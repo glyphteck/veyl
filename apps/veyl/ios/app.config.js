@@ -46,13 +46,6 @@ module.exports = {
             'expo-router',
             'expo-notifications',
             [
-                'react-native-vision-camera',
-                {
-                    cameraPermissionText: 'Allow veyl to access your camera to scan QR codes, take photos, and set your avatar.',
-                    enableMicrophonePermission: false,
-                },
-            ],
-            [
                 'expo-image-picker',
                 {
                     photosPermission: 'Allow veyl to access your photos to set your avatar.',
