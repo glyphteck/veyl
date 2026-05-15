@@ -1,0 +1,85 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function myChatPK() {
+      return firestore.get(/databases/(default)/documents/profiles/$(request.auth.uid)).data.chatPK;
+    }
+
+    function isAdmin() {
+      return signedIn()
+        && firestore.exists(/databases/(default)/documents/admins/$(request.auth.uid));
+    }
+
+    function isAvatarBanned(uid) {
+      return uid is string
+        && firestore.exists(/databases/(default)/documents/moderation/$(uid))
+        && firestore.get(/databases/(default)/documents/moderation/$(uid)).data.banned is map
+        && (
+          firestore.get(/databases/(default)/documents/moderation/$(uid)).data.banned.full is map
+          || firestore.get(/databases/(default)/documents/moderation/$(uid)).data.banned.avatar is map
+        );
+    }
+
+    function isChatId(chatId) {
+      return chatId is string
+        && chatId.matches('^[0-9a-fA-F]{64}_[0-9a-fA-F]{64}$');
+    }
+
+    function isAvatarWrite() {
+      return request.resource == null
+        || (
+          request.resource.size < 5 * 1024 * 1024
+          && request.resource.contentType.matches('image/.*')
+        );
+    }
+
+    function isChatBlob() {
+      return request.resource == null
+        || request.resource.contentType == 'application/octet-stream';
+    }
+
+    function isReportBlob() {
+      return request.resource == null
+        || request.resource.size < 20 * 1024 * 1024;
+    }
+
+    function isChatMember(chatId) {
+      let chatPK = myChatPK();
+      return signedIn()
+        && chatPK is string
+        && isChatId(chatId)
+        && (
+          chatId.matches('^' + chatPK + '_[0-9a-fA-F]{64}$')
+          || chatId.matches('^[0-9a-fA-F]{64}_' + chatPK + '$')
+        );
+    }
+
+    match /{uid}/avatar.webp {
+      allow read: if signedIn();
+      allow write: if (
+        isAdmin()
+        && request.resource == null
+      ) || (
+        signedIn()
+        && request.auth.uid == uid
+        && !isAvatarBanned(uid)
+        && isAvatarWrite()
+      );
+    }
+
+    match /chatmedia/{chatId}/{cid}/{slot} {
+      allow get: if signedIn();
+      allow list: if false;
+      allow write: if isChatMember(chatId) && isChatBlob();
+    }
+
+    match /reports/{reporterUid}/{targetUid}/{evidenceId} {
+      allow read: if isAdmin();
+      allow write: if signedIn() && request.auth.uid == reporterUid && isReportBlob();
+    }
+  }
+}

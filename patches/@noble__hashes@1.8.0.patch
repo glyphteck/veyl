@@ -1,0 +1,18 @@
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -234,6 +234,14 @@
+     "./utils.js": {
+       "import": "./esm/utils.js",
+       "require": "./utils.js"
++    },
++    "./crypto.js": {
++      "node": {
++        "import": "./esm/cryptoNode.js",
++        "default": "./cryptoNode.js"
++      },
++      "import": "./esm/crypto.js",
++      "default": "./crypto.js"
+     }
+   },
+   "sideEffects": false,

@@ -1,0 +1,135 @@
+'use client';
+
+import { CHAT_FILE_SIZE_LIMIT_ENABLED, MAX_CHAT_FILE_BYTES } from './filepayload.js';
+import { makeTxtFileName } from './messages.js';
+import { encoder } from '../crypto/core.js';
+import { writeCachedMedia } from '../localdatacache.js';
+
+export function makeChatUnavailableError() {
+    const error = new Error('chat unavailable');
+    error.code = 'permission-denied';
+    return error;
+}
+
+export function getAttachmentByteSize(attachment) {
+    const direct = attachment?.size;
+    if (Number.isFinite(direct)) {
+        return direct;
+    }
+    const data = attachment?.data;
+    if (Number.isFinite(data?.size)) {
+        return data.size;
+    }
+    if (Number.isFinite(data?.byteLength)) {
+        return data.byteLength;
+    }
+    return null;
+}
+
+export function makeAttachmentTooLargeError(size) {
+    const error = new Error('file too large');
+    error.code = 'file-too-large';
+    error.maxBytes = MAX_CHAT_FILE_BYTES;
+    if (Number.isFinite(size)) {
+        error.size = size;
+    }
+    return error;
+}
+
+export function checkAttachmentSize(attachment) {
+    const size = getAttachmentByteSize(attachment);
+    if (CHAT_FILE_SIZE_LIMIT_ENABLED && Number.isFinite(size) && size > MAX_CHAT_FILE_BYTES) {
+        throw makeAttachmentTooLargeError(size);
+    }
+    return size;
+}
+
+export function makeAttachmentUnavailableError(type = 'file') {
+    const error = new Error(type === 'mp4' ? 'video unavailable' : 'file unavailable');
+    error.code = type === 'mp4' ? 'video-unavailable' : 'file-unavailable';
+    return error;
+}
+
+export function makeTxtFileAttachment(message) {
+    const text = String(message?.c ?? '');
+    return {
+        type: 'file',
+        data: text,
+        mimeType: 'text/plain;charset=utf-8',
+        size: encoder.encode(text).byteLength,
+        name: makeTxtFileName(text),
+    };
+}
+
+export async function attachmentBytes(data) {
+    if (data == null) {
+        return null;
+    }
+    if (data instanceof Uint8Array) {
+        return data;
+    }
+    if (data instanceof ArrayBuffer) {
+        return new Uint8Array(data);
+    }
+    if (ArrayBuffer.isView(data)) {
+        return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+    }
+    if (typeof Blob !== 'undefined' && data instanceof Blob) {
+        return new Uint8Array(await data.arrayBuffer());
+    }
+    if (typeof data?.arrayBuffer === 'function') {
+        return new Uint8Array(await data.arrayBuffer());
+    }
+    if (typeof data === 'string') {
+        return encoder.encode(data);
+    }
+    return null;
+}
+
+export function saveMedia(cache, message, data, meta = {}) {
+    if (!cache || !message?.p || !message?.k) {
+        return;
+    }
+
+    const run = () => {
+        void Promise.resolve()
+            .then(() => attachmentBytes(data))
+            .then((bytes) => {
+                if (bytes?.byteLength) {
+                    return writeCachedMedia(cache, message, bytes, meta);
+                }
+                return false;
+            })
+            .catch(() => {});
+    };
+
+    if (typeof globalThis.requestIdleCallback === 'function') {
+        globalThis.requestIdleCallback(run, { timeout: 2500 });
+        return;
+    }
+    setTimeout(run, 250);
+}
+
+export function getAttachmentType(attachment = {}) {
+    const type = typeof attachment?.type === 'string' ? attachment.type.trim() : '';
+    if (type) {
+        return type;
+    }
+
+    const mimeType = typeof attachment?.mimeType === 'string' ? attachment.mimeType.toLowerCase() : '';
+    if (mimeType.startsWith('image/')) {
+        return 'img';
+    }
+    if (mimeType.startsWith('audio/')) {
+        return 'mp3';
+    }
+    if (mimeType.startsWith('video/')) {
+        return 'mp4';
+    }
+
+    return 'file';
+}
+
+export function isAttachmentType(type) {
+    return type === 'img' || type === 'mp3' || type === 'mp4' || type === 'file';
+}

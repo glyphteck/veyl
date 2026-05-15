@@ -1,0 +1,56 @@
+# Validation
+
+## Default Policy
+
+- Linting is allowed. Prefer targeted lint runs for files or packages you touched.
+- Use lint to catch mechanical issues instead of rereading every touched file by hand.
+- Do not run `git diff --check`, tests, builds, typechecks, formatters, or any other non-lint verification commands unless the user explicitly asks.
+- Do not assume there is a required TypeScript typecheck step.
+- If the user asks for broader validation, prefer the narrowest command that matches the task before repo-wide checks.
+- If you add or remove a native package, do not run a manual app build by default. Tell the user they need to rebuild, and list the packages changed in the conclusion.
+- Backend deployable surfaces are not complete until deployed. If you change Firebase Functions, Firestore rules, Storage rules, indexes, or backend config scripts, deploy the changed target before handing work back unless the user explicitly says not to deploy.
+
+## Lint Commands
+
+From the repo root:
+
+```bash
+pnpm lint
+pnpm lint:warn
+pnpm lint:fix
+```
+
+`pnpm lint` is error-only and low-noise. The repo should keep both `pnpm lint` and `pnpm lint:warn` clean.
+
+Lint is intentionally not a formatter or style gate. It should speed up work by catching mechanical issues:
+
+- undefined names
+- blocked browser prompts
+- React hook-order mistakes
+- stale eslint-disable comments
+
+Target a package when the change is local:
+
+```bash
+pnpm --filter @glyphteck/veyl-web lint
+pnpm --filter @glyphteck/veyl-ios lint
+pnpm --filter @glyphteck/veyl-bot lint
+pnpm --filter @glyphteck/shared lint
+cd functions && npm run lint
+```
+
+Target specific files when that is enough:
+
+```bash
+pnpm eslint path/to/file.js
+```
+
+## Files To Avoid Editing
+
+Do not make hand edits in generated or vendor directories unless the task is explicitly about them:
+
+- `node_modules/`
+- `apps/veyl/web/.next/`
+- `apps/veyl/ios/.expo/`
+- `apps/veyl/ios/ios/Pods/`
+- `apps/veyl/ios/ios/build/`

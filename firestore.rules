@@ -1,0 +1,365 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    /* ---------- helpers ---------- */
+    function userChatPK() {
+      return get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.chatPK;
+    }
+    function isAdmin() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+    function isParticipant(arr) {
+      return request.auth != null && userChatPK() in arr;
+    }
+
+    function mapGet(m, k) {
+      return m is map && k in m ? m[k] : null;
+    }
+
+    function activeBan(uid, key) {
+      let data = uid is string && exists(/databases/$(database)/documents/moderation/$(uid))
+        ? get(/databases/$(database)/documents/moderation/$(uid)).data
+        : {};
+      let banned = mapGet(data, 'banned');
+      let ban = mapGet(banned, key);
+      let until = mapGet(ban, 'until');
+      return ban is map
+        && (
+          until == null
+          || (until is timestamp && until > request.time)
+        );
+    }
+
+    function isChatBanned(uid) {
+      return activeBan(uid, 'full') || activeBan(uid, 'chat');
+    }
+
+    function chatAllowed() {
+      return request.auth != null && !isChatBanned(request.auth.uid);
+    }
+
+    function participantsWritable(arr) {
+      return chatAllowed()
+        && isParticipant(arr)
+        && validParticipants(arr);
+    }
+
+    function isChatPK(pk) {
+      return pk is string && pk.matches('^[0-9a-fA-F]{64}$');
+    }
+
+    function validParticipants(arr) {
+      return arr is list
+        && arr.size() == 2
+        && isChatPK(arr[0])
+        && isChatPK(arr[1])
+        && arr[0] < arr[1];
+    }
+
+    function chatIdMatchesParticipants(chatId, arr) {
+      return validParticipants(arr) && chatId == arr[0] + '_' + arr[1];
+    }
+
+    function participantsUnchanged() {
+      return request.resource.data.participants == resource.data.participants;
+    }
+
+    function isDeleting(data) {
+      return mapGet(data, 'deleting') == true;
+    }
+
+    function lastMsgUnchanged() {
+      return mapGet(request.resource.data, 'lastMsg') == mapGet(resource.data, 'lastMsg');
+    }
+
+    function lastMsgValueAllowed(newLast) {
+      return newLast == null
+        || (
+          newLast is map
+          && newLast.keys().hasOnly(['head', 'body', 'ts'])
+          && messageHeadValid(mapGet(newLast, 'head'))
+          && mapGet(newLast, 'body') is bytes
+          && mapGet(newLast, 'ts') is timestamp
+        );
+    }
+
+    function lastMsgWriteAllowed() {
+      // participants can rewrite lastMsg, or remove it if the chat becomes empty
+      return lastMsgValueAllowed(mapGet(request.resource.data, 'lastMsg'));
+    }
+
+    function chatFieldsValid(data) {
+      return data.keys().hasOnly(['participants', 'lastMsg'])
+        && (
+          !('lastMsg' in data) || lastMsgValueAllowed(mapGet(data, 'lastMsg'))
+        );
+    }
+
+    function chatUpdateFieldsAllowed() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMsg']);
+    }
+
+    function messageHeadValid(head) {
+      return head is map
+        && head.keys().hasOnly(['from', 'cid'])
+        && isChatPK(mapGet(head, 'from'))
+        && mapGet(head, 'cid') is string;
+    }
+
+    function messageFieldsValid(data) {
+      return data.keys().hasOnly(['head', 'body', 'ts'])
+        && messageHeadValid(data.head)
+        && data.body is bytes
+        && data.ts is timestamp
+        && mapGet(data.head, 'from') is string;
+    }
+
+    function messageIdentityUnchanged() {
+      return request.resource.data.head == resource.data.head
+        && request.resource.data.ts == resource.data.ts;
+    }
+
+    function isPushDid(v) {
+      return v is string && v.matches('^[a-zA-Z0-9_-]{12,128}$');
+    }
+
+    function isPushToken(v) {
+      return v is string && v.matches('^(Expo|Exponent)PushToken\\[[^\\]]+\\]$');
+    }
+
+    function isPushPlatform(v) {
+      return v in ['ios', 'android', 'web'];
+    }
+
+    function pushDocValid(did, data) {
+      return data.keys().hasOnly(['did', 'token', 'platform', 'enabled', 'updatedAt'])
+        && data.did == did
+        && isPushDid(data.did)
+        && isPushToken(data.token)
+        && isPushPlatform(data.platform)
+        && data.enabled is bool
+        && data.updatedAt == request.time;
+    }
+
+    function communityRulesAckValid(data) {
+      return data.communityRulesVersion is string
+        && data.communityRulesVersion.size() >= 4
+        && data.communityRulesVersion.size() <= 32
+        && data.communityRulesDate is string
+        && data.communityRulesDate.size() >= 4
+        && data.communityRulesDate.size() <= 32
+        && data.communityRulesAcceptedAt == request.time;
+    }
+
+    function isAutolockTimer(v) {
+      return v == 'never' || (v is int && v >= 1 && v <= 60);
+    }
+
+    function settingsValid(data) {
+      let settings = mapGet(data, 'settings');
+      let autolock = mapGet(settings, 'autolock');
+      let faceID = mapGet(settings, 'faceID');
+
+      return settings is map
+        && settings.keys().hasOnly(['glass', 'moneyFormat', 'sendOnScan', 'confirmSend', 'faceID', 'autolock'])
+        && mapGet(settings, 'glass') is bool
+        && mapGet(settings, 'moneyFormat') in ['btc', 'usd', 'sats']
+        && mapGet(settings, 'sendOnScan') is bool
+        && mapGet(settings, 'confirmSend') is bool
+        && (faceID == null || faceID is bool)
+        && autolock is map
+        && autolock.keys().hasOnly(['timer', 'onHide', 'onBlur', 'onBackground'])
+        && isAutolockTimer(mapGet(autolock, 'timer'))
+        && mapGet(autolock, 'onHide') is bool
+        && mapGet(autolock, 'onBlur') is bool
+        && mapGet(autolock, 'onBackground') is bool;
+    }
+
+    function communityRulesShapeValid(data) {
+      let version = mapGet(data, 'communityRulesVersion');
+      let date = mapGet(data, 'communityRulesDate');
+      let acceptedAt = mapGet(data, 'communityRulesAcceptedAt');
+
+      return (
+          (version == null && date == null && acceptedAt == null)
+          || (version is string && (date == null || date is string) && acceptedAt is timestamp)
+        );
+    }
+
+    function userDocCreateValid(data) {
+      return data.keys().hasOnly(['settings', 'communityRulesVersion', 'communityRulesDate', 'communityRulesAcceptedAt'])
+        && (!('settings' in data) || settingsValid(data))
+        && communityRulesShapeValid(data);
+    }
+
+    function userDocUpdateValid() {
+      return userDocCreateValid(request.resource.data)
+        && (
+          (
+            mapGet(request.resource.data, 'communityRulesVersion') == mapGet(resource.data, 'communityRulesVersion')
+            && mapGet(request.resource.data, 'communityRulesDate') == mapGet(resource.data, 'communityRulesDate')
+            && mapGet(request.resource.data, 'communityRulesAcceptedAt') == mapGet(resource.data, 'communityRulesAcceptedAt')
+          )
+          || communityRulesAckValid(request.resource.data)
+        );
+    }
+
+    /* ---------- users / profiles / misc ---------- */
+    match /users/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow list: if false;
+      allow create: if request.auth != null
+                    && request.auth.uid == uid
+                    && userDocCreateValid(request.resource.data)
+                    && (
+                      (!('communityRulesVersion' in request.resource.data) && !('communityRulesDate' in request.resource.data) && !('communityRulesAcceptedAt' in request.resource.data))
+                      || communityRulesAckValid(request.resource.data)
+                    );
+      allow update: if request.auth != null
+                    && request.auth.uid == uid
+                    && userDocUpdateValid();
+      allow write: if false;
+
+      match /blocked/{peerUid} {
+        allow get, list: if request.auth != null && request.auth.uid == uid;
+        allow create, update: if request.auth != null
+                              && request.auth.uid == uid
+                              && peerUid != uid
+                              && request.resource.data.keys().size() == 0;
+        allow delete: if request.auth != null && request.auth.uid == uid;
+      }
+
+      match /push/{did} {
+        allow get, list: if request.auth != null && request.auth.uid == uid;
+        allow create, update: if request.auth != null
+                              && request.auth.uid == uid
+                              && pushDocValid(did, request.resource.data);
+        allow delete: if request.auth != null && request.auth.uid == uid;
+      }
+    }
+    match /moderation/{uid} {
+      allow get: if request.auth != null && (request.auth.uid == uid || isAdmin());
+      allow list: if isAdmin();
+      allow create, update, delete: if isAdmin();
+    }
+    match /admins/{uid} {
+      allow get: if request.auth != null
+                 && (request.auth.uid == uid || isAdmin());
+      allow list: if isAdmin();
+      allow write: if false;
+    }
+    match /runtimes/{id} {
+      allow get: if isAdmin();
+      allow write: if false;
+    }
+    match /bots/{uid} {
+      allow get, list: if isAdmin();
+      allow write: if false;
+
+      match /events/{eventId} {
+        allow get, list: if isAdmin();
+        allow write: if false;
+      }
+    }
+    match /reported/{uid} {
+      allow get, list: if isAdmin();
+      allow write: if false;
+
+      match /reports/{reportId} {
+        allow get, list: if isAdmin();
+        allow write: if false;
+      }
+    }
+    match /profiles/{uid} {
+      allow get: if request.auth != null;
+      allow list: if request.auth != null
+                  && request.query.limit != null
+                  && request.query.limit <= 15;
+      // profiles are managed server-side, except for presence
+      allow create: if false;
+      allow update: if request.auth != null
+                    && request.auth.uid == uid
+                    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['active'])
+                    && request.resource.data.active is bool;
+      allow delete: if false;
+    }
+    match /seeds/{uid} {
+      allow get: if request.auth.uid == uid;
+      allow create: if request.auth.uid == uid
+                    && request.resource.data.keys().hasOnly(['es']);
+      allow list, update, delete: if false;
+    }
+
+    // bitcoin data
+    match /bitcoin/current {
+      allow get: if true;
+      allow list: if false;
+      allow write: if false;
+    }
+
+    //usernames
+    match /usernames/{name} {
+      allow get: if request.auth != null;
+      allow create: if request.auth != null
+                    && request.resource.data.keys().hasOnly(['uid'])
+                    && !exists(resource.path);
+      allow list, update, delete: if false;
+    }
+
+    /* ---------- chats ---------- */
+    match /chats/{chatId} {
+
+      /* parent chat document */
+      allow get, list: if chatAllowed() && isParticipant(resource.data.participants);
+
+      allow create: if participantsWritable(request.resource.data.participants)
+                    && chatIdMatchesParticipants(chatId, request.resource.data.participants)
+                    && chatFieldsValid(request.resource.data)
+                    && (
+                      !('lastMsg' in request.resource.data) || lastMsgWriteAllowed()
+                    );
+
+      allow update: if participantsWritable(resource.data.participants)
+                    && chatIdMatchesParticipants(chatId, resource.data.participants)
+                    && !isDeleting(resource.data)
+                    && participantsUnchanged()
+                    && chatUpdateFieldsAllowed()
+                    && (
+                      // if lastMsg changes, it must still match the allowed encrypted message shape
+                      lastMsgUnchanged() || lastMsgWriteAllowed()
+                    );
+
+      /* messages sub-collection */
+      match /messages/{messageId} {
+        allow get, list: if chatAllowed()
+                         && exists(/databases/$(database)/documents/chats/$(chatId))
+                         && !isDeleting(get(/databases/$(database)/documents/chats/$(chatId)).data)
+                         && isParticipant(get(/databases/$(database)/documents/chats/$(chatId)).data.participants);
+
+        allow create: if chatAllowed()
+                      && messageFieldsValid(request.resource.data)
+                      && request.resource.data.head.from == userChatPK()
+                      && existsAfter(/databases/$(database)/documents/chats/$(chatId))
+                      && !isDeleting(getAfter(/databases/$(database)/documents/chats/$(chatId)).data)
+                      && chatIdMatchesParticipants(chatId, getAfter(/databases/$(database)/documents/chats/$(chatId)).data.participants)
+                      && participantsWritable(getAfter(/databases/$(database)/documents/chats/$(chatId)).data.participants);
+
+        allow update: if chatAllowed()
+                      && exists(/databases/$(database)/documents/chats/$(chatId))
+                      && !isDeleting(get(/databases/$(database)/documents/chats/$(chatId)).data)
+                      && participantsWritable(get(/databases/$(database)/documents/chats/$(chatId)).data.participants)
+                      && messageFieldsValid(request.resource.data)
+                      && messageIdentityUnchanged();
+        allow delete: if chatAllowed()
+                      && exists(/databases/$(database)/documents/chats/$(chatId))
+                      && !isDeleting(get(/databases/$(database)/documents/chats/$(chatId)).data)
+                      && participantsWritable(get(/databases/$(database)/documents/chats/$(chatId)).data.participants);
+      }
+    }
+
+    /* block everything else */
+    match /{document=**} { allow read, write: if false; }
+  }
+}

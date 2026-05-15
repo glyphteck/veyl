@@ -1,0 +1,33 @@
+{
+    "name": "@glyphteck/shared",
+    "version": "0.0.0",
+    "private": true,
+    "type": "module",
+    "sideEffects": [],
+    "scripts": {
+        "lint": "eslint . --quiet"
+    },
+    "exports": {
+        "./bot/*": "./bot/*.js",
+        "./chat/*": "./chat/*.js",
+        "./crypto/*": "./crypto/*.js",
+        "./logos": "./logos/index.js",
+        "./logos/*": "./logos/*",
+        "./providers/*": "./providers/*.js",
+        "./search/*": "./search/*.js",
+        "./*": "./*.js"
+    },
+    "dependencies": {
+        "@noble/ciphers": "catalog:",
+        "@noble/curves": "catalog:",
+        "@noble/hashes": "catalog:",
+        "@scure/bip39": "catalog:",
+        "bech32": "catalog:"
+    },
+    "peerDependencies": {
+        "firebase": "catalog:",
+        "next": "catalog:",
+        "react": "^19.0.0",
+        "react-dom": "^19.0.0"
+    }
+}

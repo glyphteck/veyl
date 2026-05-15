@@ -1,0 +1,17 @@
+{
+    "name": "@glyphteck/veyl-bot",
+    "version": "0.0.0",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "start": "node src/index.js",
+        "provision": "node src/newbot.js",
+        "lint": "eslint . --quiet"
+    },
+    "dependencies": {
+        "@buildonspark/spark-sdk": "catalog:",
+        "@glyphteck/shared": "workspace:*",
+        "@google-cloud/secret-manager": "^6.1.2",
+        "firebase-admin": "^13.9.0"
+    }
+}

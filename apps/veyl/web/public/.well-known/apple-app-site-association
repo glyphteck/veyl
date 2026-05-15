@@ -1,0 +1,15 @@
+{
+    "applinks": {
+        "apps": [],
+        "details": [
+            {
+                "appID": "HHTM355M49.com.glyphteck.veyl",
+                "paths": ["/qr", "/qr/*"]
+            },
+            {
+                "appID": "HHTM355M49.com.glyphteck.veyl.local",
+                "paths": ["/qr", "/qr/*"]
+            }
+        ]
+    }
+}

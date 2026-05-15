@@ -1,0 +1,132 @@
+'use client';
+
+import { File, Loader } from 'lucide-react';
+import { useTxData } from '@/components/providers/txdataprovider';
+import { useUser } from '@/components/providers/userprovider';
+import { useWallet } from '@/components/providers/walletprovider';
+import { bubbleBg, imageWidth } from '@/lib/messages';
+import { renderMoney } from '@/lib/utils';
+import { getAttachmentCaption, getAttachmentTitle, getImageAspect } from '@glyphteck/shared/chat/messages';
+import { useCloak } from '@glyphteck/shared/providers/cloakprovider';
+import { useMsgImage } from '../usemsgimage';
+import { TextBubble } from './text';
+
+function ReplyButton({ onReplyPress, children }) {
+    return (
+        <button
+            type="button"
+            className="block min-w-0 max-w-full border-0 bg-transparent p-0 text-left"
+            onClick={(event) => {
+                event.stopPropagation();
+                onReplyPress?.();
+            }}
+        >
+            {children}
+        </button>
+    );
+}
+
+function ReplyText({ reply, replyFromPeer, onReplyPress }) {
+    const { cloaked } = useCloak();
+
+    return (
+        <ReplyButton onReplyPress={onReplyPress}>
+            <div className={`backdrop-blur-sm min-w-0 max-w-full rounded-full px-2 py-0.5 shadow-sm opacity-65 ${bubbleBg(replyFromPeer)}`}>
+                <p className={`truncate whitespace-nowrap text-md ${cloaked ? 'cloaked' : ''}`}>{reply?.c}</p>
+            </div>
+        </ReplyButton>
+    );
+}
+
+function ReplyRequest({ reply, replyFromPeer, peerDisplayName, onReplyPress }) {
+    const { settings } = useUser();
+    const { bitcoin } = useWallet();
+    const { getTxById } = useTxData();
+    const msgTx = reply.tx ? getTxById?.(reply.tx) : null;
+    const displayAmount = msgTx ? Math.abs(Number(msgTx.amount)) : Number(reply.a);
+    const amount = renderMoney(displayAmount, settings?.moneyFormat, bitcoin?.price);
+    const label = reply.tx ? (replyFromPeer ? 'You sent' : 'You received') : replyFromPeer ? `${peerDisplayName || 'They'} requested` : 'You requested';
+
+    return (
+        <ReplyButton onReplyPress={onReplyPress}>
+            <div className={`backdrop-blur-sm min-w-0 max-w-full rounded-[20px] px-3 py-2 shadow-sm opacity-65 ${bubbleBg(replyFromPeer)}`}>
+                <p className="truncate text-[11px] font-black text-muted">{label}</p>
+                <p className="truncate text-2xl font-black">{amount}</p>
+            </div>
+        </ReplyButton>
+    );
+}
+
+function ReplyImage({ reply, peerChatPK, onReplyPress }) {
+    const { cloaked } = useCloak();
+    const { src, loading, error } = useMsgImage(peerChatPK, reply);
+    const aspect = getImageAspect(reply);
+    const width = Math.round(Math.min(160, imageWidth(aspect) * 0.56));
+
+    return (
+        <ReplyButton onReplyPress={onReplyPress}>
+            <div className="overflow-hidden rounded-[20px] bg-foreground/5 shadow-sm opacity-65" style={{ width, maxWidth: '100%' }}>
+                {src ? (
+                    <img src={src} alt={reply?.c || 'replied image'} className={`block w-full object-cover ${cloaked ? 'blur-xl saturate-0' : ''}`} style={{ aspectRatio: aspect }} />
+                ) : (
+                    <div className="flex items-center justify-center bg-foreground/5" style={{ width: '100%', aspectRatio: aspect }}>
+                        {loading ? <Loader className="size-4 animate-spin text-muted" /> : <span className="text-xs text-muted">{error ? 'image unavailable' : 'image'}</span>}
+                    </div>
+                )}
+                {typeof reply?.c === 'string' && reply.c.trim() ? <p className={`truncate px-2.5 py-2 text-sm ${cloaked ? 'cloaked' : ''}`}>{reply.c}</p> : null}
+            </div>
+        </ReplyButton>
+    );
+}
+
+function ReplyAttachment({ reply, replyFromPeer, onReplyPress }) {
+    const { cloaked } = useCloak();
+    const title = getAttachmentTitle(reply);
+    const caption = getAttachmentCaption(reply);
+
+    return (
+        <ReplyButton onReplyPress={onReplyPress}>
+            <div className={`flex min-w-0 max-w-full items-center gap-3 rounded-[20px] px-3 py-2 shadow-sm opacity-65 ${bubbleBg(replyFromPeer)}`}>
+                <File className="size-4 shrink-0" />
+                <div className="min-w-0 flex-1">
+                    <p className={`truncate text-sm font-black ${cloaked ? 'cloaked' : ''}`}>{title}</p>
+                    {caption ? <p className={`truncate text-xs ${cloaked ? 'cloaked' : ''}`}>{caption}</p> : null}
+                </div>
+            </div>
+        </ReplyButton>
+    );
+}
+
+function ReplyPreview({ reply, replyFromPeer, peerChatPK, peerDisplayName, onReplyPress }) {
+    switch (reply?.t) {
+        case 'txt':
+            return <ReplyText reply={reply} replyFromPeer={replyFromPeer} onReplyPress={onReplyPress} />;
+        case 'req':
+            return <ReplyRequest reply={reply} replyFromPeer={replyFromPeer} peerDisplayName={peerDisplayName} onReplyPress={onReplyPress} />;
+        case 'img':
+            return <ReplyImage reply={reply} peerChatPK={peerChatPK} onReplyPress={onReplyPress} />;
+        case 'file':
+        case 'mp3':
+        case 'mp4':
+            return <ReplyAttachment reply={reply} replyFromPeer={replyFromPeer} onReplyPress={onReplyPress} />;
+        default:
+            return null;
+    }
+}
+
+export default function ReplyMessage({ msg, fromPeer = false, reply, replyFromPeer = false, peerChatPK, peerDisplayName, onReplyPress }) {
+    const body = <TextBubble msg={msg} fromPeer={fromPeer} allowEmoji={false} />;
+
+    if (!reply) {
+        return body;
+    }
+
+    return (
+        <div className={`flex min-w-0 max-w-full flex-col gap-1.5 ${fromPeer ? 'items-start' : 'items-end'}`}>
+            <ReplyPreview reply={reply} replyFromPeer={replyFromPeer} peerChatPK={peerChatPK} peerDisplayName={peerDisplayName} onReplyPress={onReplyPress} />
+            <div className="min-w-0 max-w-full">
+                {body}
+            </div>
+        </div>
+    );
+}

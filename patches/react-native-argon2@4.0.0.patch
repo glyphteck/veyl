@@ -1,0 +1,12 @@
+diff --git a/RNArgon2.podspec b/RNArgon2.podspec
+index 8d9d57552e09e93ed7e9733330dcf8c578ee95e1..567df3002af23884edd8f871a5750e2a97936145 100644
+--- a/RNArgon2.podspec
++++ b/RNArgon2.podspec
+@@ -18,4 +18,7 @@ Pod::Spec.new do |s|
+ 
+   s.dependency 'React-Core'
+   s.dependency 'Argon2Swift', '~> 1.0'
++  s.pod_target_xcconfig = {
++    'SWIFT_ENABLE_EXPLICIT_MODULES' => 'NO'
++  }
+ end

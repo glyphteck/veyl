@@ -1,0 +1,54 @@
+{
+    "name": "veyl",
+    "version": "4.6.0",
+    "private": true,
+    "scripts": {
+        "admin": "node scripts/admin/index.mjs",
+        "bot": "node scripts/admin/bot.mjs",
+        "push": "node scripts/repo.mjs push",
+        "merge": "node scripts/repo.mjs merge",
+        "veyl": "node scripts/veyl.mjs",
+        "build": "node scripts/build.mjs",
+        "ban": "node scripts/admin/ban.mjs",
+        "nuke": "node scripts/admin/nuke.mjs",
+        "steal": "node scripts/admin/steal.mjs",
+        "lint": "eslint . --quiet",
+        "lint:warn": "eslint .",
+        "lint:fix": "eslint . --fix",
+        "update": "pnpm -r up && pnpm sync:frameworks",
+        "sync:frameworks": "node scripts/sync-frameworks.mjs",
+        "check:frameworks": "node scripts/sync-frameworks.mjs --check"
+    },
+    "packageManager": "pnpm@10.33.0",
+    "dependencies": {
+        "@buildonspark/spark-sdk": "^0.8.0",
+        "@noble/ciphers": "catalog:",
+        "@noble/curves": "catalog:",
+        "@noble/hashes": "catalog:",
+        "@scure/bip39": "catalog:",
+        "bech32": "catalog:",
+        "firebase": "catalog:"
+    },
+    "pnpm": {
+        "overrides": {
+            "firebase": "catalog:",
+            "next": "catalog:"
+        },
+        "peerDependencyRules": {
+            "ignoreMissing": [],
+            "allowAny": [
+                "@react-native-async-storage/async-storage"
+            ]
+        },
+        "patchedDependencies": {
+            "@noble/hashes@1.8.0": "patches/@noble__hashes@1.8.0.patch",
+            "react-native-argon2@4.0.0": "patches/react-native-argon2@4.0.0.patch"
+        }
+    },
+    "devDependencies": {
+        "@eslint/js": "^10.0.1",
+        "eslint": "^10.3.0",
+        "eslint-plugin-react-hooks": "^7.1.1",
+        "globals": "^17.6.0"
+    }
+}

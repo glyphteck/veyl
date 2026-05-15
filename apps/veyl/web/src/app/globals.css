@@ -1,0 +1,149 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+@custom-variant dark (&:is(.dark *));
+
+@layer base {
+    * {
+        @apply border-border;
+        scrollbar-width: none;
+        scrollbar-color: var(--muted) transparent;
+        outline: none;
+    }
+
+    .lucide {
+        @apply stroke-[2.5] size-5;
+    }
+
+    *::selection {
+        @apply bg-foreground text-background;
+    }
+
+    html,
+    body {
+        min-height: 100%;
+    }
+
+    body {
+        @apply bg-background text-foreground;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+
+}
+
+@layer components {
+    .grower-sm {
+        @apply transition-transform hover:scale-105 active:scale-90 aria-expanded:scale-90;
+    }
+
+    .grower {
+        @apply transition-transform hover:scale-120 active:scale-85 aria-expanded:scale-80 group-hover:scale-120 group-active:scale-85;
+    }
+
+    .grower-lg {
+        @apply transition-transform hover:scale-135 active:scale-85 aria-expanded:scale-85;
+    }
+
+    .shrinker {
+        @apply transition-transform hover:scale-95 active:scale-85 aria-expanded:scale-85;
+    }
+
+    .shrinker-fixed {
+        @apply transition-transform hover:scale-80 aria-expanded:scale-80;
+    }
+
+    .shrinker-fixed-sm {
+        @apply transition-transform hover:scale-90 aria-expanded:scale-90;
+    }
+
+    .pop {
+        opacity: 0;
+        transform: translateY(0.25rem) scale(0.9);
+        transform-origin: center;
+        pointer-events: none;
+        transition:
+            opacity 160ms cubic-bezier(0.2, 0, 0, 1),
+            transform 160ms cubic-bezier(0.2, 0, 0, 1);
+        will-change: opacity, transform;
+    }
+
+    .pop[data-open='true'],
+    .group:hover .group-pop,
+    .group:focus-within .group-pop {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+        pointer-events: auto;
+    }
+
+    .mainmenu {
+        @apply flex h-10 w-full items-center justify-start px-3 py-1.5 shadow transition-transform hover:scale-95 active:scale-90;
+    }
+
+    .button-outline {
+        @apply bg-background/70 px-3 py-2 shadow;
+    }
+
+    .button-fill {
+        @apply bg-foreground px-3 py-2 text-background shadow;
+    }
+
+    .button-destructive {
+        @apply bg-destructive px-3 py-2 text-background shadow;
+    }
+}
+
+@layer utilities {
+    .cloaked {
+        -webkit-text-security: disc;
+    }
+}
+
+@theme inline {
+    --default-transition-duration: 160ms;
+    --radius-round: 1.375rem;
+    --color-background: var(--background);
+    --color-foreground: var(--foreground);
+    --color-muted: var(--muted);
+    --color-destructive: var(--destructive);
+    --color-alert: var(--alert);
+    --color-border: var(--border);
+    --color-inflow: var(--inflow);
+    --color-outflow: var(--outflow);
+    --color-bitcoin: var(--bitcoin);
+    --color-pending: var(--pending);
+    --color-shadow: var(--shadow);
+    --color-active: var(--active);
+    --shadow: 0px 0px 8px 0px var(--shadow);
+    --shadow-sm: 0px 0px 4px 0px var(--shadow);
+    --inset-shadow: inset 0px 0px 6px 0px var(--shadow);
+}
+
+:root {
+    --background: oklch(1 0 0);
+    --foreground: oklch(0 0 0);
+    --muted: oklch(0.6 0 0);
+    --destructive: oklch(0.45 0.25 20);
+    --alert: oklch(0.45 0.25 20);
+    --border: oklch(0.92 0 0);
+    --inflow: oklch(0.4 0.25 145);
+    --outflow: oklch(0.45 0.25 15);
+    --bitcoin: oklch(0.65 0.25 63);
+    --pending: oklch(0.75 0.18 88);
+    --shadow: oklch(0 0 0 / 0.1);
+    --active: oklch(0.7 0.25 145);
+}
+
+.dark {
+    --background: oklch(0.2 0 0);
+    --foreground: oklch(0.99 0 0);
+    --muted: oklch(0.55 0 0);
+    --destructive: oklch(0.52 0.25 15);
+    --alert: oklch(0.52 0.25 15);
+    --border: oklch(0.27 0 0);
+    --inflow: oklch(0.6 0.25 145);
+    --outflow: oklch(0.52 0.25 15);
+    --bitcoin: oklch(0.8 0.25 63);
+    --pending: oklch(0.88 0.18 88);
+    --shadow: oklch(0 0 0 / 0.21);
+    --active: oklch(0.75 0.25 145);
+}

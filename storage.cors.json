@@ -1,0 +1,23 @@
+[
+    {
+        "origin": [
+            "https://dev.glyphteck.com:3001",
+            "https://dev.veyl.glyphteck.com",
+            "https://dev.veyl.glyphteck.com:3000",
+            "https://veyl.glyphteck.com",
+            "https://test.veyl.glyphteck.com"
+        ],
+        "method": [
+            "GET",
+            "HEAD"
+        ],
+        "responseHeader": [
+            "Content-Type",
+            "Content-Length",
+            "Content-Disposition",
+            "Cache-Control",
+            "ETag"
+        ],
+        "maxAgeSeconds": 3600
+    }
+]
