@@ -9,8 +9,8 @@ const EXTRA = ['bots'];
 const KNOWN = [...ALL, ...EXTRA];
 
 function usage() {
-    console.error('usage: pnpm nuke <db|storage|auth|bots|all> [...]');
-    console.error('usage: pnpm nuke bots [@username|uid]');
+    console.error('usage: bun nuke <db|storage|auth|bots|all> [...]');
+    console.error('usage: bun nuke bots [@username|uid]');
     process.exit(1);
 }
 

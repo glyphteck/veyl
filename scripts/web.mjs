@@ -152,7 +152,7 @@ if (clear) {
     rmSync(resolve(config.cwd, '.next'), { recursive: true, force: true });
 }
 
-const command = ['exec', 'next', 'dev', '--turbopack'];
+const command = ['x', 'next', 'dev', '--turbopack'];
 if (config.hostname) {
     command.push('--hostname', config.hostname);
 }
@@ -164,7 +164,7 @@ if (config.https) {
 }
 command.push(...extra);
 
-const child = spawn('pnpm', command, { stdio: 'inherit', env, cwd: config.cwd });
+const child = spawn('bun', command, { stdio: 'inherit', env, cwd: config.cwd });
 
 child.on('exit', (code, signal) => {
     process.exitCode = code ?? (signal ? 1 : 0);

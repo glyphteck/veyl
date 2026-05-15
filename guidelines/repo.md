@@ -23,17 +23,19 @@ veyl contains most product logic. The main user-facing product surfaces are the 
 
 ## Package Shape
 
-The root repo uses `pnpm`.
+The root repo uses Bun.
 
-The pnpm workspace includes:
+The Bun workspace includes:
 
 - `apps/*`
 - `apps/*/*`
 - `shared`
 
-`functions/` is not part of the root pnpm workspace. Install it separately with `npm install` inside `functions/`.
+`functions/` is not part of the root Bun workspace. Install it separately with `npm install` inside `functions/`.
 
-Repo-level automation lives in root `scripts/` and is exposed through `pnpm` scripts. Do not add or rely on editor-specific workflow files for common repo operations. The old VS Code push/merge tasks are replaced by `scripts/repo.mjs` through `pnpm push` and `pnpm merge`.
+Repo-level automation lives in root `scripts/` and is exposed through Bun scripts. Do not add or rely on editor-specific workflow files for common repo operations. The old VS Code push/merge tasks are replaced by `scripts/repo.mjs` through `bun push` and `bun merge`.
+
+After a feature branch is merged, delete the merged branch and any abandoned predecessor branches. Then document the shipped behavior in durable docs such as `README.md`, `AGENTS.md`, or the focused guideline file, matching the cleanup expected for completed work that started in `todo/`.
 
 ## Working Assumptions
 

@@ -149,56 +149,56 @@ The admin UI can:
 
 The CLI can do the same:
 
-- `pnpm bot add [username]` — provision a bot (random username if omitted)
-- `pnpm bot add <count>` — provision N bots with random usernames
-- `pnpm bot power <@username|uid> on`
-- `pnpm bot power <@username|uid> off`
-- `pnpm bot kill <@username|uid>` — fully delete the bot account
-- `pnpm bot kill all` — delete every bot
+- `bun bot add [username]` — provision a bot (random username if omitted)
+- `bun bot add <count>` — provision N bots with random usernames
+- `bun bot power <@username|uid> on`
+- `bun bot power <@username|uid> off`
+- `bun bot kill <@username|uid>` — fully delete the bot account
+- `bun bot kill all` — delete every bot
 
 ## Operator Manual
 
 ### One-time setup
 
 ```bash
-pnpm install
+bun install
 cd functions && npm install && cd ..
-pnpm bot add @mybot
+bun bot add @mybot
 ```
 
 Or provision 10 bots with random usernames:
 
 ```bash
-pnpm bot add 10
+bun bot add 10
 ```
 
 ### Start the runtime
 
 ```bash
-pnpm veyl bot
+bun veyl bot
 ```
 
-One runtime serves all bots. Power control happens from `/bot` or `pnpm bot power`.
+One runtime serves all bots. Power control happens from `/bot` or `bun bot power`.
 
 ### Power a bot on or off
 
 ```bash
-pnpm bot power @mybot on
-pnpm bot power @mybot off
+bun bot power @mybot on
+bun bot power @mybot off
 ```
 
 ### Delete a bot
 
 ```bash
-pnpm bot kill @mybot
-pnpm bot kill all
+bun bot kill @mybot
+bun bot kill all
 ```
 
 ### Nuke bot backend refs
 
 ```bash
-pnpm nuke bots @mybot   # one bot
-pnpm nuke bots           # all bots
+bun nuke bots @mybot   # one bot
+bun nuke bots           # all bots
 ```
 
 Removes `bots/{uid}`, `users/{uid}`, `profiles/{uid}`, `moderation/{uid}`, `usernames/*`, `chatkeys/{chatPK}`, and chats containing the bot, plus associated bot avatar/chatmedia files. Does not delete the seed secret or the Auth user.

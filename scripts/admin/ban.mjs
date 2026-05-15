@@ -4,7 +4,7 @@ import admin, { db, FieldValue, Timestamp } from '../../functions/lib/admin.js';
 import { cliArgs, resolveUid } from './common.mjs';
 
 function usage() {
-    console.error('usage: pnpm ban <uid|@username> [chat|avatar] [hours|permanent|clear]');
+    console.error('usage: bun ban <uid|@username> [chat|avatar] [hours|permanent|clear]');
     process.exit(1);
 }
 

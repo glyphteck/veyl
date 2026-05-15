@@ -10,7 +10,7 @@
         "start": "npm run shell",
         "deploy": "firebase deploy --only functions",
         "logs": "firebase functions:log",
-        "lint": "cd .. && pnpm exec eslint functions --quiet"
+        "lint": "cd .. && bun x eslint functions --quiet"
     },
     "engines": {
         "node": "22"

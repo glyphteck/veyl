@@ -4,7 +4,7 @@ import { db } from '../../functions/lib/admin.js';
 import { cliArgs, resolveUid } from './common.mjs';
 
 function usage() {
-    console.error('usage: pnpm admin <add|drop> <uid|@username>');
+    console.error('usage: bun admin <add|drop> <uid|@username>');
     process.exit(1);
 }
 

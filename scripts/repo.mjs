@@ -30,8 +30,8 @@ function paint(text, color) {
 
 function usage() {
     process.stdout.write(`Usage:
-  pnpm push [patch|minor|major] [commit message]
-  pnpm merge <pr> [patch|minor|major] [commit message]
+  bun push [patch|minor|major] [commit message]
+  bun merge <pr> [patch|minor|major] [commit message]
 
 Options:
   -v, --version <patch|minor|major>
@@ -39,9 +39,9 @@ Options:
   -p, --pr <number>
 
 Examples:
-  pnpm push
-  pnpm push --version patch --message "update"
-  pnpm merge --pr 123
+  bun push
+  bun push --version patch --message "update"
+  bun merge --pr 123
 `);
 }
 

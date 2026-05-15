@@ -13,6 +13,7 @@
 - Avoid scaffolding words like `manager`, `controller`, `coordinator`, `processor`, and `handler` unless the code really owns that broad role.
 - Prefer product nouns over technical plumbing nouns. Use names like `chat`, `wallet`, `audio`, `vault`, `seed`, `profile`, and `bot` when those are the actual concepts.
 - `handle*` names are fine for UI event callbacks. For reusable logic, prefer the verb itself.
+- Branch names follow the same naming bar: no agent prefixes or namespace prefixes like `codex/`, `codex-`, or similar. Use the shortest meaningful lowercase name, preferably one word.
 
 ## Structure
 
