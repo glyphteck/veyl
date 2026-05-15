@@ -21,7 +21,7 @@ const origins = [
 
 const CSP_DIRECTIVES = [
     "default-src 'self'",
-    `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'${process.env.NEXT_PUBLIC_NETWORK === 'REGTEST' ? " 'unsafe-eval'" : ''}`,
+    `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'${process.env.NODE_ENV === 'development' || process.env.NEXT_PUBLIC_NETWORK === 'REGTEST' ? " 'unsafe-eval'" : ''}`,
     `connect-src 'self' ${origins.join(' ')}`,
     "img-src 'self' data: blob: https://firebasestorage.googleapis.com",
     "media-src 'self' data: blob:",
