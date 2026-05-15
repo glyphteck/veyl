@@ -1,6 +1,6 @@
 {
     "name": "veyl",
-    "version": "4.6.3",
+    "version": "4.6.4",
     "private": true,
     "scripts": {
         "admin": "node scripts/admin/index.mjs",

@@ -1,8 +1,8 @@
-# veyl
+<p align="center">
+  <img src="apps/veyl/web/public/wallet.png" alt="veyl" width="256">
+</p>
 
-<img src="shared/logos/GT.svg" alt="glyphteck" width="128">
-
-Glyphteck Corp is the company.
+<h1 align="center">veyl</h1>
 
 This repo is the Veyl product workspace.
 
