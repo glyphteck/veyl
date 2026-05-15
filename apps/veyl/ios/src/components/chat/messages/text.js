@@ -7,15 +7,19 @@ import GlassView from '@/components/glass/glassview';
 import Menu from '@/components/menu';
 import ReactionTray from './reactiontray';
 
+const EMOJI_LINE_HEIGHT = 1.1;
+
 export function TextBubble({ msg, fromPeer = false, compact = false, singleLine = false, muted = false, allowEmoji = true }) {
     const { theme } = useTheme();
     const text = typeof msg?.c === 'string' ? msg.c : '';
     const emoji = getEmojiTextInfo(text);
 
     if (allowEmoji && emoji && !compact) {
+        const lineHeight = Math.ceil(emoji.size * EMOJI_LINE_HEIGHT);
+
         return (
             <View style={{ paddingHorizontal: 2 }}>
-                <Text style={{ fontSize: emoji.size, lineHeight: emoji.size, includeFontPadding: false, color: theme.foreground }}>{emoji.text}</Text>
+                <Text style={{ fontSize: emoji.size, lineHeight, includeFontPadding: false, color: theme.foreground }}>{emoji.text}</Text>
             </View>
         );
     }
