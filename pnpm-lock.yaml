@@ -322,9 +322,6 @@ importers:
       '@tailwindcss/postcss':
         specifier: 'catalog:'
         version: 4.3.0
-      '@vercel/oidc':
-        specifier: ^3.4.1
-        version: 3.4.1
       bech32:
         specifier: 'catalog:'
         version: 2.0.0
@@ -346,9 +343,6 @@ importers:
       firebase-admin:
         specifier: ^13.9.0
         version: 13.9.0
-      google-auth-library:
-        specifier: ^10.6.2
-        version: 10.6.2
       lamejs:
         specifier: ^1.2.1
         version: 1.2.1
@@ -2728,10 +2722,6 @@ packages:
     resolution: {integrity: sha512-lrW200hZdbfRtztbygyaq/6jP6AKE8qQN2KvPcJ+x7wiD038YtnYtZ82IMNJ69GJibV7bwL3y9FgK+5w/pYt6g==}
     cpu: [x64]
     os: [win32]
-
-  '@vercel/oidc@3.4.1':
-    resolution: {integrity: sha512-H6B+/ig/GoahccL3WZjiHayHw1H5KhvTJNceqYulwfK9kkz5iul2hTmYzcJ7tTCQzyd0dutuL9xYFZCyLUqsog==}
-    engines: {node: '>= 20'}
 
   '@xmldom/xmldom@0.8.13':
     resolution: {integrity: sha512-KRYzxepc14G/CEpEGc3Yn+JKaAeT63smlDr+vjB8jRfgTBBI9wRj/nkQEO+ucV8p8I9bfKLWp37uHgFrbntPvw==}
@@ -9584,8 +9574,6 @@ snapshots:
 
   '@unrs/resolver-binding-win32-x64-msvc@1.11.1':
     optional: true
-
-  '@vercel/oidc@3.4.1': {}
 
   '@xmldom/xmldom@0.8.13': {}
 

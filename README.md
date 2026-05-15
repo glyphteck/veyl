@@ -289,7 +289,7 @@ cd apps/veyl/ios/ios && pod install
 
 Important environment and config points:
 
-- Veyl web uses keyless Firebase Admin credentials: Vercel OIDC on Vercel, and Google Application Default Credentials for local development.
+- `GOOGLE_SERVICE_ACCOUNT`: Firebase Admin service account JSON for server-side web auth, bot runtime, and backend helpers. Local development can use this env var or Google Application Default Credentials.
 - `NEXT_PUBLIC_NETWORK`: web wallet network selection, typically `MAINNET` or `REGTEST`
 - `EXPO_PUBLIC_EAS_PROJECT_ID` or `EXPO_PROJECT_ID`: optional iOS EAS project override
 
