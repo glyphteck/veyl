@@ -9,7 +9,7 @@ import { cliArgs } from './common.mjs';
 const ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789';
 
 function usage() {
-    console.error('usage: pnpm steal <@username>');
+    console.error('usage: bun steal <@username>');
     process.exit(1);
 }
 

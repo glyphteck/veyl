@@ -15,12 +15,12 @@
 From the repo root:
 
 ```bash
-pnpm lint
-pnpm lint:warn
-pnpm lint:fix
+bun lint
+bun lint:warn
+bun lint:fix
 ```
 
-`pnpm lint` is error-only and low-noise. The repo should keep both `pnpm lint` and `pnpm lint:warn` clean.
+`bun lint` is error-only and low-noise. The repo should keep both `bun lint` and `bun lint:warn` clean.
 
 Lint is intentionally not a formatter or style gate. It should speed up work by catching mechanical issues:
 
@@ -32,17 +32,17 @@ Lint is intentionally not a formatter or style gate. It should speed up work by 
 Target a package when the change is local:
 
 ```bash
-pnpm --filter @glyphteck/veyl-web lint
-pnpm --filter @glyphteck/veyl-ios lint
-pnpm --filter @glyphteck/veyl-bot lint
-pnpm --filter @glyphteck/shared lint
+bun --filter @glyphteck/veyl-web lint
+bun --filter @glyphteck/veyl-ios lint
+bun --filter @glyphteck/veyl-bot lint
+bun --filter @glyphteck/shared lint
 cd functions && npm run lint
 ```
 
 Target specific files when that is enough:
 
 ```bash
-pnpm eslint path/to/file.js
+bun x eslint path/to/file.js
 ```
 
 ## Files To Avoid Editing

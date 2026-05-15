@@ -206,32 +206,32 @@ Main Firestore collections:
 
 ## Local Development
 
-The repo root is a pnpm workspace for app packages under `apps/*` and `apps/*/*`, plus the shared package under `shared`.
+The repo root is a Bun workspace for app packages under `apps/*` and `apps/*/*`, plus the shared package under `shared`.
 
 `functions/` is separate and uses npm, not the root workspace.
 
 ### Install
 
 ```bash
-pnpm install
+bun install
 cd functions && npm install
 ```
 
 ### Run web
 
 ```bash
-pnpm veyl web
-pnpm veyl web mainnet
-pnpm veyl web regtest
+bun veyl web
+bun veyl web mainnet
+bun veyl web regtest
 ```
 
 ### Repo workflows
 
-Repository push and merge workflows are pnpm CLI commands, not VS Code tasks:
+Repository push and merge workflows are Bun CLI commands, not VS Code tasks:
 
 ```bash
-pnpm push
-pnpm merge
+bun push
+bun merge
 ```
 
 These commands prompt in the terminal, including arrow/Enter selection for version bumps and text prompts for required values. After the required inputs are collected, the workflow runs quietly and prints the pushed commit id when it succeeds. See [guidelines/commands.md](guidelines/commands.md) for flags and non-interactive examples.
@@ -247,7 +247,7 @@ Map the local hosts from `shared/links.js` / [links.md](links.md) in `/etc/hosts
 Then run the web app:
 
 ```bash
-pnpm veyl web
+bun veyl web
 ```
 
 The launcher applies the configured Veyl hostname, port, and HTTPS flags automatically.
@@ -255,7 +255,7 @@ The launcher applies the configured Veyl hostname, port, and HTTPS flags automat
 If you need to override them manually, you still can:
 
 ```bash
-pnpm veyl web --hostname <domains.veylDev> --experimental-https
+bun veyl web --hostname <domains.veylDev> --experimental-https
 ```
 
 Root-domain auth files live in the separate Website repo. App-owned Veyl web shell files such as the global stylesheet, loading screen, theme wrapper, and notifications live under `apps/veyl/web/src/app/*` and `apps/veyl/web/src/components/*`.
@@ -263,21 +263,21 @@ Root-domain auth files live in the separate Website repo. App-owned Veyl web she
 ### Run iOS
 
 ```bash
-pnpm veyl ios
-pnpm veyl ios local
-pnpm veyl ios mainnet
-pnpm veyl ios regtest
-pnpm veyl ios tunnel
-pnpm build ios
-pnpm build ios local
-pnpm build backend
-pnpm build db
-pnpm build rules
-pnpm build cors
-pnpm build fns
+bun veyl ios
+bun veyl ios local
+bun veyl ios mainnet
+bun veyl ios regtest
+bun veyl ios tunnel
+bun make ios
+bun make ios local
+bun make backend
+bun make db
+bun make rules
+bun make cors
+bun make fns
 ```
 
-`pnpm veyl ios local` installs/runs a standalone `veyl local` iOS build on `REGTEST` with bundle id `com.glyphteck.veyl.local`, so it can remain on a device separately from the normal dev build and does not require the Expo server after install. `pnpm build ios local` uses the same build type.
+`bun veyl ios local` installs/runs a standalone `veyl local` iOS build on `REGTEST` with bundle id `com.glyphteck.veyl.local`, so it can remain on a device separately from the normal dev build and does not require the Expo server after install. `bun make ios local` uses the same build type.
 
 If native iOS dependencies change, refresh pods:
 
@@ -299,6 +299,6 @@ The Firebase client config is shared in `shared/firebaseconfig.js`.
 
 Bots are normal veyl accounts backed by a separate Node runtime under `apps/veyl/bot`.
 
-The first bot is a deterministic account for Apple App Review on `domains.veylTest`. The bot runtime can mirror messages and attachments, pay payment requests when funded, append encrypted read receipts for viewed peer messages, and expose admin status/control through the web admin surface and `pnpm bot` CLI.
+The first bot is a deterministic account for Apple App Review on `domains.veylTest`. The bot runtime can mirror messages and attachments, pay payment requests when funded, append encrypted read receipts for viewed peer messages, and expose admin status/control through the web admin surface and `bun bot` CLI.
 
 The later goal is to move bot operation from local/manual runtime management into dedicated hosted infrastructure with stronger scale, budget, lifecycle, and worker controls. AI-powered bot behavior is a later layer on top of the account model.

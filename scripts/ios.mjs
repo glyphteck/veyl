@@ -84,7 +84,8 @@ if (clear) {
 
 function run(command) {
     return new Promise((resolve, reject) => {
-        const child = spawn('pnpm', command, {
+        const child = spawn('bun', command,
+        {
             stdio: 'inherit',
             env,
             cwd: config.cwd,
@@ -95,7 +96,7 @@ function run(command) {
                 resolve();
                 return;
             }
-            reject(new Error(`pnpm ${command.join(' ')} failed with ${signal ? `signal ${signal}` : `code ${code}`}`));
+            reject(new Error(`bun ${command.join(' ')} failed with ${signal ? `signal ${signal}` : `code ${code}`}`));
         });
 
         child.on('error', reject);
@@ -104,12 +105,12 @@ function run(command) {
 
 async function main() {
     if (local) {
-        await run(['exec', 'expo', 'prebuild', '-p', 'ios']);
-        await run(['exec', 'expo', 'run:ios', '--device', process.env.VEYL_IOS_DEVICE || 'zak 15', '--configuration', 'Release', '--no-bundler', ...extra]);
+        await run(['x', 'expo', 'prebuild', '-p', 'ios']);
+        await run(['x', 'expo', 'run:ios', '--device', process.env.VEYL_IOS_DEVICE || 'zak 15', '--configuration', 'Release', '--no-bundler', ...extra]);
         return;
     }
 
-    const command = ['exec', 'expo', 'start'];
+    const command = ['x', 'expo', 'start'];
     if (tunnel) {
         command.push('--tunnel');
     }

@@ -175,20 +175,20 @@ Glyphteck Corp operates internal admin tools for:
 The review bot was provisioned with:
 
 ```bash
-pnpm bot add @review
+bun bot add @review
 ```
 
 The bot can be powered with:
 
 ```bash
-pnpm bot power @review on
-pnpm bot power @review off
+bun bot power @review on
+bun bot power @review off
 ```
 
 The local bot runtime is started with:
 
 ```bash
-pnpm veyl bot
+bun veyl bot
 ```
 
 ## Community Rules Gate

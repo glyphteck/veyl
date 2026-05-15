@@ -73,8 +73,8 @@ async function main() {
             ? ['exec', 'expo', 'run:ios', '--device', process.env.VEYL_IOS_DEVICE || 'zak 15', '--configuration', 'Release', '--no-bundler', ...iosArgs]
             : ['exec', 'expo', 'run:ios', '--device', process.env.VEYL_IOS_DEVICE || 'zak 15', ...iosArgs];
 
-        await run('pnpm', ['exec', 'expo', 'prebuild', '-p', 'ios'], { cwd: iosDir, env });
-        await run('pnpm', runArgs, { cwd: iosDir, env });
+        await run('bun', ['x', 'expo', 'prebuild', '-p', 'ios'], { cwd: iosDir, env });
+        await run('bun', ['x', ...runArgs.slice(1)], { cwd: iosDir, env });
         return;
     }
 
@@ -96,7 +96,7 @@ async function main() {
         return;
     }
 
-    console.error('Usage: pnpm build <ios|backend|db|rules|fns|cors>');
+    console.error('Usage: bun make <ios|backend|db|rules|fns|cors>');
     process.exitCode = 1;
 }
 

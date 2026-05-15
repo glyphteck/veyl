@@ -9,9 +9,9 @@ import { createSecretClient, deleteBotSeed } from '../../apps/veyl/bot/src/secre
 import { cliArgs } from './common.mjs';
 
 function usage() {
-    console.error('usage: pnpm bot add [username|count]');
-    console.error('usage: pnpm bot power <@username|uid|all> <on|off>');
-    console.error('usage: pnpm bot kill <@username|uid|all>');
+    console.error('usage: bun bot add [username|count]');
+    console.error('usage: bun bot power <@username|uid|all> <on|off>');
+    console.error('usage: bun bot kill <@username|uid|all>');
     process.exit(1);
 }
 

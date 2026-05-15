@@ -25,7 +25,7 @@ const ansi = {
 const commands = {
     web: ['node', resolve(rootDir, 'scripts', 'web.mjs'), 'veyl'],
     ios: ['node', resolve(rootDir, 'scripts', 'ios.mjs'), 'veyl'],
-    bot: ['pnpm', '--dir', resolve(rootDir, 'apps', 'veyl', 'bot'), 'start'],
+    bot: ['bun', '--cwd', resolve(rootDir, 'apps', 'veyl', 'bot'), 'start'],
 };
 const devPorts = ['3000', '8081'];
 const tags = {
@@ -482,7 +482,7 @@ if (target === 'dev') {
 }
 
 if (!commands[target]) {
-    console.error('Usage: pnpm veyl [verbose] [web|ios|bot] [...args]');
+    console.error('Usage: bun veyl [verbose] [web|ios|bot] [...args]');
     process.exit(1);
 }
 
