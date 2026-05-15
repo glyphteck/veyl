@@ -7,6 +7,10 @@ import { clearLine, createInterface, cursorTo, emitKeypressEvents, moveCursor } 
 const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const packagePath = resolve(rootDir, 'package.json');
 const [command, ...rawArgs] = process.argv.slice(2);
+const pushTargets = [
+    'https://github.com/zxrl/veyl.git',
+    'https://github.com/glyphteck/veyl.git',
+];
 const versionChoices = [
     { label: 'patch', value: 'patch', description: 'bugfix or small change' },
     { label: 'minor', value: 'minor', description: 'new feature' },
@@ -298,7 +302,7 @@ function workflowCommands(action, { version, message, pr }) {
         ['version', [version]],
         ['git', ['add', '-A']],
         ['git', ['commit', '-m', message]],
-        ['git', ['push', 'origin', 'HEAD:main', '+HEAD:regtest']],
+        ...pushTargets.map((target) => ['git', ['push', target, 'HEAD:main', '+HEAD:regtest']]),
     ];
 
     if (action === 'push') {
