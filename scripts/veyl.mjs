@@ -364,7 +364,7 @@ async function runDev() {
     let closing = false;
     let clearInputAttached = false;
     const childEnv = { ...process.env, ...(verbose ? { VEYL_VERBOSE: '1' } : {}) };
-    const webArgs = targetArgs.filter((arg) => ['clear', 'mainnet', 'regtest'].includes(arg));
+    const webArgs = targetArgs.filter((arg) => ['clear', 'mainnet', 'regtest', 'inspect', 'mem', 'trace'].includes(arg));
     const iosArgs = targetArgs.filter((arg) => ['clear', 'tunnel', 'mainnet', 'regtest'].includes(arg));
     if (targetArgs.includes('mainnet')) {
         childEnv.NETWORK = 'MAINNET';

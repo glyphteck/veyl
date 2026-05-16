@@ -40,7 +40,7 @@ Options:
 
 Examples:
   bun push
-  bun push --version patch --message "update"
+  bun push --version patch --message "document worktree task workflow"
   bun merge --pr 123
 `);
 }

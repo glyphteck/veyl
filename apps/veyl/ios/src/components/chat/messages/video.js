@@ -28,7 +28,7 @@ function normalizeUri(uri) {
     return /^[a-z][a-z0-9+.-]*:\/\//i.test(uri) ? uri : `file://${uri}`;
 }
 
-export default function VideoMessage({ msg, peerChatPK, menuItems, menuId, onUnavailable, onLike, reaction, reactionActive = false, reactionPreviewInset = 0 }) {
+export default function VideoMessage({ msg, peerChatPK, fromPeer = false, menuItems, menuId, onUnavailable, onLike, reactions = [], reactionUsers, reactionPreviewInset = 0 }) {
     const { theme } = useTheme();
     const { readMessageFile, readMessagePreview, writeMessagePreview } = useChat();
     const { activeMediaId, openMedia } = useMediaViewer();
@@ -180,7 +180,7 @@ export default function VideoMessage({ msg, peerChatPK, menuItems, menuId, onUna
     );
     const renderPreview = useCallback(
         () => (
-            <ReactionTray reaction={reaction} active={reactionActive}>
+            <ReactionTray reactions={reactions} users={reactionUsers} fromPeer={fromPeer}>
                 <View style={{ width, borderRadius: VIDEO_RADIUS, overflow: 'hidden', backgroundColor: theme.background }}>
                     <View
                         style={{
@@ -202,7 +202,7 @@ export default function VideoMessage({ msg, peerChatPK, menuItems, menuId, onUna
                 </View>
             </ReactionTray>
         ),
-        [aspect, busy, caption, previewUri, reaction, reactionActive, theme.background, theme.border, theme.foreground, width]
+        [aspect, busy, caption, fromPeer, previewUri, reactionUsers, reactions, theme.background, theme.border, theme.foreground, width]
     );
 
     return (
@@ -214,7 +214,7 @@ export default function VideoMessage({ msg, peerChatPK, menuItems, menuId, onUna
             renderPreview={renderPreview}
             previewBottomInset={reactionPreviewInset}
         >
-            <ReactionTray reaction={reaction} active={reactionActive}>
+            <ReactionTray reactions={reactions} users={reactionUsers} fromPeer={fromPeer}>
                 <View style={{ width, borderRadius: VIDEO_RADIUS, overflow: 'hidden', backgroundColor: theme.background }}>
                     {videoSurface}
                     {caption ? (

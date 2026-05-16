@@ -3,5 +3,5 @@ import { DialogProvider } from '@/components/providers/dialogprovider';
 
 export default async function AuthenticatedLayout({ children }) {
     await requireSession();
-    return <DialogProvider allow={['passwordrules']}>{children}</DialogProvider>;
+    return <DialogProvider allow={['passwordrules', 'rememberaccount']}>{children}</DialogProvider>;
 }

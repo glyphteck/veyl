@@ -3,8 +3,9 @@
 Before starting feature work in this repo:
 
 1. Read [README.md](README.md).
-2. Read the focused files under [guidelines/](guidelines/) that match the task.
-3. Check the root docs if the task touches their area:
+2. Read [guidelines/workflow.md](guidelines/workflow.md) for task sizing, todo, branch, worktree, handoff, and cleanup rules.
+3. Read the focused files under [guidelines/](guidelines/) that match the task.
+4. Check the root docs if the task touches their area:
     - [bots.md](bots.md) for bot behavior and operations
     - [guidelines/uistyling.md](guidelines/uistyling.md) for web and iOS UI styling
     - [review.md](review.md) for Apple App Review posture
@@ -21,33 +22,26 @@ Before starting feature work in this repo:
 - Prefer small, clean changes over layering more code onto a messy path.
 - Do not add backward compatibility, legacy fallbacks, compatibility shims, or migrations. Make clean cutovers to the current architecture.
 - Do not depend on VS Code tasks for repo operations. The repo intentionally has no `.vscode/` workflow source; use the Bun scripts documented in [guidelines/commands.md](guidelines/commands.md), including `bun push` and `bun merge`.
+- Work in the current branch by default. Do not create, switch, or rename git branches unless the user explicitly asks for branch work or the concurrent-agent collision rule below applies.
 - When creating branches, never use agent prefixes or namespace prefixes like `codex/`, `codex-`, or similar. Branch names should be as short as possible; prefer a meaningful single word when one is clear, using the naming rules in [guidelines/code.md](guidelines/code.md).
 - When running repo push or merge workflows, use a specific commit message that describes the actual changes being committed. Do not use vague defaults like `update` unless the user explicitly asks for that exact message.
 - Veyl wallet/backend data is pre-production unless the user says otherwise. Do not add legacy wallet/account compatibility or migrations by default; prefer the clean current architecture. Still ask before destructive live backend data deletion.
 - Do not use `todo/` to list completed work. When a task is done, remove its feature file or cross out only the context that still matters, then document implemented behavior directly in README, AGENTS, or focused docs.
 - After a feature branch is merged, delete the merged feature branch and any abandoned predecessor branches, then document the shipped behavior in README, AGENTS, or focused docs the same way completed todo-planned features are documented.
 
-## Large Feature And Refactor Workflow
+## Workflow Summary
 
-Use this full lifecycle only for large feature implementation, broad behavior changes, major architecture work, or large refactors.
+Detailed workflow rules live in [guidelines/workflow.md](guidelines/workflow.md). Keep this summary in mind:
 
-Small updates, narrow bugfixes, copy changes, targeted UI tweaks, and obvious cleanup do not need a todo plan or the full lifecycle. For those, read the relevant context, make the smallest clean fix directly, review it, and update durable docs only if behavior or workflow guidance changed.
-
-1. Crawl [README.md](README.md) for the product and architecture context.
-2. Crawl every file under [guidelines/](guidelines/), then reread the focused guideline files that match the work.
-3. Crawl the source files, shared modules, providers, routes, and docs related to the feature or refactor before deciding on the approach.
-4. Stage the implementation plan in a dedicated file under [todo/](todo/) with enough detail for another agent to understand the intended architecture.
-5. Keep one feature or implementation plan per todo file so parallel agents do not edit each other's planning files.
-6. Implement the smallest clean change that matches the plan and the existing code patterns.
-7. Review the implementation from a code-review stance and fix any actionable issues.
-8. If the change needs product or device testing, stop after the review pass, ask @zxrl to test it, and clearly list what to test.
-9. Once @zxrl is satisfied, review the code again if the tested behavior changed or exposed follow-up issues.
-10. After review passes, remove the implemented feature file from [todo/](todo/) and document the current behavior in [README.md](README.md), this guide, and the focused guideline files where applicable.
-11. After merge, delete the merged feature branch and any abandoned predecessor branches.
-12. Keep Markdown docs current with the repo state. Planning docs should describe pending work, while durable docs should describe implemented behavior.
+- Small updates and narrow fixes usually stay on the current branch without a todo file or worktree.
+- Large features, broad behavior changes, major refactors, and collision-prone work get one active task file under [todo/](todo/).
+- If a large task needs isolation, create a short task-specific branch and linked worktree, then record both in the task file.
+- The individual todo task file is the coordination record. Do not turn `todo/README.md` into a constantly changing status board.
+- When the task is done, remove or trim the todo file, move shipped behavior into durable docs when useful, and clean up merged or abandoned branches and worktrees.
 
 ## Guideline Index
 
+- [guidelines/workflow.md](guidelines/workflow.md): task sizing, todo files, branch/worktree policy, handoff, cleanup
 - [guidelines/repo.md](guidelines/repo.md): repo shape, Bun workspace, product model, account model, data model
 - [guidelines/commands.md](guidelines/commands.md): install, run, build, bot, and local host commands
 - [guidelines/code.md](guidelines/code.md): naming, code structure, refactors, shared-vs-client rules
@@ -59,6 +53,7 @@ Small updates, narrow bugfixes, copy changes, targeted UI tweaks, and obvious cl
 
 Use the smallest relevant guideline set after reading the product context:
 
+- Repo workflow, planning, branch, or worktree work: read `workflow.md`, `repo.md`, `code.md`, `commands.md`, and `validation.md`.
 - Chat work: read `repo.md`, `code.md`, `navigation.md`, and `security.md`.
 - UI or styling work: read `code.md` and `uistyling.md`.
 - Bot work: read `guidelines/bots.md` and the root [bots.md](bots.md).

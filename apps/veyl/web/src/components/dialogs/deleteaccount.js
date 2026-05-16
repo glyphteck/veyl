@@ -26,7 +26,7 @@ export default function DeleteAccount({ close }) {
     const passwordInputRef = useRef(null);
     const { openDialog } = useDialog();
     const { balance, bitcoin } = useWallet();
-    const { settings } = useUser();
+    const { settings, clearAvatar } = useUser();
     const { encSeed, localCache, lock } = useVault();
     const showWithdraw = balance != null && balance >= minWithdrawalSats;
     const balanceLabel = renderMoney(balance ?? 0n, settings.moneyFormat, bitcoin.price);
@@ -62,9 +62,10 @@ export default function DeleteAccount({ close }) {
             const deleteAccountFn = httpsCallable(getFunctions(), 'deleteAccount');
             await deleteAccountFn();
             await localCache?.clear?.().catch(() => {});
+            clearAvatar?.();
             lock?.(true);
             close?.();
-            await logout();
+            await logout({ remember: false });
         } catch (error) {
             setError(error?.message || 'failed to delete account');
             setIsDeleting(false);
@@ -73,7 +74,7 @@ export default function DeleteAccount({ close }) {
                 setIsDeleting(false);
             }
         }
-    }, [close, localCache, lock]);
+    }, [clearAvatar, close, localCache, lock]);
 
     useEffect(() => {
         if (step !== 'confirm') return;

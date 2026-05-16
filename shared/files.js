@@ -43,8 +43,7 @@ async function put(storage, path, data, metadata) {
         throw new Error('storage required');
     }
     const payload = typeof Blob !== 'undefined' && data instanceof Blob ? data : toBytes(data, 'upload bytes');
-    await uploadBytes(ref(storage, path), payload, metadata);
-    return path;
+    return uploadBytes(ref(storage, path), payload, metadata);
 }
 
 export async function getFileUrl(storage, path) {
@@ -92,8 +91,12 @@ export async function removeFile(storage, path) {
 
 export async function putAvatar(storage, uid, data, mimeType = 'image/webp') {
     const path = avatarPath(uid);
-    await put(storage, path, data, { contentType: mimeType });
-    return getFileUrl(storage, path);
+    const result = await put(storage, path, data, { contentType: mimeType });
+    const url = await getFileUrl(storage, path);
+    return {
+        url,
+        generation: result?.metadata?.generation ?? null,
+    };
 }
 
 export async function dropAvatar(storage, uid) {

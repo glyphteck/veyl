@@ -7,6 +7,8 @@ import { getChatFileChatId } from './filepayload.js';
 export const ATTACHMENT_MSG_TYPES = ['img', 'mp3', 'mp4', 'file'];
 export const MAX_TXT_CHARS = 2048;
 export const READ_RECEIPT_MSG_TYPE = 'rr';
+export const DEFAULT_REACTION_EMOJI = '❤️';
+export const MAX_REACTIONS = 2;
 
 function hasText(value) {
     return typeof value === 'string' && value.trim().length > 0;
@@ -106,8 +108,39 @@ function charLength(value) {
     return Array.from(String(value ?? '')).length;
 }
 
-function likedEntry(msg) {
-    return msg?.liked === true ? { liked: true } : {};
+function cleanReactionUser(value) {
+    return typeof value === 'string' ? value.trim() : '';
+}
+
+function cleanReactionEmoji(value) {
+    const emoji = typeof value === 'string' ? value.trim() : '';
+    return emoji || DEFAULT_REACTION_EMOJI;
+}
+
+export function getMsgReactions(msg) {
+    const raw = Array.isArray(msg?.reactions) ? msg.reactions : [];
+    const seen = new Set();
+    const reactions = [];
+
+    for (const item of raw) {
+        const user = cleanReactionUser(item?.user);
+        const emoji = cleanReactionEmoji(item?.emoji);
+        if (!user || seen.has(user)) {
+            continue;
+        }
+        seen.add(user);
+        reactions.push({ emoji, user });
+        if (reactions.length >= MAX_REACTIONS) {
+            break;
+        }
+    }
+
+    return reactions;
+}
+
+function reactionsEntry(msg) {
+    const reactions = getMsgReactions(msg);
+    return reactions.length ? { reactions } : {};
 }
 
 function cleanPayload(msg) {
@@ -115,7 +148,7 @@ function cleanPayload(msg) {
         return {};
     }
 
-    const { id, ts, from, pending, failed, localUri, localData, type, rr, ...payload } = msg;
+    const { id, ts, from, pending, failed, localUri, localData, type, rr, liked, ...payload } = msg;
     return payload;
 }
 
@@ -250,21 +283,65 @@ export function getLatestReadOutgoingReceiptMessage(messages, chatPK, peerChatPK
     return getLatestReadOutgoingReceipt(messages, chatPK, peerChatPK)?.message ?? null;
 }
 
-export function isLikedMsg(msg) {
-    return msg?.liked === true;
+export function hasReaction(msg, user) {
+    const actor = cleanReactionUser(user);
+    return !!actor && getMsgReactions(msg).some((reaction) => reaction.user === actor);
 }
 
-export function setLiked(msg, liked) {
+export function setReaction(msg, user, emoji = DEFAULT_REACTION_EMOJI) {
+    const actor = cleanReactionUser(user);
+    if (!actor) {
+        throw new Error('reaction user required');
+    }
+
     const next = cleanPayload(msg);
-    if (liked) {
+    const reaction = { emoji: cleanReactionEmoji(emoji), user: actor };
+    const reactions = [...getMsgReactions(next).filter((item) => item.user !== actor), reaction].slice(-MAX_REACTIONS);
+    if (reactions.length) {
         return {
             ...next,
-            liked: true,
+            reactions,
         };
     }
 
-    delete next.liked;
     return next;
+}
+
+export function removeReaction(msg, user) {
+    const actor = cleanReactionUser(user);
+    const next = cleanPayload(msg);
+    if (!actor) {
+        return next;
+    }
+
+    const reactions = getMsgReactions(next).filter((reaction) => reaction.user !== actor);
+    if (reactions.length) {
+        return {
+            ...next,
+            reactions,
+        };
+    }
+
+    delete next.reactions;
+    return next;
+}
+
+export function setMsgReactions(msg, reactions) {
+    const next = cleanPayload(msg);
+    const clean = getMsgReactions({ reactions });
+    if (clean.length) {
+        return {
+            ...next,
+            reactions: clean,
+        };
+    }
+
+    delete next.reactions;
+    return next;
+}
+
+export function toggleReaction(msg, user, emoji = DEFAULT_REACTION_EMOJI) {
+    return hasReaction(msg, user) ? removeReaction(msg, user) : setReaction(msg, user, emoji);
 }
 
 export function formatAttachmentSize(value) {
@@ -338,7 +415,7 @@ export function setTxt(msg, text) {
         ...(typeof msg?.s === 'string' && msg.s ? { s: msg.s } : {}),
         ...(typeof msg?.cid === 'string' && msg.cid ? { cid: msg.cid } : {}),
         ...(typeof msg?.r === 'string' && msg.r ? { r: msg.r } : {}),
-        ...likedEntry(msg),
+        ...reactionsEntry(msg),
         t: 'txt',
         c,
     };
@@ -386,7 +463,7 @@ export function setReqTx(msg, tx) {
         ...(typeof msg?.s === 'string' && msg.s ? { s: msg.s } : {}),
         ...(typeof msg?.cid === 'string' && msg.cid ? { cid: msg.cid } : {}),
         ...(typeof msg?.r === 'string' && msg.r ? { r: msg.r } : {}),
-        ...likedEntry(msg),
+        ...reactionsEntry(msg),
         t: 'req',
         a,
         tx: nextTx,

@@ -16,7 +16,7 @@ import { useMediaTapGesture } from './usemediatap';
 const IMAGE_LONG_SCALE = 0.94;
 const MEDIA_ACTIVE_STYLE = { opacity: 0.01 };
 
-export default function ImageMessage({ msg, peerChatPK, menuItems, menuId, onLike, reaction, reactionActive = false, reactionPreviewInset = 0 }) {
+export default function ImageMessage({ msg, peerChatPK, fromPeer = false, menuItems, menuId, onLike, reactions = [], reactionUsers, reactionPreviewInset = 0 }) {
     const { theme } = useTheme();
     const { activeMediaId, openMedia } = useMediaViewer();
     const focused = useIsFocused();
@@ -59,7 +59,7 @@ export default function ImageMessage({ msg, peerChatPK, menuItems, menuId, onLik
     );
     const renderPreview = useCallback(
         () => (
-            <ReactionTray reaction={reaction} active={reactionActive}>
+            <ReactionTray reactions={reactions} users={reactionUsers} fromPeer={fromPeer}>
                 <View
                     style={{
                         width,
@@ -77,12 +77,12 @@ export default function ImageMessage({ msg, peerChatPK, menuItems, menuId, onLik
                 </View>
             </ReactionTray>
         ),
-        [barePng, hasCaption, msg?.c, reaction, reactionActive, renderImage, theme.background, width]
+        [barePng, fromPeer, hasCaption, msg?.c, reactionUsers, reactions, renderImage, theme.background, width]
     );
 
     return (
         <Menu id={menuId} items={menuItems} longScale={IMAGE_LONG_SCALE} activeStyle={MEDIA_ACTIVE_STYLE} renderPreview={renderPreview} previewBottomInset={reactionPreviewInset}>
-            <ReactionTray reaction={reaction} active={reactionActive}>
+            <ReactionTray reactions={reactions} users={reactionUsers} fromPeer={fromPeer}>
                 <View
                     style={{
                         width,

@@ -103,8 +103,8 @@ export function createChat({ db, storage, getStorage, uploadAttachment: uploadAt
             }
             return uploadImageShared(db, resolveStorage(), senderPubkey, senderPrivkey, receiverChatPK, cid, data, meta);
         },
-        updateMessage(chatId, msgId, senderPrivkey, receiverChatPK, newMessage) {
-            return updateMessageShared(db, chatId, msgId, senderPrivkey, receiverChatPK, newMessage);
+        updateMessage(chatId, msgId, senderPrivkey, receiverChatPK, newMessage, options) {
+            return updateMessageShared(db, chatId, msgId, senderPrivkey, receiverChatPK, newMessage, options);
         },
         deleteMessage(chatId, msgId) {
             return deleteMessageShared(db, chatId, msgId);
@@ -840,11 +840,11 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
             [chat, chatBanned, chatPK, chatPrivateKey, queueSend]
         );
         const updateMessage = useCallback(
-            (chatId, msgId, newMessage, peerChatPK) => {
+            (chatId, msgId, newMessage, peerChatPK, options) => {
                 if (chatBanned) {
                     throw makeChatUnavailableError();
                 }
-                return chat.updateMessage(chatId, msgId, chatPrivateKey, peerChatPK, newMessage);
+                return chat.updateMessage(chatId, msgId, chatPrivateKey, peerChatPK, newMessage, options);
             },
             [chat, chatBanned, chatPrivateKey]
         );

@@ -17,6 +17,7 @@ import { auth, functions } from '@/lib/firebase';
 import { clearFaceIdPassword } from '@/lib/faceid';
 import { dropPush } from '@/lib/push';
 import { useTap } from '@/lib/tap';
+import { userAvatarCache } from '@/lib/useravatarcache';
 import { useTheme } from '@/providers/themeprovider';
 import { useUser } from '@/providers/userprovider';
 import { useVault } from '@/providers/vaultprovider';
@@ -41,7 +42,7 @@ export default function DeleteAccountScreen() {
     const buttonColor = theme.background;
     const router = useRouter();
     const { encSeed, localCache, lock } = useVault();
-    const { uid, settings } = useUser();
+    const { uid, settings, clearAvatar } = useUser();
     const { balance, bitcoin } = useWallet();
     const inputRef = useRef(null);
     const openRef = useRef(true);
@@ -155,7 +156,9 @@ export default function DeleteAccountScreen() {
             await dropPush().catch(() => {});
             await httpsCallable(functions, 'deleteAccount')();
             await localCache?.clear?.().catch(() => {});
+            clearAvatar?.();
             await clearFaceIdPassword(uid).catch(() => {});
+            await userAvatarCache.forget?.(uid).catch(() => {});
             lock?.();
             await signOut(auth).catch(() => {});
         } catch (err) {
@@ -165,7 +168,7 @@ export default function DeleteAccountScreen() {
                 setIsDeleting(false);
             }
         }
-    }, [isDeleting, isVerified, localCache, lock, uid]);
+    }, [clearAvatar, isDeleting, isVerified, localCache, lock, uid]);
 
     const WarningCopy = () => (
         <GlassView glassEffectStyle="clear" tintColor={theme.background} style={{ borderRadius: 24, paddingHorizontal: 18, paddingVertical: 18, gap: 12 }}>

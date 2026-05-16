@@ -30,10 +30,10 @@ function UnsupportedBubble({ msg }) {
     );
 }
 
-export default function UnsupportedMessage({ msg, menuItems, menuId, reaction, reactionActive = false, reactionPreviewInset = 0 }) {
+export default function UnsupportedMessage({ msg, fromPeer = false, menuItems, menuId, reactions = [], reactionUsers, reactionPreviewInset = 0 }) {
     return (
         <Menu id={menuId} items={menuItems} previewBottomInset={reactionPreviewInset}>
-            <ReactionTray reaction={reaction} active={reactionActive}>
+            <ReactionTray reactions={reactions} users={reactionUsers} fromPeer={fromPeer}>
                 <UnsupportedBubble msg={msg} />
             </ReactionTray>
         </Menu>

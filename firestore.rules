@@ -36,6 +36,21 @@ service cloud.firestore {
       return activeBan(uid, 'full') || activeBan(uid, 'chat');
     }
 
+    function profileAvatarValueAllowed(value) {
+      return value == null || (value is int && value > 0);
+    }
+
+    function profileAvatarUpdateAllowed(uid) {
+      let nextAvatar = mapGet(request.resource.data, 'avatar');
+      return 'avatar' in request.resource.data
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['avatar'])
+        && profileAvatarValueAllowed(nextAvatar)
+        && (
+          nextAvatar == null
+          || (!activeBan(uid, 'full') && !activeBan(uid, 'avatar'))
+        );
+    }
+
     function chatAllowed() {
       return request.auth != null && !isChatBanned(request.auth.uid);
     }
@@ -277,12 +292,17 @@ service cloud.firestore {
       allow list: if request.auth != null
                   && request.query.limit != null
                   && request.query.limit <= 15;
-      // profiles are managed server-side, except for presence
+      // profiles are managed server-side, except for presence and the owner's avatar step state.
       allow create: if false;
       allow update: if request.auth != null
                     && request.auth.uid == uid
-                    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['active'])
-                    && request.resource.data.active is bool;
+                    && (
+                      (
+                        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['active'])
+                        && request.resource.data.active is bool
+                      )
+                      || profileAvatarUpdateAllowed(uid)
+                    );
       allow delete: if false;
     }
     match /seeds/{uid} {

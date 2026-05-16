@@ -16,3 +16,4 @@ export { default as SendPhoto } from './sendphoto';
 export { default as ShareMedia } from './sharemedia';
 export { default as ExportWallet } from './exportwallet';
 export { default as PasswordRules } from './passwordrules';
+export { default as RememberAccount } from './rememberaccount';

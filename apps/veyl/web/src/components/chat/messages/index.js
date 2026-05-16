@@ -10,7 +10,7 @@ import AttachmentMessage from './attachment';
 import UnsupportedMessage from './unsupported';
 import ReactionTray from './reactiontray';
 
-export function ChatMessageType({ msg, fromPeer = false, peerChatPK, peerDisplayName, onPay, isPaying = false, reply, replyFromPeer = false, onReplyPress, reactionActive = false }) {
+export function ChatMessageType({ msg, fromPeer = false, peerChatPK, peerDisplayName, onPay, isPaying = false, reply, replyFromPeer = false, onReplyPress, reactions = [], reactionUsers, actionSlot }) {
     let body;
 
     switch (msg?.t) {
@@ -41,7 +41,7 @@ export function ChatMessageType({ msg, fromPeer = false, peerChatPK, peerDisplay
     }
 
     return (
-        <ReactionTray active={reactionActive} kind={msg?.t}>
+        <ReactionTray reactions={reactions} users={reactionUsers} fromPeer={fromPeer} actionSlot={actionSlot}>
             {body}
         </ReactionTray>
     );

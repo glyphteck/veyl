@@ -249,7 +249,7 @@ export async function uploadAttachmentMsg(db, storage, senderPubkey, senderPrivk
     }
 }
 
-export async function updateMsg(db, chatId, msgId, senderPrivkey, receiverChatPK, newMessage) {
+export async function updateMsg(db, chatId, msgId, senderPrivkey, receiverChatPK, newMessage, options = {}) {
     if (!senderPrivkey) throw new Error('vault locked');
     const senderPubkey = getOwnChatPKFromChatId(chatId, receiverChatPK);
     const pair = await getCachedPair(senderPubkey, senderPrivkey, receiverChatPK);
@@ -266,7 +266,8 @@ export async function updateMsg(db, chatId, msgId, senderPrivkey, receiverChatPK
 
     // Keep the chat preview in sync when the edited message is still the latest.
     // Do not touch lastMsg.ts or lastMsg.head so edits cannot create false unseen state.
-    const nextCid = typeof newMessage?.cid === 'string' ? newMessage.cid : '';
+    const syncLastMsg = options?.updateLastMsg !== false;
+    const nextCid = syncLastMsg && typeof newMessage?.cid === 'string' ? newMessage.cid : '';
     if (nextCid) {
         try {
             const chatRef = doc(db, 'chats', chatId);

@@ -7,6 +7,8 @@ import { makeCid } from '@glyphteck/shared/chat/state';
 import { resolveNetwork } from '@glyphteck/shared/network';
 import { resolveWalletPK } from '@glyphteck/shared/walletkeys';
 import { SparkWallet, SparkWalletEvent } from '@buildonspark/spark-sdk';
+import { randomUUID } from 'node:crypto';
+import { hostname } from 'node:os';
 import admin, { db, FieldValue, Timestamp, projectId } from './admin.js';
 import { createSecretClient, readBotSeed } from './secrets.js';
 
@@ -14,6 +16,34 @@ const SPARK_NETWORK = resolveNetwork(process.env);
 const VERBOSE = process.env.VEYL_VERBOSE === '1';
 const MAX_BOT_PEER_CACHE = 512;
 const MAX_BOT_READ_CACHE = 2048;
+const BOT_READS = 'reads';
+const RUNTIME_LEASE_MS = 45000;
+const RUNTIME_HEARTBEAT_MS = 15000;
+
+function cleanDocPart(value) {
+    return String(value ?? '')
+        .trim()
+        .replace(/[^A-Za-z0-9_-]/g, '_')
+        .slice(0, 120);
+}
+
+function botReplyId(context, kind = 'reply') {
+    const msgId = cleanDocPart(context?.msgId);
+    const part = cleanDocPart(kind) || 'reply';
+    if (!msgId) {
+        return '';
+    }
+    return `bot_${part}_${msgId}`;
+}
+
+function botReplyCid(context, kind = 'reply') {
+    const ms = Math.max(1, tsMs(context?.msgTs));
+    const base = ms.toString(36);
+    const suffix = cleanDocPart(`${kind}${context?.msgId || ''}`)
+        .padEnd(6, '0')
+        .slice(0, 6);
+    return `${base}${suffix}`;
+}
 
 function verboseLog(...args) {
     if (VERBOSE) {
@@ -163,6 +193,8 @@ export class BotRuntime {
         this.walletDown = new Set();
         this.unsubscribeBots = null;
         this.stopResolve = null;
+        this.runtimeId = randomUUID();
+        this.heartbeatTimer = null;
     }
 
     async start() {
@@ -172,8 +204,9 @@ export class BotRuntime {
 
         this.running = true;
         this.stopped = false;
+        await this.acquireRuntimeLease();
+        this.startHeartbeat();
         console.log(`bot runtime started on ${SPARK_NETWORK}`);
-        await db.collection('runtimes').doc('bot').set({ running: true }, { merge: true });
         this.subscribeBots();
 
         await new Promise((resolve) => {
@@ -201,7 +234,12 @@ export class BotRuntime {
             await this.closeSession(uid);
         }
 
-        await db.collection('runtimes').doc('bot').set({ running: false }, { merge: true });
+        if (this.heartbeatTimer) {
+            clearInterval(this.heartbeatTimer);
+            this.heartbeatTimer = null;
+        }
+
+        await this.releaseRuntimeLease();
 
         if (this.stopResolve) {
             this.stopResolve();
@@ -222,6 +260,81 @@ export class BotRuntime {
                 console.error('bot runtime subscription failed', error);
             }
         );
+    }
+
+    async acquireRuntimeLease() {
+        const ref = db.collection('runtimes').doc('bot');
+        await db.runTransaction(async (tx) => {
+            const snap = await tx.get(ref);
+            const data = snap.exists ? snap.data() : {};
+            const heartbeatMs = tsMs(data?.heartbeatAt);
+            const active = data?.running === true && heartbeatMs > Date.now() - RUNTIME_LEASE_MS;
+            if (active && data?.runtimeId !== this.runtimeId) {
+                throw new Error(`bot runtime already running (${data?.host || 'unknown host'} pid ${data?.pid || 'unknown'})`);
+            }
+
+            tx.set(
+                ref,
+                {
+                    running: true,
+                    runtimeId: this.runtimeId,
+                    pid: process.pid,
+                    host: hostname(),
+                    startedAt: FieldValue.serverTimestamp(),
+                    heartbeatAt: FieldValue.serverTimestamp(),
+                    network: SPARK_NETWORK,
+                },
+                { merge: true }
+            );
+        });
+    }
+
+    startHeartbeat() {
+        if (this.heartbeatTimer) {
+            return;
+        }
+        this.heartbeatTimer = setInterval(() => {
+            void db
+                .collection('runtimes')
+                .doc('bot')
+                .set(
+                    {
+                        running: true,
+                        runtimeId: this.runtimeId,
+                        pid: process.pid,
+                        host: hostname(),
+                        heartbeatAt: FieldValue.serverTimestamp(),
+                        network: SPARK_NETWORK,
+                    },
+                    { merge: true }
+                )
+                .catch((error) => {
+                    console.error('bot runtime heartbeat failed', error);
+                });
+        }, RUNTIME_HEARTBEAT_MS);
+        this.heartbeatTimer.unref?.();
+    }
+
+    async releaseRuntimeLease() {
+        const ref = db.collection('runtimes').doc('bot');
+        await db
+            .runTransaction(async (tx) => {
+                const snap = await tx.get(ref);
+                if (snap.exists && snap.data()?.runtimeId === this.runtimeId) {
+                    tx.set(
+                        ref,
+                        {
+                            running: false,
+                            stoppedAt: FieldValue.serverTimestamp(),
+                            heartbeatAt: FieldValue.serverTimestamp(),
+                        },
+                        { merge: true }
+                    );
+                }
+            })
+            .catch((error) => {
+                console.error('bot runtime lease release failed', error);
+            });
     }
 
     async handleBotsSnapshot(snap) {
@@ -420,6 +533,29 @@ export class BotRuntime {
         return balance;
     }
 
+    readRef(session, chatId) {
+        return session.ref.collection(BOT_READS).doc(chatId);
+    }
+
+    async readChatMs(session, chatId) {
+        const snap = await this.readRef(session, chatId).get().catch(() => null);
+        return tsMs(snap?.data()?.readAt);
+    }
+
+    async ackChat(session, chatId, readMs) {
+        if (!chatId || !Number.isFinite(readMs) || readMs <= 0) {
+            return;
+        }
+        setLimitedMap(session.chatRead, chatId, readMs, MAX_BOT_READ_CACHE);
+        await this.readRef(session, chatId).set(
+            {
+                readAt: Timestamp.fromMillis(readMs),
+                updatedAt: FieldValue.serverTimestamp(),
+            },
+            { merge: true }
+        );
+    }
+
     async getSession(bot) {
         if (!bot.walletPK || !bot.chatPK) {
             throw new Error(`bot @${bot.username} missing keys on bots doc`);
@@ -554,7 +690,8 @@ export class BotRuntime {
         }
 
         const localReadMs = tsMs(session.chatRead?.get(chat.id));
-        const sinceMs = Math.max(session.resumeAtMs, localReadMs);
+        const storedReadMs = await this.readChatMs(session, chat.id);
+        const sinceMs = Math.max(session.resumeAtMs, localReadMs, storedReadMs);
         if (tsMs(chat?.lastMsg?.ts) <= sinceMs) {
             return;
         }
@@ -584,7 +721,7 @@ export class BotRuntime {
         ]);
 
         if (peer?.bot || peerBanned || botBlockedPeer || peerBlockedBot || botBanned) {
-            setLimitedMap(session.chatRead, chat.id, latestMs, MAX_BOT_READ_CACHE);
+            await this.ackChat(session, chat.id, latestMs);
             return;
         }
 
@@ -602,6 +739,7 @@ export class BotRuntime {
 
             if (senderChatPK !== peerChatPK) {
                 readMs = Math.max(readMs, msgMs);
+                await this.ackChat(session, chat.id, readMs);
                 continue;
             }
 
@@ -610,6 +748,7 @@ export class BotRuntime {
                 {
                     chatId: chat.id,
                     msgId: msgSnap.id,
+                    msgTs: msgData?.ts,
                     peerUid: peer.uid,
                     peerChatPK,
                     peerWalletPK: peer.walletPK || null,
@@ -621,6 +760,7 @@ export class BotRuntime {
             }
 
             readMs = Math.max(readMs, msgMs);
+            await this.ackChat(session, chat.id, readMs);
         }
 
         if (receiptTarget) {
@@ -629,7 +769,7 @@ export class BotRuntime {
             });
         }
 
-        setLimitedMap(session.chatRead, chat.id, readMs, MAX_BOT_READ_CACHE);
+        await this.ackChat(session, chat.id, readMs);
     }
 
     async handleChatMessage(session, context, msgData) {
@@ -650,15 +790,18 @@ export class BotRuntime {
         if (hasAttachment(msg)) {
             const body = await readBotMsgAttachment(this.bucket, session.chatPK, session.chatPrivKey, context.peerChatPK, msg);
             await uploadBotAttachmentMsg(db, FieldValue, this.bucket, session.chatPK, session.chatPrivKey, context.peerChatPK, {
-                cid: makeCid(),
+                cid: botReplyCid(context, 'file'),
                 type: msg.t,
                 data: body,
                 meta: attachmentMeta(msg),
-            });
+            }, { msgId: botReplyId(context, 'file') });
             return true;
         }
 
-        await this.sendPayload(session, context.peerChatPK, cleanPayload(msg));
+        await this.sendPayload(session, context.peerChatPK, cleanPayload(msg), {
+            cid: botReplyCid(context, 'reply'),
+            msgId: botReplyId(context, 'reply'),
+        });
         return true;
     }
 
@@ -666,6 +809,9 @@ export class BotRuntime {
         const amount = String(msg?.a ?? '').trim();
         if (!amount) {
             throw new Error('request amount missing');
+        }
+        if (msg?.tx) {
+            return;
         }
 
         const peerWalletPK = context.peerWalletPK || (await getProfile(context.peerUid))?.walletPK || '';
@@ -680,7 +826,10 @@ export class BotRuntime {
         }
 
         if (!Number.isFinite(balance) || balance < amountSats) {
-            await this.sendPayload(session, context.peerChatPK, makeTxt(BOT_UNDERFUNDED_TEXT));
+            await this.sendPayload(session, context.peerChatPK, makeTxt(BOT_UNDERFUNDED_TEXT), {
+                cid: botReplyCid(context, 'funds'),
+                msgId: botReplyId(context, 'funds'),
+            });
             return;
         }
 
@@ -693,7 +842,10 @@ export class BotRuntime {
             console.warn('bot request patch failed', context.chatId, statusMessage(error));
         }
 
-        await this.sendPayload(session, context.peerChatPK, makeReq(amount));
+        await this.sendPayload(session, context.peerChatPK, makeReq(amount), {
+            cid: botReplyCid(context, 'req'),
+            msgId: botReplyId(context, 'req'),
+        });
 
         const nextBalance = await this.refreshBalance(session);
         await this.touchBot(session.ref, {
@@ -703,11 +855,11 @@ export class BotRuntime {
         });
     }
 
-    async sendPayload(session, peerChatPK, payload) {
+    async sendPayload(session, peerChatPK, payload, options = {}) {
         return sendBotMsg(db, FieldValue, session.chatPK, session.chatPrivKey, peerChatPK, {
             ...payload,
-            cid: makeCid(),
-        });
+            cid: options.cid || makeCid(),
+        }, options.msgId ? { msgId: options.msgId } : {});
     }
 
     async sendReadReceipt(session, peerChatPK, target) {

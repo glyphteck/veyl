@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, writeFileSync, unlinkSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { BotRuntime } from './runtime.js';
 
@@ -13,13 +13,9 @@ console.error = (...args) => {
 };
 
 const botDir = resolve(import.meta.dirname, '..');
-const lockfile = resolve(botDir, '.bot.pid');
-
-function sleep(ms) {
-    return new Promise((resolveSleep) => {
-        setTimeout(resolveSleep, ms);
-    });
-}
+const legacyLockfile = resolve(botDir, '.bot.pid');
+const lockdir = resolve(botDir, '.bot.lock');
+const lockfile = resolve(lockdir, 'pid');
 
 function isRunning(pid) {
     if (!Number.isInteger(pid) || pid <= 0 || pid === process.pid) {
@@ -59,11 +55,11 @@ function processCommand(pid) {
     }
 }
 
-function pidFromLockfile() {
-    if (!existsSync(lockfile)) {
+function readPid(file) {
+    if (!existsSync(file)) {
         return null;
     }
-    const pid = Number(readFileSync(lockfile, 'utf-8').trim());
+    const pid = Number(readFileSync(file, 'utf-8').trim());
     return Number.isInteger(pid) && pid > 0 ? pid : null;
 }
 
@@ -85,75 +81,49 @@ function botRuntimePids() {
         .filter((pid) => processCwd(pid) === botDir && /\bnode\b/.test(processCommand(pid)));
 }
 
-async function stopProcess(pid) {
-    if (!isRunning(pid)) {
-        return false;
-    }
-
+function removeLock() {
     try {
-        process.kill(pid, 'SIGTERM');
+        rmSync(lockdir, { recursive: true, force: true });
     } catch {}
-
-    for (let i = 0; i < 10; i += 1) {
-        await sleep(100);
-        if (!isRunning(pid)) {
-            return true;
-        }
-    }
-
-    try {
-        process.kill(pid, 'SIGKILL');
-    } catch {}
-
-    for (let i = 0; i < 10; i += 1) {
-        await sleep(100);
-        if (!isRunning(pid)) {
-            return true;
-        }
-    }
-
-    return !isRunning(pid);
 }
 
-async function stopOtherRuntimes() {
-    const pids = new Set([pidFromLockfile(), ...botRuntimePids()].filter((pid) => isRunning(pid)));
-    if (!pids.size) {
-        try {
-            unlinkSync(lockfile);
-        } catch {}
-        return;
-    }
-
-    const stopped = [];
-    const failed = [];
-
-    for (const pid of pids) {
-        if (await stopProcess(pid)) {
-            stopped.push(pid);
-        } else {
-            failed.push(pid);
+function acquireLock() {
+    try {
+        mkdirSync(lockdir);
+        writeFileSync(lockfile, String(process.pid));
+    } catch (error) {
+        if (error?.code !== 'EEXIST') {
+            throw error;
         }
+
+        const pid = readPid(lockfile);
+        if (isRunning(pid)) {
+            throw new Error(`bot runtime already running (pid ${pid})`, { cause: error });
+        }
+
+        removeLock();
+        mkdirSync(lockdir);
+        writeFileSync(lockfile, String(process.pid));
     }
 
-    if (stopped.length) {
-        console.error(`stopped stale bot runtime${stopped.length === 1 ? '' : 's'}: ${stopped.join(', ')}`);
-    }
-
-    if (failed.length) {
-        throw new Error(`failed to stop stale bot runtime${failed.length === 1 ? '' : 's'}: ${failed.join(', ')}`);
+    const legacyPid = readPid(legacyLockfile);
+    const pids = new Set([legacyPid, ...botRuntimePids()].filter((pid) => isRunning(pid)));
+    if (pids.size) {
+        removeLock();
+        throw new Error(`bot runtime already running (pid${pids.size === 1 ? '' : 's'} ${[...pids].join(', ')})`);
     }
 }
 
-await stopOtherRuntimes();
-
-writeFileSync(lockfile, String(process.pid));
+acquireLock();
 
 const runtime = new BotRuntime();
+let stopping = false;
 
 function stop() {
-    try {
-        unlinkSync(lockfile);
-    } catch {}
+    if (stopping) {
+        return;
+    }
+    stopping = true;
     runtime.stop().catch((error) => {
         console.error('bot runtime shutdown failed', error);
         process.exitCode = 1;
@@ -164,4 +134,8 @@ process.on('SIGINT', stop);
 process.on('SIGTERM', stop);
 process.on('SIGHUP', stop);
 
-await runtime.start();
+try {
+    await runtime.start();
+} finally {
+    removeLock();
+}

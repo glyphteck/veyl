@@ -74,13 +74,17 @@ export async function sendBotMsg(db, FieldValue, senderChatPK, senderChatPrivKey
     }
 
     const updateLastMsg = options?.updateLastMsg !== false;
+    const msgId = typeof options?.msgId === 'string' ? options.msgId.trim() : '';
     const sortedKeys = orderChatKeys(senderChatPK, receiverChatPK);
     const chatId = getChatId(senderChatPK, receiverChatPK);
     const pair = await getCachedPair(senderChatPK, senderChatPrivKey, receiverChatPK);
     const { head, body } = await sealMsg(pair, message);
     const rawBody = typeof body?.toUint8Array === 'function' ? Buffer.from(body.toUint8Array()) : body;
     const chatRef = db.collection('chats').doc(chatId);
-    const msgRef = chatRef.collection('messages').doc();
+    const msgRef = msgId ? chatRef.collection('messages').doc(msgId) : chatRef.collection('messages').doc();
+    if (msgId && (await msgRef.get()).exists) {
+        return { chatId, msgId, skipped: true };
+    }
     const msgData = {
         head,
         body: rawBody,
@@ -165,12 +169,12 @@ export async function uploadBotAttachment(bucket, senderChatPK, senderChatPrivKe
     return putBotAttachment(bucket, pair, cid, attachment?.type, attachment?.data, attachment?.meta || {});
 }
 
-export async function uploadBotAttachmentMsg(db, FieldValue, bucket, senderChatPK, senderChatPrivKey, receiverChatPK, attachment = {}) {
+export async function uploadBotAttachmentMsg(db, FieldValue, bucket, senderChatPK, senderChatPrivKey, receiverChatPK, attachment = {}, options = {}) {
     const cid = typeof attachment?.cid === 'string' ? attachment.cid.trim() : '';
     if (!cid) {
         throw new Error('message cid required');
     }
 
     const msg = await uploadBotAttachment(bucket, senderChatPK, senderChatPrivKey, receiverChatPK, attachment);
-    return sendBotMsg(db, FieldValue, senderChatPK, senderChatPrivKey, receiverChatPK, { ...msg, cid });
+    return sendBotMsg(db, FieldValue, senderChatPK, senderChatPrivKey, receiverChatPK, { ...msg, cid }, options);
 }

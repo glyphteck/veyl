@@ -1,5 +1,6 @@
-import { useEffect, useId, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useId, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
+import { Image as ExpoImage } from 'expo-image';
 import Animated, { useAnimatedProps, useSharedValue, withTiming } from 'react-native-reanimated';
 import Svg, { Circle, Defs, G, Image as SvgImage, Mask, Path, Rect } from 'react-native-svg';
 import { DotBadge, getDotMetrics } from './dot';
@@ -19,6 +20,74 @@ export function getAvatarSourceKey(source) {
 export function isAvatarSourceLoaded(source) {
     const sourceKey = getAvatarSourceKey(source);
     return !!sourceKey && loadedSourceKeys.has(sourceKey);
+}
+
+function useAvatarImageSource(source) {
+    const sourceKey = getAvatarSourceKey(source);
+    const sourceNumber = typeof source === 'number' ? source : null;
+    const imageSource = useMemo(() => {
+        if (!sourceKey) return null;
+        return sourceNumber == null ? { uri: sourceKey } : sourceNumber;
+    }, [sourceKey, sourceNumber]);
+
+    return { sourceKey, imageSource };
+}
+
+export function StaticAvatar({ source, size = 52, style, pointerEvents, contentFit = 'cover', bot = false }) {
+    const { theme } = useTheme();
+    const { sourceKey, imageSource } = useAvatarImageSource(source);
+    const [loadedKey, setLoadedKey] = useState(() => (sourceKey && loadedSourceKeys.has(sourceKey) ? sourceKey : ''));
+    const imageLoaded = !!sourceKey && loadedKey === sourceKey;
+
+    useEffect(() => {
+        if (!sourceKey) {
+            setLoadedKey('');
+            return;
+        }
+        if (loadedSourceKeys.has(sourceKey)) {
+            setLoadedKey(sourceKey);
+            return;
+        }
+        setLoadedKey('');
+    }, [sourceKey]);
+
+    if (!sourceKey) {
+        return (
+            <View pointerEvents={pointerEvents} style={[{ width: size, height: size, borderRadius: size / 2, overflow: 'hidden', backgroundColor: theme.background }, style]}>
+                <Svg width={size} height={size} pointerEvents={pointerEvents}>
+                    <Rect x="0" y="0" width={size} height={size} fill={theme.background} />
+                    <AvatarGlyph bot={bot} size={size} color={theme.foreground} />
+                </Svg>
+            </View>
+        );
+    }
+
+    return (
+        <View pointerEvents={pointerEvents} style={[{ width: size, height: size, borderRadius: size / 2, overflow: 'hidden', backgroundColor: theme.background }, style]}>
+            {!imageLoaded ? (
+                <Svg width={size} height={size} pointerEvents={pointerEvents}>
+                    <Rect x="0" y="0" width={size} height={size} fill={theme.background} />
+                    <AvatarGlyph bot={bot} size={size} color={theme.foreground} />
+                </Svg>
+            ) : null}
+            <ExpoImage
+                pointerEvents={pointerEvents}
+                source={imageSource}
+                recyclingKey={sourceKey}
+                cachePolicy="memory-disk"
+                transition={0}
+                contentFit={contentFit}
+                style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, width: size, height: size, opacity: imageLoaded ? 1 : 0 }}
+                onLoad={() => {
+                    loadedSourceKeys.add(sourceKey);
+                    setLoadedKey(sourceKey);
+                }}
+                onError={() => {
+                    setLoadedKey('');
+                }}
+            />
+        </View>
+    );
 }
 
 function AvatarGlyph({ bot, size, color }) {
@@ -52,10 +121,28 @@ function getMaskId(id) {
     return `avatar-mask-${id.replace(/[^a-zA-Z0-9_-]/g, '') || 'id'}`;
 }
 
+const AvatarImage = memo(
+    function AvatarImage({ href, size, loaded, onLoad }) {
+        return (
+            <SvgImage
+                href={href}
+                x="0"
+                y="0"
+                width={size}
+                height={size}
+                preserveAspectRatio="xMidYMid slice"
+                opacity={loaded ? 1 : 0}
+                onLoad={onLoad}
+            />
+        );
+    },
+    (prev, next) => prev.href === next.href && prev.size === next.size && prev.loaded === next.loaded && prev.onLoad === next.onLoad
+);
+
 export default function Avatar({ source, size = 52, style, pointerEvents, active = false, selected = null, bot = false, hideFallbackUntilLoaded = false, assumeImageLoaded = false, onImageLoad }) {
     const { theme } = useTheme();
     const id = useId();
-    const sourceKey = getAvatarSourceKey(source);
+    const { sourceKey, imageSource } = useAvatarImageSource(source);
     const [loadedKey, setLoadedKey] = useState(() => (sourceKey && loadedSourceKeys.has(sourceKey) ? sourceKey : ''));
     const imageLoaded = !!sourceKey && (assumeImageLoaded || loadedKey === sourceKey);
     const maskId = useMemo(() => getMaskId(id), [id]);
@@ -67,6 +154,14 @@ export default function Avatar({ source, size = 52, style, pointerEvents, active
     const selectedProps = useAnimatedProps(() => ({
         opacity: selectedProgress.value,
     }));
+    const handleImageLoad = useCallback(() => {
+        if (!sourceKey) {
+            return;
+        }
+        loadedSourceKeys.add(sourceKey);
+        setLoadedKey(sourceKey);
+        onImageLoad?.(sourceKey);
+    }, [onImageLoad, sourceKey]);
 
     useEffect(() => {
         if (!sourceKey) {
@@ -113,23 +208,8 @@ export default function Avatar({ source, size = 52, style, pointerEvents, active
                 <G mask={`url(#${maskId})`}>
                     <Rect x="0" y="0" width={size} height={size} fill={theme.background} />
                     {!hideFallbackUntilLoaded || !sourceKey || imageLoaded ? <AvatarGlyph bot={bot} size={size} color={theme.foreground} /> : null}
-                    {source ? (
-                        <SvgImage
-                            href={source}
-                            x="0"
-                            y="0"
-                            width={size}
-                            height={size}
-                            preserveAspectRatio="xMidYMid slice"
-                            opacity={imageLoaded ? 1 : 0}
-                            onLoad={() => {
-                                if (sourceKey) {
-                                    loadedSourceKeys.add(sourceKey);
-                                    setLoadedKey(sourceKey);
-                                    onImageLoad?.(sourceKey);
-                                }
-                            }}
-                        />
+                    {sourceKey ? (
+                        <AvatarImage href={imageSource} size={size} loaded={imageLoaded} onLoad={handleImageLoad} />
                     ) : null}
                     {selectable ? <AnimatedCircle animatedProps={selectedProps} cx={size / 2} cy={size / 2} r={selectedRadius} fill="none" stroke={theme.active} strokeWidth={selectedStroke} /> : null}
                 </G>

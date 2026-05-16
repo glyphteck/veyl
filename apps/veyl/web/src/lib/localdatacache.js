@@ -6,8 +6,6 @@ import { resolveNetwork } from '@glyphteck/shared/network';
 const DB_NAME = 'veyl-vault-local-cache';
 const DB_VERSION = 1;
 const STORE_NAME = 'cache';
-const CACHE_KEY = 'main';
-const MEDIA_KEY_PREFIX = 'media:';
 
 let dbPromise = null;
 
@@ -71,100 +69,127 @@ function openDb() {
     return dbPromise;
 }
 
-const storage = {
-    async read() {
-        const db = await openDb();
-        if (!db) {
-            return null;
-        }
+function storageScope(uid, network) {
+    return JSON.stringify([String(network || ''), String(uid || '')]);
+}
 
-        const tx = db.transaction(STORE_NAME, 'readonly');
-        return requestToPromise(tx.objectStore(STORE_NAME).get(CACHE_KEY));
-    },
-    async write(raw) {
-        const db = await openDb();
-        if (!db) {
-            return;
-        }
+function mainKey(scope) {
+    return `main:${scope}`;
+}
 
-        const tx = db.transaction(STORE_NAME, 'readwrite');
-        tx.objectStore(STORE_NAME).put(raw, CACHE_KEY);
-        await txToPromise(tx);
-    },
-    async remove() {
-        const db = await openDb();
-        if (!db) {
-            return;
-        }
+function mediaKeyPrefix(scope) {
+    return `media:${scope}:`;
+}
 
-        const tx = db.transaction(STORE_NAME, 'readwrite');
-        tx.objectStore(STORE_NAME).delete(CACHE_KEY);
-        await txToPromise(tx);
-    },
-    async readMedia(id) {
-        const db = await openDb();
-        if (!db || !id) {
-            return null;
-        }
+function makeStorage({ uid, network }) {
+    const scope = storageScope(uid, network);
+    const key = mainKey(scope);
+    const mediaPrefix = mediaKeyPrefix(scope);
 
-        const tx = db.transaction(STORE_NAME, 'readonly');
-        return requestToPromise(tx.objectStore(STORE_NAME).get(`${MEDIA_KEY_PREFIX}${id}`));
-    },
-    async writeMedia(id, raw) {
-        const db = await openDb();
-        if (!db || !id) {
-            return;
-        }
-
-        const tx = db.transaction(STORE_NAME, 'readwrite');
-        tx.objectStore(STORE_NAME).put(raw, `${MEDIA_KEY_PREFIX}${id}`);
-        await txToPromise(tx);
-    },
-    async removeMedia(id) {
-        const db = await openDb();
-        if (!db || !id) {
-            return;
-        }
-
-        const tx = db.transaction(STORE_NAME, 'readwrite');
-        tx.objectStore(STORE_NAME).delete(`${MEDIA_KEY_PREFIX}${id}`);
-        await txToPromise(tx);
-    },
-    async removeAllMedia() {
-        const db = await openDb();
-        if (!db) {
-            return;
-        }
-
-        const readTx = db.transaction(STORE_NAME, 'readonly');
-        const keys = await requestToPromise(readTx.objectStore(STORE_NAME).getAllKeys());
-
-        const tx = db.transaction(STORE_NAME, 'readwrite');
-        const store = tx.objectStore(STORE_NAME);
-        for (const key of keys || []) {
-            if (typeof key === 'string' && key.startsWith(MEDIA_KEY_PREFIX)) {
-                store.delete(key);
+    return {
+        async read() {
+            const db = await openDb();
+            if (!db) {
+                return null;
             }
-        }
-        await txToPromise(tx);
-    },
-    async estimateSize() {
-        const db = await openDb();
-        if (!db) {
-            return 0;
-        }
 
-        const tx = db.transaction(STORE_NAME, 'readonly');
-        const values = await requestToPromise(tx.objectStore(STORE_NAME).getAll());
-        return (values || []).reduce((total, value) => total + valueSize(value), 0);
-    },
-};
+            const tx = db.transaction(STORE_NAME, 'readonly');
+            return requestToPromise(tx.objectStore(STORE_NAME).get(key));
+        },
+        async write(raw) {
+            const db = await openDb();
+            if (!db) {
+                return;
+            }
+
+            const tx = db.transaction(STORE_NAME, 'readwrite');
+            tx.objectStore(STORE_NAME).put(raw, key);
+            await txToPromise(tx);
+        },
+        async remove() {
+            const db = await openDb();
+            if (!db) {
+                return;
+            }
+
+            const tx = db.transaction(STORE_NAME, 'readwrite');
+            tx.objectStore(STORE_NAME).delete(key);
+            await txToPromise(tx);
+        },
+        async readMedia(id) {
+            const db = await openDb();
+            if (!db || !id) {
+                return null;
+            }
+
+            const tx = db.transaction(STORE_NAME, 'readonly');
+            return requestToPromise(tx.objectStore(STORE_NAME).get(`${mediaPrefix}${id}`));
+        },
+        async writeMedia(id, raw) {
+            const db = await openDb();
+            if (!db || !id) {
+                return;
+            }
+
+            const tx = db.transaction(STORE_NAME, 'readwrite');
+            tx.objectStore(STORE_NAME).put(raw, `${mediaPrefix}${id}`);
+            await txToPromise(tx);
+        },
+        async removeMedia(id) {
+            const db = await openDb();
+            if (!db || !id) {
+                return;
+            }
+
+            const tx = db.transaction(STORE_NAME, 'readwrite');
+            tx.objectStore(STORE_NAME).delete(`${mediaPrefix}${id}`);
+            await txToPromise(tx);
+        },
+        async removeAllMedia() {
+            const db = await openDb();
+            if (!db) {
+                return;
+            }
+
+            const readTx = db.transaction(STORE_NAME, 'readonly');
+            const keys = await requestToPromise(readTx.objectStore(STORE_NAME).getAllKeys());
+
+            const tx = db.transaction(STORE_NAME, 'readwrite');
+            const store = tx.objectStore(STORE_NAME);
+            for (const key of keys || []) {
+                if (typeof key === 'string' && key.startsWith(mediaPrefix)) {
+                    store.delete(key);
+                }
+            }
+            await txToPromise(tx);
+        },
+        async estimateSize() {
+            const db = await openDb();
+            if (!db) {
+                return 0;
+            }
+
+            const keyTx = db.transaction(STORE_NAME, 'readonly');
+            const keys = await requestToPromise(keyTx.objectStore(STORE_NAME).getAllKeys());
+            const selected = (keys || []).filter((item) => item === key || (typeof item === 'string' && item.startsWith(mediaPrefix)));
+            if (selected.length === 0) {
+                return 0;
+            }
+
+            const valueTx = db.transaction(STORE_NAME, 'readonly');
+            const store = valueTx.objectStore(STORE_NAME);
+            const values = await Promise.all(selected.map((item) => requestToPromise(store.get(item))));
+            return values.reduce((total, value) => total + valueSize(value), 0);
+        },
+    };
+}
 
 export function openLocalDataCache(key, { uid } = {}) {
+    const network = resolveNetwork({ NEXT_PUBLIC_NETWORK: process.env.NEXT_PUBLIC_NETWORK });
     return openVaultCache({
         key,
-        storage,
+        storage: makeStorage({ uid, network }),
         uid,
-        network: resolveNetwork({ NEXT_PUBLIC_NETWORK: process.env.NEXT_PUBLIC_NETWORK }),
+        network,
     });
 }

@@ -37,17 +37,17 @@ function RequestCard({ fromPeer = false, formattedAmount, label, amountColor, is
     );
 }
 
-function RequestBubble({ card, menuId, menuItems, onHold, reaction, reactionActive = false, reactionPreviewInset = 0 }) {
+function RequestBubble({ card, menuId, menuItems, onHold, reactions = [], reactionUsers, reactionPreviewInset = 0 }) {
     return (
         <Menu id={menuId} items={menuItems} onHold={onHold} previewBottomInset={reactionPreviewInset}>
-            <ReactionTray reaction={reaction} active={reactionActive}>
+            <ReactionTray reactions={reactions} users={reactionUsers} fromPeer={card?.fromPeer}>
                 <RequestCard {...card} />
             </ReactionTray>
         </Menu>
     );
 }
 
-export default function RequestMessage({ msg, fromPeer = false, peerDisplayName, onPay, isPaying = false, menuId, menuItems, onHold, reaction, reactionActive = false, reactionPreviewInset = 0 }) {
+export default function RequestMessage({ msg, fromPeer = false, peerDisplayName, onPay, isPaying = false, menuId, menuItems, onHold, reactions = [], reactionUsers, reactionPreviewInset = 0 }) {
     const { theme } = useTheme();
     const { settings } = useUser();
     const { bitcoin, balance } = useWallet();
@@ -65,11 +65,11 @@ export default function RequestMessage({ msg, fromPeer = false, peerDisplayName,
 
         return (
             <View style={ROW}>
-                <RequestBubble card={card} menuId={menuId} menuItems={menuItems} onHold={onHold} reaction={reaction} reactionActive={reactionActive} reactionPreviewInset={reactionPreviewInset} />
+                <RequestBubble card={card} menuId={menuId} menuItems={menuItems} onHold={onHold} reactions={reactions} reactionUsers={reactionUsers} reactionPreviewInset={reactionPreviewInset} />
                 {!msg.tx && !isPaying ? <GlassIcon accent icon={ArrowUpRight} onPress={onPay} disabled={!canAfford} iconSize={32} /> : null}
             </View>
         );
     }
 
-    return <RequestBubble card={card} menuId={menuId} menuItems={menuItems} onHold={onHold} reaction={reaction} reactionActive={reactionActive} reactionPreviewInset={reactionPreviewInset} />;
+    return <RequestBubble card={card} menuId={menuId} menuItems={menuItems} onHold={onHold} reactions={reactions} reactionUsers={reactionUsers} reactionPreviewInset={reactionPreviewInset} />;
 }

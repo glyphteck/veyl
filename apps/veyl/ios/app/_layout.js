@@ -75,6 +75,7 @@ function AppContent() {
                 <Stack.Protected guard={isAuthed && onboardingComplete}>
                     <Stack.Screen name="index" />
                     <Stack.Screen name="(vault)" />
+                    <Stack.Screen name="(onboarding)" />
                 </Stack.Protected>
                 <Stack.Protected guard={isAuthed && !onboardingComplete}>
                     <Stack.Screen name="(onboarding)" />

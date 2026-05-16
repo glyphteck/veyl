@@ -1,9 +1,9 @@
 'use client';
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { collection, deleteDoc, doc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
-import { avatarPath, getFileUrl } from '../files.js';
+import { avatarPath, getFileUrl, readFile } from '../files.js';
 import { COMMUNITY_RULES_DATE, COMMUNITY_RULES_VERSION } from '../community.js';
 import { defaultSettings, writeUserSettings } from '../settings.js';
 import { resolveWalletPK } from '../walletkeys.js';
@@ -13,6 +13,8 @@ export const defaultUser = {
     authReady: false,
     username: null,
     avatar: null,
+    avatarVersion: null,
+    hasAvatarEntry: false,
     isAdmin: false,
     adminReady: false,
     walletPKs: null,
@@ -70,13 +72,93 @@ function getActiveBan(ban) {
     return untilMs > Date.now() ? ban : null;
 }
 
-export function createUserProvider({ auth, db, storage, getStorage, network }) {
+function readAvatarVersion(value) {
+    const version = Number(value);
+    return Number.isSafeInteger(version) && version >= 0 ? version : null;
+}
+
+function avatarUrlWithVersion(url, version) {
+    if (!url) return null;
+    return version == null ? url : `${url}${url.includes('?') ? '&' : '?'}v=${encodeURIComponent(String(version))}`;
+}
+
+export function createUserProvider({ auth, db, storage, getStorage, network, avatarCache = null }) {
     if (!auth || !db) {
         throw new Error('createUserProvider requires { auth, db }');
     }
 
     function resolveStorage() {
         return typeof getStorage === 'function' ? getStorage() : storage;
+    }
+
+    async function readCachedAvatar(uid, expectedVersion = null) {
+        if (!uid || typeof avatarCache?.read !== 'function') return null;
+        try {
+            const cached = await avatarCache.read(uid);
+            const version = readAvatarVersion(cached?.version);
+            if (expectedVersion != null && version !== expectedVersion) {
+                return null;
+            }
+            const url = typeof cached?.url === 'string' && cached.url ? cached.url : typeof cached?.source === 'string' && cached.source ? cached.source : null;
+            return version == null || !url ? null : { version, url };
+        } catch (error) {
+            console.warn('failed to read cached avatar', error);
+            return null;
+        }
+    }
+
+    async function writeCachedAvatar(uid, avatar) {
+        if (!uid || typeof avatarCache?.write !== 'function') return;
+        const version = readAvatarVersion(avatar?.version);
+        const bytes = avatar?.bytes;
+        if (version == null || !bytes) return null;
+        try {
+            const result = await avatarCache.write(uid, { version, bytes });
+            return typeof result === 'string' && result ? result : typeof result?.url === 'string' && result.url ? result.url : typeof result?.source === 'string' && result.source ? result.source : null;
+        } catch (error) {
+            console.warn('failed to cache avatar', error);
+            return null;
+        }
+    }
+
+    function removeCachedAvatar(uid) {
+        if (!uid || typeof avatarCache?.remove !== 'function') return;
+        try {
+            const result = avatarCache.remove(uid);
+            result?.catch?.((error) => console.warn('failed to remove cached avatar', error));
+        } catch (error) {
+            console.warn('failed to remove cached avatar', error);
+        }
+    }
+
+    function keepOnlyCachedAvatar(uid, previousUid = null) {
+        if (!uid) {
+            if (typeof avatarCache?.removeAll === 'function') {
+                try {
+                    const result = avatarCache.removeAll();
+                    result?.catch?.((error) => console.warn('failed to clear cached avatars', error));
+                } catch (error) {
+                    console.warn('failed to clear cached avatars', error);
+                }
+                return;
+            }
+            removeCachedAvatar(previousUid);
+            return;
+        }
+
+        if (typeof avatarCache?.removeAllExcept === 'function') {
+            try {
+                const result = avatarCache.removeAllExcept(uid);
+                result?.catch?.((error) => console.warn('failed to prune cached avatars', error));
+            } catch (error) {
+                console.warn('failed to prune cached avatars', error);
+            }
+            return;
+        }
+
+        if (previousUid && previousUid !== uid) {
+            removeCachedAvatar(previousUid);
+        }
     }
 
     const UserContext = createContext({
@@ -91,30 +173,99 @@ export function createUserProvider({ auth, db, storage, getStorage, network }) {
         acceptCommunityRules: async () => {},
         updateSettings: async () => {},
         refetchAvatar: () => {},
+        clearAvatar: () => {},
     });
 
     function UserProvider({ children }) {
         const [user, setUser] = useState(defaultUser);
+        const avatarFetchRef = useRef({ uid: null, key: null, promise: null });
+        const authSessionRef = useRef(0);
+        const avatarCacheUidRef = useRef(null);
 
         const fetchAvatar = useCallback(
-            async (uid, { bust = false } = {}) => {
+            async (uid, { version = null, force = false, clear = false, persist = true } = {}) => {
                 if (!uid) return;
+                if (clear) {
+                    avatarFetchRef.current = { uid: null, key: null, promise: null };
+                    removeCachedAvatar(uid);
+                    setUser((prevUser) => (prevUser.avatar == null && prevUser.avatarVersion == null ? prevUser : { ...prevUser, avatar: null, avatarVersion: null }));
+                    return null;
+                }
+
+                const avatarVersion = readAvatarVersion(version);
+                const key = avatarVersion == null ? 'unknown' : String(avatarVersion);
+                const cached = avatarFetchRef.current;
+                if (!force && cached.uid === uid && cached.key === key && cached.promise) {
+                    return cached.promise;
+                }
+
                 try {
-                    const storage = resolveStorage();
-                    if (!storage) return;
-                    const avatarUrl = await getFileUrl(storage, avatarPath(uid));
-                    const nextAvatar = bust ? `${avatarUrl}${avatarUrl.includes('?') ? '&' : '?'}t=${Date.now()}` : avatarUrl;
-                    setUser((prevUser) => (prevUser.avatar === nextAvatar ? prevUser : { ...prevUser, avatar: nextAvatar }));
+                    const promise = (async () => {
+                        const cachedAvatar = avatarVersion == null ? null : await readCachedAvatar(uid, avatarVersion);
+                        if (cachedAvatar) {
+                            return cachedAvatar.url;
+                        }
+
+                        const storage = resolveStorage();
+                        if (!storage) return null;
+                        if (persist && avatarVersion != null) {
+                            const bytes = await readFile(storage, avatarPath(uid));
+                            const cachedSource = await writeCachedAvatar(uid, { version: avatarVersion, bytes });
+                            if (cachedSource) {
+                                return cachedSource;
+                            }
+                        }
+
+                        const avatarUrl = await getFileUrl(storage, avatarPath(uid));
+                        return avatarUrlWithVersion(avatarUrl, avatarVersion);
+                    })().then((nextAvatar) => {
+                        if (!nextAvatar) {
+                            return null;
+                        }
+                        if (avatarFetchRef.current.uid !== uid || avatarFetchRef.current.key !== key) {
+                            return nextAvatar;
+                        }
+                        setUser((prevUser) => {
+                            const nextVersion = avatarVersion ?? prevUser.avatarVersion;
+                            if (prevUser.avatar === nextAvatar && prevUser.avatarVersion === nextVersion) {
+                                return prevUser;
+                            }
+                            return { ...prevUser, avatar: nextAvatar, avatarVersion: nextVersion };
+                        });
+                        return nextAvatar;
+                    });
+                    avatarFetchRef.current = { uid, key, promise };
+                    return await promise;
                 } catch (error) {
+                    const isCurrentFetch = avatarFetchRef.current.uid === uid && avatarFetchRef.current.key === key;
+                    if (isCurrentFetch) {
+                        avatarFetchRef.current = { uid: null, key: null, promise: null };
+                    }
                     if (error?.code === 'storage/object-not-found') {
+                        if (!isCurrentFetch) {
+                            return null;
+                        }
+                        removeCachedAvatar(uid);
                         setUser((prevUser) => (prevUser.avatar == null ? prevUser : { ...prevUser, avatar: null }));
-                        return;
+                        return null;
                     }
                     console.warn('failed to fetch avatar', error);
+                    return null;
                 }
             },
             [getStorage, storage]
         );
+
+        const clearAvatar = useCallback(() => {
+            avatarFetchRef.current = { uid: null, key: null, promise: null };
+            removeCachedAvatar(auth.currentUser?.uid);
+            setUser((prevUser) => {
+                if (prevUser.avatar == null && prevUser.avatarVersion == null) {
+                    return prevUser;
+                }
+                return { ...prevUser, avatar: null, avatarVersion: null };
+            });
+        }, [auth]);
 
         useEffect(() => {
             let unsubscribePrivate = () => {};
@@ -124,6 +275,8 @@ export function createUserProvider({ auth, db, storage, getStorage, network }) {
             let unsubscribeBlocked = () => {};
 
             const unsubscribeAuth = onAuthStateChanged(auth, (authUser) => {
+                const authSession = authSessionRef.current + 1;
+                authSessionRef.current = authSession;
                 unsubscribePrivate();
                 unsubscribeAdmin();
                 unsubscribeModeration();
@@ -131,15 +284,35 @@ export function createUserProvider({ auth, db, storage, getStorage, network }) {
                 unsubscribeBlocked();
 
                 if (!authUser) {
+                    keepOnlyCachedAvatar(null, avatarCacheUidRef.current);
+                    avatarCacheUidRef.current = null;
+                    avatarFetchRef.current = { uid: null, key: null, promise: null };
                     setUser({ ...defaultUser, authReady: true });
                     return;
                 }
+
+                keepOnlyCachedAvatar(authUser.uid, avatarCacheUidRef.current);
+                avatarCacheUidRef.current = authUser.uid;
 
                 setUser((prevUser) => (
                     prevUser.uid === authUser.uid
                         ? { ...prevUser, authReady: true, isAdmin: false, adminReady: false }
                         : { ...defaultUser, authReady: true, uid: authUser.uid }
                 ));
+                void readCachedAvatar(authUser.uid).then((cached) => {
+                    if (!cached || authSessionRef.current !== authSession || auth.currentUser?.uid !== authUser.uid) {
+                        return;
+                    }
+                    setUser((prevUser) => {
+                        if (prevUser.uid !== authUser.uid || prevUser.avatar) {
+                            return prevUser;
+                        }
+                        if (prevUser.avatarVersion != null && prevUser.avatarVersion !== cached.version) {
+                            return prevUser;
+                        }
+                        return { ...prevUser, avatar: cached.url, avatarVersion: cached.version };
+                    });
+                });
 
                 unsubscribeAdmin = onSnapshot(
                     doc(db, 'admins', authUser.uid),
@@ -248,22 +421,34 @@ export function createUserProvider({ auth, db, storage, getStorage, network }) {
                             const walletPK = resolveWalletPK(profileData, network);
                             const chatPK = profileData.chatPK || null;
                             const active = profileData.active ?? false;
+                            const hasAvatarEntry = profileSnap.exists() && Object.prototype.hasOwnProperty.call(profileData, 'avatar');
+                            const avatarVersion = readAvatarVersion(profileData.avatar);
+                            const avatar = avatarVersion == null ? null : prevUser.avatar;
                             if (
                                 prevUser.uid === authUser.uid &&
                                 prevUser.username === username &&
                                 prevUser.walletPK === walletPK &&
                                 prevUser.walletPKs === walletPKs &&
                                 prevUser.chatPK === chatPK &&
-                                prevUser.active === active
+                                prevUser.active === active &&
+                                prevUser.hasAvatarEntry === hasAvatarEntry &&
+                                prevUser.avatarVersion === avatarVersion &&
+                                prevUser.avatar === avatar
                             ) {
                                 return prevUser;
                             }
-                            return { ...prevUser, uid: authUser.uid, username, walletPKs, walletPK, chatPK, active };
+                            return { ...prevUser, uid: authUser.uid, username, walletPKs, walletPK, chatPK, active, hasAvatarEntry, avatarVersion, avatar };
                         });
-                        fetchAvatar(authUser.uid);
+                        const avatarVersion = readAvatarVersion(profileData.avatar);
+                        if (avatarVersion == null) {
+                            void fetchAvatar(authUser.uid, { clear: true });
+                        } else if (profileSnap.exists()) {
+                            void fetchAvatar(authUser.uid, { version: avatarVersion });
+                        }
                     },
                     (error) => {
                         console.warn('failed to subscribe profile', error);
+                        avatarFetchRef.current = { uid: null, key: null, promise: null };
                         setUser((prevUser) => ({
                             ...prevUser,
                             uid: authUser.uid,
@@ -272,6 +457,9 @@ export function createUserProvider({ auth, db, storage, getStorage, network }) {
                             walletPK: null,
                             chatPK: null,
                             active: false,
+                            avatarVersion: null,
+                            avatar: null,
+                            hasAvatarEntry: false,
                         }));
                     }
                 );
@@ -391,6 +579,12 @@ export function createUserProvider({ auth, db, storage, getStorage, network }) {
             [blockedSet]
         );
 
+        const refetchAvatar = useCallback((options = {}) => {
+            const optimistic = options?.optimistic === true;
+            const nextVersion = optimistic && user.avatarVersion != null ? user.avatarVersion + 1 : user.avatarVersion;
+            return fetchAvatar(user.uid, { force: true, persist: !optimistic, version: nextVersion });
+        }, [fetchAvatar, user.avatarVersion, user.uid]);
+
         const value = useMemo(
             () => ({
                 ...user,
@@ -403,9 +597,10 @@ export function createUserProvider({ auth, db, storage, getStorage, network }) {
                 unblockPeer,
                 acceptCommunityRules,
                 updateSettings,
-                refetchAvatar: () => fetchAvatar(user.uid, { bust: true }),
+                refetchAvatar,
+                clearAvatar,
             }),
-            [acceptCommunityRules, avatarBanned, blockPeer, blockedSet, chatBanned, chatBanUntil, fetchAvatar, isBlocked, unblockPeer, updateSettings, user]
+            [acceptCommunityRules, avatarBanned, blockPeer, blockedSet, chatBanned, chatBanUntil, clearAvatar, isBlocked, refetchAvatar, unblockPeer, updateSettings, user]
         );
 
         return <UserContext value={value}>{children}</UserContext>;

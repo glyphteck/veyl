@@ -31,6 +31,7 @@ export function DialogProvider({ children, allow = null }) {
                 sharemedia: Dialogs.ShareMedia,
                 exportwallet: Dialogs.ExportWallet,
                 passwordrules: Dialogs.PasswordRules,
+                rememberaccount: Dialogs.RememberAccount,
             };
 
             if (!allow?.length) {

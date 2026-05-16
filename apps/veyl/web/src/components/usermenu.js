@@ -4,7 +4,6 @@ import { makeUserQr, qr } from '@glyphteck/shared/qrutils';
 import { minWithdrawalSats } from '@glyphteck/shared/spark';
 import { formatUserDisplay } from '@/lib/utils';
 import { shortcuts } from '@/lib/shortcuts';
-import { logout } from '@/lib/useractions';
 import { Button } from '@/components/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/avatar';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuSeparator, DropdownMenuItem, DropdownMenuShortcut } from '@/components/dropdownmenu';
@@ -85,7 +84,7 @@ export default function UserMenu({ user, balance, copyFundingAddress, lock, open
                         <DropdownMenuShortcut>{shortcuts.lock}</DropdownMenuShortcut>
                     </DropdownMenuItem>
                 )}
-                <DropdownMenuItem onClick={logout}>
+                <DropdownMenuItem onClick={() => openDialog('rememberaccount', { user })}>
                     <LogOut />
                     <span>logout</span>
                     <DropdownMenuShortcut>{shortcuts.logout}</DropdownMenuShortcut>

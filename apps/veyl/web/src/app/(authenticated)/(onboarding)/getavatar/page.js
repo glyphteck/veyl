@@ -2,9 +2,8 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Loading from '@/components/loading';
 import { Button } from '@/components/button';
-import { uploadAvatar } from '@/lib/useractions';
+import { skipAvatar, uploadAvatar } from '@/lib/useractions';
 import { useUser } from '@/components/providers/userprovider';
 import UpdateAvatar from '@/components/updateavatar';
 import { ImageUp } from 'lucide-react';
@@ -28,7 +27,7 @@ export default function GetAvatar() {
                 setStatus('idle');
                 return;
             }
-            await refetchAvatar?.();
+            await refetchAvatar?.({ optimistic: true });
             setStatus('skipping');
             router.push('/community');
         } catch {
@@ -36,29 +35,49 @@ export default function GetAvatar() {
         }
     };
 
-    const handleSkip = () => {
+    const handleSkip = async () => {
         if (busy) return;
         setStatus('skipping');
+        const ok = await skipAvatar();
+        if (!ok) {
+            setStatus('idle');
+            return;
+        }
         router.push('/community');
     };
 
-    if (busy) {
-        return <Loading />;
-    }
+    const handleRemoveAvatar = () => {
+        if (busy) return;
+        setSelectedImage(null);
+    };
 
     return (
         <div className="absolute inset-0 items-center flex justify-center">
             <div className="flex flex-col items-center gap-4">
                 <div className="flex items-center gap-2 text-xl font-black leading-none select-none">set your avatar</div>
-                <UpdateAvatar className="size-48" disabled={busy || avatarBanned} selectedImage={selectedImage} onImageSelect={setSelectedImage} />
-                <div className="flex flex-col gap-1 ">
-                    <Button type="button" className="button-outline shrinker w-3xs" disabled={!selectedImage || busy || avatarBanned} onClick={handleConfirm}>
-                        <ImageUp className="stroke-2" />
-                        confirm
-                    </Button>
-                    <Button type="button" className="grower text-muted hover:text-foreground" disabled={busy} onClick={handleSkip}>
-                        skip for now
-                    </Button>
+                <UpdateAvatar
+                    className="size-48"
+                    disabled={busy || avatarBanned}
+                    onImageSelect={setSelectedImage}
+                    onRemove={handleRemoveAvatar}
+                    removeDisabled={busy}
+                    selectedImage={selectedImage}
+                    showRemove={!!selectedImage && !busy}
+                />
+                <div className="flex flex-col gap-1">
+                    <div className="relative h-10 w-3xs">
+                        <div className="pop absolute inset-0 flex items-center justify-center" data-open={!selectedImage}>
+                            <Button type="button" className="grower w-full text-muted hover:text-foreground" disabled={busy} onClick={handleSkip}>
+                                skip for now
+                            </Button>
+                        </div>
+                        <div className="pop absolute inset-0 flex items-center justify-center" data-open={!!selectedImage}>
+                            <Button type="button" className="button-outline shrinker w-full" disabled={!selectedImage || busy || avatarBanned} onClick={handleConfirm}>
+                                <ImageUp className="stroke-2" />
+                                confirm
+                            </Button>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>

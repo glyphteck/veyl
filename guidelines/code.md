@@ -37,6 +37,16 @@
 - Keep lint rules production-oriented. They should catch undefined names, blocked browser prompts, and hook-order mistakes without enforcing broad style churn.
 - Do not silence lint unless the exception is narrow and still correct. Remove stale eslint-disable comments when the rule no longer reports.
 
+## Multi-Agent Hygiene
+
+Use [workflow.md](workflow.md) for the detailed task-file, branch, worktree, handoff, and cleanup policy.
+
+- Assume unrelated file changes may belong to another active agent. Do not revert, restyle, or opportunistically refactor them.
+- Keep your diff scoped and easy to identify. Prefer task-specific file names, todo plan names, commit messages, and PR text over broad labels.
+- When parallel work is unrelated, proceed without coordinating through code changes.
+- If a large overhaul or many-file change has an obvious collision risk, use a separate short task-specific branch and linked worktree, then record both in the task file. Branch names still must not include agent prefixes.
+- Before handing work back, remove temporary labels, scratch files, planning artifacts, or coordination-only scaffolding you created when they are no longer useful. Do not remove active todo context or durable documentation.
+
 ## Product Language
 
 - In user-facing copy, call other accounts people, users, or friends.

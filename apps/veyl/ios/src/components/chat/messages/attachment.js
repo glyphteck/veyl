@@ -14,7 +14,7 @@ import ReactionTray from './reactiontray';
 
 const ATTACHMENT_LONG_SCALE = 0.9;
 
-export default function AttachmentMessage({ msg, peerChatPK, fromPeer = false, menuItems, menuId, reaction, reactionActive = false, reactionPreviewInset = 0 }) {
+export default function AttachmentMessage({ msg, peerChatPK, fromPeer = false, menuItems, menuId, reactions = [], reactionUsers, reactionPreviewInset = 0 }) {
     const { theme } = useTheme();
     const { readMessageFile } = useChat();
     const focused = useIsFocused();
@@ -31,7 +31,7 @@ export default function AttachmentMessage({ msg, peerChatPK, fromPeer = false, m
 
     return (
         <Menu id={menuId} items={menuItems} longScale={ATTACHMENT_LONG_SCALE} previewBottomInset={reactionPreviewInset}>
-            <ReactionTray reaction={reaction} active={reactionActive}>
+            <ReactionTray reactions={reactions} users={reactionUsers} fromPeer={fromPeer}>
                 <GlassView
                     glassEffectStyle="clear"
                     tintColor={bubbleTint(theme, fromPeer)}

@@ -3,9 +3,11 @@ import * as Haptics from 'expo-haptics';
 import { Gesture } from 'react-native-gesture-handler';
 
 const TAP_DECISION_MS = 180;
+const OPEN_BLOCK_MS = 420;
 
 export function useMediaTapGesture({ disabled = false, msg, onLike, onOpen }) {
     const lastTapRef = useRef(0);
+    const openBlockUntilRef = useRef(0);
     const tapTimerRef = useRef(null);
     const canLike = typeof onLike === 'function';
 
@@ -33,6 +35,7 @@ export function useMediaTapGesture({ disabled = false, msg, onLike, onOpen }) {
 
         if (isDoubleTap) {
             lastTapRef.current = 0;
+            openBlockUntilRef.current = now + OPEN_BLOCK_MS;
             if (tapTimerRef.current) {
                 clearTimeout(tapTimerRef.current);
                 tapTimerRef.current = null;
@@ -45,6 +48,12 @@ export function useMediaTapGesture({ disabled = false, msg, onLike, onOpen }) {
         if (tapTimerRef.current) {
             clearTimeout(tapTimerRef.current);
             tapTimerRef.current = null;
+        }
+
+        if (now < openBlockUntilRef.current) {
+            lastTapRef.current = now;
+            openBlockUntilRef.current = now + OPEN_BLOCK_MS;
+            return;
         }
 
         if (!disabled && typeof onOpen === 'function') {

@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { forwardRef, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, FlatList, Keyboard, Pressable, Text, TextInput, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import Animated, { Easing, useAnimatedStyle, useDerivedValue, useSharedValue, withTiming } from 'react-native-reanimated';
@@ -50,7 +50,7 @@ function samePeer(a, b) {
     return false;
 }
 
-function PeerCell({ item, onSelect, theme, selected, disabled }) {
+const PeerCell = memo(function PeerCell({ item, onSelect, theme, selected, disabled }) {
     const scale = useSharedValue(1);
     const pressFeedback = tap({
         value: scale,
@@ -61,7 +61,7 @@ function PeerCell({ item, onSelect, theme, selected, disabled }) {
 
     const scaleStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
 
-    const avatar = item?.avatar ? { uri: item.avatar } : null;
+    const avatar = useMemo(() => (item?.avatar ? { uri: item.avatar } : null), [item?.avatar]);
     const label = truncateLabel(getPeerLabel(item), 8);
 
     return (
@@ -73,6 +73,19 @@ function PeerCell({ item, onSelect, theme, selected, disabled }) {
                 </Text>
             </Animated.View>
         </Pressable>
+    );
+}, arePeerCellsEqual);
+
+function arePeerCellsEqual(prev, next) {
+    return (
+        prev.item?.uid === next.item?.uid &&
+        prev.item?.avatar === next.item?.avatar &&
+        prev.item?.active === next.item?.active &&
+        prev.item?.bot === next.item?.bot &&
+        prev.selected === next.selected &&
+        prev.disabled === next.disabled &&
+        prev.onSelect === next.onSelect &&
+        prev.theme?.foreground === next.theme?.foreground
     );
 }
 

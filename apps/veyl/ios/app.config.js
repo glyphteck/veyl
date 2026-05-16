@@ -4,6 +4,10 @@ const easProjectId = process.env.EXPO_PUBLIC_EAS_PROJECT_ID?.trim() || process.e
 const associatedDomains = [`webcredentials:${PASSKEY_DOMAIN}`, ...appLinkDomains.map((domain) => `applinks:${domain}`)];
 const variant = process.env.VEYL_IOS_VARIANT?.trim().toLowerCase() || 'dev';
 const isLocal = variant === 'local';
+const appleTeamId = 'HHTM355M49';
+const lightSplashLogo = './assets/wallet.png';
+const darkSplashLogo = './assets/wallet.png';
+const splashBackground = '#000000';
 
 module.exports = {
     expo: {
@@ -20,11 +24,8 @@ module.exports = {
         orientation: 'portrait',
         userInterfaceStyle: 'automatic',
         newArchEnabled: true,
-        splash: {
-            resizeMode: 'contain',
-            backgroundColor: '#000000',
-        },
         ios: {
+            appleTeamId,
             icon: {
                 light: './assets/lighticon.png',
                 dark: './assets/darkicon.png',
@@ -45,6 +46,21 @@ module.exports = {
         plugins: [
             'expo-router',
             'expo-notifications',
+            [
+                'expo-splash-screen',
+                {
+                    ios: {
+                        image: lightSplashLogo,
+                        imageWidth: 200,
+                        resizeMode: 'contain',
+                        backgroundColor: splashBackground,
+                        dark: {
+                            image: darkSplashLogo,
+                            backgroundColor: splashBackground,
+                        },
+                    },
+                },
+            ],
             [
                 'expo-image-picker',
                 {

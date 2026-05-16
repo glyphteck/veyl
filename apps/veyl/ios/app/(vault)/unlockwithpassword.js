@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated as RNAnimated, Pressable, Text, TextInput, View } from 'react-native';
+import { Alert, Animated as RNAnimated, Pressable, Text, TextInput, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { Eye, EyeOff, Lock, LockOpen, LogOut, Unlock } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
-import { signOut } from 'firebase/auth';
 
 import { useTheme } from '@/providers/themeprovider';
 import { useUser } from '@/providers/userprovider';
@@ -13,9 +12,8 @@ import GlassButton from '@/components/glass/glassbutton';
 import GlassField from '@/components/glass/glassfield';
 import GlassHeader from '@/components/glass/glassheader';
 import Icon from '@/components/icon';
-import { auth } from '@/lib/firebase';
-import { dropPush } from '@/lib/push';
 import { useTap } from '@/lib/tap';
+import { logout } from '@/lib/useractions';
 import { isPassword, MAX_PASSWORD, normalizePassword } from '@glyphteck/shared/password';
 
 export default function UnlockScreen() {
@@ -105,16 +103,21 @@ export default function UnlockScreen() {
         }
     };
 
-    const onLogout = async () => {
+    const performLogout = async (remember) => {
         try {
-            lock?.();
-            await dropPush().catch(() => {});
-            await signOut(auth);
+            await logout({ remember, account: user, lock });
         } catch (err) {
             console.warn('logout failed', err);
         } finally {
             router.replace('/login');
         }
+    };
+
+    const onLogout = () => {
+        Alert.alert('remember account?', 'login faster next time', [
+            { text: 'no thanks', style: 'cancel', onPress: () => performLogout(false) },
+            { text: 'remember', onPress: () => performLogout(true) },
+        ]);
     };
 
     const canSubmit = !disabled && isPassword(password);

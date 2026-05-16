@@ -24,7 +24,8 @@ const DISMISS_DISTANCE = 240;
 const DISMISS_VELOCITY = 1200;
 const SWIPE_VELOCITY = 900;
 const SWIPE_COMMIT_RATIO = 0.5;
-const PAN_AXIS_LOCK = 12;
+const PAN_MIN_DISTANCE = 2;
+const PAN_AXIS_LOCK = 2;
 const PAN_AXIS_RATIO = 1.15;
 const PAN_NONE = 0;
 const PAN_SCRUB = 1;
@@ -58,6 +59,9 @@ const RENDER_RADIUS = 2;
 const ACTION_ROW_H = 48;
 const ACTION_ROW_GAP = 6;
 const EXIT_MEDIA_RADIUS = 64;
+const SWIPE_MEDIA_SCALE = 0.96;
+const SWIPE_MEDIA_RADIUS = 24;
+const SWIPE_MEDIA_DISTANCE = 18;
 
 function clamp(value, min, max) {
     'worklet';
@@ -538,7 +542,7 @@ function VideoSlide({ active, item, rect, registerVideo, onReady, playAllowed, m
     );
 }
 
-function MediaSlide({ active, item, screenW, screenH, mediaStyle, registerVideo, onReady, playAllowed, muted }) {
+function MediaSlide({ active, item, screenW, screenH, mediaStyle, swipeStyle, registerVideo, onReady, playAllowed, muted }) {
     const aspect = getMediaAspect(item);
     const layout = useMemo(() => getViewerLayout(screenW, screenH, aspect, getMediaOrientation(item, aspect)), [aspect, item, screenH, screenW]);
     const rect = getMediaRect(layout.stageW, layout.stageH, aspect);
@@ -563,14 +567,16 @@ function MediaSlide({ active, item, screenW, screenH, mediaStyle, registerVideo,
                         width: rect.width,
                         height: rect.height,
                     },
-                    active ? mediaStyle : null,
+                    swipeStyle,
                 ]}
             >
-                {item.type === 'mp4' ? (
-                    <VideoSlide active={active} item={item} rect={rect} registerVideo={registerVideo} onReady={onReady} playAllowed={playAllowed} muted={muted} />
-                ) : (
-                    <ImageSlide active={active} item={item} onReady={onReady} />
-                )}
+                <Animated.View style={[{ width: '100%', height: '100%' }, active ? mediaStyle : null]}>
+                    {item.type === 'mp4' ? (
+                        <VideoSlide active={active} item={item} rect={rect} registerVideo={registerVideo} onReady={onReady} playAllowed={playAllowed} muted={muted} />
+                    ) : (
+                        <ImageSlide active={active} item={item} onReady={onReady} />
+                    )}
+                </Animated.View>
             </Animated.View>
         </View>
     );
@@ -615,6 +621,7 @@ export function FullscreenRail({ activeIndex, items, onCloseComplete, onMove }) 
     const backdropOpacity = useSharedValue(0);
     const mediaOpacity = useSharedValue(0);
     const mediaRadius = useSharedValue(0);
+    const swipeProgress = useSharedValue(0);
     const saveOpacity = useSharedValue(1);
     const muteOpacity = useSharedValue(activeIsVideo ? 1 : 0);
     const railX = useSharedValue(-activeIndex * slideW);
@@ -644,6 +651,14 @@ export function FullscreenRail({ activeIndex, items, onCloseComplete, onMove }) 
             transform: [{ scale: openScale.value }],
             opacity: mediaOpacity.value,
             borderRadius: mediaRadius.value,
+            overflow: 'hidden',
+        }),
+        []
+    );
+    const swipeMediaStyle = useAnimatedStyle(
+        () => ({
+            transform: [{ scale: 1 - swipeProgress.value * (1 - SWIPE_MEDIA_SCALE) }],
+            borderRadius: swipeProgress.value * SWIPE_MEDIA_RADIUS,
             overflow: 'hidden',
         }),
         []
@@ -707,6 +722,7 @@ export function FullscreenRail({ activeIndex, items, onCloseComplete, onMove }) 
         backdropOpacity.value = withTiming(0, BACKDROP_OUT_TIMING);
         mediaOpacity.value = withTiming(0, MEDIA_OUT_TIMING);
         mediaRadius.value = withTiming(EXIT_MEDIA_RADIUS, MEDIA_OUT_TIMING);
+        swipeProgress.value = withTiming(0, MEDIA_OUT_TIMING);
         saveOpacity.value = withTiming(0, MEDIA_OUT_TIMING);
         muteOpacity.value = withTiming(0, MEDIA_OUT_TIMING);
         openScale.value = withTiming(0.01, MEDIA_OUT_TIMING);
@@ -717,13 +733,14 @@ export function FullscreenRail({ activeIndex, items, onCloseComplete, onMove }) 
             onCloseComplete();
             afterClose?.();
         }, CLOSE_UNMOUNT_MS);
-    }, [backdropOpacity, mediaOpacity, mediaRadius, muteOpacity, onCloseComplete, openScale, saveOpacity]);
+    }, [backdropOpacity, mediaOpacity, mediaRadius, muteOpacity, onCloseComplete, openScale, saveOpacity, swipeProgress]);
 
     useEffect(() => {
         openScale.value = 0.01;
         backdropOpacity.value = 0;
         mediaOpacity.value = 0;
         mediaRadius.value = 0;
+        swipeProgress.value = 0;
         saveOpacity.value = 1;
         mediaShownRef.current = false;
         closingRef.current = false;
@@ -745,7 +762,7 @@ export function FullscreenRail({ activeIndex, items, onCloseComplete, onMove }) 
                 shownTimerRef.current = null;
             }
         };
-    }, [backdropOpacity, mediaOpacity, mediaRadius, openScale, saveOpacity, showMedia]);
+    }, [backdropOpacity, mediaOpacity, mediaRadius, openScale, saveOpacity, showMedia, swipeProgress]);
 
     useEffect(() => {
         const target = -activeIndex * slideW;
@@ -761,8 +778,9 @@ export function FullscreenRail({ activeIndex, items, onCloseComplete, onMove }) 
         }
         setSavedId(null);
         mediaRadius.value = 0;
+        swipeProgress.value = withTiming(0, MEDIA_OUT_TIMING);
         saveOpacity.value = 1;
-    }, [activeIndex, mediaRadius, panStartX, railX, saveOpacity, slideW]);
+    }, [activeIndex, mediaRadius, panStartX, railX, saveOpacity, slideW, swipeProgress]);
 
     useEffect(() => {
         if (activeIsVideo) {
@@ -826,7 +844,7 @@ export function FullscreenRail({ activeIndex, items, onCloseComplete, onMove }) 
     const mediaPan = useMemo(
         () =>
             Gesture.Pan()
-                .minDistance(14)
+                .minDistance(PAN_MIN_DISTANCE)
                 .onTouchesDown((event) => {
                     const touch = getGesturePoint(event);
                     const point = pointToStage(touch.x, touch.y, activeMediaLayout);
@@ -855,13 +873,18 @@ export function FullscreenRail({ activeIndex, items, onCloseComplete, onMove }) 
 
                         const ax = Math.abs(event.translationX);
                         const ay = Math.abs(event.translationY);
+                        if (ax > ay) {
+                            swipeProgress.value = clamp(ax / SWIPE_MEDIA_DISTANCE, 0, 1);
+                        }
                         if (ax < PAN_AXIS_LOCK && ay < PAN_AXIS_LOCK) {
                             return;
                         }
                         if (ax > ay * PAN_AXIS_RATIO) {
                             panMode.value = PAN_SWIPE;
+                            swipeProgress.value = clamp(ax / SWIPE_MEDIA_DISTANCE, 0, 1);
                         } else if (ay > ax * PAN_AXIS_RATIO) {
                             panMode.value = PAN_EXIT;
+                            swipeProgress.value = withTiming(0, MEDIA_OUT_TIMING);
                         } else {
                             return;
                         }
@@ -871,6 +894,7 @@ export function FullscreenRail({ activeIndex, items, onCloseComplete, onMove }) 
                         const step = event.translationX < 0 ? 1 : -1;
                         const hasTarget = step < 0 ? canPrevious : canNext;
                         railX.value = panStartX.value + (hasTarget ? event.translationX : event.translationX * 0.28);
+                        swipeProgress.value = clamp(Math.abs(event.translationX) / SWIPE_MEDIA_DISTANCE, 0, 1);
                         return;
                     }
 
@@ -902,6 +926,7 @@ export function FullscreenRail({ activeIndex, items, onCloseComplete, onMove }) 
                         const hasTarget = step === 0 || (step < 0 ? canPrevious : canNext);
                         const shouldMove = hasTarget && step !== 0;
                         panMode.value = PAN_NONE;
+                        swipeProgress.value = withTiming(0, MEDIA_OUT_TIMING);
                         if (shouldMove) {
                             const target = -(activeIndex + step) * slideW;
                             const remaining = Math.abs(target - railX.value);
@@ -950,6 +975,7 @@ export function FullscreenRail({ activeIndex, items, onCloseComplete, onMove }) 
                         saveOpacity.value = withTiming(1, MEDIA_OUT_TIMING);
                     } else if (panMode.value === PAN_SWIPE) {
                         railX.value = withTiming(-activeIndex * slideW, MEDIA_OUT_TIMING);
+                        swipeProgress.value = withTiming(0, MEDIA_OUT_TIMING);
                     }
                     panMode.value = PAN_NONE;
                     panStartedOnSlider.value = false;
@@ -975,6 +1001,7 @@ export function FullscreenRail({ activeIndex, items, onCloseComplete, onMove }) 
             saveOpacity,
             slideW,
             startScrub,
+            swipeProgress,
         ]
     );
 
@@ -1034,6 +1061,7 @@ export function FullscreenRail({ activeIndex, items, onCloseComplete, onMove }) 
                                         screenW={screenW}
                                         screenH={mediaH}
                                         mediaStyle={activeMediaStyle}
+                                        swipeStyle={swipeMediaStyle}
                                         registerVideo={registerVideo}
                                         onReady={showMedia}
                                         playAllowed={shown}

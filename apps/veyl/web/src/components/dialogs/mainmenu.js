@@ -35,7 +35,6 @@ import { sortProfiles } from '@glyphteck/shared/search/sort';
 import { matchCommands, parseCommand, getTypingUsername } from '@glyphteck/shared/commands';
 import { useChat } from '@/components/providers/chatprovider';
 import { formatUserDisplay, renderMoney, formatFullDateTime } from '@/lib/utils';
-import { logout } from '@/lib/useractions';
 import { useSearch } from '@/lib/search/usesearch';
 import { shortcuts } from '@/lib/shortcuts';
 import { Bitcoin } from '@/components/bitcoin';
@@ -56,7 +55,7 @@ function formatCacheSize(bytes) {
 export default function MainMenu({ close, data }) {
     const router = useRouter();
     const { openDialog } = useDialog();
-    const { uid, settings, chatPK, chatBanned, isAdmin, avatar } = useUser();
+    const { uid, username, settings, chatPK, chatBanned, isAdmin, avatar } = useUser();
     const { copyFundingAddress, balance, bitcoin } = useWallet();
     const { lock, localCache } = useVault();
     const { hasTx, transactions } = useTxData();
@@ -445,7 +444,7 @@ export default function MainMenu({ close, data }) {
                         <span>lock vault</span>
                         <CommandShortcut>{shortcuts.lock}</CommandShortcut>
                     </CommandItem>
-                    <CommandItem onSelect={logout}>
+                    <CommandItem onSelect={() => openDialog('rememberaccount', { user: { uid, username, avatar } })}>
                         <LogOut />
                         <span>logout</span>
                         <CommandShortcut>{shortcuts.logout}</CommandShortcut>

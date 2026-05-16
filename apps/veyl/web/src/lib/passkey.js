@@ -85,13 +85,13 @@ export function isPasskeyEnvironmentMismatchError(error) {
 }
 
 // Passkey authentication functions
-export async function passkeyLogin() {
+export async function passkeyLogin({ uid } = {}) {
     try {
         const origin = window.location.origin;
         const functions = getFunctions();
         const {
             data: { opts },
-        } = await httpsCallable(functions, 'passkeyLoginOptions')({ origin });
+        } = await httpsCallable(functions, 'passkeyLoginOptions')({ origin, uid });
 
         const assertion = await navigator.credentials.get({
             publicKey: optsFromServer(opts),

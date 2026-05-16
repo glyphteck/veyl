@@ -6,8 +6,9 @@ import { useUser } from '@/components/providers/userprovider';
 import { usePeer } from '@/components/providers/peerprovider';
 import { useWallet } from '@/components/providers/walletprovider';
 import { useDialog } from '@/components/providers/dialogprovider';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/avatar';
-import { canReplyToMsg, canShareAttachmentMsg, canShowMsg, getLatestReadOutgoingReceipt, isLikedMsg, isPeerMsg, setLiked, setReqTx } from '@glyphteck/shared/chat/messages';
+import { Avatar, AvatarFallback, StaticAvatar } from '@/components/avatar';
+import { canReplyToMsg, canShareAttachmentMsg, canShowMsg, getLatestReadOutgoingReceipt, isPeerMsg, setReqTx } from '@glyphteck/shared/chat/messages';
+import { useOptimisticMessageReactions } from '@glyphteck/shared/chat/usereactions';
 import { formatUserDisplay, formatFullDateTime } from '@/lib/utils';
 import { getPeerChatPKFromChatId } from '@glyphteck/shared/chat/utils';
 import { getMessageOrderMs } from '@glyphteck/shared/chat/state';
@@ -21,6 +22,7 @@ const LIKE_TAP_DIST = 42;
 const MESSAGE_ROW_ANIMATION_MS = 160;
 const MESSAGE_ROW_EASE = 'cubic-bezier(0.2, 0, 0, 1)';
 const MAX_CHAT_SCROLL_MEMORY = 50;
+const MESSAGE_ACTION_ICON = 'size-4';
 const chatScrollMemory = new Map();
 
 function rememberChatScroll(chatId, scrollTop) {
@@ -37,10 +39,6 @@ function rememberChatScroll(chatId, scrollTop) {
         }
         chatScrollMemory.delete(oldest);
     }
-}
-
-function likePatch(liked) {
-    return { liked: liked ? true : undefined };
 }
 
 function getMsgKey(msg) {
@@ -78,12 +76,12 @@ function SendDot({ show, failed }) {
     );
 }
 
-function ActionButton({ title, icon: Icon, className = 'text-muted', iconClassName = 'size-4', onClick, disabled = false }) {
+function ActionButton({ title, icon: Icon, className = 'text-muted', iconClassName = '', onClick, disabled = false }) {
     return (
         <button
             type="button"
             title={title}
-            className={`grower-lg rounded-full px-0 py-0 disabled:cursor-default disabled:opacity-50 disabled:hover:scale-100 ${className}`}
+            className={`grower-lg flex size-4 items-center justify-center rounded-full px-0 py-0 disabled:cursor-default disabled:opacity-50 disabled:hover:scale-100 ${className}`}
             disabled={disabled}
             onClick={(event) => {
                 event.stopPropagation();
@@ -93,7 +91,7 @@ function ActionButton({ title, icon: Icon, className = 'text-muted', iconClassNa
                 onClick?.();
             }}
         >
-            <Icon className={iconClassName} />
+            <Icon className={`${MESSAGE_ACTION_ICON} ${iconClassName}`.trim()} />
         </button>
     );
 }
@@ -105,7 +103,7 @@ function MessageActions({ actions, fromPeer }) {
 
     return (
         <div className={`absolute top-1/2 z-20 -translate-y-1/2 ${fromPeer ? 'left-full ml-2' : 'right-full mr-2'}`}>
-            <div className="pop group-pop flex items-center gap-1">
+            <div className="pop group-pop flex items-center gap-2">
                 {actions.map(({ key, ...action }) => (
                     <ActionButton key={key} {...action} />
                 ))}
@@ -163,7 +161,7 @@ function makeMessageActions({
                   key: 'save',
                   title: 'save',
                   icon: saving ? Loader : Download,
-                  iconClassName: `size-4 ${saving ? 'animate-spin' : ''}`,
+                  iconClassName: saving ? 'animate-spin' : '',
                   onClick: onSave,
                   disabled: saving,
               }
@@ -227,10 +225,15 @@ function MessageMeta({ time, receiptTime, receiptPeer, userSent }) {
                         onFocus={() => setReceiptHovered(true)}
                         onBlur={() => setReceiptHovered(false)}
                     >
-                        <Avatar bot={!!receiptPeer?.bot} className="size-4 shadow-none">
-                            <AvatarImage src={receiptPeer?.avatar} alt="" />
-                            <AvatarFallback />
-                        </Avatar>
+                        {receiptPeer?.avatar ? (
+                            <span className="block size-4 overflow-hidden rounded-full bg-background">
+                                <StaticAvatar src={receiptPeer.avatar} aria-hidden="true" />
+                            </span>
+                        ) : (
+                            <Avatar bot={!!receiptPeer?.bot} className="size-4 shadow-none">
+                                <AvatarFallback />
+                            </Avatar>
+                        )}
                     </div>
                 ) : null}
             </div>
@@ -355,35 +358,14 @@ const MessageRowShell = forwardRef(function MessageRowShell({ rowState = 'presen
     const innerRef = useRef(null);
     const [height, setHeight] = useState(null);
     const heightRef = useRef(null);
-    const shiftCancelRef = useRef(null);
-    const [shift, setShift] = useState(0);
     const entering = rowState === 'entering';
     const leaving = rowState === 'leaving';
 
-    const setMeasuredHeight = useCallback((nextHeight, center = false) => {
+    const setMeasuredHeight = useCallback((nextHeight) => {
         const next = Math.max(0, Math.ceil(nextHeight));
-        const current = heightRef.current;
-
-        if (center && Number.isFinite(current) && current !== next) {
-            shiftCancelRef.current?.();
-            setShift((next - current) / 2);
-            shiftCancelRef.current = afterNextPaint(() => {
-                shiftCancelRef.current = null;
-                setShift(0);
-            });
-        }
-
         heightRef.current = next;
         setHeight(next);
     }, []);
-
-    useEffect(
-        () => () => {
-            shiftCancelRef.current?.();
-            shiftCancelRef.current = null;
-        },
-        []
-    );
 
     useLayoutEffect(() => {
         const node = innerRef.current;
@@ -394,13 +376,11 @@ const MessageRowShell = forwardRef(function MessageRowShell({ rowState = 'presen
         const measure = () => Math.ceil(node.getBoundingClientRect().height);
 
         if (leaving) {
-            setShift(0);
             setMeasuredHeight(heightRef.current ?? measure());
             return afterNextPaint(() => setMeasuredHeight(0));
         }
 
         if (entering) {
-            setShift(0);
             setMeasuredHeight(0);
             return afterNextPaint(() => setMeasuredHeight(measure()));
         }
@@ -415,7 +395,7 @@ const MessageRowShell = forwardRef(function MessageRowShell({ rowState = 'presen
             const entry = entries[0];
             const blockSize = entry?.borderBoxSize?.[0]?.blockSize ?? entry?.contentRect?.height;
             if (Number.isFinite(blockSize)) {
-                setMeasuredHeight(blockSize, true);
+                setMeasuredHeight(blockSize);
             }
         });
         observer.observe(node);
@@ -441,10 +421,10 @@ const MessageRowShell = forwardRef(function MessageRowShell({ rowState = 'presen
                 style={{
                     width: '100%',
                     opacity: entering || leaving ? 0 : 1,
-                    transform: `${shift ? `translateY(${shift}px) ` : ''}${entering || leaving ? 'scale(0.98)' : 'scale(1)'}`,
+                    transform: entering || leaving ? 'scale(0.98)' : 'scale(1)',
                     transformOrigin: 'center',
                     transition: `opacity ${MESSAGE_ROW_ANIMATION_MS}ms ease-out, transform ${MESSAGE_ROW_ANIMATION_MS}ms ${MESSAGE_ROW_EASE}`,
-                    willChange: entering || leaving || shift ? 'opacity, transform' : undefined,
+                    willChange: entering || leaving ? 'opacity, transform' : undefined,
                 }}
             >
                 {children}
@@ -455,7 +435,7 @@ const MessageRowShell = forwardRef(function MessageRowShell({ rowState = 'presen
 
 export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
     const { selectedChatId, updateMessage, retryMessage, readMessageFile } = useChat();
-    const { chatPK } = useUser();
+    const { avatar, chatPK } = useUser();
     const { peers } = usePeer();
     const { sendMoneyWithSpark } = useWallet();
     const { openDialog } = useDialog();
@@ -583,15 +563,33 @@ export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
         username: peerProfile?.username,
         walletPK: peerChatPK,
     });
+    const reactionUsers = useMemo(
+        () => ({
+            ...(chatPK ? { [chatPK]: { avatar } } : {}),
+            ...(peerChatPK ? { [peerChatPK]: { avatar: peerProfile?.avatar, bot: peerProfile?.bot } } : {}),
+        }),
+        [avatar, chatPK, peerChatPK, peerProfile?.avatar, peerProfile?.bot]
+    );
+    const {
+        getReactions: getOptimisticReactions,
+        toggleReaction: toggleOptimisticReaction,
+    } = useOptimisticMessageReactions({
+        chatId: selectedChatId,
+        chatPK,
+        peerChatPK,
+        messages: msgs,
+        updateMessage,
+        onError: (error) => console.error('message like failed', error),
+    });
     const latestReadReceipt = useMemo(() => getLatestReadOutgoingReceipt(msgs, chatPK, peerChatPK), [chatPK, msgs, peerChatPK]);
     const latestReadReceiptKey = latestReadReceipt?.message?.cid || latestReadReceipt?.message?.id || null;
     const latestReadReceiptTime = useMemo(() => formatMsgFullDateTime(latestReadReceipt?.receipt), [latestReadReceipt?.receipt]);
 
     const canLikeMessage = useCallback(
         (msg) => {
-            return !!(selectedChatId && peerChatPK && msg?.id && !String(msg.id).startsWith('local:') && !msg.pending && !msg.failed);
+            return !!(selectedChatId && chatPK && peerChatPK && msg?.id && !String(msg.id).startsWith('local:') && !msg.pending && !msg.failed);
         },
-        [peerChatPK, selectedChatId]
+        [chatPK, peerChatPK, selectedChatId]
     );
 
     const canSaveMessage = useCallback((msg) => canSaveMsgFile(msg, peerChatPK), [peerChatPK]);
@@ -628,23 +626,14 @@ export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
     );
 
     const toggleLikeMessage = useCallback(
-        async (msg) => {
+        (msg) => {
             if (!canLikeMessage(msg)) {
                 return;
             }
 
-            const liked = !isLikedMsg(msg);
-            const nextMessage = setLiked(msg, liked);
-            patchMessage(msg.id, likePatch(liked));
-
-            try {
-                await updateMessage(selectedChatId, msg.id, nextMessage, peerChatPK);
-            } catch (error) {
-                patchMessage(msg.id, likePatch(isLikedMsg(msg)));
-                console.error('message like failed', error);
-            }
+            toggleOptimisticReaction(msg);
         },
-        [canLikeMessage, patchMessage, peerChatPK, selectedChatId, updateMessage]
+        [canLikeMessage, toggleOptimisticReaction]
     );
 
     const handleMessagePointerUp = useCallback(
@@ -779,7 +768,7 @@ export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
                 const saving = !!msgKey && savingMessages.has(msgKey);
                 const reply = msg?.r ? replyMap.get(msg.r) || null : null;
                 const replyFromPeer = reply ? isPeerMsg(reply, chatPK) : false;
-                const liked = isLikedMsg(msg) && !isReported;
+                const reactions = isReported ? [] : getOptimisticReactions(msg);
                 const receiptPeer = userSent && msgKey && msgKey === latestReadReceiptKey ? peerProfile || {} : null;
                 const actions = makeMessageActions({
                     msg,
@@ -830,9 +819,11 @@ export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
                                     marginRight: userSent ? (showDot ? 0 : -16) : 0,
                                 }}
                             >
-                                <MessageActions actions={actions} fromPeer={fromPeer} />
                                 {isReported ? (
-                                    <ReportedMessage fromPeer={fromPeer} />
+                                    <>
+                                        <MessageActions actions={actions} fromPeer={fromPeer} />
+                                        <ReportedMessage fromPeer={fromPeer} />
+                                    </>
                                 ) : (
                                     <div className="relative min-w-0 max-w-full touch-manipulation" onPointerUp={(event) => handleMessagePointerUp(event, msg)}>
                                         <ChatMessageType
@@ -845,7 +836,9 @@ export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
                                             reply={reply}
                                             replyFromPeer={replyFromPeer}
                                             onReplyPress={() => jumpToReply(msg.r)}
-                                            reactionActive={liked}
+                                            reactions={reactions}
+                                            reactionUsers={reactionUsers}
+                                            actionSlot={<MessageActions actions={actions} fromPeer={fromPeer} />}
                                         />
                                     </div>
                                 )}

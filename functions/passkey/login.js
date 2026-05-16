@@ -18,6 +18,31 @@ const db = admin.firestore();
 const UNLINKED_PASSKEY = 'Passkey is not linked to an account';
 const LOCALHOST_PASSKEY_MISMATCH = 'This passkey was created for a different local host. Use the matching local veyl host or register a new passkey.';
 
+function cleanUid(value) {
+    return typeof value === 'string' ? value.trim() : '';
+}
+
+async function getCredentialsForUid(uid, rpId) {
+    const clean = cleanUid(uid);
+    if (!clean) {
+        return [];
+    }
+
+    const snap = await db.collection('passkeys').where('uid', '==', clean).get();
+    return snap.docs
+        .map((doc) => {
+            const data = doc.data() || {};
+            if (data.rpId !== rpId) {
+                return null;
+            }
+            return {
+                type: 'public-key',
+                id: Buffer.from(doc.id, 'base64url'),
+            };
+        })
+        .filter(Boolean);
+}
+
 /* 3. Generate passkey login options */
 export const passkeyLoginOptions = onCall(async (context) => {
     const origin = resolveOrigin(context);
@@ -28,6 +53,14 @@ export const passkeyLoginOptions = onCall(async (context) => {
     const fido = createFido2Lib(rpId);
 
     const options = await fido.assertionOptions();
+    const uid = cleanUid(context.data?.uid);
+    if (uid) {
+        const allowCredentials = await getCredentialsForUid(uid, rpId);
+        if (!allowCredentials.length) {
+            throw new HttpsError('not-found', UNLINKED_PASSKEY);
+        }
+        options.allowCredentials = allowCredentials;
+    }
 
     // Store challenge
     const challengeString = bufferToBase64url(options.challenge);

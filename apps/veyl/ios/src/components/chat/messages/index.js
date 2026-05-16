@@ -24,8 +24,8 @@ export function ChatMessageType({
     onReplyPress,
     onMediaUnavailable,
     onLike,
-    reaction,
-    reactionActive = false,
+    reactions = [],
+    reactionUsers,
     reactionPreviewInset = 0,
 }) {
     switch (msg?.t) {
@@ -41,24 +41,24 @@ export function ChatMessageType({
                     peerChatPK={peerChatPK}
                     peerDisplayName={peerDisplayName}
                     onReplyPress={onReplyPress}
-                    reaction={reaction}
-                    reactionActive={reactionActive}
+                    reactions={reactions}
+                    reactionUsers={reactionUsers}
                     reactionPreviewInset={reactionPreviewInset}
                 />
             ) : (
-                <TextMessage msg={msg} fromPeer={fromPeer} menuItems={menuItems} menuId={menuId} reaction={reaction} reactionActive={reactionActive} reactionPreviewInset={reactionPreviewInset} />
+                <TextMessage msg={msg} fromPeer={fromPeer} menuItems={menuItems} menuId={menuId} reactions={reactions} reactionUsers={reactionUsers} reactionPreviewInset={reactionPreviewInset} />
             );
         case 'req':
-            return <RequestMessage msg={msg} fromPeer={fromPeer} peerDisplayName={peerDisplayName} onPay={onPay} isPaying={isPaying} menuId={menuId} menuItems={menuItems} onHold={onRequestHold} reaction={reaction} reactionActive={reactionActive} reactionPreviewInset={reactionPreviewInset} />;
+            return <RequestMessage msg={msg} fromPeer={fromPeer} peerDisplayName={peerDisplayName} onPay={onPay} isPaying={isPaying} menuId={menuId} menuItems={menuItems} onHold={onRequestHold} reactions={reactions} reactionUsers={reactionUsers} reactionPreviewInset={reactionPreviewInset} />;
         case 'img':
-            return <ImageMessage msg={msg} peerChatPK={peerChatPK} menuItems={menuItems} menuId={menuId} onLike={onLike} reaction={reaction} reactionActive={reactionActive} reactionPreviewInset={reactionPreviewInset} />;
+            return <ImageMessage msg={msg} peerChatPK={peerChatPK} fromPeer={fromPeer} menuItems={menuItems} menuId={menuId} onLike={onLike} reactions={reactions} reactionUsers={reactionUsers} reactionPreviewInset={reactionPreviewInset} />;
         case 'mp3':
-            return <AudioMessage msg={msg} peerChatPK={peerChatPK} fromPeer={fromPeer} menuItems={menuItems} menuId={menuId} reaction={reaction} reactionActive={reactionActive} reactionPreviewInset={reactionPreviewInset} />;
+            return <AudioMessage msg={msg} peerChatPK={peerChatPK} fromPeer={fromPeer} menuItems={menuItems} menuId={menuId} reactions={reactions} reactionUsers={reactionUsers} reactionPreviewInset={reactionPreviewInset} />;
         case 'mp4':
-            return <VideoMessage msg={msg} peerChatPK={peerChatPK} fromPeer={fromPeer} menuItems={menuItems} menuId={menuId} onUnavailable={onMediaUnavailable} onLike={onLike} reaction={reaction} reactionActive={reactionActive} reactionPreviewInset={reactionPreviewInset} />;
+            return <VideoMessage msg={msg} peerChatPK={peerChatPK} fromPeer={fromPeer} menuItems={menuItems} menuId={menuId} onUnavailable={onMediaUnavailable} onLike={onLike} reactions={reactions} reactionUsers={reactionUsers} reactionPreviewInset={reactionPreviewInset} />;
         case 'file':
-            return <AttachmentMessage msg={msg} peerChatPK={peerChatPK} fromPeer={fromPeer} menuItems={menuItems} menuId={menuId} reaction={reaction} reactionActive={reactionActive} reactionPreviewInset={reactionPreviewInset} />;
+            return <AttachmentMessage msg={msg} peerChatPK={peerChatPK} fromPeer={fromPeer} menuItems={menuItems} menuId={menuId} reactions={reactions} reactionUsers={reactionUsers} reactionPreviewInset={reactionPreviewInset} />;
         default:
-            return <UnsupportedMessage msg={msg} menuItems={menuItems} menuId={menuId} reaction={reaction} reactionActive={reactionActive} reactionPreviewInset={reactionPreviewInset} />;
+            return <UnsupportedMessage msg={msg} fromPeer={fromPeer} menuItems={menuItems} menuId={menuId} reactions={reactions} reactionUsers={reactionUsers} reactionPreviewInset={reactionPreviewInset} />;
     }
 }

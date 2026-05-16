@@ -1,7 +1,50 @@
-import { putAvatar } from '@glyphteck/shared/files';
-import { storage } from './firebase';
+import { dropAvatar, putAvatar } from '@glyphteck/shared/files';
+import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
+import * as FileSystem from 'expo-file-system/legacy';
+import { doc, updateDoc } from 'firebase/firestore';
+import { db, storage } from './firebase';
 
-export async function uploadAvatar({ uid, uri, mimeType }) {
+function readAvatarGeneration(value) {
+    const version = Number(value);
+    if (!Number.isSafeInteger(version) || version <= 0) {
+        throw new Error('Avatar upload did not return a valid generation.');
+    }
+    return version;
+}
+
+async function updateProfileAvatar(uid, avatar) {
+    await updateDoc(doc(db, 'profiles', uid), { avatar });
+}
+
+async function prepareAvatarBlob(uri) {
+    let source = null;
+    let rendered = null;
+    let savedUri = '';
+
+    try {
+        source = await ImageManipulator.manipulate(uri).renderAsync();
+        const side = Math.max(1, Math.min(source.width || 1, source.height || 1));
+        const originX = Math.max(0, Math.floor(((source.width || side) - side) / 2));
+        const originY = Math.max(0, Math.floor(((source.height || side) - side) / 2));
+        rendered = await ImageManipulator.manipulate(source)
+            .crop({ originX, originY, width: side, height: side })
+            .resize({ width: 128, height: 128 })
+            .renderAsync();
+        const saved = await rendered.saveAsync({
+            compress: 0.85,
+            format: SaveFormat.WEBP,
+        });
+        savedUri = saved?.uri || '';
+        const response = await fetch(savedUri);
+        return response.blob();
+    } finally {
+        await FileSystem.deleteAsync(savedUri, { idempotent: true }).catch(() => {});
+        rendered?.release?.();
+        source?.release?.();
+    }
+}
+
+export async function uploadAvatar({ uid, uri }) {
     if (!uid) {
         throw new Error('uid is required');
     }
@@ -9,8 +52,34 @@ export async function uploadAvatar({ uid, uri, mimeType }) {
         throw new Error('storage unavailable');
     }
 
-    const response = await fetch(uri);
-    const blob = await response.blob();
+    const blob = await prepareAvatarBlob(uri);
+    const result = await putAvatar(storage, uid, blob, 'image/webp');
+    await updateProfileAvatar(uid, readAvatarGeneration(result?.generation));
+    return result?.url || null;
+}
 
-    return putAvatar(storage, uid, blob, mimeType || 'image/jpeg');
+export async function skipAvatar({ uid }) {
+    if (!uid) {
+        throw new Error('uid is required');
+    }
+
+    await updateProfileAvatar(uid, null);
+}
+
+export async function deleteAvatar({ uid }) {
+    if (!uid) {
+        throw new Error('uid is required');
+    }
+    if (!storage) {
+        throw new Error('storage unavailable');
+    }
+
+    try {
+        await dropAvatar(storage, uid);
+    } catch (error) {
+        if (error?.code !== 'storage/object-not-found') {
+            throw error;
+        }
+    }
+    await updateProfileAvatar(uid, null);
 }

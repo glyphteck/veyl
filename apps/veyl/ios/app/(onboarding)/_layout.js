@@ -14,12 +14,14 @@ export default function OnboardingLayout() {
     const needsPassword = hasUsername && !hasSeed;
     const acceptedRules = hasCurrentCommunityRules(user);
     const needsRules = hasUsername && !acceptedRules;
-    const needsAvatar = needsRules && !hasSeed;
+    const canOpenAvatar = hasUsername && hasSeed && acceptedRules;
 
     return (
         <Stack
             screenOptions={{
                 headerShown: false,
+                gestureEnabled: true,
+                fullScreenGestureEnabled: true,
                 animationDuration: 500,
                 contentStyle: { backgroundColor: theme?.background },
             }}
@@ -27,7 +29,7 @@ export default function OnboardingLayout() {
             <Stack.Protected guard={!hasUsername}>
                 <Stack.Screen name="getusername" />
             </Stack.Protected>
-            <Stack.Protected guard={needsAvatar}>
+            <Stack.Protected guard={canOpenAvatar}>
                 <Stack.Screen name="getavatar" />
             </Stack.Protected>
             <Stack.Protected guard={needsRules}>

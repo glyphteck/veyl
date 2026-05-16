@@ -13,7 +13,6 @@ export function createPeersApi({ db, storage, getStorage, network }) {
 
     const walletNetwork = normalizeWalletNetwork(network);
     const avatarCache = new Map();
-    const refreshedAvatars = new Set();
     const profileCache = new Map();
     const walletToUid = new Map();
     const chatToUid = new Map();
@@ -24,9 +23,12 @@ export function createPeersApi({ db, storage, getStorage, network }) {
         return typeof bot === 'string' ? bot : 'bot';
     }
 
-    function createProfileFromDoc(docSnap) {
-        const data = docSnap.data();
-        const uid = docSnap.id;
+    function readAvatarVersion(value) {
+        const version = Number(value);
+        return Number.isSafeInteger(version) && version >= 0 ? version : null;
+    }
+
+    function createProfileFromData(uid, data) {
         return {
             username: data?.username || null,
             avatar: null,
@@ -34,57 +36,112 @@ export function createPeersApi({ db, storage, getStorage, network }) {
             chatPK: data?.chatPK || null,
             active: data?.active ?? false,
             bot: readBotMarker(data),
+            avatarVersion: readAvatarVersion(data?.avatar),
             uid,
         };
     }
 
-    function cacheBustUrl(url) {
+    function createProfileFromDoc(docSnap) {
+        return createProfileFromData(docSnap.id, docSnap.data());
+    }
+
+    function avatarUrlWithVersion(url, version) {
         if (!url) return null;
-        return `${url}${url.includes('?') ? '&' : '?'}v=${Date.now().toString(36)}`;
+        return version == null ? url : `${url}${url.includes('?') ? '&' : '?'}v=${encodeURIComponent(String(version))}`;
     }
 
     async function getAvatarUrl(uid, options = {}) {
         if (!uid) return null;
+        const version = readAvatarVersion(options?.version);
+        const key = version == null ? 'unknown' : String(version);
         const force = options?.force === true;
-        if (force) {
-            avatarCache.delete(uid);
+        const cached = avatarCache.get(uid);
+        if (!force && cached?.key === key) {
+            return cached.promise;
         }
-        if (!avatarCache.has(uid)) {
-            const storage = resolveStorage();
-            if (!storage) return null;
-            avatarCache.set(
-                uid,
-                getFileUrl(storage, avatarPath(uid))
-                    .then((url) => (force ? cacheBustUrl(url) : url))
-                    .catch(() => null)
-            );
-        }
-        return avatarCache.get(uid);
+
+        const storage = resolveStorage();
+        if (!storage) return null;
+        const promise = getFileUrl(storage, avatarPath(uid))
+            .then((url) => avatarUrlWithVersion(url, version))
+            .catch(() => null);
+        avatarCache.set(uid, { key, promise });
+        return promise;
     }
 
-    function shouldRefreshAvatar(uid, options = {}) {
-        return !!(uid && options?.refreshAvatar && !refreshedAvatars.has(uid));
+    function clearAvatarUrl(uid) {
+        if (uid) avatarCache.delete(uid);
     }
 
     function hasPeerKeys(profile) {
         return !!(profile?.walletPK || profile?.chatPK);
     }
 
-    function cachePeer(profile) {
-        if (!profile?.uid || !hasPeerKeys(profile)) return null;
-        const existing = profileCache.get(profile.uid);
-        const nextProfile = existing
+    function avatarStateChanged(existing, profile) {
+        if (!existing || !profile) return false;
+        if (profile.avatarVersion == null) {
+            return existing.avatarVersion != null || !!existing.avatar;
+        }
+        return profile.avatarVersion !== (existing.avatarVersion ?? null);
+    }
+
+    function mergeCachedProfile(existing, profile) {
+        const changedAvatarState = avatarStateChanged(existing, profile);
+        const avatar = profile.avatarVersion == null ? null : profile.avatar ?? (!changedAvatarState ? existing?.avatar ?? null : null);
+        return existing
             ? {
                   ...existing,
                   ...profile,
-                  avatar: profile.avatar ?? existing.avatar ?? null,
+                  avatar,
               }
-            : profile;
+            : {
+                  ...profile,
+                  avatar: avatar ?? null,
+              };
+    }
 
-        profileCache.set(profile.uid, nextProfile);
-        if (nextProfile.walletPK) walletToUid.set(nextProfile.walletPK, nextProfile.uid);
-        if (nextProfile.chatPK) chatToUid.set(nextProfile.chatPK, nextProfile.uid);
-        return nextProfile;
+    function profileChanged(existing, profile) {
+        return (
+            existing.username !== profile.username ||
+            existing.walletPK !== profile.walletPK ||
+            existing.chatPK !== profile.chatPK ||
+            existing.active !== profile.active ||
+            existing.bot !== profile.bot ||
+            existing.avatarVersion !== profile.avatarVersion ||
+            (existing.avatar ?? null) !== (profile.avatar ?? null)
+        );
+    }
+
+    function storeProfile(profile) {
+        profileCache.set(profile.uid, profile);
+        if (profile.walletPK) walletToUid.set(profile.walletPK, profile.uid);
+        if (profile.chatPK) chatToUid.set(profile.chatPK, profile.uid);
+        return profile;
+    }
+
+    function cachePeer(profile) {
+        if (!profile?.uid || !hasPeerKeys(profile)) return null;
+        const existing = profileCache.get(profile.uid);
+        return storeProfile(mergeCachedProfile(existing, profile));
+    }
+
+    async function resolveProfileAvatar(profile, existing, options = {}) {
+        if (!profile?.uid) return null;
+        if (profile.avatarVersion == null) {
+            clearAvatarUrl(profile.uid);
+            return null;
+        }
+
+        const changedAvatarState = avatarStateChanged(existing, profile);
+        const currentAvatar = changedAvatarState ? null : profile.avatar ?? existing?.avatar ?? null;
+        if (currentAvatar && (options?.refreshAvatar !== true || profile.avatarVersion != null)) {
+            return currentAvatar;
+        }
+
+        const avatarUrl = await getAvatarUrl(profile.uid, {
+            version: profile.avatarVersion,
+        });
+        return avatarUrl || null;
     }
 
     function hydrateProfiles(profiles) {
@@ -110,15 +167,10 @@ export function createPeersApi({ db, storage, getStorage, network }) {
     async function buildPeer(profile, stats, options = {}) {
         if (!profile?.uid || !hasPeerKeys(profile)) return null;
 
-        const refreshAvatar = shouldRefreshAvatar(profile.uid, options);
-        if (refreshAvatar || !profile.avatar) {
-            const avatarUrl = await getAvatarUrl(profile.uid, { force: refreshAvatar });
-            if (refreshAvatar) {
-                refreshedAvatars.add(profile.uid);
-                profile.avatar = avatarUrl || null;
-            } else if (avatarUrl) {
-                profile.avatar = avatarUrl;
-            }
+        const avatar = await resolveProfileAvatar(profile, profileCache.get(profile.uid), options);
+        if ((profile.avatar ?? null) !== avatar) {
+            profile.avatar = avatar;
+            storeProfile(profile);
         }
 
         const peer = { ...profile };
@@ -159,53 +211,22 @@ export function createPeersApi({ db, storage, getStorage, network }) {
             const docSnap = await getDoc(docRef);
             if (!docSnap.exists()) return null;
 
-            const data = docSnap.data();
-            const nextProfile = {
-                username: data?.username || null,
-                avatar: null,
-                walletPK: resolveWalletPK(data, walletNetwork),
-                chatPK: data?.chatPK || null,
-                active: data?.active ?? false,
-                bot: readBotMarker(data),
-                uid,
-            };
+            const nextProfile = createProfileFromDoc(docSnap);
             const existing = profileCache.get(uid);
-            const refreshAvatar = shouldRefreshAvatar(uid, options);
-            const refreshedAvatar = refreshAvatar ? await getAvatarUrl(uid, { force: true }) : null;
-            if (refreshAvatar) {
-                refreshedAvatars.add(uid);
-            }
+            const nextAvatar = await resolveProfileAvatar(nextProfile, existing, options);
+            const merged = mergeCachedProfile(existing, { ...nextProfile, avatar: nextAvatar });
 
             if (existing) {
-                const changed =
-                    existing.username !== nextProfile.username ||
-                    existing.walletPK !== nextProfile.walletPK ||
-                    existing.chatPK !== nextProfile.chatPK ||
-                    existing.active !== nextProfile.active ||
-                    existing.bot !== nextProfile.bot;
-                const nextAvatar = refreshAvatar ? refreshedAvatar || null : existing.avatar ?? nextProfile.avatar ?? null;
-
-                if (!changed && nextAvatar === (existing.avatar ?? null)) {
+                if (!profileChanged(existing, merged)) {
                     return null;
                 }
 
-                const merged = {
-                    ...existing,
-                    ...nextProfile,
-                    avatar: nextAvatar,
-                };
-                profileCache.set(uid, merged);
-                if (merged.walletPK) walletToUid.set(merged.walletPK, merged.uid);
-                if (merged.chatPK) chatToUid.set(merged.chatPK, merged.uid);
+                storeProfile(merged);
                 return { uid, active: merged.active };
             } else {
-                const profile = cachePeer(nextProfile);
-                if (!profile) return null;
-                if (refreshAvatar) {
-                    profile.avatar = refreshedAvatar || null;
-                    profileCache.set(uid, profile);
-                }
-                return { uid, active: profile.active };
+                if (!hasPeerKeys(merged)) return null;
+                storeProfile(merged);
+                return { uid, active: merged.active };
             }
         } catch {
             return null;
@@ -254,6 +275,7 @@ export function createPeersApi({ db, storage, getStorage, network }) {
                 chatPK: partialProfile.chatPK || null,
                 active: partialProfile.active ?? false,
                 bot: partialProfile.bot || null,
+                avatarVersion: readAvatarVersion(partialProfile.avatarVersion),
                 uid: partialProfile.uid,
             };
         } else if (partialProfile.uid) {
@@ -275,6 +297,7 @@ export function createPeersApi({ db, storage, getStorage, network }) {
                     chatPK: partialProfile.chatPK || null,
                     active: partialProfile.active ?? false,
                     bot: partialProfile.bot || null,
+                    avatarVersion: readAvatarVersion(partialProfile.avatarVersion),
                     uid: partialProfile.uid || null,
                 };
             } else {

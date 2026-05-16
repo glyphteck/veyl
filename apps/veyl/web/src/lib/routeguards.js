@@ -51,6 +51,7 @@ export async function getOnboardingState(uid) {
     return {
         uid: nextUid,
         hasUsername: !!profile?.username,
+        hasAvatarEntry: !!profile && Object.prototype.hasOwnProperty.call(profile, 'avatar'),
         hasSeed: seedDoc.exists,
         communityRulesVersion: user?.communityRulesVersion || null,
         communityRulesDate: user?.communityRulesDate || null,
@@ -62,6 +63,7 @@ export async function getOnboardingState(uid) {
 export async function requireVaultReady(uid) {
     const state = await getOnboardingState(uid);
     if (!state.hasUsername) redirect('/getusername');
+    if (!state.hasAvatarEntry) redirect('/getavatar');
     if (!state.hasCurrentCommunityRules) redirect('/community');
     if (!state.hasSeed) redirect('/getpassword');
     return state;
@@ -70,8 +72,9 @@ export async function requireVaultReady(uid) {
 export async function requireUsernameStep() {
     const state = await getOnboardingState();
     if (state.hasUsername) {
-        if (state.hasSeed && !state.hasCurrentCommunityRules) redirect('/community');
-        redirect(state.hasSeed ? '/unlock' : '/getavatar');
+        if (!state.hasAvatarEntry) redirect('/getavatar');
+        if (!state.hasCurrentCommunityRules) redirect('/community');
+        redirect(state.hasSeed ? '/unlock' : '/getpassword');
     }
     return state;
 }
@@ -79,13 +82,17 @@ export async function requireUsernameStep() {
 export async function requireAvatarStep() {
     const state = await getOnboardingState();
     if (!state.hasUsername) redirect('/getusername');
-    if (state.hasSeed) redirect(state.hasCurrentCommunityRules ? '/unlock' : '/community');
+    if (state.hasAvatarEntry) {
+        if (!state.hasCurrentCommunityRules) redirect('/community');
+        redirect(state.hasSeed ? '/unlock' : '/getpassword');
+    }
     return state;
 }
 
 export async function requireCommunityStep() {
     const state = await getOnboardingState();
     if (!state.hasUsername) redirect('/getusername');
+    if (!state.hasAvatarEntry) redirect('/getavatar');
     if (state.hasCurrentCommunityRules) redirect(state.hasSeed ? '/unlock' : '/getpassword');
     return state;
 }
@@ -93,6 +100,7 @@ export async function requireCommunityStep() {
 export async function requirePasswordStep() {
     const state = await getOnboardingState();
     if (!state.hasUsername) redirect('/getusername');
+    if (!state.hasAvatarEntry) redirect('/getavatar');
     if (!state.hasCurrentCommunityRules) redirect('/community');
     if (state.hasSeed) redirect('/unlock');
     return state;

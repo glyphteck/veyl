@@ -19,6 +19,8 @@ Do not build new buttons from raw `Pressable` unless the shape is genuinely cust
 
 Tap feedback is scale-first. Press targets shrink on press down with the shared spring, then return on release. The default release haptic is soft and should stay on release for normal taps; use `hapticIn` only when immediate press-down confirmation is intentional, and use `hapticPress` for custom release cases such as menu rows that should not use the default. Prefer `tap` for reanimated values and `useTap` for React Native `Animated.Value` surfaces.
 
+For controls that appear or disappear in place, use `usePop` from `src/lib/pop.js` so the item scales in and can animate width, height, or adjacent gaps. Keep normal press feedback on the child press target when a popped item is also tappable.
+
 Use `160ms` as the default fixed animation time for responsive UI state changes, including button/toggle state changes, avatar selection borders, menu/dialog fades, search focus crossfades, and chat row layout transitions for height changes, inserts, and removals. Timings in the `100ms` to `200ms` range should usually normalize to `160ms`; keep deliberately different longer/shorter timings, springs, gesture physics, media viewer staging, and spinner behavior only when they are tuned for a specific feel.
 
 Route and toolbar buttons usually use `GlassIcon`. The common size is `56`, icon size defaults to half that, and rounded square route buttons commonly use `rounded={16}`. Full circular buttons use the default `rounded="full"`. Accent actions set `accent`, which flips to foreground tint with background-colored content.
@@ -91,6 +93,8 @@ Buttons are intentionally thin primitives. `Button` supplies layout, rounded ful
 - `grower`, `grower-sm`, `grower-lg`: icon/action hover growth.
 - `shrinker`, `shrinker-fixed`, `shrinker-fixed-sm`: larger text/profile/menu controls that press inward.
 - `mainmenu`: the center search route button in the navbar.
+
+For web controls that appear or disappear in place, wrap the control in `.pop` and toggle `data-open="true"`. Put `grower*` or `shrinker*` on the inner `Button` when the popped item also needs press feedback, so the pop transform and press transform do not fight on the same element.
 
 Route buttons and compact toolbar actions are usually icon-only `Button`s with lucide icons and `grower-lg`. Navbar route icons are commonly `size-6`; default lucide styling sets icons to `size-5` and `stroke-[2.5]`. Chat composer/action icons often use `size-5`; standalone utility actions often use `size-6`.
 

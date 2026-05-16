@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/tabs';
 import { ToggleGroup, ToggleGroupItem } from '@/components/togglegroup';
 import { useUser } from '@/components/providers/userprovider';
 import UpdateAvatar from '@/components/updateavatar';
-import { uploadAvatar } from '@/lib/useractions';
+import { deleteAvatar, uploadAvatar } from '@/lib/useractions';
 
 const settingsSchema = z.object({
     moneyFormat: z.enum(['btc', 'usd', 'sats']),
@@ -33,8 +33,10 @@ const MONEY_LABELS = {
 
 export default function Settings({ data, close }) {
     const [selectedAvatar, setSelectedAvatar] = useState(null);
+    const [avatarHidden, setAvatarHidden] = useState(false);
+    const [avatarBusy, setAvatarBusy] = useState(false);
     const [tooltip, setTooltip] = useState('save');
-    const { settings, uid, avatar, avatarBanned, refetchAvatar, updateSettings } = useUser();
+    const { settings, uid, avatar, avatarBanned, refetchAvatar, clearAvatar, updateSettings } = useUser();
     const hasChangesRef = useRef(false);
     const isManualSaveRef = useRef(false);
 
@@ -63,7 +65,6 @@ export default function Settings({ data, close }) {
                 onBlur: settings.autolock.onBlur,
             },
         });
-        setSelectedAvatar(null);
         hasChangesRef.current = false;
         isManualSaveRef.current = false;
     }, [form, settings]);
@@ -75,11 +76,40 @@ export default function Settings({ data, close }) {
         return () => subscription.unsubscribe();
     }, [form]);
 
+    const handleAvatarSelect = (imageData) => {
+        setAvatarHidden(false);
+        setSelectedAvatar(imageData);
+    };
+
     const handleAvatarUpload = async (imageData) => {
-        if (avatarBanned) return;
-        const success = await uploadAvatar(imageData);
-        if (success) {
-            await refetchAvatar();
+        if (avatarBanned || avatarBusy) return;
+        setAvatarBusy(true);
+        try {
+            const success = await uploadAvatar(imageData);
+            if (success) {
+                await refetchAvatar({ optimistic: true });
+            } else {
+                setSelectedAvatar(null);
+            }
+        } finally {
+            setAvatarBusy(false);
+        }
+    };
+
+    const handleAvatarDelete = async () => {
+        if (avatarBusy) return;
+        setAvatarHidden(true);
+        setSelectedAvatar(null);
+        setAvatarBusy(true);
+        try {
+            const success = await deleteAvatar();
+            if (success) {
+                clearAvatar?.();
+            } else {
+                setAvatarHidden(false);
+            }
+        } finally {
+            setAvatarBusy(false);
         }
     };
 
@@ -134,7 +164,17 @@ export default function Settings({ data, close }) {
                                             <CircleUserRound />
                                             <span className="hidden sm:inline">avatar</span>
                                         </div>
-                                        <UpdateAvatar className="size-12" currentAvatar={avatar} selectedImage={selectedAvatar} onImageSelect={setSelectedAvatar} onImageUpload={handleAvatarUpload} />
+                                        <UpdateAvatar
+                                            className="size-12"
+                                            currentAvatar={avatarHidden ? null : avatar}
+                                            disabled={avatarBusy}
+                                            onImageSelect={handleAvatarSelect}
+                                            onImageUpload={handleAvatarUpload}
+                                            onRemove={handleAvatarDelete}
+                                            removeDisabled={avatarBusy}
+                                            selectedImage={selectedAvatar}
+                                            showRemove={!!(selectedAvatar || (!avatarHidden && avatar)) && !avatarBusy}
+                                        />
                                     </div>
                                 </div>
                             </Card>

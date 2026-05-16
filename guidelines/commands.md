@@ -65,11 +65,38 @@ The workflows preserve the old task behavior while suppressing routine command o
 Non-interactive forms are also available:
 
 ```bash
-bun push --version patch --message "update"
-bun merge --pr 123 --version patch --message "update"
+bun push --version patch --message "document worktree task workflow"
+bun merge --pr 123 --version patch --message "merge wallet fee controls"
 ```
 
 Use `bun push --help` or `bun merge --help` for the script's current usage text.
+
+## Worktrees
+
+Use [workflow.md](workflow.md) for when worktrees are appropriate. In short, use the current checkout for small work and reserve linked worktrees for large or collision-prone tasks.
+
+Prefer worktrees outside the repo root:
+
+```bash
+mkdir -p ../worktrees
+git worktree add -b shortbranch ../worktrees/shortbranch
+git worktree list
+```
+
+Resume an existing task branch with:
+
+```bash
+git worktree add ../worktrees/shortbranch shortbranch
+```
+
+Remove completed or abandoned worktrees after confirming the diff is merged, moved, or intentionally discarded:
+
+```bash
+git worktree remove ../worktrees/shortbranch
+git branch -d shortbranch
+```
+
+`bun push` pushes the current `HEAD` to `main` and force-updates `regtest`. It is not a feature-branch publish command. Before using `bun push` or `bun merge`, confirm the current checkout, branch, and intended diff.
 
 ## Backend Deploys
 
@@ -90,6 +117,7 @@ bun make cors
 - veyl web always uses Turbopack for local dev.
 - `bun veyl clear` clears web `.next`, iOS `.expo`, and Metro cache before starting the combined runtime.
 - `bun veyl web clear` clears only the veyl web `.next` cache before starting.
+- `bun veyl web mem` starts web with V8 heap snapshots near the heap limit; combine with `trace` for Turbopack trace output or `inspect` for Chrome DevTools memory profiling.
 - `bun veyl ios clear` clears only the veyl iOS `.expo` and Metro caches before starting.
 - `bun veyl ios local` installs/runs the standalone `veyl local` iOS build on `REGTEST` with bundle id `com.glyphteck.veyl.local`.
 - `bun veyl mainnet` and `bun veyl regtest` apply the selected network to web, iOS, and bot.
@@ -103,6 +131,8 @@ links.veylDevWeb
 ```
 
 `bun veyl web` is expected to bind to that host with local HTTPS so the shared `glyphteck.com` RP works without a localhost passkey silo.
+
+The web runner warns when the Next/Turbopack process tree grows past `VEYL_WEB_MEMORY_WARN_MB` MB RSS, defaulting to `3200`. Use `VEYL_WEB_MEMORY_CHECK_MS` to change the polling interval when diagnosing dev-server leaks.
 
 Local root-site work belongs in the separate Website repo.
 

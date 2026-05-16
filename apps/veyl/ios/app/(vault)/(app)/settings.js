@@ -1,19 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, AppState, Linking, Pressable, ScrollView, Switch, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Animated, AppState, Linking, Pressable, ScrollView, Switch, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronLeft, CircleDollarSign, FileText, KeyRound, Lock, LogOut, ScanQrCode, Settings, Shield, Timer, Trash2, UserX } from 'lucide-react-native';
 import { useNavigation, useRouter } from 'expo-router';
-import { signOut } from 'firebase/auth';
 
 import GlassFooter from '@/components/glass/glassfooter';
 import GlassHeader from '@/components/glass/glassheader';
 import GlassView from '@/components/glass/glassview';
 import Icon from '@/components/icon';
-import { auth } from '@/lib/firebase';
 import { clearFaceIdPassword, FaceIdIcon } from '@/lib/faceid';
 import { clearMsgImageCache } from '@/lib/msgimagecache';
-import { dropPush } from '@/lib/push';
 import { useTap } from '@/lib/tap';
+import { logout } from '@/lib/useractions';
 import { useTheme } from '@/providers/themeprovider';
 import { useUser } from '@/providers/userprovider';
 import { useVault } from '@/providers/vaultprovider';
@@ -351,19 +349,26 @@ export default function SettingsScreen() {
         void Linking.openSettings();
     }, []);
 
-    const handleLogout = async () => {
+    const performLogout = async (remember) => {
         if (isLoggingOut) return;
         setIsLoggingOut(true);
         try {
             await saveSettings();
-            await dropPush().catch(() => {});
-            await signOut(auth);
+            await logout({ remember, account: user });
         } catch (err) {
             console.warn('logout failed', err);
             if (openRef.current) {
                 setIsLoggingOut(false);
             }
         }
+    };
+
+    const handleLogout = () => {
+        if (isLoggingOut) return;
+        Alert.alert('remember account?', 'login faster next time', [
+            { text: 'no thanks', style: 'cancel', onPress: () => performLogout(false) },
+            { text: 'remember', onPress: () => performLogout(true) },
+        ]);
     };
 
     const openDeleteAccount = useCallback(() => {

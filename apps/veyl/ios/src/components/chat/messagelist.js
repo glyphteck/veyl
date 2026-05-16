@@ -3,7 +3,6 @@ import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'r
 import { useNavigation, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
-import { Image as ExpoImage } from 'expo-image';
 import { httpsCallable } from 'firebase/functions';
 import { Copy, Download, Flag, History, Reply, RotateCcw, Share2, SquarePen, Trash2 } from 'lucide-react-native';
 import Animated, { Easing, FadeIn, FadeOut, LinearTransition, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
@@ -16,9 +15,9 @@ import { useMediaViewer } from '@/providers/mediaviewerprovider';
 import { useUser } from '@/providers/userprovider';
 import { useWallet } from '@/providers/walletprovider';
 import GlassView from '@/components/glass/glassview';
-import Avatar from '@/components/avatar';
+import Avatar, { StaticAvatar } from '@/components/avatar';
 import { ChatMessageType, TextBubble } from '@/components/chat/messages';
-import { REACTION_MARK_BOTTOM, REACTION_MARK_H, REACTION_MARK_INSET, REACTION_MARK_W, REACTION_SPACE } from '@/components/chat/messages/reactiontray';
+import { REACTION_SPACE } from '@/components/chat/messages/reactiontray';
 import { MessageGestureProvider } from '@/components/chat/messagegesturecontext';
 import Icon from '@/components/icon';
 import { KeyboardGestureArea, KeyboardListScrollView } from '@/components/keyboardscroll';
@@ -28,8 +27,8 @@ import { getMediaViewerKey, isMediaViewerMsg } from '@/lib/chatmediaitems';
 import { copyMessageImage, copyMessageText, saveMessageFile, saveMessageImage } from '@/lib/chatdownloads';
 import { stageShareMedia } from '@/lib/sharemedia';
 import { functions, storage } from '@/lib/firebase';
-import { bubbleTint } from '@/lib/messages';
-import { canReplyToMsg, canShareAttachmentMsg, canShowMsg, getLatestReadOutgoingReceipt, isLikedMsg, isPeerMsg, setLiked, setReqTx } from '@glyphteck/shared/chat/messages';
+import { canReplyToMsg, canShareAttachmentMsg, canShowMsg, getLatestReadOutgoingReceipt, isPeerMsg, setReqTx } from '@glyphteck/shared/chat/messages';
+import { useOptimisticMessageReactions } from '@glyphteck/shared/chat/usereactions';
 import { makeFileId, reportEvidencePath } from '@glyphteck/shared/files';
 import { buildReportFields, getReportAttachmentMeta } from '@glyphteck/shared/report';
 import { formatTimeHHMM } from '@glyphteck/shared/utils';
@@ -48,19 +47,11 @@ const MESSAGE_ROW_EASING = Easing.out(Easing.cubic);
 const MESSAGE_ROW_LAYOUT = LinearTransition.duration(MESSAGE_ROW_ANIMATION_MS).easing(MESSAGE_ROW_EASING);
 const MESSAGE_ROW_ENTERING = FadeIn.duration(MESSAGE_ROW_ANIMATION_MS).easing(MESSAGE_ROW_EASING);
 const MESSAGE_ROW_EXITING = FadeOut.duration(MESSAGE_ROW_ANIMATION_MS).easing(MESSAGE_ROW_EASING);
-const LIKE_MARK_SIZE = 12;
 const LIKE_PREVIEW_INSET = 22;
-const LIKE_ANIMATION_MS = 160;
 const LIKE_BLOCK_MS = 320;
-const LIKE_START_SCALE = 0.01;
 const RECEIPT_MARK_SIZE = 16;
 const RECEIPT_ANIMATION_MS = 160;
 const RECEIPT_START_SCALE = 0.01;
-const LIKE_POP_SPRING = {
-    mass: 0.28,
-    stiffness: 520,
-    damping: 17,
-};
 const REPLY_SPRING = {
     mass: 0.16,
     stiffness: 200,
@@ -105,10 +96,6 @@ function getMsgStamp(msg) {
     return Number.isFinite(ms) && ms !== Infinity ? formatTimeHHMM(ms, true) : '';
 }
 
-function likePatch(liked) {
-    return { liked: liked ? true : undefined };
-}
-
 function hasMsgText(msg) {
     return typeof msg?.c === 'string' && msg.c.trim().length > 0;
 }
@@ -129,31 +116,12 @@ function SendDot({ show, failed, theme }) {
     );
 }
 
-function getReceiptAvatarKey(source) {
-    if (!source) return '';
-    if (typeof source === 'number') return String(source);
-    if (typeof source === 'string') return source;
-    return source.uri || '';
-}
-
 function ReceiptAvatar({ source, bot }) {
-    const sourceKey = getReceiptAvatarKey(source);
-
-    if (!sourceKey) {
+    if (!source) {
         return <Avatar pointerEvents="none" source={source} size={RECEIPT_MARK_SIZE} bot={!!bot} />;
     }
 
-    return (
-        <ExpoImage
-            pointerEvents="none"
-            source={source}
-            recyclingKey={sourceKey}
-            cachePolicy="memory-disk"
-            transition={0}
-            contentFit="cover"
-            style={{ width: RECEIPT_MARK_SIZE, height: RECEIPT_MARK_SIZE, borderRadius: RECEIPT_MARK_SIZE / 2, backgroundColor: 'transparent' }}
-        />
-    );
+    return <StaticAvatar pointerEvents="none" source={source} size={RECEIPT_MARK_SIZE} />;
 }
 
 function ReceiptMark({ show, source, bot }) {
@@ -190,74 +158,6 @@ function ReceiptMark({ show, source, bot }) {
     return (
         <Animated.View pointerEvents="none" style={[{ marginTop: 5, paddingRight: 4, alignSelf: 'flex-end', flexDirection: 'row', alignItems: 'center' }, markStyle]}>
             <ReceiptAvatar source={source} bot={bot} />
-        </Animated.View>
-    );
-}
-
-function LikeMark({ show, fromPeer = false }) {
-    const { theme } = useTheme();
-    const [present, setPresent] = useState(show);
-    const prevShowRef = useRef(show);
-    const scale = useSharedValue(show ? 1 : LIKE_START_SCALE);
-    const markStyle = useAnimatedStyle(() => ({
-        transform: [{ scale: scale.value }],
-    }));
-
-    useEffect(() => {
-        const wasShown = prevShowRef.current;
-        prevShowRef.current = show;
-
-        if (show) {
-            setPresent(true);
-            if (wasShown) {
-                scale.value = 1;
-            } else {
-                scale.value = LIKE_START_SCALE;
-                scale.value = withSpring(1, LIKE_POP_SPRING);
-            }
-            return undefined;
-        }
-
-        scale.value = withTiming(LIKE_START_SCALE, { duration: LIKE_ANIMATION_MS });
-        const timeout = setTimeout(() => setPresent(false), LIKE_ANIMATION_MS);
-        return () => clearTimeout(timeout);
-    }, [scale, show]);
-
-    if (!present) {
-        return null;
-    }
-
-    return (
-        <Animated.View
-            pointerEvents="none"
-            style={[
-                {
-                    position: 'absolute',
-                    left: REACTION_MARK_INSET - REACTION_MARK_W / 2,
-                    bottom: REACTION_MARK_BOTTOM + REACTION_SPACE,
-                    width: REACTION_MARK_W,
-                    height: REACTION_MARK_H,
-                    borderRadius: 999,
-                    overflow: 'hidden',
-                    zIndex: 10,
-                },
-                markStyle,
-            ]}
-        >
-            <GlassView
-                glassEffectStyle="clear"
-                tintColor={bubbleTint(theme, fromPeer)}
-                style={{
-                    width: '100%',
-                    height: '100%',
-                    borderRadius: 999,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    overflow: 'hidden',
-                }}
-            >
-                <Text style={{ fontSize: LIKE_MARK_SIZE, lineHeight: LIKE_MARK_SIZE + 2, includeFontPadding: false }}>❤️</Text>
-            </GlassView>
         </Animated.View>
     );
 }
@@ -471,7 +371,7 @@ export default function MessageList({
 }) {
     const navigation = useNavigation();
     const router = useRouter();
-    const { chatPK, uid } = useUser();
+    const { avatar, chatPK, uid } = useUser();
     const { theme } = useTheme();
     const { active: menuActive } = useMenu();
     const { setMediaItems } = useMediaViewer();
@@ -485,6 +385,25 @@ export default function MessageList({
     const [reportedMessageKeys, setReportedMessageKeys] = useState(new Set());
     const [hiddenMessageKeys, setHiddenMessageKeys] = useState(new Set());
     const time = useSharedValue(0);
+    const userAvatarSource = useMemo(() => (avatar ? { uri: avatar } : null), [avatar]);
+    const reactionUsers = useMemo(
+        () => ({
+            ...(chatPK ? { [chatPK]: { source: userAvatarSource } } : {}),
+            ...(peerChatPK ? { [peerChatPK]: { source: peerAvatarSource, bot: peerBot } } : {}),
+        }),
+        [chatPK, peerAvatarSource, peerBot, peerChatPK, userAvatarSource]
+    );
+    const {
+        getReactions: getOptimisticReactions,
+        toggleReaction: toggleOptimisticReaction,
+    } = useOptimisticMessageReactions({
+        chatId,
+        chatPK,
+        peerChatPK,
+        messages: messagesAsc,
+        updateMessage,
+        onError: (error) => console.warn('message like failed', error),
+    });
     const visibleMessagesAsc = useMemo(() => (messagesAsc || []).filter(canShowMsg), [messagesAsc]);
     const messages = useMemo(() => [...visibleMessagesAsc].filter((msg) => !hiddenMessageKeys.has(getMsgKey(msg))).reverse(), [hiddenMessageKeys, visibleMessagesAsc]);
     const latestReadReceipt = useMemo(() => getLatestReadOutgoingReceipt(messagesAsc, chatPK, peerChatPK), [chatPK, messagesAsc, peerChatPK]);
@@ -873,29 +792,20 @@ export default function MessageList({
 
     const canLikeMessage = useCallback(
         (msg) => {
-            return !!(chatId && peerChatPK && msg?.id && !String(msg.id).startsWith('local:') && !msg.pending && !msg.failed);
+            return !!(chatId && chatPK && peerChatPK && msg?.id && !String(msg.id).startsWith('local:') && !msg.pending && !msg.failed);
         },
-        [chatId, peerChatPK]
+        [chatId, chatPK, peerChatPK]
     );
 
     const handleLike = useCallback(
-        async (msg) => {
+        (msg) => {
             if (!canLikeMessage(msg)) {
                 return;
             }
 
-            const liked = !isLikedMsg(msg);
-            const nextMsg = setLiked(msg, liked);
-            patchMessage(msg.id, likePatch(liked));
-
-            try {
-                await updateMessage(chatId, msg.id, nextMsg, peerChatPK);
-            } catch (error) {
-                patchMessage(msg.id, likePatch(isLikedMsg(msg)));
-                console.warn('message like failed', error);
-            }
+            toggleOptimisticReaction(msg);
         },
-        [canLikeMessage, chatId, patchMessage, peerChatPK, updateMessage]
+        [canLikeMessage, toggleOptimisticReaction]
     );
 
     const renderItem = useCallback(
@@ -909,7 +819,7 @@ export default function MessageList({
             const replyFromPeer = reply ? isPeerMsg(reply, chatPK) : false;
             const viewerMedia = isMediaViewerMsg(msg);
             const canLike = !isReported && canLikeMessage(msg);
-            const liked = isLikedMsg(msg) && !isReported;
+            const reactions = isReported ? [] : getOptimisticReactions(msg);
             const showReceipt = userSent && msgKey && msgKey === latestReadReceiptKey;
 
             return (
@@ -946,9 +856,9 @@ export default function MessageList({
                                         onReplyPress={() => jumpToReply(msg.r)}
                                         onMediaUnavailable={hideMediaMessage}
                                         onLike={canLike ? handleLike : undefined}
-                                        reaction={<LikeMark show={liked} fromPeer={fromPeer} />}
-                                        reactionActive={liked}
-                                        reactionPreviewInset={liked ? LIKE_PREVIEW_INSET : 0}
+                                        reactions={reactions}
+                                        reactionUsers={reactionUsers}
+                                        reactionPreviewInset={reactions.length ? LIKE_PREVIEW_INSET : 0}
                                     />
                                 </View>
                             )}
@@ -978,6 +888,7 @@ export default function MessageList({
             peerChatPK,
             peerAvatarSource,
             peerBot,
+            reactionUsers,
             replyMap,
             reportedMessageKeys,
             screenW,

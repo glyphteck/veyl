@@ -7,6 +7,16 @@ import { cn } from '@/lib/utils';
 import { Dot } from '@/components/dot';
 
 const AvatarContext = React.createContext(null);
+const loadedAvatarSrcs = new Set();
+
+function getAvatarImageKey(src) {
+    return typeof src === 'string' ? src.trim() : '';
+}
+
+function isAvatarImageLoaded(src) {
+    const srcKey = getAvatarImageKey(src);
+    return !!srcKey && loadedAvatarSrcs.has(srcKey);
+}
 
 const Avatar = React.forwardRef(function Avatar({ className, active = false, selected = null, bot = false, children, ...props }, ref) {
     const [status, setStatus] = React.useState('idle');
@@ -30,23 +40,33 @@ const AvatarImage = React.forwardRef(function AvatarImage({ className, src, alt 
     const avatar = React.useContext(AvatarContext);
     const setStatus = avatar?.setStatus;
     const imgRef = React.useRef(null);
+    const srcKey = getAvatarImageKey(src);
 
     React.useEffect(() => {
-        if (!src) {
+        if (!srcKey) {
             setStatus?.('error');
+            return;
+        }
+        if (loadedAvatarSrcs.has(srcKey)) {
+            setStatus?.('loaded');
             return;
         }
 
         const img = imgRef.current;
         if (img?.complete) {
-            setStatus?.(img.naturalWidth > 0 ? 'loaded' : 'error');
+            if (img.naturalWidth > 0) {
+                loadedAvatarSrcs.add(srcKey);
+                setStatus?.('loaded');
+            } else {
+                setStatus?.('error');
+            }
             return;
         }
 
         setStatus?.('loading');
-    }, [setStatus, src]);
+    }, [setStatus, srcKey]);
 
-    if (!src) {
+    if (!srcKey) {
         return null;
     }
 
@@ -65,6 +85,7 @@ const AvatarImage = React.forwardRef(function AvatarImage({ className, src, alt 
             src={src}
             alt={alt}
             onLoad={(event) => {
+                loadedAvatarSrcs.add(srcKey);
                 setStatus?.('loaded');
                 onLoad?.(event);
             }}
@@ -74,6 +95,46 @@ const AvatarImage = React.forwardRef(function AvatarImage({ className, src, alt 
             }}
             {...props}
         />
+    );
+});
+
+const StaticAvatar = React.forwardRef(function StaticAvatar({ className, src, style, bot = false, ...props }, ref) {
+    const srcKey = getAvatarImageKey(src);
+    const [loaded, setLoaded] = React.useState(() => isAvatarImageLoaded(srcKey));
+
+    React.useEffect(() => {
+        setLoaded(isAvatarImageLoaded(srcKey));
+    }, [srcKey]);
+
+    const fallback = bot ? <Bot className="size-[70%] stroke-2" aria-hidden /> : <UserRound className="mt-[25%] size-full stroke-2" aria-hidden />;
+
+    if (!srcKey) {
+        return (
+            <span ref={ref} className={cn('flex size-full items-center justify-center overflow-hidden rounded-full bg-background', className)} style={style} {...props}>
+                {fallback}
+            </span>
+        );
+    }
+
+    return (
+        <span ref={ref} className={cn('relative flex size-full items-center justify-center overflow-hidden rounded-full bg-background', className)} style={style} {...props}>
+            {!loaded ? fallback : null}
+            <img
+                alt=""
+                aria-hidden="true"
+                className="absolute inset-0 size-full object-cover"
+                draggable={false}
+                src={srcKey}
+                style={{ opacity: loaded ? 1 : 0 }}
+                onLoad={() => {
+                    loadedAvatarSrcs.add(srcKey);
+                    setLoaded(true);
+                }}
+                onError={() => {
+                    setLoaded(false);
+                }}
+            />
+        </span>
     );
 });
 
@@ -91,4 +152,4 @@ const AvatarFallback = React.forwardRef(function AvatarFallback({ className, chi
     );
 });
 
-export { Avatar, AvatarImage, AvatarFallback };
+export { Avatar, AvatarImage, AvatarFallback, StaticAvatar, isAvatarImageLoaded };

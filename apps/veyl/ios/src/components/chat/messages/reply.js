@@ -163,10 +163,10 @@ function ReplyPreview({ reply, replyFromPeer, peerChatPK, peerDisplayName, onRep
     }
 }
 
-export default function ReplyMessage({ msg, fromPeer = false, menuItems, menuId, reply, replyFromPeer = false, peerChatPK, peerDisplayName, onReplyPress, reaction, reactionActive = false, reactionPreviewInset = 0 }) {
+export default function ReplyMessage({ msg, fromPeer = false, menuItems, menuId, reply, replyFromPeer = false, peerChatPK, peerDisplayName, onReplyPress, reactions = [], reactionUsers, reactionPreviewInset = 0 }) {
     const body = (
         <Menu id={menuId} items={menuItems} previewBottomInset={reactionPreviewInset}>
-            <ReactionTray reaction={reaction} active={reactionActive}>
+            <ReactionTray reactions={reactions} users={reactionUsers} fromPeer={fromPeer}>
                 <TextBubble msg={msg} fromPeer={fromPeer} allowEmoji={false} />
             </ReactionTray>
         </Menu>

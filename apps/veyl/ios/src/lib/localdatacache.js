@@ -7,23 +7,44 @@ import { openVaultCache } from '@glyphteck/shared/localdatacache';
 import { resolveNetwork } from '@glyphteck/shared/network';
 import { cleanBytes, randomBytes, toBytes } from '@glyphteck/shared/crypto/core';
 
-const CACHE_FILE = FileSystem.documentDirectory ? `${FileSystem.documentDirectory}vault-local-cache.dat` : null;
-const MEDIA_DIR = FileSystem.documentDirectory ? `${FileSystem.documentDirectory}vault-local-cache-media/` : null;
+const CACHE_ROOT = FileSystem.documentDirectory ? `${FileSystem.documentDirectory}vault-local-cache/` : null;
 const MEDIA_TAG_BYTES = 16;
 
-function mediaFile(id) {
-    const safeId = String(id || '').trim();
-    if (!MEDIA_DIR || !/^[a-z0-9]+$/i.test(safeId)) {
-        return null;
-    }
-    return `${MEDIA_DIR}${safeId}.dat`;
+function safePart(value) {
+    return String(value || '').replace(/[^a-zA-Z0-9_-]/g, '_') || 'default';
 }
 
-async function ensureMediaDir() {
-    if (!MEDIA_DIR) {
+function storageScope(uid, network) {
+    return `${safePart(network)}-${safePart(uid)}`;
+}
+
+function cacheDir(scope) {
+    return CACHE_ROOT ? `${CACHE_ROOT}${scope}/` : null;
+}
+
+function cacheFile(scope) {
+    const dir = cacheDir(scope);
+    return dir ? `${dir}main.dat` : null;
+}
+
+function mediaDir(scope) {
+    const dir = cacheDir(scope);
+    return dir ? `${dir}media/` : null;
+}
+
+function mediaFile(dir, id) {
+    const safeId = String(id || '').trim();
+    if (!dir || !/^[a-z0-9]+$/i.test(safeId)) {
+        return null;
+    }
+    return `${dir}${safeId}.dat`;
+}
+
+async function ensureDir(path) {
+    if (!path) {
         return false;
     }
-    await FileSystem.makeDirectoryAsync(MEDIA_DIR, { intermediates: true }).catch((error) => {
+    await FileSystem.makeDirectoryAsync(path, { intermediates: true }).catch((error) => {
         if (!/already exists/i.test(String(error?.message || error))) {
             throw error;
         }
@@ -103,86 +124,94 @@ async function openMediaNative(raw, { key, aad, version, ivBytes }) {
     }
 }
 
-const storage = {
-    async read() {
-        if (!CACHE_FILE) {
-            return null;
-        }
+function makeStorage({ uid, network }) {
+    const scope = storageScope(uid, network);
+    const dir = cacheDir(scope);
+    const mainFile = cacheFile(scope);
+    const mediaDirectory = mediaDir(scope);
 
-        const info = await FileSystem.getInfoAsync(CACHE_FILE);
-        if (!info.exists) {
-            return null;
-        }
-        return FileSystem.readAsStringAsync(CACHE_FILE);
-    },
-    async write(raw) {
-        if (!CACHE_FILE) {
-            return;
-        }
-        await FileSystem.writeAsStringAsync(CACHE_FILE, raw);
-    },
-    async remove() {
-        if (!CACHE_FILE) {
-            return;
-        }
-        await FileSystem.deleteAsync(CACHE_FILE, { idempotent: true });
-    },
-    async readMedia(id) {
-        const file = mediaFile(id);
-        if (!file) {
-            return null;
-        }
-        const info = await FileSystem.getInfoAsync(file);
-        if (!info.exists) {
-            return null;
-        }
-        try {
-            return new Uint8Array(await new File(file).bytes());
-        } catch {}
-        const base64 = await FileSystem.readAsStringAsync(file, {
-            encoding: FileSystem.EncodingType.Base64,
-        });
-        return new Uint8Array(Buffer.from(base64, 'base64'));
-    },
-    async writeMedia(id, raw) {
-        const file = mediaFile(id);
-        if (!file || !(await ensureMediaDir())) {
-            return;
-        }
-        await FileSystem.writeAsStringAsync(file, Buffer.from(raw).toString('base64'), {
-            encoding: FileSystem.EncodingType.Base64,
-        });
-    },
-    async removeMedia(id) {
-        const file = mediaFile(id);
-        if (!file) {
-            return;
-        }
-        await FileSystem.deleteAsync(file, { idempotent: true });
-    },
-    async removeAllMedia() {
-        if (!MEDIA_DIR) {
-            return;
-        }
-        await FileSystem.deleteAsync(MEDIA_DIR, { idempotent: true });
-    },
-    sealMedia(id, bytes, crypto) {
-        return sealMediaNative(bytes, crypto);
-    },
-    openMedia(id, raw, crypto) {
-        return openMediaNative(raw, crypto);
-    },
-    async estimateSize() {
-        const [mainSize, mediaSize] = await Promise.all([fileSize(CACHE_FILE), directorySize(MEDIA_DIR)]);
-        return mainSize + mediaSize;
-    },
-};
+    return {
+        async read() {
+            if (!mainFile) {
+                return null;
+            }
+
+            const info = await FileSystem.getInfoAsync(mainFile);
+            if (!info.exists) {
+                return null;
+            }
+            return FileSystem.readAsStringAsync(mainFile);
+        },
+        async write(raw) {
+            if (!mainFile || !(await ensureDir(dir))) {
+                return;
+            }
+            await FileSystem.writeAsStringAsync(mainFile, raw);
+        },
+        async remove() {
+            if (!mainFile) {
+                return;
+            }
+            await FileSystem.deleteAsync(mainFile, { idempotent: true });
+        },
+        async readMedia(id) {
+            const file = mediaFile(mediaDirectory, id);
+            if (!file) {
+                return null;
+            }
+            const info = await FileSystem.getInfoAsync(file);
+            if (!info.exists) {
+                return null;
+            }
+            try {
+                return new Uint8Array(await new File(file).bytes());
+            } catch {}
+            const base64 = await FileSystem.readAsStringAsync(file, {
+                encoding: FileSystem.EncodingType.Base64,
+            });
+            return new Uint8Array(Buffer.from(base64, 'base64'));
+        },
+        async writeMedia(id, raw) {
+            const file = mediaFile(mediaDirectory, id);
+            if (!file || !(await ensureDir(mediaDirectory))) {
+                return;
+            }
+            await FileSystem.writeAsStringAsync(file, Buffer.from(raw).toString('base64'), {
+                encoding: FileSystem.EncodingType.Base64,
+            });
+        },
+        async removeMedia(id) {
+            const file = mediaFile(mediaDirectory, id);
+            if (!file) {
+                return;
+            }
+            await FileSystem.deleteAsync(file, { idempotent: true });
+        },
+        async removeAllMedia() {
+            if (!mediaDirectory) {
+                return;
+            }
+            await FileSystem.deleteAsync(mediaDirectory, { idempotent: true });
+        },
+        sealMedia(id, bytes, crypto) {
+            return sealMediaNative(bytes, crypto);
+        },
+        openMedia(id, raw, crypto) {
+            return openMediaNative(raw, crypto);
+        },
+        async estimateSize() {
+            const [mainSize, mediaSize] = await Promise.all([fileSize(mainFile), directorySize(mediaDirectory)]);
+            return mainSize + mediaSize;
+        },
+    };
+}
 
 export function openLocalDataCache(key, { uid } = {}) {
+    const network = resolveNetwork(globalThis?.process?.env ?? {});
     return openVaultCache({
         key,
-        storage,
+        storage: makeStorage({ uid, network }),
         uid,
-        network: resolveNetwork(globalThis?.process?.env ?? {}),
+        network,
     });
 }

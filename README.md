@@ -18,7 +18,7 @@ Shared domains, origins, product links, local host names, passkey origins, app-l
 
 ## Agent Guidelines
 
-Agent-facing repo rules live in [guidelines/](guidelines/). Start with [AGENTS.md](AGENTS.md), then read the focused guideline files that match the task.
+Agent-facing repo rules live in [AGENTS.md](AGENTS.md) and [guidelines/](guidelines/). Start with [AGENTS.md](AGENTS.md), read [guidelines/workflow.md](guidelines/workflow.md) for task sizing, todo, branch, worktree, handoff, and cleanup rules, then read the focused guideline files that match the task.
 
 ## Accounts
 
@@ -124,6 +124,7 @@ The wrapper URL is intentional for veyl-specific actions. On iOS, the veyl web h
 - iOS stores the encrypted main blob and media blobs in app document storage through `apps/veyl/ios/src/lib/localdatacache.js`.
 - iOS also materializes decrypted media into a transient deterministic render-file cache under the app cache directory through `apps/veyl/ios/src/lib/msgimagecache.js`. That URI layer is separate from the vaulted media blob cache and can be rebuilt from the vaulted bytes after unlock.
 - Web stores the encrypted main blob and media blobs in IndexedDB through `apps/veyl/web/src/lib/localdatacache.js`.
+- Vaulted cache storage is scoped by uid and wallet network before encryption, so multiple accounts on one device keep separate encrypted cache slots instead of overwriting each other. The ciphertext AAD is also bound to uid and network.
 - Shared schema, crypto, timestamp revival, and cache helpers live in `shared/localdatacache.js`.
 - The cache key is derived from the local master seed with a domain-separated label and is never stored in Keychain, SecureStore, IndexedDB, AsyncStorage, localStorage, or React state as raw key material.
 - Wallet balance is not cached as authoritative state. Unlock may render cached transaction history immediately, but spendable balance still comes from fresh Spark balance calls and wallet events.
@@ -146,8 +147,11 @@ The wrapper URL is intentional for veyl-specific actions. On iOS, the veyl web h
 - The iOS full-screen media viewer is owned by `apps/veyl/ios/src/providers/mediaviewerprovider.js`. Swipe navigation moves only the horizontal rail; vertical dismiss scale, opacity, rounding, and save-action fade are scoped to the active media slide so neighboring slides stay unscaled during exit.
 - Chat IDs are derived from the two participant chat public keys.
 - Chat list rows and previously decrypted media hydrate from the vaulted local cache after unlock, then Firestore listeners reconcile fresh chat-row data. Chat docs carry only participants and an encrypted latest visible-message preview (`lastMsg`) so list ordering, timestamps, previews, and push gating do not need one subcollection query per chat. Visible message lists still come from server-confirmed message reads, not the durable local cache.
+- Peer profiles may hydrate from the vaulted local cache for immediate UI, but profile refreshes still re-read `profiles/{uid}` for recent or directly opened people. Avatar image URLs are the heavy cached work: `profiles/{uid}.avatar` is a single version field, set to the Storage object generation when a profile picture exists and `null` when it is removed. Clients compare that version before resolving a new Storage URL, so unchanged avatars keep a stable image source.
+- The current user's own avatar image also has a tiny unlocked cache keyed by uid and `profiles/{uid}.avatar` because `UserProvider` sits above the vault and unlock/profile chrome can render it before the vault cache opens. That unlocked cache stores only the live authenticated user's public avatar image bytes and version; sign-out/no-auth purges it, and auth switches prune every other self-avatar entry. It does not store usernames, settings, wallet keys, chat keys, chats, transactions, or decrypted media.
 - On iOS and web, chat warming keeps bounded in-memory latest-message batches for recent chats after unlock. Opening a warmed chat uses that provider-owned message batch as the initial message list instead of attaching a second latest-message listener or rendering an empty list first. The first chat row is warmed first because web lands there by default, but unlock navigation does not wait for warming. Media rows reuse the transient render-file cache before reading vaulted media again, and the warming path fills image/video media caches in the background only after server-confirmed message docs exist. These message batches are never written to the vaulted local cache and are cleared on lock/session teardown.
 - Read receipts are encrypted `t: 'rr'` control messages appended to `chats/{chatId}/messages`. Clients derive read state after decrypting the stream, and outgoing message UI renders the latest peer receipt with the peer avatar.
+- Visible messages can carry up to two encrypted `reactions` entries, one per chat participant. Each reaction stores an `emoji` and the reacting user's chat public key in `user`; the clients currently toggle a heart reaction and render the reacting user's already-loaded avatar beside the emoji.
 
 ### Backend and data
 
@@ -168,6 +172,7 @@ The wrapper URL is intentional for veyl-specific actions. On iOS, the veyl web h
 ├── functions     Firebase Functions package (separate npm package)
 ├── firestore.rules
 ├── firebase.json
+├── guidelines    Focused agent guidance by task area
 ├── todo         One-file-per-feature active planning area
 ├── AGENTS.md
 └── README.md
@@ -195,7 +200,7 @@ If you want the quickest path into the codebase, start here:
 Main Firestore collections:
 
 - `users/{uid}`: private settings and per-user data
-- `profiles/{uid}`: public profile info such as username, wallet/chat public keys, and presence
+- `profiles/{uid}`: public profile info such as username, wallet/chat public keys, presence, and `avatar` as a Storage-generation version number or `null`
 - `seeds/{uid}`: encrypted master seed
 - `usernames/{username}`: username reservation
 - `chats/{chatId}`: 1:1 chat metadata, including participants and encrypted last message preview

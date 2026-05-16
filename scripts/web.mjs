@@ -99,11 +99,14 @@ async function assertPortOpen(config) {
 
 const args = process.argv.slice(2);
 const knownNetworks = new Set(['mainnet', 'regtest']);
-const knownFlags = new Set(['clear']);
+const knownFlags = new Set(['clear', 'inspect', 'mem', 'trace']);
 
 let app = 'veyl';
 let network = null;
 let clear = false;
+let inspect = false;
+let memoryDebug = false;
+let trace = false;
 const extra = [];
 
 for (const arg of args) {
@@ -123,12 +126,34 @@ for (const arg of args) {
         if (arg === 'clear') {
             clear = true;
         }
+        if (arg === 'inspect') {
+            inspect = true;
+        }
+        if (arg === 'mem') {
+            memoryDebug = true;
+        }
+        if (arg === 'trace') {
+            trace = true;
+        }
         continue;
     }
     extra.push(arg);
 }
 
 const env = { ...process.env };
+const nodeOptions = new Set(String(env.NODE_OPTIONS || '').split(/\s+/).filter(Boolean));
+if (inspect) {
+    nodeOptions.add('--inspect');
+}
+if (memoryDebug) {
+    nodeOptions.add('--heapsnapshot-near-heap-limit=3');
+}
+if (nodeOptions.size) {
+    env.NODE_OPTIONS = [...nodeOptions].join(' ');
+}
+if (trace) {
+    env.NEXT_TURBOPACK_TRACING = '1';
+}
 if (network === 'mainnet') {
     env.NEXT_PUBLIC_NETWORK = 'MAINNET';
 } else if (network === 'regtest') {
@@ -165,12 +190,66 @@ if (config.https) {
 command.push(...extra);
 
 const child = spawn('bun', command, { stdio: 'inherit', env, cwd: config.cwd });
+const warnMb = Number(env.VEYL_WEB_MEMORY_WARN_MB || 3200);
+const checkMs = Number(env.VEYL_WEB_MEMORY_CHECK_MS || (memoryDebug ? 10000 : 30000));
+let lastMemoryWarning = 0;
+
+function childPids(pid) {
+    try {
+        return execFileSync('pgrep', ['-P', String(pid)], {
+            encoding: 'utf8',
+            stdio: ['ignore', 'pipe', 'ignore'],
+        })
+            .trim()
+            .split(/\s+/)
+            .filter(Boolean)
+            .map(Number);
+    } catch {
+        return [];
+    }
+}
+
+function processTree(pid, seen = new Set()) {
+    if (!pid || seen.has(pid)) {
+        return [];
+    }
+    seen.add(pid);
+    return [pid, ...childPids(pid).flatMap((childPid) => processTree(childPid, seen))];
+}
+
+function rssMb(pid) {
+    try {
+        const output = execFileSync('ps', ['-o', 'rss=', '-p', String(pid)], {
+            encoding: 'utf8',
+            stdio: ['ignore', 'pipe', 'ignore'],
+        }).trim();
+        return Math.round((Number(output) || 0) / 1024);
+    } catch {
+        return 0;
+    }
+}
+
+const memoryTimer = setInterval(() => {
+    const total = processTree(child.pid).reduce((sum, pid) => sum + rssMb(pid), 0);
+    if (total < warnMb) {
+        return;
+    }
+    const now = Date.now();
+    if (now - lastMemoryWarning < 120000) {
+        return;
+    }
+    lastMemoryWarning = now;
+    console.warn(`[web] memory high: ${total} MB rss. Run "bun veyl web mem trace" if it keeps climbing.`);
+}, checkMs);
+memoryTimer.unref?.();
 
 child.on('exit', (code, signal) => {
+    clearInterval(memoryTimer);
     process.exitCode = code ?? (signal ? 1 : 0);
 });
 
 child.on('error', (error) => {
+    clearInterval(memoryTimer);
     console.error(error);
     process.exitCode = 1;
 });

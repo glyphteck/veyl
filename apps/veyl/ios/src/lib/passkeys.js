@@ -82,13 +82,13 @@ export async function passkeyRegister({ onPrompt, label: providedLabel } = {}) {
     }
 }
 
-export async function passkeyLogin({ onPrompt } = {}) {
+export async function passkeyLogin({ uid, onPrompt } = {}) {
     try {
         const origin = getPasskeyOrigin();
 
         const {
             data: { opts },
-        } = await httpsCallable(functions, 'passkeyLoginOptions')({ origin });
+        } = await httpsCallable(functions, 'passkeyLoginOptions')({ origin, uid });
 
         if (typeof onPrompt === 'function') {
             onPrompt();

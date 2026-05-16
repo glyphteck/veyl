@@ -33,7 +33,7 @@ function normalizeUri(uri) {
     return /^[a-z][a-z0-9+.-]*:\/\//i.test(uri) ? uri : `file://${uri}`;
 }
 
-export default function AudioMessage({ msg, peerChatPK, fromPeer = false, menuItems, menuId, reaction, reactionActive = false, reactionPreviewInset = 0 }) {
+export default function AudioMessage({ msg, peerChatPK, fromPeer = false, menuItems, menuId, reactions = [], reactionUsers, reactionPreviewInset = 0 }) {
     const { theme } = useTheme();
     const { readMessageFile } = useChat();
     const { kind, key: audioKey, play, pause, seek } = useAudio();
@@ -140,7 +140,7 @@ export default function AudioMessage({ msg, peerChatPK, fromPeer = false, menuIt
 
     return (
         <Menu id={menuId} items={menuItems} previewBottomInset={reactionPreviewInset}>
-            <ReactionTray reaction={reaction} active={reactionActive}>
+            <ReactionTray reactions={reactions} users={reactionUsers} fromPeer={fromPeer}>
                 <GlassView
                     glassEffectStyle="clear"
                     tintColor={bubbleTint(theme, fromPeer)}

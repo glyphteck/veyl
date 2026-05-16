@@ -16,10 +16,11 @@ export function TextBubble({ msg, fromPeer = false, compact = false, singleLine 
 
     if (allowEmoji && emoji && !compact) {
         const lineHeight = Math.ceil(emoji.size * EMOJI_LINE_HEIGHT);
+        const textAlign = fromPeer ? 'left' : 'right';
 
         return (
-            <View style={{ paddingHorizontal: 2 }}>
-                <Text style={{ fontSize: emoji.size, lineHeight, includeFontPadding: false, color: theme.foreground }}>{emoji.text}</Text>
+            <View style={{ maxWidth: '100%', paddingHorizontal: 2, alignItems: fromPeer ? 'flex-start' : 'flex-end' }}>
+                <Text style={{ maxWidth: '100%', fontSize: emoji.size, lineHeight, includeFontPadding: false, color: theme.foreground, textAlign }}>{emoji.text}</Text>
             </View>
         );
     }
@@ -52,10 +53,10 @@ export function TextBubble({ msg, fromPeer = false, compact = false, singleLine 
     );
 }
 
-export default function TextMessage({ msg, fromPeer = false, menuItems, menuId, reaction, reactionActive = false, reactionPreviewInset = 0 }) {
+export default function TextMessage({ msg, fromPeer = false, menuItems, menuId, reactions = [], reactionUsers, reactionPreviewInset = 0 }) {
     return (
         <Menu id={menuId} items={menuItems} previewBottomInset={reactionPreviewInset}>
-            <ReactionTray reaction={reaction} active={reactionActive}>
+            <ReactionTray reactions={reactions} users={reactionUsers} fromPeer={fromPeer}>
                 <TextBubble msg={msg} fromPeer={fromPeer} />
             </ReactionTray>
         </Menu>

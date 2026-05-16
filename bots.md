@@ -68,11 +68,11 @@ Message handling:
 - read receipts: appended as encrypted `t: 'rr'` control messages and sent without updating `lastMsg`
 - incoming transfers: accepted passively — Spark claims them automatically and the runtime refreshes the balance snapshot
 
-Job serialization uses `queueMapJob` to ensure per-chat and per-wallet work runs sequentially without blocking other chats.
+Job serialization uses `queueMapJob` to ensure per-chat and per-wallet work runs sequentially without blocking other chats. The runtime also stores per-chat read checkpoints under `bots/{uid}/reads/{chatId}` and writes bot replies with deterministic message IDs derived from the source message, so a restart or retry cannot mirror the same source message into duplicate bot texts.
 
 ### Entry Point (`apps/veyl/bot/src/index.js`)
 
-Starts the runtime process. Uses a `.bot.pid` lockfile to prevent duplicate instances. Handles `SIGINT`/`SIGTERM` for clean shutdown.
+Starts the runtime process. Uses an atomic `.bot.lock` directory with a PID file to prevent duplicate local instances and a short Firestore lease at `runtimes/bot` to prevent two active runtimes against the same backend. A second runtime exits instead of stopping or replacing the active one. Handles `SIGINT`/`SIGTERM` for clean shutdown.
 
 ### Secrets (`apps/veyl/bot/src/secrets.js`)
 

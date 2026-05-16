@@ -92,6 +92,7 @@ async function syncDocs({ uid, username, walletPK, chatPK, network }) {
             profileRef,
             {
                 username,
+                ...(profileSnap.exists ? {} : { avatar: null }),
                 ...walletPKPatch(walletPK, walletNetwork),
                 chatPK,
                 active: false,
