@@ -28,8 +28,10 @@ bun veyl ios clear
 bun veyl ios mainnet
 bun veyl ios regtest
 bun veyl ios tunnel
+bun veyl ios submit
 bun make ios
 bun make ios local
+bun make ios prod
 bun make backend
 bun make db
 bun make rules
@@ -121,6 +123,28 @@ bun make cors
 - `bun veyl ios clear` clears only the veyl iOS `.expo` and Metro caches before starting.
 - `bun veyl ios local` installs/runs the standalone `veyl local` iOS build on `REGTEST` with bundle id `com.glyphteck.veyl.local`.
 - `bun veyl mainnet` and `bun veyl regtest` apply the selected network to web, iOS, and bot.
+
+## iOS Production Builds
+
+`bun make ios prod` starts a cloud EAS App Store production build and waits for it to finish:
+
+```bash
+bun make ios prod
+```
+
+The command builds `com.glyphteck.veyl` on `MAINNET`, uses the production iOS build profile, lets EAS manage the App Store signing/build artifact, and does not upload anything to App Store Connect. Pass extra EAS build flags after `prod` when needed, for example:
+
+```bash
+bun make ios prod --clear-cache
+```
+
+After the App Store Connect app record exists and the EAS build is ready, upload the latest EAS iOS build with:
+
+```bash
+bun veyl ios submit
+```
+
+`bun veyl ios submit` runs EAS Submit from `apps/veyl/ios` with the production profile. It defaults to `--latest` and forwards extra EAS Submit flags, so a specific build still works with `bun veyl ios submit --id <build-id>`. EAS Submit can use the preset non-secret values in `apps/veyl/ios/eas.json`, but the Apple account, App Store Connect app id, or API key still need to come from Apple.
 
 ## Local Web Hosts
 

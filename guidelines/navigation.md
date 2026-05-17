@@ -13,6 +13,8 @@ Start here when a task touches one of these areas.
 - iOS onboarding routes: `apps/veyl/ios/app/(onboarding)/*`
 - Root-domain auth files: separate Website repo under `public/.well-known/*`
 
+Forced auth, vault, and onboarding flows are route-guard owned. After a required write such as username, avatar, community acknowledgement, seed creation, auth, or unlock state changes, update the underlying state and let the guarded layout or protected stack choose the next route. Do not push or replace to the next concrete forced step from the completing screen; reserve explicit navigation for optional user actions and non-forced exits.
+
 ## Vault And Seed Handling
 
 - Shared vault boot helpers: `shared/vaultutils.js`

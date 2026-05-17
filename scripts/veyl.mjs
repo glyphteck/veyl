@@ -27,6 +27,7 @@ const commands = {
     ios: ['bun', resolve(rootDir, 'scripts', 'ios.mjs'), 'veyl'],
     bot: ['bun', '--cwd', resolve(rootDir, 'apps', 'veyl', 'bot'), 'src/index.js'],
 };
+const iosDir = resolve(rootDir, 'apps', 'veyl', 'ios');
 const devPorts = ['3000', '8081'];
 const tags = {
     ios: paint('[ios]', ansi.blue),
@@ -356,10 +357,14 @@ function pipe(name, stream, target) {
 
 function run(command, commandArgs, options = {}) {
     return spawn(command, commandArgs, {
-        cwd: rootDir,
+        cwd: options.cwd || rootDir,
         env: options.env || process.env,
         stdio: options.stdio || 'inherit',
     });
+}
+
+function hasFlag(args, flag) {
+    return args.some((arg) => arg === flag || arg.startsWith(`${flag}=`));
 }
 
 function stop(child, signal = 'SIGTERM') {
@@ -547,9 +552,30 @@ if (!commands[target]) {
     process.exit(1);
 }
 
-const [command, ...commandArgs] = [...commands[target], ...rest];
+let cwd = rootDir;
+let commandLine = [...commands[target], ...rest];
+
+if (target === 'ios' && rest[0] === 'submit') {
+    const submitArgs = rest.slice(1);
+    const hasBuildSource = hasFlag(submitArgs, '--latest') || hasFlag(submitArgs, '--id') || hasFlag(submitArgs, '--path') || hasFlag(submitArgs, '--url');
+    commandLine = [
+        'bun',
+        'x',
+        'eas-cli',
+        'submit',
+        '--platform',
+        'ios',
+        '--profile',
+        'production',
+        ...(hasBuildSource ? [] : ['--latest']),
+        ...submitArgs,
+    ];
+    cwd = iosDir;
+}
+
+const [command, ...commandArgs] = commandLine;
 const env = verbose ? { ...process.env, VEYL_VERBOSE: '1' } : process.env;
-const child = run(command, commandArgs, { env });
+const child = run(command, commandArgs, { cwd, env });
 
 child.on('exit', (code, signal) => {
     process.exitCode = code ?? (signal ? 1 : 0);

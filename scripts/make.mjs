@@ -66,6 +66,26 @@ async function main() {
 
         await writeIosLinks();
 
+        if (iosArgs[0] === 'prod' || iosArgs[0] === 'production') {
+            const prodArgs = iosArgs.slice(1);
+            await run(
+                'bun',
+                [
+                    'x',
+                    'eas-cli',
+                    'build',
+                    '--platform',
+                    'ios',
+                    '--profile',
+                    'production',
+                    '--wait',
+                    ...prodArgs,
+                ],
+                { cwd: iosDir, env: { ...process.env, VEYL_IOS_VARIANT: 'prod', EXPO_PUBLIC_NETWORK: 'MAINNET' } }
+            );
+            return;
+        }
+
         const env = local
             ? { ...process.env, VEYL_IOS_VARIANT: 'local', EXPO_PUBLIC_NETWORK: 'REGTEST' }
             : process.env;
@@ -97,6 +117,7 @@ async function main() {
     }
 
     console.error('Usage: bun make <ios|backend|db|rules|fns|cors>');
+    console.error('Examples: bun make ios, bun make ios local, bun make ios prod');
     process.exitCode = 1;
 }
 

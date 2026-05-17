@@ -181,6 +181,10 @@ export const userAvatarCache = {
         if (!uid) return;
         await AsyncStorage.setItem(metaKey(uid), JSON.stringify(rememberMeta(await readMeta(uid), uid, account)));
     },
+    async hasRemembered(uid) {
+        if (!uid) return false;
+        return isRemembered(await readMeta(uid));
+    },
     async touchLogin(uid) {
         if (!uid) return;
         const meta = await readMeta(uid);

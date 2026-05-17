@@ -2,8 +2,10 @@ const appPackage = require('./package.json');
 const { appLinkDomains, PASSKEY_DOMAIN } = require('./links.config.js');
 const easProjectId = process.env.EXPO_PUBLIC_EAS_PROJECT_ID?.trim() || process.env.EXPO_PROJECT_ID?.trim() || 'bec0c61a-adc9-4edd-ba25-b6a6d441fc67';
 const associatedDomains = [`webcredentials:${PASSKEY_DOMAIN}`, ...appLinkDomains.map((domain) => `applinks:${domain}`)];
-const variant = process.env.VEYL_IOS_VARIANT?.trim().toLowerCase() || 'dev';
+const easBuildProfile = process.env.EAS_BUILD_PROFILE?.trim().toLowerCase() || '';
+const variant = process.env.VEYL_IOS_VARIANT?.trim().toLowerCase() || (easBuildProfile === 'production' ? 'prod' : 'dev');
 const isLocal = variant === 'local';
+const isProd = variant === 'prod' || variant === 'production';
 const appleTeamId = 'HHTM355M49';
 const lightSplashLogo = './assets/wallet.png';
 const darkSplashLogo = './assets/wallet.png';
@@ -33,7 +35,7 @@ module.exports = {
             supportsTablet: true,
             bundleIdentifier: isLocal ? 'com.glyphteck.veyl.local' : 'com.glyphteck.veyl',
             entitlements: {
-                'aps-environment': 'development',
+                'aps-environment': isProd ? 'production' : 'development',
             },
             associatedDomains,
             infoPlist: {

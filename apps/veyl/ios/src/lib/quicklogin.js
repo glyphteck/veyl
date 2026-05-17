@@ -34,6 +34,11 @@ export async function listQuickLoginAccounts() {
     return accounts;
 }
 
+export async function hasQuickLoginAccount(uid) {
+    if (!uid) return false;
+    return (await userAvatarCache.hasRemembered?.(uid).catch(() => false)) === true;
+}
+
 export async function touchQuickLoginAccount(uid) {
     if (!uid) return;
     await userAvatarCache.touchLogin?.(uid);

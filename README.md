@@ -80,7 +80,7 @@ Current chat payloads:
 - `t: 'rr'` for encrypted read-receipt control payloads
 - `t: 'rxn'` for encrypted reaction control payloads
 
-Chat attachments are encrypted before upload and are stored as file references plus encrypted keys/metadata in message documents. After a client decrypts an attachment, it can store the plaintext bytes in the device-local vault cache as a separate encrypted media blob. Read receipts and reactions are encrypted control messages in the same message stream; they do not update chat previews and are filtered out of visible chat UI.
+Chat attachments are encrypted before upload and are stored as file references plus encrypted keys/metadata in message documents. Attachment messages can be forwarded by reusing the stored encrypted file reference instead of reuploading bytes. After a client decrypts an attachment, it can store the plaintext bytes in the device-local vault cache as a separate encrypted media blob. Media writes prune the durable cache by byte and item caps, and media reads refresh recency so older unaccessed blobs are pruned first. Read receipts and reactions are encrypted control messages in the same message stream; they do not update chat previews and are filtered out of visible chat UI.
 
 ## Architecture
 
@@ -148,6 +148,7 @@ The wrapper URL is intentional for veyl-specific actions. On iOS, the veyl web h
 - The iOS full-screen media viewer is owned by `apps/veyl/ios/src/providers/mediaviewerprovider.js`. Swipe navigation moves only the horizontal rail; vertical dismiss scale, opacity, rounding, and save-action fade are scoped to the active media slide so neighboring slides stay unscaled during exit.
 - Chat IDs are derived from the two participant chat public keys.
 - Chat list rows and previously decrypted media hydrate from the vaulted local cache after unlock, then Firestore listeners reconcile fresh chat-row data. Chat docs carry only participants and an encrypted latest visible-message preview (`lastMsg`) so list ordering, timestamps, previews, and push gating do not need one subcollection query per chat. Visible message lists still come from server-confirmed message reads, not the durable local cache.
+- Normal chat and account deletion leave shared `chatmedia` blobs in Storage because forwarded attachment messages can still reference those immutable encrypted objects from other chats.
 - Peer profiles may hydrate from the vaulted local cache for immediate UI, but profile refreshes still re-read `profiles/{uid}` for recent or directly opened people. Avatar image URLs are the heavy cached work: `profiles/{uid}.avatar` is a single version field, set to the Storage object generation when a profile picture exists and `null` when it is removed. Clients compare that version before resolving a new Storage URL, so unchanged avatars keep a stable image source.
 - The current user's own avatar image also has a tiny unlocked cache keyed by uid and `profiles/{uid}.avatar` because `UserProvider` sits above the vault and unlock/profile chrome can render it before the vault cache opens. That unlocked cache stores only the live authenticated user's public avatar image bytes and version; sign-out/no-auth purges it, and auth switches prune every other self-avatar entry. It does not store usernames, settings, wallet keys, chat keys, chats, transactions, or decrypted media.
 - On iOS and web, chat warming keeps bounded in-memory latest-message batches for recent chats after unlock. Opening a warmed chat uses that provider-owned message batch as the initial message list instead of attaching a second latest-message listener or rendering an empty list first. The first chat row is warmed first because web lands there by default, but unlock navigation does not wait for warming. Media rows reuse the transient render-file cache before reading vaulted media again, and the warming path fills image/video media caches in the background only after server-confirmed message docs exist. These message batches are never written to the vaulted local cache and are cleared on lock/session teardown.
@@ -174,7 +175,7 @@ The wrapper URL is intentional for veyl-specific actions. On iOS, the veyl web h
 ├── firestore.rules
 ├── firebase.json
 ├── guidelines    Focused agent guidance by task area
-├── todo         One-file-per-feature active planning area
+├── todo         Active planning task files; policy lives in guidelines/todo.md
 ├── AGENTS.md
 └── README.md
 ```
@@ -274,8 +275,10 @@ bun veyl ios local
 bun veyl ios mainnet
 bun veyl ios regtest
 bun veyl ios tunnel
+bun veyl ios submit
 bun make ios
 bun make ios local
+bun make ios prod
 bun make backend
 bun make db
 bun make rules
@@ -284,6 +287,8 @@ bun make fns
 ```
 
 `bun veyl ios local` installs/runs a standalone `veyl local` iOS build on `REGTEST` with bundle id `com.glyphteck.veyl.local`, so it can remain on a device separately from the normal dev build and does not require the Expo server after install. `bun make ios local` uses the same build type.
+
+`bun make ios prod` starts a cloud EAS App Store production build. After it finishes, `bun veyl ios submit` submits the latest EAS iOS build to App Store Connect using the production submit profile.
 
 If native iOS dependencies change, refresh pods:
 

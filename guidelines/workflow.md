@@ -27,52 +27,7 @@ Large work:
 
 ## Todo Task Files
 
-`todo/` is an active planning and coordination area. It is not a changelog.
-
-- Keep one active feature or implementation plan per file.
-- Use lowercase task-specific filenames, such as `wallet-fees.md` or `ios-profile.md`.
-- Keep the task file short enough to scan, but concrete enough that another agent can continue the work.
-- The task file is the coordination record. If the implementation uses a branch or worktree, record that branch and worktree path in the task file.
-- For worktree-backed tasks, keep the coordination task file visible from the primary checkout's `todo/`; do not leave the only task record inside the linked worktree.
-- Do not list completed work in `todo/`. When a task is done, delete its file or trim it down to only unresolved work.
-- If implemented behavior needs durable documentation, move it into `README.md`, `AGENTS.md`, or the focused guideline file instead of leaving history in `todo/`.
-- Avoid making `todo/README.md` a constantly changing status board. The individual task files are the authoritative active records.
-
-Use this shape for worktree-backed or collision-prone tasks:
-
-```md
-# Task Name
-
-status: active
-branch: shortbranch
-worktree: ../worktrees/shortbranch
-base: main@<commit>
-owner: optional
-
-## Scope
-
-What this task changes and what it intentionally does not change.
-
-## Write Boundary
-
-Files, modules, routes, or docs this task expects to touch.
-
-## Collision Notes
-
-Related active todo files, branches, worktrees, or surfaces to avoid.
-
-## Plan
-
-The current implementation plan.
-
-## Handoff
-
-Current state, blockers, review notes, and what @zxrl should test.
-```
-
-Paths in task files are relative to the repo root unless they are absolute.
-
-For task files that do not use a branch or worktree, set `branch: current` and `worktree: current` or omit those lines when the scope is obvious.
+Use [todo.md](todo.md) for todo folder policy, task-file shape, and cleanup rules. In short: `todo/` is for active large-feature coordination only, the folder contents are the active list, and implemented behavior belongs in durable docs instead of todo files.
 
 ## Branches And Worktrees
 

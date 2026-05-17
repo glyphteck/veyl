@@ -201,6 +201,14 @@ export const userAvatarCache = {
         tx.objectStore(STORE_NAME).put(rememberRecord(previous, uid, account), uid);
         await txToPromise(tx);
     },
+    async hasRemembered(uid) {
+        if (!uid) return false;
+        const db = await openDb();
+        if (!db) return false;
+
+        const tx = db.transaction(STORE_NAME, 'readonly');
+        return isRemembered(await requestToPromise(tx.objectStore(STORE_NAME).get(uid)));
+    },
     async touchLogin(uid) {
         if (!uid) return;
         const db = await openDb();

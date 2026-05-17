@@ -62,8 +62,9 @@ function useCachedAvatarSource(sourceKey) {
     return cachedSource;
 }
 
-export function StaticAvatar({ source, size = 52, style, pointerEvents, contentFit = 'cover', bot = false }) {
+export function StaticAvatar({ source, size = 52, style, pointerEvents, contentFit = 'cover', bot = false, glyphColor, glyphScale = 1 }) {
     const { theme } = useTheme();
+    const resolvedGlyphColor = glyphColor ?? theme.foreground;
     const { sourceKey, imageSource, cachedSource } = useAvatarImageSource(source);
     const [loadedKey, setLoadedKey] = useState(() => (sourceKey && loadedSourceKeys.has(sourceKey) ? sourceKey : ''));
     const imageLoaded = !!sourceKey && (loadedKey === sourceKey || !!cachedSource);
@@ -85,7 +86,7 @@ export function StaticAvatar({ source, size = 52, style, pointerEvents, contentF
             <View pointerEvents={pointerEvents} style={[{ width: size, height: size, borderRadius: size / 2, overflow: 'hidden', backgroundColor: theme.background }, style]}>
                 <Svg width={size} height={size} pointerEvents={pointerEvents}>
                     <Rect x="0" y="0" width={size} height={size} fill={theme.background} />
-                    <AvatarGlyph bot={bot} size={size} color={theme.foreground} />
+                    <AvatarGlyph bot={bot} size={size} color={resolvedGlyphColor} glyphScale={glyphScale} />
                 </Svg>
             </View>
         );
@@ -96,7 +97,7 @@ export function StaticAvatar({ source, size = 52, style, pointerEvents, contentF
             {!imageLoaded ? (
                 <Svg width={size} height={size} pointerEvents={pointerEvents}>
                     <Rect x="0" y="0" width={size} height={size} fill={theme.background} />
-                    <AvatarGlyph bot={bot} size={size} color={theme.foreground} />
+                    <AvatarGlyph bot={bot} size={size} color={resolvedGlyphColor} glyphScale={glyphScale} />
                 </Svg>
             ) : null}
             <ExpoImage
@@ -119,8 +120,8 @@ export function StaticAvatar({ source, size = 52, style, pointerEvents, contentF
     );
 }
 
-function AvatarGlyph({ bot, size, color }) {
-    const glyphSize = bot ? size * 0.7 : size * 1.1;
+function AvatarGlyph({ bot, size, color, glyphScale = 1 }) {
+    const glyphSize = (bot ? size * 0.7 : size * 1.1) * glyphScale;
     const x = (size - glyphSize) / 2;
     const y = bot ? x : (size - glyphSize - size * 0.25) / 2 + size * 0.25;
     const scale = glyphSize / 24;
@@ -272,12 +273,15 @@ export default function Avatar({
     active = false,
     selected = null,
     bot = false,
+    glyphColor,
+    glyphScale = 1,
     hideFallbackUntilLoaded = false,
     assumeImageLoaded = false,
     onImageLoad,
     maskAdornments = [],
 }) {
     const { theme } = useTheme();
+    const resolvedGlyphColor = glyphColor ?? theme.foreground;
     const id = useId();
     const { sourceKey, imageSource, cachedSource } = useAvatarImageSource(source);
     const [loadedKey, setLoadedKey] = useState(() => (sourceKey && loadedSourceKeys.has(sourceKey) ? sourceKey : ''));
@@ -346,7 +350,7 @@ export default function Avatar({
                 </Defs>
                 <G mask={`url(#${maskId})`}>
                     <Rect x="0" y="0" width={size} height={size} fill={theme.background} />
-                    {!hideFallbackUntilLoaded || !sourceKey || imageLoaded ? <AvatarGlyph bot={bot} size={size} color={theme.foreground} /> : null}
+                    {!hideFallbackUntilLoaded || !sourceKey || imageLoaded ? <AvatarGlyph bot={bot} size={size} color={resolvedGlyphColor} glyphScale={glyphScale} /> : null}
                     {sourceKey ? <AvatarImage href={imageSource} size={size} loaded={imageLoaded} onLoad={handleImageLoad} /> : null}
                     {selectable ? <AnimatedCircle animatedProps={selectedProps} cx={size / 2} cy={size / 2} r={selectedRadius} fill="none" stroke={theme.active} strokeWidth={selectedStroke} /> : null}
                 </G>

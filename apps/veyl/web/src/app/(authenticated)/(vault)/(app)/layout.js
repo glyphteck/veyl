@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Loading from '@/components/loading';
 import Navbar from '@/components/navbar';
-import { DialogProvider } from '@/components/providers/dialogprovider';
+import { AppDialogHost } from '@/components/providers/dialogprovider';
 import { useChat } from '@/components/providers/chatprovider';
 import { PeerProvider, usePeer } from '@/components/providers/peerprovider';
 import { TxDataProvider } from '@/components/providers/txdataprovider';
@@ -26,12 +26,10 @@ function AppShell({ children }) {
     return !hasInitiallyLoaded ? (
         <Loading />
     ) : (
-        <DialogProvider>
-            <div className="relative flex h-screen flex-col px-2 pb-2">
-                <Navbar />
-                <main className="min-h-0 flex-1">{children}</main>
-            </div>
-        </DialogProvider>
+        <div className="relative flex h-screen flex-col px-2 pb-2">
+            <Navbar />
+            <main className="min-h-0 flex-1">{children}</main>
+        </div>
     );
 }
 
@@ -57,7 +55,9 @@ export default function AppLayout({ children }) {
         <WalletProvider>
             <TxDataProvider>
                 <PeerProvider>
-                    <AppShell>{children}</AppShell>
+                    <AppDialogHost>
+                        <AppShell>{children}</AppShell>
+                    </AppDialogHost>
                 </PeerProvider>
             </TxDataProvider>
         </WalletProvider>

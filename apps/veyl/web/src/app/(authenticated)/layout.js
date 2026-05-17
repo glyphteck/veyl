@@ -1,7 +1,11 @@
 import { requireSession } from '@/lib/routeguards';
-import { DialogProvider } from '@/components/providers/dialogprovider';
+import { AuthDialogHost, DialogProvider } from '@/components/providers/dialogprovider';
 
 export default async function AuthenticatedLayout({ children }) {
     await requireSession();
-    return <DialogProvider allow={['passwordrules', 'rememberaccount']}>{children}</DialogProvider>;
+    return (
+        <DialogProvider>
+            <AuthDialogHost>{children}</AuthDialogHost>
+        </DialogProvider>
+    );
 }

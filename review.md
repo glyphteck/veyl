@@ -125,7 +125,7 @@ Account deletion removes service-side account records controlled by Glyphteck Co
 
 veyl includes user-generated one-to-one text and payment-request content. The app includes:
 
-- versioned community-rules acknowledgement during iOS and web onboarding,
+- current community-rules acknowledgement during iOS and web onboarding,
 - acceptable-use, privacy, terms, and support disclosures,
 - user reporting,
 - user blocking,
@@ -195,7 +195,7 @@ bun veyl bot
 
 Apple's current App Review Guidelines require full reviewer access for account-based features, live backend services during review, and user-generated-content controls such as filtering, reporting, blocking, and published contact information. For veyl, public user-generated surfaces are limited to usernames and profile avatars. Private one-to-one chat content is end-to-end encrypted and is not publicly posted.
 
-Current decision: iOS and web both require acknowledgement of the current community-rules version before vault/app access. If Glyphteck Corp ships a new rules version, returning users are routed to the acknowledgement screen on their next app load or web session before they can continue into the app.
+Current decision: iOS and web both require acknowledgement of the latest community rules before vault/app access. If Glyphteck Corp ships updated rules, returning users are routed to the acknowledgement screen on their next app load or web session before they can continue into the app.
 
 ## App Review Guideline Mapping
 

@@ -12,6 +12,7 @@ import GlassButton from '@/components/glass/glassbutton';
 import GlassField from '@/components/glass/glassfield';
 import GlassHeader from '@/components/glass/glassheader';
 import Icon from '@/components/icon';
+import { hasQuickLoginAccount } from '@/lib/quicklogin';
 import { useTap } from '@/lib/tap';
 import { logout } from '@/lib/useractions';
 import { isPassword, MAX_PASSWORD, normalizePassword } from '@glyphteck/shared/password';
@@ -113,7 +114,11 @@ export default function UnlockScreen() {
         }
     };
 
-    const onLogout = () => {
+    const onLogout = async () => {
+        if (await hasQuickLoginAccount(user.uid)) {
+            await performLogout(true);
+            return;
+        }
         Alert.alert('remember account?', 'login faster next time', [
             { text: 'no thanks', style: 'cancel', onPress: () => performLogout(false) },
             { text: 'remember', onPress: () => performLogout(true) },

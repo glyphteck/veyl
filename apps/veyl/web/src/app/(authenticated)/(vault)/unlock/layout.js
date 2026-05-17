@@ -1,4 +1,4 @@
-import { DialogProvider } from '@/components/providers/dialogprovider';
+import { UnlockDialogHost } from '@/components/providers/dialogprovider';
 
 export const metadata = {
     title: 'Locked',
@@ -6,5 +6,5 @@ export const metadata = {
 };
 
 export default function UnlockLayout({ children }) {
-    return <DialogProvider allow={['qrcode']}>{children}</DialogProvider>;
+    return <UnlockDialogHost>{children}</UnlockDialogHost>;
 }

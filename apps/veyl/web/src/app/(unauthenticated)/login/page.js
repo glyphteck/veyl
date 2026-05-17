@@ -76,6 +76,12 @@ export default function LoginPage() {
         }
     }
 
+    function newAccount() {
+        if (isLoading) return;
+        setLoadingKey('newaccount');
+        router.push('/newaccount');
+    }
+
     async function forget(uid, event = null) {
         event?.preventDefault?.();
         event?.stopPropagation?.();
@@ -133,7 +139,7 @@ export default function LoginPage() {
                         <Fingerprint />
                         login
                     </Button>
-                    <Button onClick={() => router.push('/newaccount')} disabled={isLoading} variant="ghost" className="w-3xs shrinker disabled:opacity-100">
+                    <Button onClick={newAccount} disabled={isLoading} variant="ghost" className="w-3xs shrinker disabled:opacity-100">
                         <UserRoundPlus />
                         new account
                     </Button>

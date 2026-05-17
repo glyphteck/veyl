@@ -77,7 +77,7 @@ const GetUsername = () => {
 
         try {
             await httpsCallable(getFunctions(), 'setUsername')({ username });
-            router.push('/getavatar');
+            router.refresh();
         } catch (err) {
             form.reset({ username: '' });
             setStatus(isTakenError(err) ? 'taken' : 'unavailable');

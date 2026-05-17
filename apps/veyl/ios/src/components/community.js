@@ -108,7 +108,7 @@ export default function Community({ ackMode = false }) {
                 <View style={{ flex: 1, minWidth: 0, alignItems: 'center', justifyContent: 'center' }}>
                     <Text style={{ fontSize: 24, fontWeight: '800', color: theme.foreground }}>community rules</Text>
                     <Text style={{ fontSize: 12, fontWeight: '700', color: theme.muted }}>
-                        {COMMUNITY_RULES_VERSION} - {COMMUNITY_RULES_EFFECTIVE}
+                        issued {COMMUNITY_RULES_EFFECTIVE}
                     </Text>
                 </View>
                 <View style={{ width: 56 }} />

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, Animated, Pressable, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Animated, Pressable, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { ImageUp } from 'lucide-react-native';
 import { useTheme } from '@/providers/themeprovider';
@@ -20,7 +20,8 @@ export default function NewUserAvatar() {
     const { uid, hasAvatarEntry, refetchAvatar, communityRulesVersion, communityRulesAcceptedAt, communityRulesPending } = useUser();
     const { encSeed } = useVault();
     const [selectedAsset, setSelectedAsset] = useState(null);
-    const [isUploading, setIsUploading] = useState(false);
+    const [pendingAction, setPendingAction] = useState(null);
+    const isUploading = !!pendingAction;
     const hasSelectedAsset = !!selectedAsset;
     const desiredAction = hasSelectedAsset ? 'confirm' : 'skip';
     const [visibleAction, setVisibleAction] = useState(desiredAction);
@@ -32,6 +33,7 @@ export default function NewUserAvatar() {
     const routeLockTimerRef = useRef(null);
     const acceptedRules = hasCurrentCommunityRules({ communityRulesVersion, communityRulesAcceptedAt, communityRulesPending });
     const isOnboarding = !hasAvatarEntry || !encSeed || !acceptedRules;
+    const pendingLabel = pendingAction === 'upload' ? 'uplaoding' : pendingAction === 'skip' ? 'confirming' : '';
     const lockRoute = useCallback((ms = 1200) => {
         if (routeLockRef.current) return false;
         routeLockRef.current = true;
@@ -90,19 +92,15 @@ export default function NewUserAvatar() {
         };
     }, [actionScaleValue, desiredAction]);
 
-    const continueAfterAvatar = useCallback(() => {
-        if (acceptedRules) {
-            router.replace(encSeed ? '/wallet' : '/getpassword');
-            return;
-        }
-        router.push('/community');
-    }, [acceptedRules, encSeed, router]);
-
     const handleSkip = useCallback(async () => {
         if (isUploading) return;
 
         if (!isOnboarding) {
-            if (!lockRoute()) return;
+            setPendingAction('skip');
+            if (!lockRoute()) {
+                setPendingAction(null);
+                return;
+            }
             router.back();
             return;
         }
@@ -114,17 +112,21 @@ export default function NewUserAvatar() {
         }
 
         try {
-            setIsUploading(true);
+            setPendingAction('skip');
             await skipAvatar({ uid: effectiveUid });
-            if (!lockRoute()) return;
-            continueAfterAvatar();
+            if (!isOnboarding) {
+                if (!lockRoute()) {
+                    setPendingAction(null);
+                    return;
+                }
+                router.back();
+            }
         } catch (err) {
             console.warn('avatar skip failed', err);
             Alert.alert('Skip failed', 'Could not update your avatar step. Please try again.');
-        } finally {
-            setIsUploading(false);
+            setPendingAction(null);
         }
-    }, [continueAfterAvatar, isOnboarding, isUploading, lockRoute, router, uid]);
+    }, [isOnboarding, isUploading, lockRoute, router, uid]);
 
     const skipFeedback = useTap({
         disabled: isUploading,
@@ -144,26 +146,26 @@ export default function NewUserAvatar() {
         }
 
         try {
-            setIsUploading(true);
+            setPendingAction('upload');
             await uploadAvatar({
                 uid: effectiveUid,
                 uri: selectedAsset.uri,
                 mimeType: selectedAsset.mimeType,
             });
             await refetchAvatar?.({ optimistic: true });
-            if (!lockRoute()) return;
             if (!isOnboarding) {
+                if (!lockRoute()) {
+                    setPendingAction(null);
+                    return;
+                }
                 router.back();
-                return;
             }
-            continueAfterAvatar();
         } catch (err) {
             console.warn('avatar upload failed', err);
             Alert.alert('Upload failed', 'Could not upload your avatar. Please try again.');
-        } finally {
-            setIsUploading(false);
+            setPendingAction(null);
         }
-    }, [continueAfterAvatar, isOnboarding, isUploading, lockRoute, refetchAvatar, router, selectedAsset, uid]);
+    }, [isOnboarding, isUploading, lockRoute, refetchAvatar, router, selectedAsset, uid]);
 
     const handleRemoveAvatar = useCallback(() => {
         if (isUploading) return;
@@ -187,9 +189,14 @@ export default function NewUserAvatar() {
 
             <View style={{ position: 'absolute', left: 24, right: 24, bottom: '14%', alignItems: 'center', gap: 12 }}>
                 <View style={{ width: 256, height: 54, alignItems: 'center', justifyContent: 'center' }}>
-                    <Animated.View pointerEvents={actionOpen ? 'auto' : 'none'} style={{ position: 'absolute', alignItems: 'center', justifyContent: 'center', transform: [{ scale: actionScaleValue }] }}>
-                        {visibleAction === 'confirm' ? (
-                            <GlassButton onPress={handleContinue} icon={ImageUp} label={isUploading ? 'uploading…' : 'confirm'} accent disabled={!canContinue} style={{ width: 256 }} />
+                    <Animated.View pointerEvents={pendingLabel ? 'none' : actionOpen ? 'auto' : 'none'} style={{ position: 'absolute', alignItems: 'center', justifyContent: 'center', transform: [{ scale: actionScaleValue }] }}>
+                        {pendingLabel ? (
+                            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                                <ActivityIndicator size="small" color={theme.muted} />
+                                <Text style={{ color: theme.muted, fontSize: 16, fontWeight: '700' }}>{pendingLabel}</Text>
+                            </View>
+                        ) : visibleAction === 'confirm' ? (
+                            <GlassButton onPress={handleContinue} icon={ImageUp} label="confirm" accent disabled={!canContinue} style={{ width: 256 }} />
                         ) : (
                             <Pressable {...skipFeedback.props} disabled={isUploading}>
                                 <Animated.View style={{ transform: [{ scale: skipFeedback.scale }] }}>

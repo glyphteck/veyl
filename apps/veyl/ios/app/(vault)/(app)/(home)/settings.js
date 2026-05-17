@@ -13,6 +13,7 @@ import { deleteAvatar, uploadAvatar } from '@/lib/avatarupload';
 import { clearFaceIdPassword, FaceIdIcon } from '@/lib/faceid';
 import { auth } from '@/lib/firebase';
 import { clearMsgImageCache } from '@/lib/msgimagecache';
+import { hasQuickLoginAccount } from '@/lib/quicklogin';
 import { useTap } from '@/lib/tap';
 import { logout } from '@/lib/useractions';
 import { useTheme } from '@/providers/themeprovider';
@@ -508,8 +509,12 @@ export default function SettingsScreen() {
         }
     };
 
-    const handleLogout = () => {
+    const handleLogout = async () => {
         if (isLoggingOut) return;
+        if (await hasQuickLoginAccount(user.uid)) {
+            await performLogout(true);
+            return;
+        }
         Alert.alert('remember account?', 'login faster next time', [
             { text: 'no thanks', style: 'cancel', onPress: () => performLogout(false) },
             { text: 'remember', onPress: () => performLogout(true) },

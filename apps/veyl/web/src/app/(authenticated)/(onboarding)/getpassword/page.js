@@ -79,8 +79,8 @@ const GetPsw = () => {
             const seedData = await encryptSeed(password);
             console.log('Encryption completed, saving to database...');
             await setDoc(doc(db, 'seeds', uid), { es: packSeedData(seedData) });
-            console.log('Saved to database, redirecting...');
-            router.push('/unlock');
+            console.log('Saved to database, refreshing route...');
+            router.refresh();
         } catch (error) {
             console.error('Error in encryption process:', error);
             setStatus('idle');

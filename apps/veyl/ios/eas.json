@@ -1,6 +1,7 @@
 {
     "cli": {
-        "version": ">= 8.0.0"
+        "version": ">= 16.0.1",
+        "appVersionSource": "remote"
     },
     "build": {
         "development": {
@@ -18,8 +19,22 @@
             }
         },
         "production": {
+            "autoIncrement": true,
             "env": {
+                "VEYL_IOS_VARIANT": "prod",
                 "EXPO_PUBLIC_NETWORK": "MAINNET"
+            }
+        }
+    },
+    "submit": {
+        "production": {
+            "ios": {
+                "appleTeamId": "HHTM355M49",
+                "bundleIdentifier": "com.glyphteck.veyl",
+                "sku": "com.glyphteck.veyl",
+                "language": "en-US",
+                "companyName": "Glyphteck Corp",
+                "appName": "veyl"
             }
         }
     }

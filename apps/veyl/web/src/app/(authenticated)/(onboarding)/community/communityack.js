@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { Loader } from 'lucide-react';
@@ -8,15 +8,13 @@ import { COMMUNITY_RULES_DATE, COMMUNITY_RULES_EFFECTIVE, COMMUNITY_RULES_VERSIO
 import { Button } from '@/components/button';
 import { auth, db } from '@/lib/firebase/firebaseclient';
 
-export default function CommunityAck({ hasSeed }) {
+export default function CommunityAck() {
     const router = useRouter();
     const bodyRef = useRef(null);
     const [canAccept, setCanAccept] = useState(false);
     const [status, setStatus] = useState('idle');
     const isSubmitting = status === 'submitting';
     const isError = status === 'error';
-
-    const target = useMemo(() => (hasSeed ? '/unlock' : '/getpassword'), [hasSeed]);
 
     const handleScroll = useCallback(
         (event) => {
@@ -55,13 +53,12 @@ export default function CommunityAck({ hasSeed }) {
                 },
                 { merge: true }
             );
-            router.replace(target);
             router.refresh();
         } catch (error) {
             console.warn('community rules acknowledgement failed', error);
             setStatus('error');
         }
-    }, [canAccept, isSubmitting, router, target]);
+    }, [canAccept, isSubmitting, router]);
 
     return (
         <main className="absolute inset-0 overflow-hidden">
@@ -86,7 +83,7 @@ export default function CommunityAck({ hasSeed }) {
                     <div className="min-w-0 text-center">
                         <h1 className="text-2xl font-extrabold leading-tight">community rules</h1>
                         <div className="text-xs font-bold text-muted">
-                            {COMMUNITY_RULES_VERSION} - {COMMUNITY_RULES_EFFECTIVE}
+                            issued {COMMUNITY_RULES_EFFECTIVE}
                         </div>
                     </div>
                     <div />

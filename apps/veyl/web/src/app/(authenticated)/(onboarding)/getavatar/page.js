@@ -6,16 +6,15 @@ import { Button } from '@/components/button';
 import { skipAvatar, uploadAvatar } from '@/lib/useractions';
 import { useUser } from '@/components/providers/userprovider';
 import UpdateAvatar from '@/components/updateavatar';
-import { ImageUp } from 'lucide-react';
+import { ImageUp, Loader } from 'lucide-react';
 
 export default function GetAvatar() {
     const router = useRouter();
     const { avatarBanned, refetchAvatar } = useUser();
     const [selectedImage, setSelectedImage] = useState(null);
     const [status, setStatus] = useState('idle');
-    const isUploading = status === 'uploading';
-    const isSkipping = status === 'skipping';
-    const busy = isUploading || isSkipping;
+    const busy = status !== 'idle';
+    const statusLabel = status === 'uploading' ? 'uplaoding' : status === 'confirming' ? 'confirming' : '';
 
     const handleConfirm = async () => {
         if (!selectedImage || busy || avatarBanned) return;
@@ -28,8 +27,7 @@ export default function GetAvatar() {
                 return;
             }
             await refetchAvatar?.({ optimistic: true });
-            setStatus('skipping');
-            router.push('/community');
+            router.replace('/community');
         } catch {
             setStatus('idle');
         }
@@ -37,13 +35,13 @@ export default function GetAvatar() {
 
     const handleSkip = async () => {
         if (busy) return;
-        setStatus('skipping');
+        setStatus('confirming');
         const ok = await skipAvatar();
         if (!ok) {
             setStatus('idle');
             return;
         }
-        router.push('/community');
+        router.replace('/community');
     };
 
     const handleRemoveAvatar = () => {
@@ -66,13 +64,17 @@ export default function GetAvatar() {
                 />
                 <div className="flex flex-col gap-1">
                     <div className="relative h-10 w-3xs">
-                        <div className="pop absolute inset-0 flex items-center justify-center" data-open={!selectedImage}>
-                            <Button type="button" className="grower w-full text-muted hover:text-foreground" disabled={busy} onClick={handleSkip}>
+                        <div className="pop absolute inset-0 flex items-center justify-center gap-2 text-sm font-black text-muted select-none" data-open={!!statusLabel}>
+                            <Loader className="size-4 animate-spin" />
+                            <span>{statusLabel}</span>
+                        </div>
+                        <div className="pop absolute inset-0 flex items-center justify-center" data-open={!selectedImage && !busy}>
+                            <Button type="button" className="grower w-full text-muted hover:text-foreground" disabled={busy} onClick={handleSkip} tabIndex={!selectedImage && !busy ? 0 : -1}>
                                 skip for now
                             </Button>
                         </div>
-                        <div className="pop absolute inset-0 flex items-center justify-center" data-open={!!selectedImage}>
-                            <Button type="button" className="button-outline shrinker w-full" disabled={!selectedImage || busy || avatarBanned} onClick={handleConfirm}>
+                        <div className="pop absolute inset-0 flex items-center justify-center" data-open={!!selectedImage && !busy}>
+                            <Button type="button" className="button-outline shrinker w-full" disabled={!selectedImage || busy || avatarBanned} onClick={handleConfirm} tabIndex={selectedImage && !busy ? 0 : -1}>
                                 <ImageUp className="stroke-2" />
                                 confirm
                             </Button>

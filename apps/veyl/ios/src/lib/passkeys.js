@@ -40,7 +40,7 @@ export function isPasskeyRpMismatchError(error) {
     return error?.code === 'passkey-rp-mismatch';
 }
 
-export async function passkeyRegister({ onPrompt, label: providedLabel } = {}) {
+export async function passkeyRegister({ onPrompt, onVerified, label: providedLabel } = {}) {
     try {
         const label = providedLabel?.trim() || generateLabel();
         const origin = getPasskeyOrigin();
@@ -73,6 +73,10 @@ export async function passkeyRegister({ onPrompt, label: providedLabel } = {}) {
             uid,
             attestation,
         });
+
+        if (typeof onVerified === 'function') {
+            await onVerified({ uid });
+        }
 
         await signInWithCustomToken(auth, token);
 

@@ -3,67 +3,89 @@
 import { useRef, useState } from 'react';
 import { Button } from '@/components/button';
 import { Input } from '@/components/input';
-import { Loader } from 'lucide-react';
+import { StaticAvatar } from '@/components/avatar';
 import { toast } from 'sonner';
 import { isPasskeyRpMismatchError, passkeyRegister } from '@/lib/passkey';
+import { cn } from '@/lib/utils';
+
+const PASSKEY_AVATAR_SUCCESS_MS = 500;
+const PASSKEY_AVATAR_PULSE_MS = 1600;
 
 function isInvalidPasskeyRegisterError(error) {
     return error?.code === 'passkey-register-invalid';
 }
 
+function PasskeyAvatarStatus({ state }) {
+    const visible = state !== 'idle';
+    const success = state === 'success';
+
+    return (
+        <div className={cn('pointer-events-none absolute inset-0 flex items-center justify-center transition-opacity ease-out', visible ? 'opacity-100' : 'opacity-0')} aria-hidden={!visible}>
+            <div className="relative size-18">
+                <StaticAvatar
+                    className={cn('absolute inset-0 size-18 text-foreground shadow-sm transition-opacity duration-500 ease-out [&_svg]:scale-[1.12]', visible && !success ? 'animate-pulse opacity-100' : 'opacity-0')}
+                    style={{ animationDuration: `${PASSKEY_AVATAR_PULSE_MS}ms` }}
+                />
+                <StaticAvatar className={cn('absolute inset-0 size-18 text-active shadow-sm transition-opacity duration-500 ease-out [&_svg]:scale-[1.12]', success ? 'opacity-100' : 'opacity-0')} />
+            </div>
+        </div>
+    );
+}
+
 export default function NewAccountPage() {
     const [accountName, setAccountName] = useState('');
-    const [isLoading, setIsLoading] = useState(false);
+    const [authState, setAuthState] = useState('idle');
+    const registeringRef = useRef(false);
     const inputRef = useRef(null);
+    const isLoading = authState !== 'idle';
+    const hidden = isLoading;
+    const createDisabled = isLoading || !accountName.trim();
 
     async function register(label) {
-        if (isLoading) return;
+        if (registeringRef.current) return;
+        registeringRef.current = true;
+        const registration = passkeyRegister({ label });
         try {
-            setIsLoading(true);
-            await passkeyRegister({ label });
-            window.location.replace('/unlock');
+            setAuthState('preparing');
+            await registration;
+            setAuthState('success');
+            await new Promise((resolve) => setTimeout(resolve, PASSKEY_AVATAR_SUCCESS_MS));
+            window.location.replace('/getusername');
         } catch (error) {
+            registeringRef.current = false;
             if (error.name === 'NotAllowedError') {
-                setIsLoading(false);
+                setAuthState('idle');
                 return;
             }
             if (isPasskeyRpMismatchError(error)) {
                 toast.error('This passkey is from a different Gliftec passkey setup.', {
                     description: 'Try again and create a new passkey for the current build.',
                 });
-                setIsLoading(false);
+                setAuthState('idle');
                 return;
             }
             if (isInvalidPasskeyRegisterError(error)) {
                 toast.error('Passkey registration failed.', {
                     description: error.message,
                 });
-                setIsLoading(false);
+                setAuthState('idle');
                 return;
             }
             console.error('Registration failed:', error);
-            setIsLoading(false);
+            setAuthState('idle');
         }
     }
 
-    if (isLoading) {
-        return (
-            <div className="h-screen flex items-center justify-center">
-                <Loader className="size-8 animate-spin" />
-            </div>
-        );
-    }
-
     return (
-        <div className="h-screen flex items-center justify-center" onClick={() => inputRef.current?.focus()}>
-            <div className="flex flex-col gap-2 items-start pointer-events-auto select-none">
+        <div className="relative h-screen flex items-center justify-center" onClick={() => (!isLoading ? inputRef.current?.focus() : null)}>
+            <div className={`flex flex-col gap-2 items-start select-none transition-opacity ease-out ${hidden ? 'pointer-events-none opacity-0' : 'pointer-events-auto opacity-100'}`} aria-hidden={hidden}>
                 <label htmlFor="passkey-name" className="px-3 text-xl font-black leading-none select-none">
                     label your passkey
                 </label>
                 <Input
                     ref={inputRef}
                     id="passkey-name"
-                    className="min-w-80"
+                    className="min-w-80 disabled:!opacity-100"
                     type="text"
                     placeholder="passkey name"
                     value={accountName}
@@ -79,14 +101,15 @@ export default function NewAccountPage() {
                     autoCorrect="off"
                 />
                 <div className="flex flex-col w-full gap-2 mt-2">
-                    <Button onClick={() => register(accountName.trim())} disabled={isLoading || !accountName.trim()} className="w-full shrinker button-fill">
+                    <Button onClick={() => register(accountName.trim())} disabled={createDisabled} className={`w-full shrinker button-fill ${isLoading ? 'disabled:!opacity-100' : ''}`}>
                         create account
                     </Button>
-                    <Button type="button" variant="ghost" className="grower text-muted hover:text-foreground" disabled={isLoading} onClick={() => register(undefined)}>
+                    <Button type="button" variant="ghost" className="grower text-muted hover:text-foreground disabled:!opacity-100" disabled={isLoading} onClick={() => register(undefined)}>
                         i don't care
                     </Button>
                 </div>
             </div>
+            <PasskeyAvatarStatus state={authState} />
         </div>
     );
 }

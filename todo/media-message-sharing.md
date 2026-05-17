@@ -1,15 +1,6 @@
 # Media Message Sharing
 
-## Current Behavior
-
-- Chat attachments can be forwarded by reference without reuploading the file.
-- Forwarded attachment messages clone only the stored file path/key and display metadata into a new encrypted message body.
-- File reads derive decrypt AAD from the chat id embedded in the stored file path, so a referenced object can decrypt outside the original chat.
-- `chatmedia` Storage objects are exact-readable by signed-in users and writable only by source-chat members.
-- Web and iOS both expose share UI for attachment messages.
-- Chat deletion keeps `chatmedia` blobs so existing forwarded references remain readable.
-
-## Remaining Todo: Deletion And Shared File Privacy
+## Deletion And Shared File Privacy
 
 Sharing by reference improves upload/download efficiency, but it creates a deletion contract problem: if the original message owner deletes their message, deleting the Storage object breaks every forwarded reference, while keeping it means the file still exists on the backend after the user tried to delete it.
 
@@ -23,4 +14,4 @@ Tradeoffs:
 - Track refs centrally: enables ref-aware deletion, but adds a new backend index/control surface and must avoid leaking private share graphs.
 - Add delete choices for shared media: for example, "delete just this message" versus "delete this file everywhere it was shared". This is clearer to the user, but needs careful wording, permission rules, and a way to enumerate/delete all backend refs without exposing private recipient details.
 
-Possible direction to investigate later: store an opaque attachment id/ref index server-side, track every message that references it, and make deletion explicit. A normal delete removes only the selected message ref. A destructive delete removes the Storage object and tombstones or removes all message refs that point to it. This needs privacy review, UI copy, and backend enforcement before implementation.
+Possible direction: store an opaque attachment id/ref index server-side, track every message that references it, and make deletion explicit. A normal delete removes only the selected message ref. A destructive delete removes the Storage object and tombstones or removes all message refs that point to it. This needs privacy review, UI copy, and backend enforcement before implementation.

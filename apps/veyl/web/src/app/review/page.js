@@ -16,7 +16,7 @@ const features = [
     'Search for people by username',
     'Camera scanning for payment requests and user ids',
     'Block, report, and account deletion controls',
-    'Versioned community-rules acknowledgement in iOS and web onboarding',
+    'Current community-rules acknowledgement in iOS and web onboarding',
     'Legal, privacy, support, and community-rules screens in the app',
     'Public legal and review pages on the web app',
     'Admin moderation surfaces for reports, bot state, and chat restrictions',
@@ -171,7 +171,7 @@ export default function ReviewPage() {
                             veyl includes user-generated one-to-one chat, encrypted attachments, and payment-request content. Users can block accounts, report users or messages, and delete their account from
                             Settings.
                         </div>
-                        <div>iOS and web require acknowledgement of the current community-rules version before vault/app access.</div>
+                        <div>iOS and web require acknowledgement of the latest community rules before vault/app access.</div>
                         <div>
                             Glyphteck Corp reviews reports through internal admin tooling and can restrict accounts, chat, usernames, uploads, peer discovery, or bot behavior when needed for safety or
                             policy enforcement.

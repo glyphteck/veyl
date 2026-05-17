@@ -1,4 +1,3 @@
-import { getOnboardingState } from '@/lib/routeguards';
 import CommunityAck from './communityack';
 
 export const metadata = {
@@ -7,6 +6,5 @@ export const metadata = {
 };
 
 export default async function CommunityPage() {
-    const state = await getOnboardingState();
-    return <CommunityAck hasSeed={state.hasSeed} />;
+    return <CommunityAck />;
 }
