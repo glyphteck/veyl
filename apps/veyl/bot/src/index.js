@@ -66,7 +66,7 @@ function readPid(file) {
 function botRuntimePids() {
     let output;
     try {
-        output = execFileSync('pgrep', ['-f', 'node .*src/index.js|node src/index.js'], {
+        output = execFileSync('pgrep', ['-f', 'bun .*src/index.js|bun src/index.js'], {
             encoding: 'utf8',
             stdio: ['ignore', 'pipe', 'ignore'],
         });
@@ -78,7 +78,7 @@ function botRuntimePids() {
         .split('\n')
         .map((line) => Number(line.trim()))
         .filter((pid) => isRunning(pid))
-        .filter((pid) => processCwd(pid) === botDir && /\bnode\b/.test(processCommand(pid)));
+        .filter((pid) => processCwd(pid) === botDir && /\bbun\b/.test(processCommand(pid)));
 }
 
 function removeLock() {

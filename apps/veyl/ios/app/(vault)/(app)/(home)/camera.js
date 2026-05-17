@@ -2,8 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Animated as RNAnimated, DeviceEventEmitter, Linking, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import * as MediaLibrary from 'expo-media-library';
 import { Image } from 'expo-image';
-import { useIsFocused, useNavigationState } from '@react-navigation/native';
-import { router, usePathname } from 'expo-router';
+import { useIsFocused } from '@react-navigation/native';
+import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Camera as VCamera, useCameraDevice, useCameraPermission, usePhotoOutput } from 'react-native-vision-camera';
 import { useBarcodeScannerOutput } from 'react-native-vision-camera-barcode-scanner';
@@ -26,6 +26,7 @@ import { useUser } from '@/providers/userprovider';
 import { useWallet } from '@/providers/walletprovider';
 import { usePop } from '@/lib/pop';
 import { useTap } from '@/lib/tap';
+import { CAMERA_WARM_EVENT, CAMERA_WARM_MS } from '@/lib/camerawarm';
 
 const BACK_LENS = { physicalDevices: ['ultra-wide-angle', 'wide-angle', 'telephoto'] };
 const FRONT_LENS = { physicalDevices: ['true-depth', 'wide-angle'] };
@@ -43,7 +44,6 @@ const PREVIEW_CHECK = 250;
 const SCAN_COOLDOWN = 700;
 const ACTION_GAP = 48;
 const EXIT_HOLD = 500;
-const ADJACENT_HOLD = 1000;
 
 function getNormalZoom(device) {
     const minZoom = Number.isFinite(device?.minZoom) ? device.minZoom : NORMAL_ZOOM;
@@ -59,12 +59,7 @@ export default function CameraTab() {
     const { selectChat } = useChat();
     const insets = useSafeAreaInsets();
     const { width: screenW } = useWindowDimensions();
-    const pathname = usePathname();
     const isFocused = useIsFocused();
-    const nearCamera = useNavigationState((state) => {
-        const cameraIndex = state.routes.findIndex((route) => route.name === 'camera');
-        return cameraIndex >= 0 && Math.abs(state.index - cameraIndex) <= 1;
-    });
     const { hasPermission, requestPermission } = useCameraPermission();
     const [facing, setFacing] = useState('back');
     const backDevice = useCameraDevice('back', BACK_LENS);
@@ -93,17 +88,45 @@ export default function CameraTab() {
     const [warming, setWarming] = useState(false);
     const [stagedPhoto, setStagedPhoto] = useState(null);
     const wasOpenRef = useRef(false);
-    const blockWarmRef = useRef(false);
     const previewOpacity = useSharedValue(0);
     const settingsFeedback = useTap();
     const shutterFeedback = useTap({ disabled: taking, scale: SHUTTER_SCALE, hapticIn: SHUTTER_IN, hapticOut: SHUTTER_OUT });
     const pageOpen = isFocused;
-    const inHomeTabs = pathname === '/wallet' || pathname === '/camera' || pathname === '/chatlist' || pathname === '/profile';
-    const adjacent = inHomeTabs && nearCamera && !pageOpen;
+
+    const clearWarm = useCallback(() => {
+        if (warmTimerRef.current) {
+            clearTimeout(warmTimerRef.current);
+            warmTimerRef.current = null;
+        }
+        setWarming(false);
+    }, []);
+
+    const startWarm = useCallback(
+        (ms = CAMERA_WARM_MS) => {
+            if (pageOpen) return;
+            const duration = Number(ms);
+            const hold = Number.isFinite(duration) && duration > 0 ? duration : CAMERA_WARM_MS;
+
+            if (warmTimerRef.current) clearTimeout(warmTimerRef.current);
+            setWarming(true);
+            warmTimerRef.current = setTimeout(() => {
+                warmTimerRef.current = null;
+                setWarming(false);
+            }, hold);
+        },
+        [pageOpen]
+    );
 
     useEffect(() => {
         if (pageOpen && hasPermission === false) requestPermission();
     }, [hasPermission, pageOpen, requestPermission]);
+
+    useEffect(() => {
+        const sub = DeviceEventEmitter.addListener(CAMERA_WARM_EVENT, (payload = {}) => {
+            startWarm(payload?.ms);
+        });
+        return () => sub.remove();
+    }, [startWarm]);
 
     useEffect(
         () => () => {
@@ -119,7 +142,10 @@ export default function CameraTab() {
     }, [previewOpacity, previewVisible]);
 
     useEffect(() => {
-        if (pageOpen) return;
+        if (pageOpen) {
+            clearWarm();
+            return;
+        }
         if (previewRef.current.timer) {
             clearTimeout(previewRef.current.timer);
             previewRef.current.timer = null;
@@ -131,30 +157,11 @@ export default function CameraTab() {
         scanRef.current.time = 0;
         scanRef.current.busy = false;
         setPreviewVisible(false);
-    }, [pageOpen]);
-
-    useEffect(() => {
-        if (!adjacent || blockWarmRef.current) {
-            if (warmTimerRef.current) {
-                clearTimeout(warmTimerRef.current);
-                warmTimerRef.current = null;
-            }
-            setWarming(false);
-            return;
-        }
-
-        setWarming(true);
-        if (warmTimerRef.current) clearTimeout(warmTimerRef.current);
-        warmTimerRef.current = setTimeout(() => {
-            warmTimerRef.current = null;
-            setWarming(false);
-        }, ADJACENT_HOLD);
-    }, [adjacent]);
+    }, [clearWarm, pageOpen]);
 
     useEffect(() => {
         if (pageOpen) {
             wasOpenRef.current = true;
-            blockWarmRef.current = false;
             if (exitTimerRef.current) {
                 clearTimeout(exitTimerRef.current);
                 exitTimerRef.current = null;
@@ -165,12 +172,10 @@ export default function CameraTab() {
         if (!wasOpenRef.current) return;
 
         wasOpenRef.current = false;
-        blockWarmRef.current = true;
         setHolding(true);
         if (exitTimerRef.current) clearTimeout(exitTimerRef.current);
         exitTimerRef.current = setTimeout(() => {
             exitTimerRef.current = null;
-            blockWarmRef.current = false;
             setHolding(false);
         }, EXIT_HOLD);
     }, [pageOpen]);

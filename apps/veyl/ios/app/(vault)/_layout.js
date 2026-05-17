@@ -1,5 +1,4 @@
 import { Stack } from 'expo-router';
-import * as SecureStore from 'expo-secure-store';
 
 import { WalletProvider } from '@/providers/walletprovider';
 import { TxDataProvider } from '@/providers/txdataprovider';
@@ -16,12 +15,11 @@ function VaultContent() {
 
     const faceIDConfigured = user.settingsReady && typeof user.settings?.faceID === 'boolean';
     const faceIDEnabled = faceIDConfigured && user.settings.faceID === true;
-    const faceIDAvailable = faceIDEnabled && SecureStore.canUseBiometricAuthentication();
     const isUnlocked = lockState === 'unlocked';
     const shouldShowFaceIdSetup = isUnlocked && !faceIDConfigured;
     const shouldShowApp = isUnlocked && faceIDConfigured;
-    const shouldShowFaceIdUnlock = !isUnlocked && !shouldShowFaceIdSetup && faceIDAvailable && !faceIdFailed;
-    const shouldShowPasswordUnlock = !isUnlocked && !shouldShowFaceIdSetup && (!faceIDAvailable || faceIdFailed);
+    const shouldShowFaceIdUnlock = !isUnlocked && !shouldShowFaceIdSetup && faceIDEnabled && !faceIdFailed;
+    const shouldShowPasswordUnlock = !isUnlocked && !shouldShowFaceIdSetup && (!faceIDEnabled || faceIdFailed);
 
     return (
         <Stack

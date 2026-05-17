@@ -24,7 +24,7 @@ function PeerCell({ peer, onToggle, selected }) {
 
 export default function Share({ onShare, disabled = false, busy = false, label }) {
     const { uid } = useUser();
-    const { peers } = usePeer();
+    const { peers, recentPeers } = usePeer();
     const { searching, results, query, search, clearSearch } = useSearch('profiles');
     const [searchValue, setSearchValue] = useState('');
     const [selected, setSelected] = useState([]);
@@ -35,9 +35,9 @@ export default function Share({ onShare, disabled = false, busy = false, label }
     const hasChatKey = useCallback((peer) => !!peer?.chatPK, []);
 
     const allPeers = useMemo(() => {
-        if (!peers?.length) return [];
-        return peers.filter((peer) => peer.uid !== uid && peer.chatPK);
-    }, [peers, uid]);
+        const list = Array.isArray(recentPeers?.chat) ? recentPeers.chat : [];
+        return list.filter((peer) => peer.uid !== uid && peer.chatPK);
+    }, [recentPeers?.chat, uid]);
 
     const searchPeers = useMemo(
         () =>
@@ -90,7 +90,7 @@ export default function Share({ onShare, disabled = false, busy = false, label }
             />
             <Card>
                 <div className="overflow-y-scroll p-4" style={{ height: 'calc((80px + 24px) * 3 + 16px)' }}>
-                    {searching && query ? (
+                    {searching && query && !displayPeers.length ? (
                         <div className="flex items-center justify-center h-full">
                             <Loader className="animate-spin size-6 text-muted" />
                         </div>

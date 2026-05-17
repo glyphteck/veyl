@@ -2,7 +2,7 @@ import { collection, query, where, orderBy, onSnapshot, doc, serverTimestamp, up
 import { closeChatPair, getChatId, hasMsgData, openChatPair, openMsg, resealMsgBody, sealMsg } from '../crypto/chat.js';
 import { orderChatKeys } from '../crypto/pair.js';
 import { putAttachment, putFile, putImg, putMp3, putMp4, readMsgFile } from './media.js';
-import { canShowMsg, canStoreMsg, makeReadReceipt } from './messages.js';
+import { canShowMsg, canStoreMsg, makeReaction, makeReadReceipt } from './messages.js';
 import { getMessageKey, makeCid } from './state.js';
 
 export const MSG_BATCH_SIZE = 40;
@@ -179,6 +179,15 @@ export async function sendReadReceipt(db, senderPubkey, senderPrivkey, receiverC
         s: senderPubkey,
     };
     return sendMsg(db, senderPubkey, senderPrivkey, receiverChatPK, receipt, { updateLastMsg: false });
+}
+
+export async function sendReaction(db, senderPubkey, senderPrivkey, receiverChatPK, target, emoji) {
+    const reaction = {
+        ...makeReaction(target, emoji),
+        cid: makeCid(),
+        s: senderPubkey,
+    };
+    return sendMsg(db, senderPubkey, senderPrivkey, receiverChatPK, reaction, { updateLastMsg: false });
 }
 
 export async function uploadImgMsg(db, storage, senderPubkey, senderPrivkey, receiverChatPK, cid, data, meta = {}) {

@@ -13,6 +13,7 @@ import { useWallet } from '@/providers/walletprovider';
 import GlassButton from '@/components/glass/glassbutton';
 import GlassField from '@/components/glass/glassfield';
 import Icon from '@/components/icon';
+import { warmCamera } from '@/lib/camerawarm';
 import { tap } from '@/lib/tap';
 
 const UNITS = ['sats', 'btc', 'usd'];
@@ -124,6 +125,7 @@ export default function Withdraw() {
 
     const handleScanPress = useCallback(() => {
         if (!lockRoute()) return;
+        warmCamera();
         router.dismiss();
         router.navigate('/camera');
     }, [lockRoute]);

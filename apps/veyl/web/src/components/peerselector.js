@@ -1,9 +1,8 @@
 import { useMemo, useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Button } from '@/components/button';
-import { Command, CommandInput, CommandList, CommandGroup, CommandItem, CommandEmpty } from '@/components/command';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/avatar';
-import { ChevronsUpDown, Check, Loader, UsersRound } from 'lucide-react';
+import { ChevronsUpDown, Check, Loader, Search, UsersRound } from 'lucide-react';
 import { mergeProfiles } from '@glyphteck/shared/search/merge';
 import { formatUserDisplay } from '@/lib/utils';
 import { useSearch } from '@/lib/search/usesearch';
@@ -17,10 +16,10 @@ export default function PeerSelector({ selectedPeer, onPeerChange, disabled = fa
     const [position, setPosition] = useState(null);
     const { searching, results, query, search, clearSearch } = useSearch('profiles');
     const { uid: currentUserUid } = useUser();
-    const { peers } = usePeer();
+    const { peers, recentPeers } = usePeer();
     const triggerRef = useRef(null);
     const contentRef = useRef(null);
-    const commandInputRef = useRef(null);
+    const searchInputRef = useRef(null);
     const peerResults = useMemo(
         () =>
             mergeProfiles({
@@ -32,6 +31,11 @@ export default function PeerSelector({ selectedPeer, onPeerChange, disabled = fa
             }),
         [currentUserUid, filterPeers, peers, query, results]
     );
+    const defaultPeers = useMemo(() => {
+        const list = Array.isArray(recentPeers?.wallet) ? recentPeers.wallet : [];
+        return list.filter((peer) => peer?.uid && peer.uid !== currentUserUid && (!filterPeers || filterPeers(peer))).slice(0, 3);
+    }, [currentUserUid, filterPeers, recentPeers?.wallet]);
+    const displayPeers = query ? peerResults : defaultPeers;
 
     const focusTrigger = useCallback(() => {
         window.setTimeout(() => {
@@ -115,7 +119,7 @@ export default function PeerSelector({ selectedPeer, onPeerChange, disabled = fa
         if (!popoverOpen) return;
 
         const timeout = window.setTimeout(() => {
-            commandInputRef.current?.focus();
+            searchInputRef.current?.focus();
         }, 0);
 
         return () => window.clearTimeout(timeout);
@@ -185,35 +189,52 @@ export default function PeerSelector({ selectedPeer, onPeerChange, disabled = fa
                           visibility: position ? 'visible' : 'hidden',
                       }}
                   >
-                      <Command className="max-h-71" shouldFilter={false}>
-                          <CommandInput ref={commandInputRef} value={searchValue} onValueChange={handleSearchChange} onKeyDown={handleKeyDown} />
-                          <CommandList>
-                              {searching && query && (
-                                  <CommandEmpty>
+                      <div className="flex h-full max-h-71 w-full flex-col rounded-round bg-background/70 shadow backdrop-blur-sm">
+                          <div className="flex items-center gap-2 border-b px-3">
+                              <Search className="text-muted" />
+                              <input
+                                  ref={searchInputRef}
+                                  value={searchValue}
+                                  onChange={(event) => handleSearchChange(event.target.value)}
+                                  onKeyDown={handleKeyDown}
+                                  className="flex w-full bg-transparent py-1.5 outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                                  autoFocus
+                              />
+                          </div>
+                          <div
+                              className="overflow-y-auto"
+                              onWheel={(event) => {
+                                  event.stopPropagation();
+                              }}
+                          >
+                              {searching && query && !displayPeers.length ? (
+                                  <div className="flex justify-center py-1.5 text-muted">
                                       <Loader className="animate-spin size-6" />
-                                  </CommandEmpty>
+                                  </div>
+                              ) : displayPeers.length > 0 ? (
+                                  displayPeers.map((peer) => {
+                                      const displayName = formatUserDisplay(peer, true);
+                                      return (
+                                          <button
+                                              key={peer.uid}
+                                              type="button"
+                                              className="relative flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-base outline-none select-none [&>*:nth-child(-n+2)]:transition-transform [&>*:nth-child(-n+2)]:ease-out hover:[&>*:nth-child(-n+2)]:translate-x-3 focus:[&>*:nth-child(-n+2)]:translate-x-3 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&>*.avatar]:size-6"
+                                              onClick={() => handlePeerSelect(peer)}
+                                          >
+                                              <Avatar active={peer?.active} bot={!!peer?.bot}>
+                                                  <AvatarImage src={peer.avatar} alt={peer.username} />
+                                                  <AvatarFallback />
+                                              </Avatar>
+                                              <span>{displayName}</span>
+                                              {selectedPeer?.uid === peer.uid && <Check className="ml-auto shrink-0" />}
+                                          </button>
+                                      );
+                                  })
+                              ) : (
+                                  <div className="flex justify-center py-1.5 text-muted">{query ? 'no result' : 'no recent wallet peers'}</div>
                               )}
-                              {!searching && query && !peerResults.length && <CommandEmpty>no result</CommandEmpty>}
-                              {!query && <CommandEmpty>find a username</CommandEmpty>}
-                              {query && peerResults.length > 0 && (
-                                  <CommandGroup>
-                                      {peerResults.map((peer) => {
-                                          const displayName = formatUserDisplay(peer, true);
-                                          return (
-                                              <CommandItem key={peer.uid} value={`@${peer.username}`} onSelect={() => handlePeerSelect(peer)}>
-                                                  <Avatar active={peer?.active} bot={!!peer?.bot}>
-                                                      <AvatarImage src={peer.avatar} alt={peer.username} />
-                                                      <AvatarFallback />
-                                                  </Avatar>
-                                                  <span>{displayName}</span>
-                                                  {selectedPeer?.uid === peer.uid && <Check className="ml-auto" />}
-                                              </CommandItem>
-                                          );
-                                      })}
-                                  </CommandGroup>
-                              )}
-                          </CommandList>
-                      </Command>
+                          </div>
+                      </div>
                   </div>,
                   document.body
               )

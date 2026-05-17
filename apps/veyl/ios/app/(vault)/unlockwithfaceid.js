@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef } from 'react';
-import { Animated, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Animated, AppState, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Lock, Unlock } from 'lucide-react-native';
 
@@ -16,6 +16,7 @@ export default function FaceIdUnlockScreen() {
     const { unlockWithPsw, lockState, encSeed, setFaceIdFailed } = useVault();
     const user = useUser();
 
+    const [appActive, setAppActive] = useState(AppState.currentState === 'active');
     const attemptedRef = useRef(false);
     const lockOpacity = useRef(new Animated.Value(1)).current;
     const lockIconOpacity = useRef(new Animated.Value(1)).current;
@@ -26,6 +27,7 @@ export default function FaceIdUnlockScreen() {
     const attemptFaceId = useCallback(async () => {
         if (!seedReady) return;
         if (lockState !== 'locked') return;
+        if (AppState.currentState !== 'active') return;
         if (faceIdPromptInFlight) return;
         faceIdPromptInFlight = true;
         try {
@@ -52,11 +54,19 @@ export default function FaceIdUnlockScreen() {
     }, [lockState, seedReady, setFaceIdFailed, unlockWithPsw, user?.uid, lockIconOpacity, unlockIconOpacity]);
 
     useEffect(() => {
+        const sub = AppState.addEventListener('change', (nextState) => {
+            setAppActive(nextState === 'active');
+        });
+        return () => sub?.remove?.();
+    }, []);
+
+    useEffect(() => {
         if (attemptedRef.current) return;
         if (!seedReady) return;
+        if (!appActive) return;
         attemptedRef.current = true;
         attemptFaceId();
-    }, [attemptFaceId, seedReady]);
+    }, [appActive, attemptFaceId, seedReady]);
 
     return (
         <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }} edges={['top', 'left', 'right', 'bottom']}>

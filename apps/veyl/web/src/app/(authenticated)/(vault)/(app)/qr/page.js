@@ -3,11 +3,14 @@
 import { useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
+import { Coins, Loader } from 'lucide-react';
 import Loading from '@/components/loading';
 import { useDialog } from '@/components/providers/dialogprovider';
 import { usePeer } from '@/components/providers/peerprovider';
 import { useUser } from '@/components/providers/userprovider';
 import { useWallet } from '@/components/providers/walletprovider';
+import { useCloak } from '@glyphteck/shared/providers/cloakprovider';
+import { formatUserDisplay, renderMoney } from '@/lib/utils';
 import { qr, readQr } from '@glyphteck/shared/qrutils';
 import { isAddressOnNetwork } from '@glyphteck/shared/network';
 
@@ -16,8 +19,9 @@ export default function QRPage() {
     const handledRef = useRef(false);
     const { openDialog } = useDialog();
     const { addPeer } = usePeer();
-    const { username, walletPK: ownWalletPK } = useUser();
-    const { network } = useWallet();
+    const { settings, username, walletPK: ownWalletPK } = useUser();
+    const { sendMoneyWithSpark, bitcoin, network } = useWallet();
+    const { cloaked } = useCloak();
 
     useEffect(() => {
         if (handledRef.current) return;
@@ -39,8 +43,33 @@ export default function QRPage() {
             if (data?.kind === qr.request && data.to) {
                 if (data.to !== ownWalletPK) {
                     const peer = await addPeer({ walletPK: data.to });
-                    if (peer) openDialog('payments', { peer, tab: 'send', amount: data.amount ?? null });
-                    else toast.error('user not found');
+                    if (peer) {
+                        if (settings.sendOnScan && data.amount) {
+                            const displayName = formatUserDisplay(peer, false);
+                            const formattedAmount = renderMoney(data.amount.toString(), settings.moneyFormat, bitcoin.price);
+                            const loadingToastId = toast(cloaked ? `sending money to ${displayName}` : `sending ${formattedAmount} to ${displayName}`, {
+                                icon: <Loader className="animate-spin" />,
+                                duration: Infinity,
+                            });
+                            try {
+                                await sendMoneyWithSpark(peer.walletPK, data.amount.toString());
+                                toast.success(cloaked ? `sent money to ${displayName}` : `sent ${formattedAmount} to ${displayName}`, {
+                                    id: loadingToastId,
+                                    icon: <Coins />,
+                                    duration: 2000,
+                                });
+                            } catch (error) {
+                                toast.error(error.message || 'failed to send money', {
+                                    id: loadingToastId,
+                                    duration: 2000,
+                                });
+                            }
+                        } else {
+                            openDialog('payments', { peer, tab: 'send', amount: data.amount ?? null });
+                        }
+                    } else {
+                        toast.error('user not found');
+                    }
                 }
                 router.replace('/wallet');
                 return;
@@ -63,7 +92,7 @@ export default function QRPage() {
             console.error('QR route failed:', error);
             router.replace('/wallet');
         });
-    }, [addPeer, network, openDialog, ownWalletPK, router, username]);
+    }, [addPeer, bitcoin, cloaked, network, openDialog, ownWalletPK, router, sendMoneyWithSpark, settings, username]);
 
     return <Loading />;
 }

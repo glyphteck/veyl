@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 
 import { fileURLToPath } from 'node:url';
 import admin, { db, projectId } from '../../functions/lib/admin.js';

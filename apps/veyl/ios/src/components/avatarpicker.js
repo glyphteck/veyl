@@ -68,6 +68,7 @@ export default function AvatarPicker({ size = 88, source, onPick, onRemove, disa
         hapticIn: 'selection',
     });
     const removePop = usePop({ show: removeOpen, from: 0.58, enterBounce: 16, exitDuration: 130 });
+    const removeOpacityStyle = useMemo(() => ({ opacity: removePop.value }), [removePop.value]);
 
     return (
         <View style={[{ width: size, height: size }, style]}>
@@ -93,7 +94,7 @@ export default function AvatarPicker({ size = 88, source, onPick, onRemove, disa
                         justifyContent: 'center',
                     }}
                 >
-                    <Animated.View style={[removePop.childStyle, { opacity: removePop.value }]}>
+                    <Animated.View style={[removePop.childStyle, removeOpacityStyle]}>
                         <Animated.View style={{ transform: [{ scale: removeFeedback.scale }] }}>
                             <View style={{ width: removeMetrics.outer, height: removeMetrics.outer, borderRadius: removeMetrics.outer / 2, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.background }}>
                                 <View

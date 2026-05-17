@@ -50,7 +50,6 @@ Paths in task files are relative to the repo root unless they are absolute.
 
 ## Release-Critical
 
-- [iOS Navigation And Profile](ios-navigation-and-profile.md)
 - [Peer Avatar Versioning](peer-avatar-versioning.md)
 - [Wallet Withdrawals And Fees](wallet-withdrawals-and-fees.md)
 - [Wallet Privacy](wallet-privacy.md)

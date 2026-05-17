@@ -23,9 +23,9 @@ const ansi = {
 };
 
 const commands = {
-    web: ['node', resolve(rootDir, 'scripts', 'web.mjs'), 'veyl'],
-    ios: ['node', resolve(rootDir, 'scripts', 'ios.mjs'), 'veyl'],
-    bot: ['bun', '--cwd', resolve(rootDir, 'apps', 'veyl', 'bot'), 'start'],
+    web: ['bun', resolve(rootDir, 'scripts', 'web.mjs'), 'veyl'],
+    ios: ['bun', resolve(rootDir, 'scripts', 'ios.mjs'), 'veyl'],
+    bot: ['bun', '--cwd', resolve(rootDir, 'apps', 'veyl', 'bot'), 'src/index.js'],
 };
 const devPorts = ['3000', '8081'];
 const tags = {
@@ -36,7 +36,10 @@ const tags = {
 const lineState = new Map();
 const readyUrls = new Map();
 const lastConnectionLog = new Map();
+const recentDiagnosticLines = new Map();
 const runningBots = new Set();
+const CONNECTION_LOG_COOLDOWN_MS = 60000;
+const DIAGNOSTIC_LOG_COOLDOWN_MS = 60000;
 let shuttingDown = false;
 
 function paint(text, color) {
@@ -132,6 +135,8 @@ function isBrowserSourceEcho(line) {
 function isContinuation(line) {
     return /^\s*$/.test(line)
         || /^\s*at\b/.test(line)
+        || /^for call at\b/.test(line)
+        || /^Caused by:/i.test(line)
         || /^\s*\d+\s+\|/.test(line)
         || /^\s*[>|^]/.test(line)
         || /^\s*(Previous|Incoming):/.test(line)
@@ -140,7 +145,16 @@ function isContinuation(line) {
 }
 
 function getConnectionLossSource(line) {
-    if (line.includes("WebChannelConnection RPC 'Listen' stream") && line.includes('transport errored')) {
+    if (line.includes('WebChannelConnection RPC') && line.includes('transport errored')) {
+        return 'backend';
+    }
+    if (line.includes('bot runtime heartbeat lost connection')) {
+        return 'backend';
+    }
+    if (line.includes('bot runtime heartbeat failed') && /\b(?:DEADLINE_EXCEEDED|UNAVAILABLE)\b/.test(line)) {
+        return 'backend';
+    }
+    if (line.includes('bot runtime subscription failed') && /\b(?:DEADLINE_EXCEEDED|UNAVAILABLE)\b/.test(line)) {
         return 'backend';
     }
     if (line.includes('subscription failed') && line.includes('A backoff operation is already in progress.')) {
@@ -156,10 +170,53 @@ function shouldSkipConnectionLog(name, source) {
     const key = `${name}:${source}`;
     const now = Date.now();
     const last = lastConnectionLog.get(key) || 0;
-    if (now - last < 2000) {
+    if (now - last < CONNECTION_LOG_COOLDOWN_MS) {
         return true;
     }
     lastConnectionLog.set(key, now);
+    return false;
+}
+
+function duplicateProneDiagnosticKey(name, line) {
+    if (name !== 'web') {
+        return null;
+    }
+
+    const trimmed = line.trim();
+    const isNextExportDiagnostic = /^\[browser\]\s+\.\//.test(trimmed)
+        || /^Export .+ doesn't exist in target module$/.test(trimmed)
+        || /^The export .+ was not found in module /.test(trimmed)
+        || /^Did you mean to import /.test(trimmed)
+        || /^All exports of the module are statically known/.test(trimmed)
+        || /^Import traces:$/.test(trimmed)
+        || /^Client Component (?:Browser|SSR):$/.test(trimmed)
+        || /^\.\/(?:app|apps|src|shared|functions)\//.test(trimmed);
+
+    if (!isNextExportDiagnostic) {
+        return null;
+    }
+
+    const normalized = trimmed
+        .replace(/\s+/g, ' ')
+        .replace(/\[(?:app-client|app-ssr)\]/g, '[app]')
+        .replace(/\[Client Component (?:Browser|SSR)\]/g, '[Client Component]')
+        .replace(/\bClient Component (?:Browser|SSR):/g, 'Client Component:');
+
+    return `${name}:${normalized}`;
+}
+
+function shouldSkipDuplicateDiagnostic(name, line) {
+    const key = duplicateProneDiagnosticKey(name, line);
+    if (!key) {
+        return false;
+    }
+
+    const now = Date.now();
+    const last = recentDiagnosticLines.get(key) || 0;
+    if (now - last < DIAGNOSTIC_LOG_COOLDOWN_MS) {
+        return true;
+    }
+    recentDiagnosticLines.set(key, now);
     return false;
 }
 
@@ -245,6 +302,10 @@ function format(name, rawLine) {
             return null;
         }
         return explicit(name, paint(`[${connectionSource}] lost connection`, ansi.yellow));
+    }
+
+    if (shouldSkipDuplicateDiagnostic(name, line)) {
+        return null;
     }
 
     if (lineState.get(name) === 'error' && isBrowserSourceEcho(line)) {

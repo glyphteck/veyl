@@ -9,6 +9,7 @@ import { useTheme } from '../providers/themeprovider';
 import { useUser } from '../providers/userprovider';
 import { useChat } from '../providers/chatprovider';
 import { useTap } from '@/lib/tap';
+import { warmCamera } from '@/lib/camerawarm';
 
 const ITEM_STYLE = {
     flex: 1,
@@ -18,9 +19,16 @@ const ITEM_STYLE = {
 const ACTIVE_SCALE = 1;
 const INACTIVE_SCALE = 0.82;
 
-function MenuItem({ active, onPress, disabled = false, children }) {
+function MenuItem({ active, onPress, onPressIn, disabled = false, children }) {
     const activeScale = useRef(new Animated.Value(active ? ACTIVE_SCALE : INACTIVE_SCALE)).current;
     const pressFeedback = useTap({ onPress, disabled, hapticIn: 'light' });
+    const pressProps = {
+        ...pressFeedback.props,
+        onPressIn: (event) => {
+            if (!disabled) onPressIn?.(event);
+            pressFeedback.props.onPressIn?.(event);
+        },
+    };
 
     useEffect(() => {
         Animated.spring(activeScale, {
@@ -32,7 +40,7 @@ function MenuItem({ active, onPress, disabled = false, children }) {
     }, [active, activeScale]);
 
     return (
-        <Pressable {...pressFeedback.props} style={ITEM_STYLE} disabled={disabled}>
+        <Pressable {...pressProps} style={ITEM_STYLE} disabled={disabled}>
             <Animated.View style={{ opacity: disabled ? 0.45 : 1, transform: [{ scale: Animated.multiply(activeScale, pressFeedback.scale) }] }}>{children}</Animated.View>
         </Pressable>
     );
@@ -68,7 +76,7 @@ export default function MainMenu({ state, navigation }) {
             <MenuItem active={pageIndex === 0} onPress={() => onSelect(0)} disabled={chatBanned}>
                 <DotIcon iconNode={DOT_ICONS.messageCircle} show={!chatBanned && hasUnseenChats} color={chatBanned ? theme.muted : theme.foreground} size={iconSize} />
             </MenuItem>
-            <MenuItem active={pageIndex === 1} onPress={() => onSelect(1)}>
+            <MenuItem active={pageIndex === 1} onPress={() => onSelect(1)} onPressIn={warmCamera}>
                 <Icon icon={Camera} color={theme.foreground} size={iconSize} />
             </MenuItem>
             <MenuItem active={pageIndex === 2} onPress={() => onSelect(2)}>

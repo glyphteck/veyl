@@ -43,7 +43,7 @@ function TxRow({ tx, theme, moneyFormat, btcPrice, isLast, openRoute }) {
 
     const openRow = useCallback(() => {
         if (tx?.funding || tx?.withdrawal) {
-            openRoute('/profile', 'navigate');
+            openRoute('/settings', 'navigate');
             return;
         }
         if (!chatPK || !profile?.chatPK) return;

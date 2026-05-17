@@ -3,6 +3,44 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { readCachedProfiles, writeCachedProfiles } from '../localdatacache.js';
 
+const RECENT_PEER_REFRESH_LIMIT = 50;
+
+function timeMs(value) {
+    if (typeof value?.toMillis === 'function') {
+        const ms = value.toMillis();
+        return Number.isFinite(ms) ? ms : null;
+    }
+    if (value instanceof Date) {
+        const ms = value.getTime();
+        return Number.isFinite(ms) ? ms : null;
+    }
+    if (Number.isFinite(value)) {
+        return value;
+    }
+    if (typeof value === 'string') {
+        const ms = Date.parse(value);
+        return Number.isFinite(ms) ? ms : null;
+    }
+    return null;
+}
+
+function byRecent(a, b) {
+    const delta = (b?.recentAt || 0) - (a?.recentAt || 0);
+    if (delta !== 0) return delta;
+    return String(a?.username || a?.uid || '').localeCompare(String(b?.username || b?.uid || ''));
+}
+
+function makeRecentPeer(peer, recency) {
+    return {
+        ...peer,
+        recentAt: recency?.all || 0,
+        recent: {
+            wallet: recency?.wallet ?? 0,
+            chat: recency?.chat ?? 0,
+        },
+    };
+}
+
 export function createPeerProvider({ useChat, useUser, useTxData, useVault, peerApi }) {
     if (typeof useChat !== 'function' || typeof useUser !== 'function' || typeof useTxData !== 'function' || typeof useVault !== 'function') {
         throw new Error('createPeerProvider requires { useChat, useUser, useTxData, useVault, peerApi }');
@@ -239,19 +277,6 @@ export function createPeerProvider({ useChat, useUser, useTxData, useVault, peer
             writeCachedProfiles(localCache, profiles);
         }, [enrichedPeers, getCachedProfiles, localCache, profilesReady]);
 
-        const recentChatPeerChatPKs = useMemo(() => {
-            if (!chatPK) return [];
-            if (!Array.isArray(chats) || !chats.length) return [];
-
-            const result = [];
-            for (const chat of chats.slice(0, 15)) {
-                const participants = Array.isArray(chat?.participants) ? chat.participants : [];
-                const peer = participants.find((participant) => participant && participant !== chatPK);
-                if (peer) result.push(peer);
-            }
-            return result;
-        }, [chats, chatPK]);
-
         const chatPkToUid = useMemo(() => {
             const map = new Map();
             for (const peer of enrichedPeers || []) {
@@ -262,20 +287,72 @@ export function createPeerProvider({ useChat, useUser, useTxData, useVault, peer
             return map;
         }, [enrichedPeers]);
 
-        const recentChatPeerUids = useMemo(() => {
-            const result = [];
-            for (const peerChatPK of recentChatPeerChatPKs) {
-                const uid = chatPkToUid.get(peerChatPK);
-                if (uid) result.push(uid);
+        const recentPeers = useMemo(() => {
+            const byUid = new Map();
+            for (const peer of enrichedPeers || []) {
+                if (peer?.uid) {
+                    byUid.set(peer.uid, peer);
+                }
             }
-            return result.slice(0, 15);
-        }, [recentChatPeerChatPKs, chatPkToUid]);
 
-        const recentChatPeerUidsKey = useMemo(() => recentChatPeerUids.join('|'), [recentChatPeerUids]);
+            const recencyByUid = new Map();
+            const setRecent = (uid, kind, ms) => {
+                if (!uid || ms == null) return;
+                const recency = recencyByUid.get(uid) || { wallet: null, chat: null, all: 0 };
+                recency[kind] = Math.max(recency[kind] ?? 0, ms || 0);
+                recency.all = Math.max(recency.all || 0, recency[kind] || 0);
+                recencyByUid.set(uid, recency);
+            };
+
+            for (const peer of byUid.values()) {
+                const walletPeer = peer?.walletPK ? walletPeers?.[peer.walletPK] : null;
+                const ms = timeMs(walletPeer?.lastMs);
+                if (walletPeer) {
+                    setRecent(peer.uid, 'wallet', ms || 0);
+                }
+            }
+
+            for (const chat of chats || []) {
+                const participants = Array.isArray(chat?.participants) ? chat.participants : [];
+                const peerChatPK = participants.find((participant) => participant && participant !== chatPK);
+                const uid = peerChatPK ? chatPkToUid.get(peerChatPK) : null;
+                const ms = timeMs(chat?.lastMsgTime) ?? timeMs(chat?.lastMsg?.ts) ?? 0;
+                if (uid) {
+                    setRecent(uid, 'chat', ms);
+                }
+            }
+
+            const all = [];
+            const wallet = [];
+            const chat = [];
+            for (const [uid, recency] of recencyByUid.entries()) {
+                const peer = byUid.get(uid);
+                if (!peer) continue;
+                const recentPeer = makeRecentPeer(peer, recency);
+                all.push(recentPeer);
+                if (recency.wallet != null && recency.wallet >= 0 && peer.walletPK) wallet.push(recentPeer);
+                if (recency.chat != null && recency.chat >= 0 && peer.chatPK) chat.push(recentPeer);
+            }
+
+            all.sort(byRecent);
+            wallet.sort((a, b) => {
+                const delta = (b?.recent?.wallet || 0) - (a?.recent?.wallet || 0);
+                return delta !== 0 ? delta : byRecent(a, b);
+            });
+            chat.sort((a, b) => {
+                const delta = (b?.recent?.chat || 0) - (a?.recent?.chat || 0);
+                return delta !== 0 ? delta : byRecent(a, b);
+            });
+
+            return { all, wallet, chat };
+        }, [chatPK, chatPkToUid, chats, enrichedPeers, walletPeers]);
+
+        const recentPeerUids = useMemo(() => recentPeers.all.map((peer) => peer.uid).filter(Boolean).slice(0, RECENT_PEER_REFRESH_LIMIT), [recentPeers]);
+        const recentPeerUidsKey = useMemo(() => recentPeerUids.join('|'), [recentPeerUids]);
         const refreshRunningRef = useRef(false);
         useEffect(() => {
             if (!profilesReady) return;
-            if (!recentChatPeerUids.length) return;
+            if (!recentPeerUids.length) return;
 
             let cancelled = false;
             const run = async () => {
@@ -283,7 +360,7 @@ export function createPeerProvider({ useChat, useUser, useTxData, useVault, peer
                 refreshRunningRef.current = true;
                 try {
                     if (cancelled) return;
-                    await updatePeers(recentChatPeerUids, { throttleMs: 120 });
+                    await updatePeers(recentPeerUids, { throttleMs: 120 });
                 } finally {
                     refreshRunningRef.current = false;
                 }
@@ -301,7 +378,7 @@ export function createPeerProvider({ useChat, useUser, useTxData, useVault, peer
                 clearTimeout(timeoutId);
                 clearInterval(intervalId);
             };
-        }, [profilesReady, recentChatPeerUidsKey, updatePeers]);
+        }, [profilesReady, recentPeerUidsKey, updatePeers]);
 
         useEffect(() => {
             if (!blockedPeersReady) {
@@ -373,6 +450,7 @@ export function createPeerProvider({ useChat, useUser, useTxData, useVault, peer
         const value = useMemo(
             () => ({
                 peers: enrichedPeers,
+                recentPeers,
                 blockedPeers,
                 blockedPeersReady,
                 blockedChatPKSet,
@@ -386,7 +464,7 @@ export function createPeerProvider({ useChat, useUser, useTxData, useVault, peer
                 restorePeer,
                 loadBlockedPeers,
             }),
-            [enrichedPeers, blockedPeers, blockedPeersReady, blockedChatPKSet, profilesReady, isBlockedChatPK, addPeer, primePeer, findPeer, updatePeer, dropPeer, restorePeer, loadBlockedPeers]
+            [enrichedPeers, recentPeers, blockedPeers, blockedPeersReady, blockedChatPKSet, profilesReady, isBlockedChatPK, addPeer, primePeer, findPeer, updatePeer, dropPeer, restorePeer, loadBlockedPeers]
         );
 
         return <PeerContext value={value}>{children}</PeerContext>;

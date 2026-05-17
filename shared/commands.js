@@ -15,6 +15,7 @@ const COMMAND_SETS = {
         },
         {
             name: 'msg',
+            aliases: ['message'],
             syntax: '/msg @[username] [message]',
             args: ['username', 'message'],
         },
@@ -115,6 +116,14 @@ export function parseCommand(input, { mode = 'mainmenu' } = {}) {
 
     const complete = cmd.args.every((a) => args[a]);
     return { name: cmd.name, args, complete };
+}
+
+export function parseCommandAmountSats(value) {
+    const raw = String(value ?? '').trim();
+    if (!/^[1-9]\d*$/.test(raw)) {
+        return null;
+    }
+    return raw;
 }
 
 export function getCommandHints(input, { mode = 'mainmenu' } = {}) {

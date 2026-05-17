@@ -48,6 +48,7 @@ import {
     listenToChats as listenToChatsShared,
     readMsgMedia as readMessageFileShared,
     sendReadReceipt as sendReadReceiptShared,
+    sendReaction as sendReactionShared,
     sendMsg as sendMessageShared,
     uploadAttachmentMsg as uploadAttachmentShared,
     uploadImgMsg as uploadImageShared,
@@ -77,6 +78,9 @@ export function createChat({ db, storage, getStorage, uploadAttachment: uploadAt
         },
         sendReadReceipt(senderPubkey, senderPrivkey, receiverChatPK, target) {
             return sendReadReceiptShared(db, senderPubkey, senderPrivkey, receiverChatPK, target);
+        },
+        sendReaction(senderPubkey, senderPrivkey, receiverChatPK, target, emoji) {
+            return sendReactionShared(db, senderPubkey, senderPrivkey, receiverChatPK, target, emoji);
         },
         uploadAttachment(senderPubkey, senderPrivkey, receiverChatPK, attachment = {}) {
             if (typeof uploadAttachmentImpl === 'function') {
@@ -848,6 +852,15 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
             },
             [chat, chatBanned, chatPrivateKey]
         );
+        const sendReaction = useCallback(
+            (peerChatPK, target, emoji) => {
+                if (chatBanned) {
+                    throw makeChatUnavailableError();
+                }
+                return chat.sendReaction(chatPK, chatPrivateKey, peerChatPK, target, emoji);
+            },
+            [chat, chatBanned, chatPK, chatPrivateKey]
+        );
         const deleteMessage = useCallback(
             (chatId, msgId) => {
                 if (chatBanned) {
@@ -938,6 +951,7 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
                 sendImage,
                 shareAttachment,
                 updateMessage,
+                sendReaction,
                 deleteMessage,
                 readMessageFile,
                 readMessagePreview,
@@ -973,6 +987,7 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
                 sendImage,
                 shareAttachment,
                 updateMessage,
+                sendReaction,
                 deleteMessage,
                 readMessageFile,
                 readMessagePreview,

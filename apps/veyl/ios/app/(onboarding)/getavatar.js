@@ -8,22 +8,30 @@ import GlassButton from '@/components/glass/glassbutton';
 import { auth } from '@/lib/firebase';
 import { skipAvatar, uploadAvatar } from '@/lib/avatarupload';
 import { hasCurrentCommunityRules } from '@/lib/community';
-import { usePop } from '@/lib/pop';
 import { useTap } from '@/lib/tap';
 import { useUser } from '@/providers/userprovider';
 import { useVault } from '@/providers/vaultprovider';
 
+const ACTION_SWITCH_MS = 80;
+
 export default function NewUserAvatar() {
     const { theme } = useTheme();
     const router = useRouter();
-    const { uid, refetchAvatar, communityRulesVersion, communityRulesAcceptedAt, communityRulesPending } = useUser();
+    const { uid, hasAvatarEntry, refetchAvatar, communityRulesVersion, communityRulesAcceptedAt, communityRulesPending } = useUser();
     const { encSeed } = useVault();
     const [selectedAsset, setSelectedAsset] = useState(null);
     const [isUploading, setIsUploading] = useState(false);
+    const hasSelectedAsset = !!selectedAsset;
+    const desiredAction = hasSelectedAsset ? 'confirm' : 'skip';
+    const [visibleAction, setVisibleAction] = useState(desiredAction);
+    const [actionOpen, setActionOpen] = useState(true);
+    const visibleActionRef = useRef(desiredAction);
+    const actionScaleValue = useRef(new Animated.Value(1)).current;
+    const actionTransitionRef = useRef(0);
     const routeLockRef = useRef(false);
     const routeLockTimerRef = useRef(null);
     const acceptedRules = hasCurrentCommunityRules({ communityRulesVersion, communityRulesAcceptedAt, communityRulesPending });
-    const isOnboarding = !encSeed || !acceptedRules;
+    const isOnboarding = !hasAvatarEntry || !encSeed || !acceptedRules;
     const lockRoute = useCallback((ms = 1200) => {
         if (routeLockRef.current) return false;
         routeLockRef.current = true;
@@ -41,9 +49,55 @@ export default function NewUserAvatar() {
         };
     }, []);
 
-    const canContinue = !!selectedAsset && !isUploading;
-    const confirmPop = usePop({ show: !!selectedAsset, from: 0.8, enterBounce: 12, exitDuration: 130 });
-    const skipPop = usePop({ show: !selectedAsset, from: 0.8, enterBounce: 12, exitDuration: 130 });
+    const canContinue = hasSelectedAsset && !isUploading;
+
+    useEffect(() => {
+        const transition = actionTransitionRef.current + 1;
+        actionTransitionRef.current = transition;
+        actionScaleValue.stopAnimation();
+
+        if (visibleActionRef.current === desiredAction) {
+            setActionOpen(true);
+            Animated.timing(actionScaleValue, {
+                toValue: 1,
+                duration: ACTION_SWITCH_MS,
+                useNativeDriver: true,
+            }).start();
+            return undefined;
+        }
+
+        setActionOpen(false);
+        Animated.timing(actionScaleValue, {
+            toValue: 0,
+            duration: ACTION_SWITCH_MS,
+            useNativeDriver: true,
+        }).start(({ finished }) => {
+            if (!finished || actionTransitionRef.current !== transition) return;
+            visibleActionRef.current = desiredAction;
+            setVisibleAction(desiredAction);
+            actionScaleValue.setValue(0);
+            setActionOpen(true);
+            Animated.timing(actionScaleValue, {
+                toValue: 1,
+                duration: ACTION_SWITCH_MS,
+                useNativeDriver: true,
+            }).start();
+        });
+
+        return () => {
+            actionTransitionRef.current += 1;
+            actionScaleValue.stopAnimation();
+        };
+    }, [actionScaleValue, desiredAction]);
+
+    const continueAfterAvatar = useCallback(() => {
+        if (acceptedRules) {
+            router.replace(encSeed ? '/wallet' : '/getpassword');
+            return;
+        }
+        router.push('/community');
+    }, [acceptedRules, encSeed, router]);
+
     const handleSkip = useCallback(async () => {
         if (isUploading) return;
 
@@ -63,18 +117,14 @@ export default function NewUserAvatar() {
             setIsUploading(true);
             await skipAvatar({ uid: effectiveUid });
             if (!lockRoute()) return;
-            if (acceptedRules) {
-                router.replace('/getpassword');
-                return;
-            }
-            router.push('/community');
+            continueAfterAvatar();
         } catch (err) {
             console.warn('avatar skip failed', err);
             Alert.alert('Skip failed', 'Could not update your avatar step. Please try again.');
         } finally {
             setIsUploading(false);
         }
-    }, [acceptedRules, isOnboarding, isUploading, lockRoute, router, uid]);
+    }, [continueAfterAvatar, isOnboarding, isUploading, lockRoute, router, uid]);
 
     const skipFeedback = useTap({
         disabled: isUploading,
@@ -106,18 +156,14 @@ export default function NewUserAvatar() {
                 router.back();
                 return;
             }
-            if (acceptedRules) {
-                router.replace('/getpassword');
-                return;
-            }
-            router.push('/community');
+            continueAfterAvatar();
         } catch (err) {
             console.warn('avatar upload failed', err);
             Alert.alert('Upload failed', 'Could not upload your avatar. Please try again.');
         } finally {
             setIsUploading(false);
         }
-    }, [acceptedRules, isOnboarding, isUploading, lockRoute, refetchAvatar, router, selectedAsset, uid]);
+    }, [continueAfterAvatar, isOnboarding, isUploading, lockRoute, refetchAvatar, router, selectedAsset, uid]);
 
     const handleRemoveAvatar = useCallback(() => {
         if (isUploading) return;
@@ -141,16 +187,17 @@ export default function NewUserAvatar() {
 
             <View style={{ position: 'absolute', left: 24, right: 24, bottom: '14%', alignItems: 'center', gap: 12 }}>
                 <View style={{ width: 256, height: 54, alignItems: 'center', justifyContent: 'center' }}>
-                    <Animated.View pointerEvents={confirmPop.pointerEvents} style={[{ position: 'absolute', width: 256 }, confirmPop.childStyle]}>
-                        <GlassButton onPress={handleContinue} icon={ImageUp} label={isUploading ? 'uploading…' : 'confirm'} accent disabled={!canContinue} style={{ width: 256 }} />
+                    <Animated.View pointerEvents={actionOpen ? 'auto' : 'none'} style={{ position: 'absolute', alignItems: 'center', justifyContent: 'center', transform: [{ scale: actionScaleValue }] }}>
+                        {visibleAction === 'confirm' ? (
+                            <GlassButton onPress={handleContinue} icon={ImageUp} label={isUploading ? 'uploading…' : 'confirm'} accent disabled={!canContinue} style={{ width: 256 }} />
+                        ) : (
+                            <Pressable {...skipFeedback.props} disabled={isUploading}>
+                                <Animated.View style={{ transform: [{ scale: skipFeedback.scale }] }}>
+                                    <Text style={{ color: theme.muted, fontSize: 16, fontWeight: '600' }}>skip for now</Text>
+                                </Animated.View>
+                            </Pressable>
+                        )}
                     </Animated.View>
-                    <Pressable {...skipFeedback.props} disabled={isUploading} pointerEvents={skipPop.pointerEvents} style={{ position: 'absolute' }}>
-                        <Animated.View style={[skipPop.childStyle, { opacity: isUploading ? 0.4 : 1 }]}>
-                            <Animated.View style={{ transform: [{ scale: skipFeedback.scale }] }}>
-                                <Text style={{ color: theme.muted, fontSize: 16, fontWeight: '600' }}>skip for now</Text>
-                            </Animated.View>
-                        </Animated.View>
-                    </Pressable>
                 </View>
             </View>
         </View>

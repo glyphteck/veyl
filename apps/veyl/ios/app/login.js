@@ -1,51 +1,44 @@
-import { Animated as RNAnimated, Pressable, ScrollView, Text, ActivityIndicator, useWindowDimensions, View } from 'react-native';
+import { Animated as RNAnimated, Pressable, Text, ActivityIndicator, View } from 'react-native';
 import { Image } from 'expo-image';
-import { Fingerprint, UserRoundPlus, X } from 'lucide-react-native';
+import { Fingerprint, UserRoundPlus, UsersRound, X } from 'lucide-react-native';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { passkeyLogin, isUnlinkedPasskeyError, isPasskeyRpMismatchError } from '@/lib/passkeys';
-import { userAvatarCache } from '@/lib/useravatarcache';
+import { forgetQuickLoginAccount, listQuickLoginAccounts, subscribeQuickLoginRequest, touchQuickLoginAccount } from '@/lib/quicklogin';
 import { useTheme } from '@/providers/themeprovider';
-import Avatar from '@/components/avatar';
+import Avatar, { AvatarAdornment, getAvatarAdornmentMetrics } from '@/components/avatar';
 import GlassButton from '@/components/glass/glassbutton';
-import GlassFooter from '@/components/glass/glassfooter';
+import GlassIcon from '@/components/glass/glassicon';
 import { useTap } from '@/lib/tap';
 import { resolveNetwork } from '@glyphteck/shared/network';
 
-const REMEMBERED_ROW_HEIGHT = 62;
+const REMEMBERED_INLINE_LIMIT = 2;
+const QUICK_AVATAR_SIZE = 72;
+const QUICK_REMOVE_METRICS = getAvatarAdornmentMetrics(QUICK_AVATAR_SIZE, { type: 'action' });
+const QUICK_REMOVE_MASKS = [QUICK_REMOVE_METRICS];
 
-function RememberedRow({ account, disabled, onPress, onForget }) {
+function truncateLabel(label, max = 8) {
+    if (!label || label.length <= max) return label || '';
+    return `${label.slice(0, max)}...`;
+}
+
+function QuickLoginCell({ account, disabled = false, onPress, onForget }) {
     const { theme } = useTheme();
-    const accountPress = useTap({ disabled, onPress, scale: 0.92 });
-    const forgetPress = useTap({ disabled, onPress: onForget, scale: 0.88 });
+    const press = useTap({ disabled, onPress, scale: 0.9, hapticIn: 'light' });
+    const label = truncateLabel(account.username ? `@${account.username}` : 'account');
 
     return (
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: REMEMBERED_ROW_HEIGHT, paddingHorizontal: 16, paddingVertical: 8 }}>
-            <Pressable {...accountPress.props} disabled={disabled} style={{ flex: 1, minWidth: 0 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, minHeight: 46 }}>
-                    <RNAnimated.View style={{ transform: [{ scale: accountPress.scale }] }}>
-                        <Avatar source={account.avatar ? { uri: account.avatar } : null} size={46} pointerEvents="none" />
-                    </RNAnimated.View>
-                    <Text numberOfLines={1} style={{ flex: 1, minWidth: 0, color: theme.foreground, fontSize: 20, fontWeight: '900' }}>
-                        {account.username ? `@${account.username}` : 'account'}
+        <View style={{ width: QUICK_AVATAR_SIZE, alignItems: 'center' }}>
+            <Pressable {...press.props} disabled={disabled} style={{ alignItems: 'center' }}>
+                <RNAnimated.View style={{ alignItems: 'center', transform: [{ scale: press.scale }] }}>
+                    <Avatar source={account.avatar ? { uri: account.avatar } : null} size={QUICK_AVATAR_SIZE} pointerEvents="none" maskAdornments={QUICK_REMOVE_MASKS} bot={!!account.bot} />
+                    <Text numberOfLines={1} style={{ marginTop: 6, width: 86, textAlign: 'center', color: theme.foreground, fontSize: 14, fontWeight: '700' }}>
+                        {label}
                     </Text>
-                </View>
-            </Pressable>
-            <Pressable {...forgetPress.props} disabled={disabled} hitSlop={10} style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}>
-                <RNAnimated.View
-                    style={{
-                        width: 32,
-                        height: 32,
-                        borderRadius: 16,
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        transform: [{ scale: forgetPress.scale }],
-                    }}
-                >
-                    <X pointerEvents="none" size={22} strokeWidth={3.2} color={theme.muted} />
                 </RNAnimated.View>
             </Pressable>
+            <AvatarAdornment metrics={QUICK_REMOVE_METRICS} icon={X} color={theme.foreground} iconColor={theme.background} onPress={onForget} disabled={disabled} style={{ zIndex: 2 }} />
         </View>
     );
 }
@@ -54,18 +47,19 @@ export default function Login() {
     const { theme } = useTheme();
     const router = useRouter();
     const insets = useSafeAreaInsets();
-    const { height } = useWindowDimensions();
     const [authState, setAuthState] = useState('idle');
     const [feedback, setFeedback] = useState('');
     const [remembered, setRemembered] = useState([]);
     const feedbackTimerRef = useRef(null);
+    const loadingCoverOpacity = useRef(new RNAnimated.Value(0)).current;
     const isBusy = authState !== 'idle';
     const network = resolveNetwork(globalThis?.process?.env ?? {});
     const isTestEnv = network !== 'MAINNET';
     const accounts = remembered;
-    const maxCardHeight = Math.round(height * 0.25);
-    const cardHeight = accounts.length ? Math.min(maxCardHeight, accounts.length * REMEMBERED_ROW_HEIGHT + 24) : 0;
-    const actionBottom = accounts.length ? cardHeight + 18 : '14%';
+    const visibleAccounts = accounts.slice(0, REMEMBERED_INLINE_LIMIT);
+    const hasMoreAccounts = accounts.length > REMEMBERED_INLINE_LIMIT;
+    const quickLoginItemCount = visibleAccounts.length + (hasMoreAccounts ? 1 : 0);
+    const quickLoginRowFull = quickLoginItemCount >= 3;
     const warningTop = insets.top + 10;
 
     const clearFeedback = useCallback(() => {
@@ -90,8 +84,7 @@ export default function Login() {
 
     useEffect(() => {
         let cancelled = false;
-        userAvatarCache
-            .listRemembered?.()
+        listQuickLoginAccounts()
             .then((accounts) => {
                 if (!cancelled) {
                     setRemembered(accounts || []);
@@ -115,7 +108,15 @@ export default function Login() {
         };
     }, []);
 
-    const handleLogin = async (uid = null) => {
+    useEffect(() => {
+        RNAnimated.timing(loadingCoverOpacity, {
+            toValue: isBusy ? 1 : 0,
+            duration: 160,
+            useNativeDriver: true,
+        }).start();
+    }, [isBusy, loadingCoverOpacity]);
+
+    const handleLogin = useCallback(async (uid = null) => {
         if (authState !== 'idle') return;
 
         clearFeedback();
@@ -126,7 +127,7 @@ export default function Login() {
                 onPrompt: () => setAuthState('prompt'),
             });
             if (uid) {
-                await userAvatarCache.touchLogin?.(uid);
+                await touchQuickLoginAccount(uid);
             }
             setAuthState('success');
         } catch (err) {
@@ -134,7 +135,7 @@ export default function Login() {
             if (isUnlinkedPasskeyError(err)) {
                 showFeedback('passkey not recognized');
                 if (uid) {
-                    await userAvatarCache.forget?.(uid);
+                    await forgetQuickLoginAccount(uid);
                     setRemembered((current) => current.filter((account) => account.uid !== uid));
                 }
             } else if (isPasskeyRpMismatchError(err)) {
@@ -142,13 +143,19 @@ export default function Login() {
             }
             setAuthState('idle');
         }
-    };
+    }, [authState, clearFeedback, showFeedback]);
+
+    useEffect(() => {
+        return subscribeQuickLoginRequest((uid) => {
+            void handleLogin(uid);
+        });
+    }, [handleLogin]);
 
     const handleForgetAccount = async (uid) => {
         if (authState !== 'idle' || !uid) return;
         setRemembered((current) => current.filter((account) => account.uid !== uid));
         try {
-            await userAvatarCache.forget?.(uid);
+            await forgetQuickLoginAccount(uid);
         } catch (err) {
             console.warn('failed to forget remembered account', err);
         }
@@ -163,7 +170,7 @@ export default function Login() {
 
     return (
         <View style={{ flex: 1 }}>
-            <View style={{ position: 'absolute', top: '22%', left: 0, right: 0, alignItems: 'center' }}>
+            <View style={{ position: 'absolute', top: '22%', left: 0, right: 0, alignItems: 'center', zIndex: 50 }}>
                 <Image source={require('../assets/wallet.png')} style={{ width: 192, height: 192 }} contentFit="contain" />
                 {isBusy ? (
                     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -186,26 +193,52 @@ export default function Login() {
                     </Text>
                 ) : null}
             </View>
-            <View style={{ position: 'absolute', left: 0, right: 0, bottom: actionBottom, alignItems: 'center', gap: 12 }}>
-                <GlassButton onPress={() => handleLogin()} icon={Fingerprint} label="login" accent disabled={isBusy} style={{ width: 256 }} />
-                <GlassButton onPress={handleNewAccount} icon={UserRoundPlus} label="new account" disabled={isBusy} style={{ width: 256 }} />
-            </View>
-            {accounts.length ? (
-                <GlassFooter style={{ height: cardHeight }} contentStyle={{ height: '100%', paddingTop: 0, paddingBottom: 0, paddingHorizontal: 0 }}>
-                    <ScrollView
-                        showsVerticalScrollIndicator={false}
-                        style={{ flex: 1 }}
-                        contentContainerStyle={{
-                            paddingTop: 8,
-                            paddingBottom: 16,
+            <RNAnimated.View
+                pointerEvents={isBusy ? 'auto' : 'none'}
+                style={{
+                    position: 'absolute',
+                    top: 0,
+                    right: 0,
+                    bottom: 0,
+                    left: 0,
+                    zIndex: 40,
+                    backgroundColor: theme.background,
+                    opacity: loadingCoverOpacity,
+                }}
+            />
+            <RNAnimated.View
+                pointerEvents={isBusy ? 'none' : 'auto'}
+                style={{
+                    position: 'absolute',
+                    left: 0,
+                    right: 0,
+                    bottom: '14%',
+                    alignItems: 'center',
+                    gap: 12,
+                }}
+            >
+                {accounts.length ? (
+                    <View
+                        style={{
+                            width: 256,
+                            flexDirection: 'row',
+                            alignItems: 'flex-start',
+                            justifyContent: quickLoginRowFull ? 'space-between' : 'center',
+                            gap: quickLoginRowFull ? 0 : 22,
+                            marginBottom: 2,
                         }}
                     >
-                        {accounts.map((account) => (
-                            <RememberedRow key={account.uid} account={account} disabled={isBusy} onPress={() => handleLogin(account.uid)} onForget={() => handleForgetAccount(account.uid)} />
+                        {visibleAccounts.map((account) => (
+                            <QuickLoginCell key={account.uid} account={account} onPress={() => handleLogin(account.uid)} onForget={() => handleForgetAccount(account.uid)} />
                         ))}
-                    </ScrollView>
-                </GlassFooter>
-            ) : null}
+                        {hasMoreAccounts ? <GlassIcon icon={UsersRound} size={72} iconSize={34} onPress={() => router.push('/quicklogin')} /> : null}
+                    </View>
+                ) : null}
+                <View style={{ alignItems: 'center', gap: 12 }}>
+                    <GlassButton onPress={() => handleLogin()} icon={Fingerprint} label="login" accent style={{ width: 256 }} />
+                    <GlassButton onPress={handleNewAccount} icon={UserRoundPlus} label="new account" style={{ width: 256 }} />
+                </View>
+            </RNAnimated.View>
             {isTestEnv ? (
                 <View style={{ position: 'absolute', left: 24, right: 24, top: warningTop, alignItems: 'center' }}>
                     <Text style={{ color: theme.destructive, fontSize: 12, fontWeight: '900', textAlign: 'center', lineHeight: 18 }}>

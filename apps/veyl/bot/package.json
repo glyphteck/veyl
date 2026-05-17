@@ -4,8 +4,8 @@
     "private": true,
     "type": "module",
     "scripts": {
-        "start": "node src/index.js",
-        "provision": "node src/newbot.js",
+        "start": "bun src/index.js",
+        "provision": "bun src/newbot.js",
         "lint": "eslint . --quiet"
     },
     "dependencies": {

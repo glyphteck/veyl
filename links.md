@@ -1,6 +1,6 @@
 # Links
 
-This file is generated from `shared/links.js` by `node scripts/links.mjs`.
+This file is generated from `shared/links.js` by `bun scripts/links.mjs`.
 
 ## Domains
 

@@ -73,6 +73,8 @@ Keep `shared/providers/chatprovider.js` focused on React provider orchestration.
 - Web wrapper: `apps/veyl/web/src/lib/peers.js`
 - iOS wrapper: `apps/veyl/ios/src/lib/peers.js`
 
+`usePeer()` exposes `recentPeers.all`, `recentPeers.wallet`, and `recentPeers.chat`. Use those lists for default recent-person pickers instead of locally sorting every cached peer; keep explicit profile search broad unless the surface requires a feature-specific key such as wallet or chat.
+
 ## Search
 
 The search system is built around profile lookups. An input string is parsed into a typed query (`username`, `role`, `key`), routed through a source to a Firestore fetch, then merged with locally cached people. Adding a new role is a single entry in `roles.js`.

@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { Card } from '@/components/card';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/avatar';
 import { Button } from '@/components/button';
@@ -33,7 +33,7 @@ function PeerCell({ peer, onSelect, selected }) {
 export default function NewChat({ close }) {
     const { uid, chatPK, chatBanned } = useUser();
     const { chats, sendMessage, sendAttachment, selectChat } = useChat();
-    const { peers } = usePeer();
+    const { peers, recentPeers } = usePeer();
     const { openDialog } = useDialog();
     const { cloaked } = useCloak();
     const { balance } = useWallet();
@@ -58,9 +58,11 @@ export default function NewChat({ close }) {
 
     // default list: peers without an existing chat
     const defaultPeers = useMemo(() => {
-        if (!peers?.length) return [];
-        return peers.filter((p) => p.uid !== uid && p.chatPK && !chatPeerPKs.has(p.chatPK));
-    }, [peers, uid, chatPeerPKs]);
+        const list = Array.isArray(recentPeers?.all) ? recentPeers.all : [];
+        return list.filter((p) => p.uid !== uid && p.chatPK && !chatPeerPKs.has(p.chatPK));
+    }, [recentPeers?.all, uid, chatPeerPKs]);
+
+    const hasChatKey = useCallback((peer) => !!peer?.chatPK, []);
 
     const searchPeers = useMemo(
         () =>
@@ -69,8 +71,9 @@ export default function NewChat({ close }) {
                 remote: results || [],
                 parsed: query,
                 excludeUid: uid,
+                extraFilter: hasChatKey,
             }),
-        [peers, query, results, uid]
+        [hasChatKey, peers, query, results, uid]
     );
 
     const displayPeers = query ? searchPeers : defaultPeers;
@@ -155,7 +158,7 @@ export default function NewChat({ close }) {
             />
             <Card>
                 <div className="overflow-y-scroll p-4" style={{ height: 'calc((80px + 24px) * 3 + 16px)' }}>
-                    {searching && query ? (
+                    {searching && query && !displayPeers.length ? (
                         <div className="flex items-center justify-center h-full">
                             <Loader className="animate-spin size-6 text-muted" />
                         </div>

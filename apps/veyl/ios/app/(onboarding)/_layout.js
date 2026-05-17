@@ -10,11 +10,12 @@ export default function OnboardingLayout() {
     const { encSeed } = useVault();
 
     const hasUsername = !!user.username;
+    const hasAvatarEntry = !!user.hasAvatarEntry;
     const hasSeed = !!encSeed;
-    const needsPassword = hasUsername && !hasSeed;
+    const needsAvatar = hasUsername && !hasAvatarEntry;
     const acceptedRules = hasCurrentCommunityRules(user);
-    const needsRules = hasUsername && !acceptedRules;
-    const canOpenAvatar = hasUsername && hasSeed && acceptedRules;
+    const needsRules = hasUsername && hasAvatarEntry && !acceptedRules;
+    const needsPassword = hasUsername && hasAvatarEntry && acceptedRules && !hasSeed;
 
     return (
         <Stack
@@ -29,7 +30,7 @@ export default function OnboardingLayout() {
             <Stack.Protected guard={!hasUsername}>
                 <Stack.Screen name="getusername" />
             </Stack.Protected>
-            <Stack.Protected guard={canOpenAvatar}>
+            <Stack.Protected guard={needsAvatar}>
                 <Stack.Screen name="getavatar" />
             </Stack.Protected>
             <Stack.Protected guard={needsRules}>

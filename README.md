@@ -78,8 +78,9 @@ Current chat payloads:
 - `t: 'mp4'` for video
 - `t: 'file'` for generic attachments
 - `t: 'rr'` for encrypted read-receipt control payloads
+- `t: 'rxn'` for encrypted reaction control payloads
 
-Chat attachments are encrypted before upload and are stored as file references plus encrypted keys/metadata in message documents. After a client decrypts an attachment, it can store the plaintext bytes in the device-local vault cache as a separate encrypted media blob. Read receipts are encrypted control messages in the same message stream; they do not update chat previews and are filtered out of visible chat UI.
+Chat attachments are encrypted before upload and are stored as file references plus encrypted keys/metadata in message documents. After a client decrypts an attachment, it can store the plaintext bytes in the device-local vault cache as a separate encrypted media blob. Read receipts and reactions are encrypted control messages in the same message stream; they do not update chat previews and are filtered out of visible chat UI.
 
 ## Architecture
 
@@ -151,7 +152,7 @@ The wrapper URL is intentional for veyl-specific actions. On iOS, the veyl web h
 - The current user's own avatar image also has a tiny unlocked cache keyed by uid and `profiles/{uid}.avatar` because `UserProvider` sits above the vault and unlock/profile chrome can render it before the vault cache opens. That unlocked cache stores only the live authenticated user's public avatar image bytes and version; sign-out/no-auth purges it, and auth switches prune every other self-avatar entry. It does not store usernames, settings, wallet keys, chat keys, chats, transactions, or decrypted media.
 - On iOS and web, chat warming keeps bounded in-memory latest-message batches for recent chats after unlock. Opening a warmed chat uses that provider-owned message batch as the initial message list instead of attaching a second latest-message listener or rendering an empty list first. The first chat row is warmed first because web lands there by default, but unlock navigation does not wait for warming. Media rows reuse the transient render-file cache before reading vaulted media again, and the warming path fills image/video media caches in the background only after server-confirmed message docs exist. These message batches are never written to the vaulted local cache and are cleared on lock/session teardown.
 - Read receipts are encrypted `t: 'rr'` control messages appended to `chats/{chatId}/messages`. Clients derive read state after decrypting the stream, and outgoing message UI renders the latest peer receipt with the peer avatar.
-- Visible messages can carry up to two encrypted `reactions` entries, one per chat participant. Each reaction stores an `emoji` and the reacting user's chat public key in `user`; the clients currently toggle a heart reaction and render the reacting user's already-loaded avatar beside the emoji.
+- Reactions are encrypted `t: 'rxn'` control messages appended to `chats/{chatId}/messages`. Each reaction payload targets a visible message and is scoped by the sender's chat public key. Clients derive the current reaction state from the latest reaction payload per participant, then render the reacting user's already-loaded avatar beside the emoji.
 
 ### Backend and data
 
@@ -204,7 +205,7 @@ Main Firestore collections:
 - `seeds/{uid}`: encrypted master seed
 - `usernames/{username}`: username reservation
 - `chats/{chatId}`: 1:1 chat metadata, including participants and encrypted last message preview
-- `chats/{chatId}/messages/{messageId}`: encrypted user-visible messages and encrypted control payloads such as read receipts
+- `chats/{chatId}/messages/{messageId}`: encrypted user-visible messages and encrypted control payloads such as read receipts and reactions
 - `bitcoin/current`: cached BTC price and block height
 - `passkeys/{credentialId}`: stored passkey credentials
 - `chatkeys/{chatPK}`: chat public key to uid lookup cache

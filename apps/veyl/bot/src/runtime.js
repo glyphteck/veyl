@@ -19,6 +19,21 @@ const MAX_BOT_READ_CACHE = 2048;
 const BOT_READS = 'reads';
 const RUNTIME_LEASE_MS = 45000;
 const RUNTIME_HEARTBEAT_MS = 15000;
+const TRANSIENT_CONNECTION_CODES = new Set([
+    4,
+    14,
+    '4',
+    '14',
+    'DEADLINE_EXCEEDED',
+    'UNAVAILABLE',
+    'ETIMEDOUT',
+    'ECONNRESET',
+    'ECONNABORTED',
+    'EAI_AGAIN',
+    'ENOTFOUND',
+]);
+const TRANSIENT_CONNECTION_PATTERN =
+    /\b(DEADLINE_EXCEEDED|UNAVAILABLE|ETIMEDOUT|ECONNRESET|ECONNABORTED|EAI_AGAIN|ENOTFOUND)\b/i;
 
 function cleanDocPart(value) {
     return String(value ?? '')
@@ -101,6 +116,32 @@ function sameKey(left, right) {
 
 function statusMessage(error) {
     return error?.message || String(error || 'unknown error');
+}
+
+function isTransientConnectionError(error) {
+    const code = error?.code;
+    if (TRANSIENT_CONNECTION_CODES.has(code) || TRANSIENT_CONNECTION_CODES.has(String(code).toUpperCase())) {
+        return true;
+    }
+    const message = statusMessage(error);
+    return TRANSIENT_CONNECTION_PATTERN.test(message) || /transport (?:errored|error)/i.test(message);
+}
+
+function connectionStatus(error) {
+    const message = statusMessage(error);
+    const match = message.match(TRANSIENT_CONNECTION_PATTERN);
+    if (match?.[1]) {
+        return match[1].toUpperCase();
+    }
+    return error?.code != null ? `code ${error.code}` : 'network unavailable';
+}
+
+function logHeartbeatError(error) {
+    if (isTransientConnectionError(error)) {
+        console.warn(`bot runtime heartbeat lost connection: ${connectionStatus(error)}`);
+        return;
+    }
+    console.error('bot runtime heartbeat failed', error);
 }
 
 function queueMapJob(map, key, job) {
@@ -309,7 +350,7 @@ export class BotRuntime {
                     { merge: true }
                 )
                 .catch((error) => {
-                    console.error('bot runtime heartbeat failed', error);
+                    logHeartbeatError(error);
                 });
         }, RUNTIME_HEARTBEAT_MS);
         this.heartbeatTimer.unref?.();

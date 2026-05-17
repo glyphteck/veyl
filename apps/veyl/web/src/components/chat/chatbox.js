@@ -8,10 +8,12 @@ import { useChat, useChatInput } from '@/components/providers/chatprovider';
 import { useUser } from '@/components/providers/userprovider';
 import { usePeer } from '@/components/providers/peerprovider';
 import { useDialog } from '@/components/providers/dialogprovider';
-import { formatUserDisplay } from '@/lib/utils';
+import { useWallet } from '@/components/providers/walletprovider';
+import { formatUserDisplay, renderMoney } from '@/lib/utils';
 import { prepareChatFile } from '@/lib/chatfiles';
 import { getPeerChatPKFromChatId } from '@glyphteck/shared/chat/utils';
-import { canReplyToMsg, makeTxt, setReply, setTxt } from '@glyphteck/shared/chat/messages';
+import { canReplyToMsg, makeReq, makeTxt, setReply, setTxt } from '@glyphteck/shared/chat/messages';
+import { parseCommandAmountSats } from '@glyphteck/shared/commands';
 import { CHAT_FILE_SIZE_LIMIT_ENABLED, MAX_CHAT_FILE_BYTES } from '@glyphteck/shared/chat/filepayload';
 import { toast } from 'sonner';
 import { Trash2 } from 'lucide-react';
@@ -23,9 +25,10 @@ function formatMaxSize(bytes) {
 }
 
 export function Chatbox() {
-    const { chats, selectedChatId, dropChat, sendMessage, sendAttachment, updateMessage } = useChat();
+    const { chats, selectedChatId, sendMessage, sendAttachment, updateMessage } = useChat();
     const { focusChatInput, chatInputRef } = useChatInput();
-    const { chatPK } = useUser();
+    const { chatPK, chatBanned, settings } = useUser();
+    const { sendMoneyWithSpark, bitcoin } = useWallet();
     const { peers, updatePeer } = usePeer();
     const { openDialog } = useDialog();
     const dragDepthRef = useRef(0);
@@ -126,15 +129,46 @@ export function Chatbox() {
             if (!command?.complete) {
                 return;
             }
+            const amountSats = parseCommandAmountSats(command.args.amount);
+            if (!amountSats) {
+                toast.error('invalid amount');
+                return;
+            }
             if (command.name === 'send') {
-                handleOpenMoney('send', command.args.amount);
+                if (!peerProfile?.walletPK) {
+                    toast.error('missing wallet key');
+                    return;
+                }
+                const moneyFormat = settings?.moneyFormat || 'sats';
+                const formattedAmount = renderMoney(amountSats, moneyFormat, bitcoin?.price);
+                const loadingToastId = toast(`sending ${formattedAmount} to ${peerDisplayName}`, { duration: Infinity });
+                try {
+                    await sendMoneyWithSpark(peerProfile.walletPK, amountSats);
+                    toast.success(`sent ${formattedAmount} to ${peerDisplayName}`, { id: loadingToastId, duration: 2000 });
+                } catch (error) {
+                    toast.error(error?.message || 'failed to send money', { id: loadingToastId, duration: 2000 });
+                }
                 return;
             }
             if (command.name === 'request') {
-                handleOpenMoney('request', command.args.amount);
+                if (chatBanned) {
+                    toast.error('chat unavailable');
+                    return;
+                }
+                if (!peerChatPK) {
+                    toast.error('missing chat key');
+                    return;
+                }
+                try {
+                    await sendMessage(peerChatPK, makeReq(amountSats));
+                    toast(`requested ${renderMoney(amountSats, settings?.moneyFormat || 'sats', bitcoin?.price)} from ${peerDisplayName}`);
+                } catch (error) {
+                    console.error('chat request command failed', error);
+                    toast.error(error?.message || 'failed to send request');
+                }
             }
         },
-        [handleOpenMoney]
+        [bitcoin?.price, chatBanned, peerChatPK, peerDisplayName, peerProfile?.walletPK, sendMessage, sendMoneyWithSpark, settings?.moneyFormat]
     );
 
     const handleReply = useCallback(

@@ -57,7 +57,7 @@ function PeerCell({ item, onToggle, theme, selected, disabled }) {
 
 export default function ShareMediaScreen() {
     const { theme } = useTheme();
-    const { peers } = usePeer() || {};
+    const { peers, recentPeers } = usePeer() || {};
     const { uid, chatPK, chatBanned } = useUser();
     const { shareAttachment, selectChat } = useChat();
     const { searching, results, query, search: runSearch, clearSearch } = useSearch('profiles');
@@ -105,8 +105,9 @@ export default function ShareMediaScreen() {
 
     const filteredPeers = useMemo(() => {
         const list = Array.isArray(peers) ? peers : [];
+        const recent = Array.isArray(recentPeers?.chat) ? recentPeers.chat : [];
         const requireChat = (peer) => !!peer?.chatPK;
-        if (!search.trim()) return list.filter((p) => p.uid !== uid && p.chatPK);
+        if (!search.trim()) return recent.filter((p) => p.uid !== uid && p.chatPK);
         if (!query) return [];
         return mergeProfiles({
             local: list,
@@ -115,7 +116,7 @@ export default function ShareMediaScreen() {
             excludeUid: uid,
             extraFilter: requireChat,
         });
-    }, [peers, query, results, search, uid]);
+    }, [peers, query, recentPeers?.chat, results, search, uid]);
 
     const handleSend = useCallback(async () => {
         if (!msg || !selected.length || sending || busyRef.current || chatBanned) return;

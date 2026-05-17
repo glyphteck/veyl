@@ -31,6 +31,7 @@ When enabled, a bot:
 - pays any incoming payment request if funded, then sends a mirrored request back for the same amount
 - replies with an underfunded message if it can't afford a request
 - appends an encrypted read receipt for the latest viewed peer message without changing the chat preview
+- ignores encrypted control payloads such as read receipts and reactions
 - accepts incoming transfers passively (balance updates automatically via Spark events)
 
 Guardrails:
@@ -66,6 +67,7 @@ Message handling:
 - attachments: decrypted, re-encrypted under the bot's keys, uploaded as a fresh copy, and sent back
 - payment requests: paid if the bot has sufficient balance, original request patched with the tx id, then a mirrored request sent back for the same amount
 - read receipts: appended as encrypted `t: 'rr'` control messages and sent without updating `lastMsg`
+- reactions: encrypted `t: 'rxn'` control messages; skipped by the bot runtime instead of mirrored
 - incoming transfers: accepted passively — Spark claims them automatically and the runtime refreshes the balance snapshot
 
 Job serialization uses `queueMapJob` to ensure per-chat and per-wallet work runs sequentially without blocking other chats. The runtime also stores per-chat read checkpoints under `bots/{uid}/reads/{chatId}` and writes bot replies with deterministic message IDs derived from the source message, so a restart or retry cannot mirror the same source message into duplicate bot texts.

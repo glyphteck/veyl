@@ -33,7 +33,7 @@ export async function writeLinksDoc() {
     const file = resolve(rootDir, 'links.md');
     const body = `# Links
 
-This file is generated from \`shared/links.js\` by \`node scripts/links.mjs\`.
+This file is generated from \`shared/links.js\` by \`bun scripts/links.mjs\`.
 
 ## Domains
 

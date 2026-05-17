@@ -47,11 +47,11 @@ function AppContent() {
     }, [ready]);
 
     const isAuthed = !!user.uid;
-    const settled = !isAuthed || (user.settingsReady && seedReady);
     const hasUsername = !!user.username;
+    const hasAvatarEntry = !!user.hasAvatarEntry;
     const hasSeed = !!encSeed;
     const acceptedRules = hasCurrentCommunityRules(user);
-    const onboardingComplete = hasUsername && hasSeed && acceptedRules;
+    const onboardingComplete = hasUsername && hasAvatarEntry && hasSeed && acceptedRules;
 
     if (!ready) {
         return null;
@@ -68,14 +68,22 @@ function AppContent() {
                     contentStyle: { backgroundColor: theme?.background },
                 }}
             >
-                <Stack.Protected guard={!isAuthed || !settled}>
+                <Stack.Protected guard={!isAuthed}>
                     <Stack.Screen name="login" />
+                    <Stack.Screen
+                        name="quicklogin"
+                        options={{
+                            presentation: 'formSheet',
+                            sheetGrabberVisible: true,
+                            sheetAllowedDetents: 'fitToContents',
+                            contentStyle: { backgroundColor: 'transparent' },
+                        }}
+                    />
                     <Stack.Screen name="newaccount" />
                 </Stack.Protected>
                 <Stack.Protected guard={isAuthed && onboardingComplete}>
                     <Stack.Screen name="index" />
                     <Stack.Screen name="(vault)" />
-                    <Stack.Screen name="(onboarding)" />
                 </Stack.Protected>
                 <Stack.Protected guard={isAuthed && !onboardingComplete}>
                     <Stack.Screen name="(onboarding)" />

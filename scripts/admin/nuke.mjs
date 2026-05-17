@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env bun
 
 import admin, { db } from '../../functions/lib/admin.js';
 import { cliArgs } from './common.mjs';

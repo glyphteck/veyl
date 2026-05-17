@@ -52,9 +52,11 @@ const aggregateTxs = (transfers, userPK) => {
         if (!firstDate || txDate < firstDate) firstDate = txDate;
 
         if (tx.peerPK && tx.peerPK !== userPK && !tx.funding && !tx.withdrawal) {
+            const txMs = txDate.getTime();
             if (!peerMap.has(tx.peerPK)) {
                 peerMap.set(tx.peerPK, {
                     walletPK: tx.peerPK,
+                    lastMs: 0,
                     stats: {
                         sent: 0,
                         received: 0,
@@ -65,6 +67,9 @@ const aggregateTxs = (transfers, userPK) => {
                 });
             }
             const peer = peerMap.get(tx.peerPK);
+            if (Number.isFinite(txMs) && txMs > (peer.lastMs || 0)) {
+                peer.lastMs = txMs;
+            }
             peer.stats.cnt++;
             peer.stats.vol += tx.totalValue;
             if (tx.incoming) {

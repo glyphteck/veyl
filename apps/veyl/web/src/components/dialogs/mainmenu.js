@@ -23,6 +23,7 @@ import {
     Bot,
     Hammer,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { useDialog } from '@/components/providers/dialogprovider';
 import { useUser } from '@/components/providers/userprovider';
 import { useWallet } from '@/components/providers/walletprovider';
@@ -32,13 +33,13 @@ import { usePeer } from '@/components/providers/peerprovider';
 import { useCloak } from '@glyphteck/shared/providers/cloakprovider';
 import { mergeProfiles } from '@glyphteck/shared/search/merge';
 import { sortProfiles } from '@glyphteck/shared/search/sort';
-import { matchCommands, parseCommand, getTypingUsername } from '@glyphteck/shared/commands';
+import { getTypingUsername, matchCommands, parseCommand, parseCommandAmountSats } from '@glyphteck/shared/commands';
 import { useChat } from '@/components/providers/chatprovider';
 import { formatUserDisplay, renderMoney, formatFullDateTime } from '@/lib/utils';
 import { useSearch } from '@/lib/search/usesearch';
 import { shortcuts } from '@/lib/shortcuts';
 import { Bitcoin } from '@/components/bitcoin';
-import { getMsgPreview as displayLastMsg, makeTxt } from '@glyphteck/shared/chat/messages';
+import { getMsgPreview as displayLastMsg, makeReq, makeTxt } from '@glyphteck/shared/chat/messages';
 import { Dot } from '@/components/dot';
 import { qr } from '@glyphteck/shared/qrutils';
 import { getChatId } from '@glyphteck/shared/crypto/chat';
@@ -55,12 +56,12 @@ function formatCacheSize(bytes) {
 export default function MainMenu({ close, data }) {
     const router = useRouter();
     const { openDialog } = useDialog();
-    const { uid, username, settings, chatPK, chatBanned, isAdmin, avatar } = useUser();
-    const { copyFundingAddress, balance, bitcoin } = useWallet();
+    const { uid, username, settings, chatPK, chatBanned, isAdmin, avatar, walletPK } = useUser();
+    const { copyFundingAddress, sendMoneyWithSpark, balance, bitcoin } = useWallet();
     const { lock, localCache } = useVault();
     const { hasTx, transactions } = useTxData();
     const { hasChats, lastChat, chats, sendMessage, selectChat } = useChat();
-    const { peers } = usePeer();
+    const { peers, recentPeers, addPeer } = usePeer();
     const { cloaked, cloak } = useCloak();
     const { searching, results, query, search, clearSearch } = useSearch('mainmenu');
     const [searchValue, setSearchValue] = useState(data?.searchInput || '');
@@ -78,17 +79,81 @@ export default function MainMenu({ close, data }) {
     const parsedCommand = showCommands ? parseCommand(searchValue, { mode: 'mainmenu' }) : null;
     const typingUsername = showCommands ? getTypingUsername(searchValue, { mode: 'mainmenu' }) : null;
 
-    const executeCommand = (parsed) => {
+    const executeCommand = async (parsed) => {
         if (!parsed?.complete) return;
-        const peer = peers?.find((p) => p.username === parsed.args.username) ?? null;
+        let peer =
+            [...(peers || []), ...(results || [])].find((p) => {
+                if (!p?.username || !parsed.args.username) return false;
+                return p.username.toLowerCase() === parsed.args.username.toLowerCase();
+            }) ?? null;
+        if (!peer && parsed.args.username) {
+            peer = await addPeer?.({ username: parsed.args.username });
+        }
+        if (!peer) {
+            toast.error('user not found');
+            return;
+        }
         if (parsed.name === 'send') {
+            const amountSats = parseCommandAmountSats(parsed.args.amount);
+            if (!amountSats) {
+                toast.error('invalid amount');
+                return;
+            }
+            if (!peer?.walletPK) {
+                toast.error('missing wallet key');
+                return;
+            }
+            if (peer.walletPK === walletPK) {
+                toast.error('cannot send money to yourself');
+                return;
+            }
+            const displayName = formatUserDisplay(peer, false);
+            const formattedAmount = renderMoney(amountSats, settings?.moneyFormat || 'sats', bitcoin?.price);
             close();
-            openDialog('payments', { tab: 'send', peer, amount: parsed.args.amount });
+            const loadingToastId = toast(`sending ${formattedAmount} to ${displayName}`, {
+                icon: <Loader className="animate-spin size-4" />,
+                duration: Infinity,
+            });
+            try {
+                await sendMoneyWithSpark(peer.walletPK, amountSats);
+                toast.success(`sent ${formattedAmount} to ${displayName}`, { id: loadingToastId, duration: 2000 });
+            } catch (error) {
+                toast.error(error?.message || 'failed to send money', { id: loadingToastId, duration: 2000 });
+            }
         } else if (parsed.name === 'request') {
+            const amountSats = parseCommandAmountSats(parsed.args.amount);
+            if (!amountSats) {
+                toast.error('invalid amount');
+                return;
+            }
+            if (chatBanned) {
+                toast.error('chat unavailable');
+                return;
+            }
+            if (!peer?.chatPK) {
+                toast.error('missing chat key');
+                return;
+            }
+            if (peer.uid === uid) {
+                toast.error('cannot request money from yourself');
+                return;
+            }
+            const displayName = formatUserDisplay(peer, false);
             close();
-            openDialog('payments', { tab: 'request', peer, amount: parsed.args.amount });
+            try {
+                await sendMessage(peer.chatPK, makeReq(amountSats));
+                toast(`requested ${renderMoney(amountSats, settings?.moneyFormat || 'sats', bitcoin?.price)} from ${displayName}`);
+            } catch (error) {
+                console.error('mainmenu request failed', error);
+                toast.error(error?.message || 'failed to send request');
+            }
         } else if (parsed.name === 'msg') {
+            if (chatBanned) {
+                toast.error('chat unavailable');
+                return;
+            }
             if (!peer?.chatPK || !parsed.args.message) {
+                toast.error('missing chat key');
                 return;
             }
             const chatId = getChatId(chatPK, peer.chatPK);
@@ -158,9 +223,7 @@ export default function MainMenu({ close, data }) {
         return map;
     }, [peers]);
 
-    //get top 3 peers by vol
-    const sortedPeers = peers?.slice().sort((a, b) => (b.stats?.vol || 0) - (a.stats?.vol || 0)) || [];
-    const topPeers = sortedPeers.slice(0, 3);
+    const topPeers = (recentPeers?.all || []).slice(0, 3);
     const matchedPeers = useMemo(() => {
         if (!query) return [];
         if (browseUsers) {
@@ -221,9 +284,9 @@ export default function MainMenu({ close, data }) {
                             {parsedCommand?.complete
                                 ? (() => {
                                       const { username, amount, message } = parsedCommand.args;
-                                      const label = parsedCommand.name === 'msg' ? `msg ${username}: ${message}` : `${parsedCommand.name} ${amount} to ${username}`;
+                                      const label = parsedCommand.name === 'msg' ? `msg @${username}: ${message}` : `${parsedCommand.name} ${amount} sats to @${username}`;
                                       return (
-                                          <CommandItem key="cmd-execute" value={searchValue} onSelect={() => executeCommand(parsedCommand)}>
+                                          <CommandItem key="cmd-execute" value={`/${label}`} keywords={[searchValue, searchValue.trim()]} onSelect={() => executeCommand(parsedCommand)}>
                                               <span>/{label}</span>
                                           </CommandItem>
                                       );
@@ -261,7 +324,12 @@ export default function MainMenu({ close, data }) {
                                                       ? `request money from @${username}`
                                                       : null;
                                           return hintLabel ? (
-                                              <CommandItem key="cmd-hint" value={searchValue} onSelect={() => executeCommand(parsedCommand)}>
+                                              <CommandItem
+                                                  key="cmd-hint"
+                                                  value={hintLabel}
+                                                  keywords={[searchValue, searchValue.trim(), `/${parsedCommand.name} ${username}`, `/${parsedCommand.name} ${username} `]}
+                                                  onSelect={() => executeCommand(parsedCommand)}
+                                              >
                                                   <span>{hintLabel}</span>
                                               </CommandItem>
                                           ) : null;

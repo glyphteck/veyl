@@ -1,4 +1,4 @@
-import { Animated as RNAnimated, Pressable, Text, View } from 'react-native';
+import { Alert, Animated as RNAnimated, Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronLeft } from 'lucide-react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -9,6 +9,7 @@ import { useTheme } from '@/providers/themeprovider';
 import { useChat } from '@/providers/chatprovider';
 import { useUser } from '@/providers/userprovider';
 import { usePeer } from '@/providers/peerprovider';
+import { useWallet } from '@/providers/walletprovider';
 import GlassHeader from '@/components/glass/glassheader';
 import ChatInput, { CommandBubbles, DraftBar } from '@/components/chat/chatinput';
 import MessageList from '@/components/chat/messagelist';
@@ -18,9 +19,9 @@ import Avatar from '@/components/avatar';
 import { prepareAssetForChatUpload } from '@/lib/chatmedia';
 import { formatUserDisplay } from '@glyphteck/shared/utils';
 import { getPeerChatPKFromChatId } from '@glyphteck/shared/chat/utils';
-import { canReplyToMsg, makeTxt, setReply, setTxt } from '@glyphteck/shared/chat/messages';
+import { canReplyToMsg, makeReq, makeTxt, setReply, setTxt } from '@glyphteck/shared/chat/messages';
 import { useTap } from '@/lib/tap';
-import { getCommandContext } from '@glyphteck/shared/commands';
+import { getCommandContext, parseCommandAmountSats } from '@glyphteck/shared/commands';
 
 const INPUT_ID = 'chat-input';
 
@@ -31,6 +32,7 @@ export default function CurrentChatRoute() {
     const router = useRouter();
     const { chats, selectChat, sendMessage, sendAttachment, sendImage, updateMessage } = useChat();
     const { chatPK, chatBanned } = useUser();
+    const { sendMoneyWithSpark } = useWallet();
     const { peers, updatePeer } = usePeer() || {};
     const backTap = useTap({ onPress: router.back });
     const baseH = useRef(0);
@@ -278,15 +280,40 @@ export default function CurrentChatRoute() {
             if (!command?.complete) {
                 return;
             }
+            const amountSats = parseCommandAmountSats(command.args.amount);
+            if (!amountSats) {
+                Alert.alert('Invalid amount', 'Enter a whole number of sats.');
+                return;
+            }
             if (command.name === 'send') {
-                handleOpenTransfer('send', command.args.amount);
+                if (!peerProfile?.walletPK) {
+                    Alert.alert('Missing address', 'This person has no wallet key yet.');
+                    return;
+                }
+                try {
+                    await sendMoneyWithSpark(peerProfile.walletPK, amountSats);
+                } catch (error) {
+                    Alert.alert('Send failed', error?.message || 'Failed to send money.');
+                }
                 return;
             }
             if (command.name === 'request') {
-                handleOpenTransfer('request', command.args.amount);
+                if (chatBanned) {
+                    Alert.alert('Chat unavailable', 'You cannot send requests right now.');
+                    return;
+                }
+                if (!peerChatPK) {
+                    Alert.alert('Missing chat key', 'This person has no chat key yet.');
+                    return;
+                }
+                try {
+                    await sendMessage?.(peerChatPK, makeReq(amountSats));
+                } catch (error) {
+                    Alert.alert('Request failed', error?.message || 'Failed to send request.');
+                }
             }
         },
-        [handleOpenTransfer]
+        [chatBanned, peerChatPK, peerProfile?.walletPK, sendMessage, sendMoneyWithSpark]
     );
 
     const handleCommandBubblePress = useCallback((prefix) => {

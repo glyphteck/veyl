@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { filterChatMessages, getPeerChatPKFromChatId, listenToMsgDeletes, loadOlderMsgs, MSG_BATCH_SIZE } from './utils.js';
 import { getMessageKey, getMessageOrderMs, mergeMessages } from './state.js';
 import { dropCachedMedia } from '../localdatacache.js';
-import { getLatestOwnReadReceiptTarget, getLatestReadReceiptTarget } from './messages.js';
+import { deriveMessageReactions, getLatestOwnReadReceiptTarget, getLatestReadReceiptTarget } from './messages.js';
 
 function isDenied(error) {
     return error?.code === 'permission-denied';
@@ -490,7 +490,8 @@ export function createUseChatMessages({ db, useChat, useUser, useVault, appState
             }
             return dropMissingFromBatch(activeOlder, activeServerBatch, liveKeys);
         }, [activeOlder, activeServerBatch, liveKeys]);
-        const messages = useMemo(() => filterChatMessages(mergeMessages(cleanOlder, activeLive, locals), chatPK, peerChatPK), [activeLive, chatPK, cleanOlder, locals, peerChatPK]);
+        const rawMessages = useMemo(() => filterChatMessages(mergeMessages(cleanOlder, activeLive, locals), chatPK, peerChatPK), [activeLive, chatPK, cleanOlder, locals, peerChatPK]);
+        const messages = useMemo(() => deriveMessageReactions(rawMessages, chatPK, peerChatPK), [chatPK, peerChatPK, rawMessages]);
 
         useEffect(() => {
             if (!chatId || !activeReady || !activeExists || !chatPK || !messages.length) {

@@ -7,6 +7,7 @@ import { getChatFileChatId } from './filepayload.js';
 export const ATTACHMENT_MSG_TYPES = ['img', 'mp3', 'mp4', 'file'];
 export const MAX_TXT_CHARS = 2048;
 export const READ_RECEIPT_MSG_TYPE = 'rr';
+export const REACTION_MSG_TYPE = 'rxn';
 export const DEFAULT_REACTION_EMOJI = '❤️';
 export const MAX_REACTIONS = 2;
 
@@ -117,6 +118,11 @@ function cleanReactionEmoji(value) {
     return emoji || DEFAULT_REACTION_EMOJI;
 }
 
+function cleanReactionTarget(value) {
+    const target = typeof value === 'object' && value ? msgKey(value) : value;
+    return typeof target === 'string' ? target.trim() : '';
+}
+
 export function getMsgReactions(msg) {
     const raw = Array.isArray(msg?.reactions) ? msg.reactions : [];
     const seen = new Set();
@@ -136,20 +142,6 @@ export function getMsgReactions(msg) {
     }
 
     return reactions;
-}
-
-function reactionsEntry(msg) {
-    const reactions = getMsgReactions(msg);
-    return reactions.length ? { reactions } : {};
-}
-
-function cleanPayload(msg) {
-    if (!msg || typeof msg !== 'object' || Array.isArray(msg)) {
-        return {};
-    }
-
-    const { id, ts, from, pending, failed, localUri, localData, type, rr, liked, ...payload } = msg;
-    return payload;
 }
 
 export function isLongTxt(msg) {
@@ -192,12 +184,89 @@ export function isReadReceiptMsg(msg) {
     return msg?.t === READ_RECEIPT_MSG_TYPE && hasText(msg.upto);
 }
 
+export function makeReaction(target, emoji = DEFAULT_REACTION_EMOJI) {
+    const nextTarget = cleanReactionTarget(target);
+    if (!nextTarget) {
+        throw new Error('reaction target required');
+    }
+
+    const nextEmoji = emoji == null ? '' : cleanReactionEmoji(emoji);
+    return {
+        t: REACTION_MSG_TYPE,
+        target: nextTarget,
+        ...(nextEmoji ? { emoji: nextEmoji } : {}),
+    };
+}
+
+export function isReactionMsg(msg) {
+    return msg?.t === REACTION_MSG_TYPE && hasText(msg.target) && (msg.emoji == null || hasText(msg.emoji));
+}
+
 export function isControlMsg(msg) {
-    return isReadReceiptMsg(msg);
+    return isReadReceiptMsg(msg) || isReactionMsg(msg);
 }
 
 export function canStoreMsg(msg) {
     return canShowMsg(msg) || isControlMsg(msg);
+}
+
+function sameReactions(a, b) {
+    const left = getMsgReactions({ reactions: a });
+    const right = getMsgReactions({ reactions: b });
+    if (left.length !== right.length) {
+        return false;
+    }
+    return left.every((reaction, index) => reaction.user === right[index]?.user && reaction.emoji === right[index]?.emoji);
+}
+
+export function deriveMessageReactions(messages, chatPK, peerChatPK) {
+    const participants = [chatPK, peerChatPK].filter(Boolean);
+    if (!Array.isArray(messages) || !messages.length || !participants.length) {
+        return messages || [];
+    }
+
+    const allowed = new Set(participants);
+    const byTarget = new Map();
+
+    for (const msg of messages) {
+        if (!isServerConfirmedMsg(msg) || !isReactionMsg(msg)) {
+            continue;
+        }
+
+        const user = cleanReactionUser(msg.s || msg.from);
+        const target = cleanReactionTarget(msg.target);
+        if (!user || !allowed.has(user) || !target) {
+            continue;
+        }
+
+        let reactions = byTarget.get(target);
+        if (!reactions) {
+            reactions = new Map();
+            byTarget.set(target, reactions);
+        }
+
+        if (hasText(msg.emoji)) {
+            reactions.set(user, { emoji: cleanReactionEmoji(msg.emoji), user });
+        } else {
+            reactions.delete(user);
+        }
+    }
+
+    return messages.map((msg) => {
+        if (!canShowMsg(msg)) {
+            return msg;
+        }
+
+        const target = msgKey(msg);
+        const reactionsByUser = target ? byTarget.get(target) : null;
+        const reactions = participants.map((user) => reactionsByUser?.get(user)).filter(Boolean).slice(0, MAX_REACTIONS);
+        if (sameReactions(msg.reactions, reactions)) {
+            return msg;
+        }
+
+        const { reactions: _oldReactions, ...next } = msg;
+        return reactions.length ? { ...next, reactions } : next;
+    });
 }
 
 export function getLatestReadReceiptTarget(messages, chatPK) {
@@ -283,67 +352,6 @@ export function getLatestReadOutgoingReceiptMessage(messages, chatPK, peerChatPK
     return getLatestReadOutgoingReceipt(messages, chatPK, peerChatPK)?.message ?? null;
 }
 
-export function hasReaction(msg, user) {
-    const actor = cleanReactionUser(user);
-    return !!actor && getMsgReactions(msg).some((reaction) => reaction.user === actor);
-}
-
-export function setReaction(msg, user, emoji = DEFAULT_REACTION_EMOJI) {
-    const actor = cleanReactionUser(user);
-    if (!actor) {
-        throw new Error('reaction user required');
-    }
-
-    const next = cleanPayload(msg);
-    const reaction = { emoji: cleanReactionEmoji(emoji), user: actor };
-    const reactions = [...getMsgReactions(next).filter((item) => item.user !== actor), reaction].slice(-MAX_REACTIONS);
-    if (reactions.length) {
-        return {
-            ...next,
-            reactions,
-        };
-    }
-
-    return next;
-}
-
-export function removeReaction(msg, user) {
-    const actor = cleanReactionUser(user);
-    const next = cleanPayload(msg);
-    if (!actor) {
-        return next;
-    }
-
-    const reactions = getMsgReactions(next).filter((reaction) => reaction.user !== actor);
-    if (reactions.length) {
-        return {
-            ...next,
-            reactions,
-        };
-    }
-
-    delete next.reactions;
-    return next;
-}
-
-export function setMsgReactions(msg, reactions) {
-    const next = cleanPayload(msg);
-    const clean = getMsgReactions({ reactions });
-    if (clean.length) {
-        return {
-            ...next,
-            reactions: clean,
-        };
-    }
-
-    delete next.reactions;
-    return next;
-}
-
-export function toggleReaction(msg, user, emoji = DEFAULT_REACTION_EMOJI) {
-    return hasReaction(msg, user) ? removeReaction(msg, user) : setReaction(msg, user, emoji);
-}
-
 export function formatAttachmentSize(value) {
     if (!Number.isFinite(value) || value <= 0) {
         return null;
@@ -415,7 +423,6 @@ export function setTxt(msg, text) {
         ...(typeof msg?.s === 'string' && msg.s ? { s: msg.s } : {}),
         ...(typeof msg?.cid === 'string' && msg.cid ? { cid: msg.cid } : {}),
         ...(typeof msg?.r === 'string' && msg.r ? { r: msg.r } : {}),
-        ...reactionsEntry(msg),
         t: 'txt',
         c,
     };
@@ -463,7 +470,6 @@ export function setReqTx(msg, tx) {
         ...(typeof msg?.s === 'string' && msg.s ? { s: msg.s } : {}),
         ...(typeof msg?.cid === 'string' && msg.cid ? { cid: msg.cid } : {}),
         ...(typeof msg?.r === 'string' && msg.r ? { r: msg.r } : {}),
-        ...reactionsEntry(msg),
         t: 'req',
         a,
         tx: nextTx,

@@ -1,38 +1,53 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-    DEFAULT_REACTION_EMOJI,
-    getMsgReactions,
-    setMsgReactions,
-    toggleReaction as toggleMsgReaction,
-} from './messages.js';
+import { DEFAULT_REACTION_EMOJI, MAX_REACTIONS, getMsgReactions } from './messages.js';
 
-function msgId(message) {
-    return message?.id || null;
+function msgKey(message) {
+    return message?.cid || message?.id || null;
 }
 
-function reactionKey(reactions) {
-    return getMsgReactions({ reactions })
-        .map((reaction) => `${reaction.user}:${reaction.emoji}`)
-        .sort()
-        .join('|');
+function reactionStateKey(reaction) {
+    return reaction ? `${reaction.user}:${reaction.emoji}` : '';
+}
+
+function actorReaction(reactions, actor) {
+    return getMsgReactions({ reactions }).find((reaction) => reaction.user === actor) ?? null;
+}
+
+function orderReactions(reactions, chatPK, peerChatPK) {
+    const byUser = new Map();
+    for (const reaction of getMsgReactions({ reactions })) {
+        byUser.set(reaction.user, reaction);
+    }
+    return [chatPK, peerChatPK].map((user) => byUser.get(user)).filter(Boolean).slice(0, MAX_REACTIONS);
 }
 
 export function chatReactions(msg, chatPK, peerChatPK) {
     const users = new Set([chatPK, peerChatPK].filter(Boolean));
-    return getMsgReactions(msg).filter((reaction) => users.has(reaction.user));
+    return orderReactions(
+        getMsgReactions(msg).filter((reaction) => users.has(reaction.user)),
+        chatPK,
+        peerChatPK
+    );
 }
 
-function messagesById(messages) {
+function messagesByKey(messages) {
     const map = new Map();
     for (const message of messages || []) {
-        const id = msgId(message);
-        if (id) {
-            map.set(id, message);
+        if (message?.id) {
+            map.set(message.id, message);
+        }
+        if (message?.cid) {
+            map.set(message.cid, message);
         }
     }
     return map;
+}
+
+function withActorReaction(message, actor, reaction, chatPK, peerChatPK) {
+    const current = chatReactions(message, chatPK, peerChatPK).filter((item) => item.user !== actor);
+    return orderReactions(reaction ? [...current, reaction] : current, chatPK, peerChatPK);
 }
 
 export function useOptimisticMessageReactions({
@@ -40,7 +55,7 @@ export function useOptimisticMessageReactions({
     chatPK,
     peerChatPK,
     messages,
-    updateMessage,
+    sendReaction,
     emoji = DEFAULT_REACTION_EMOJI,
     onError,
 }) {
@@ -49,11 +64,11 @@ export function useOptimisticMessageReactions({
     const overridesRef = useRef(overrides);
     const writesRef = useRef(new Map());
     const scopeRef = useRef(scopeKey);
-    const messagesByIdRef = useRef(new Map());
-    const messageMap = useMemo(() => messagesById(messages), [messages]);
+    const messagesByKeyRef = useRef(new Map());
+    const messageMap = useMemo(() => messagesByKey(messages), [messages]);
 
     useEffect(() => {
-        messagesByIdRef.current = messageMap;
+        messagesByKeyRef.current = messageMap;
     }, [messageMap]);
 
     useEffect(() => {
@@ -67,11 +82,10 @@ export function useOptimisticMessageReactions({
         setOverrides(new Map());
     }, [scopeKey]);
 
-    const setOverride = useCallback((id, reactions) => {
-        const clean = getMsgReactions({ reactions });
+    const setOverride = useCallback((id, reaction) => {
         setOverrides((current) => {
             const next = new Map(current);
-            next.set(id, clean);
+            next.set(id, reaction);
             overridesRef.current = next;
             return next;
         });
@@ -92,14 +106,14 @@ export function useOptimisticMessageReactions({
     const flushWrite = useCallback(
         (id) => {
             const entry = writesRef.current.get(id);
-            if (!entry || entry.writing || !chatId || !peerChatPK || typeof updateMessage !== 'function') {
+            if (!entry || entry.writing || !chatId || !peerChatPK || typeof sendReaction !== 'function') {
                 return;
             }
 
-            const desired = getMsgReactions({ reactions: entry.desired });
-            const sentKey = reactionKey(desired);
-            const base = messagesByIdRef.current.get(id) || entry.baseMessage;
-            if (!base) {
+            const desired = entry.desired;
+            const sentKey = reactionStateKey(desired);
+            const target = entry.target || id;
+            if (!target) {
                 writesRef.current.delete(id);
                 clearOverride(id);
                 return;
@@ -109,7 +123,7 @@ export function useOptimisticMessageReactions({
             entry.sentKey = sentKey;
             entry.scopeKey = scopeKey;
 
-            updateMessage(chatId, id, setMsgReactions(base, desired), peerChatPK, { updateLastMsg: false })
+            sendReaction(peerChatPK, target, desired?.emoji ?? null)
                 .then(() => {
                     if (scopeRef.current !== entry.scopeKey) {
                         return;
@@ -119,13 +133,14 @@ export function useOptimisticMessageReactions({
                         return;
                     }
                     current.writing = false;
-                    if (reactionKey(current.desired) !== sentKey) {
+                    if (reactionStateKey(current.desired) !== sentKey) {
                         flushWrite(id);
                         return;
                     }
 
-                    const latest = messagesByIdRef.current.get(id);
-                    if (latest && reactionKey(chatReactions(latest, chatPK, peerChatPK)) === sentKey) {
+                    const latest = messagesByKeyRef.current.get(id);
+                    const latestReaction = latest ? actorReaction(chatReactions(latest, chatPK, peerChatPK), chatPK) : null;
+                    if (latest && reactionStateKey(latestReaction) === sentKey) {
                         writesRef.current.delete(id);
                         clearOverride(id);
                     }
@@ -139,7 +154,7 @@ export function useOptimisticMessageReactions({
                         return;
                     }
                     current.writing = false;
-                    if (reactionKey(current.desired) !== sentKey) {
+                    if (reactionStateKey(current.desired) !== sentKey) {
                         flushWrite(id);
                         return;
                     }
@@ -149,7 +164,7 @@ export function useOptimisticMessageReactions({
                     onError?.(error);
                 });
         },
-        [chatId, chatPK, clearOverride, onError, peerChatPK, scopeKey, updateMessage]
+        [chatId, chatPK, clearOverride, onError, peerChatPK, scopeKey, sendReaction]
     );
 
     useEffect(() => {
@@ -168,7 +183,8 @@ export function useOptimisticMessageReactions({
                 continue;
             }
 
-            if (reactionKey(chatReactions(message, chatPK, peerChatPK)) === reactionKey(desired)) {
+            const latestReaction = actorReaction(chatReactions(message, chatPK, peerChatPK), chatPK);
+            if (reactionStateKey(latestReaction) === reactionStateKey(desired)) {
                 const entry = writesRef.current.get(id);
                 if (entry?.writing) {
                     continue;
@@ -187,9 +203,9 @@ export function useOptimisticMessageReactions({
 
     const getReactions = useCallback(
         (message) => {
-            const id = msgId(message);
+            const id = msgKey(message);
             if (id && overrides.has(id)) {
-                return overrides.get(id) || [];
+                return withActorReaction(message, chatPK, overrides.get(id), chatPK, peerChatPK);
             }
             return chatReactions(message, chatPK, peerChatPK);
         },
@@ -198,25 +214,24 @@ export function useOptimisticMessageReactions({
 
     const toggleReaction = useCallback(
         (message) => {
-            const id = msgId(message);
+            const id = msgKey(message);
             if (!id || !chatPK) {
                 return [];
             }
 
             const current = getReactions(message);
-            const nextMsg = toggleMsgReaction(setMsgReactions(message, current), chatPK, emoji);
-            const desired = chatReactions(nextMsg, chatPK, peerChatPK);
+            const desired = actorReaction(current, chatPK) ? null : { emoji, user: chatPK };
             setOverride(id, desired);
 
             const currentWrite = writesRef.current.get(id);
             writesRef.current.set(id, {
                 ...currentWrite,
-                baseMessage: message,
+                target: id,
                 desired,
                 writing: currentWrite?.writing === true,
             });
             flushWrite(id);
-            return desired;
+            return withActorReaction(message, chatPK, desired, chatPK, peerChatPK);
         },
         [chatPK, emoji, flushWrite, getReactions, peerChatPK, setOverride]
     );

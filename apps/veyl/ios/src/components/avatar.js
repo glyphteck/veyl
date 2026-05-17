@@ -1,10 +1,13 @@
 import { memo, useCallback, useEffect, useId, useMemo, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Animated as RNAnimated, Pressable, StyleSheet, View } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import Animated, { useAnimatedProps, useSharedValue, withTiming } from 'react-native-reanimated';
 import Svg, { Circle, Defs, G, Image as SvgImage, Mask, Path, Rect } from 'react-native-svg';
-import { DotBadge, getDotMetrics } from './dot';
+import { getDotMetrics } from './dot';
+import Icon from '@/components/icon';
+import { useTap } from '@/lib/tap';
 import { useTheme } from '../providers/themeprovider';
+import { prefetchAvatarImage, readAvatarImageCache, subscribeAvatarImageCache } from '../lib/avatarimagecache';
 
 const AVATAR_ANIMATION_MS = 160;
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
@@ -25,19 +28,45 @@ export function isAvatarSourceLoaded(source) {
 function useAvatarImageSource(source) {
     const sourceKey = getAvatarSourceKey(source);
     const sourceNumber = typeof source === 'number' ? source : null;
+    const cachedSource = useCachedAvatarSource(sourceKey);
+    const resolvedKey = cachedSource || sourceKey;
     const imageSource = useMemo(() => {
-        if (!sourceKey) return null;
-        return sourceNumber == null ? { uri: sourceKey } : sourceNumber;
-    }, [sourceKey, sourceNumber]);
+        if (!resolvedKey) return null;
+        return sourceNumber == null ? { uri: resolvedKey } : sourceNumber;
+    }, [resolvedKey, sourceNumber]);
 
-    return { sourceKey, imageSource };
+    return { sourceKey, imageSource, cachedSource };
+}
+
+function isRemoteAvatarSource(sourceKey) {
+    return /^https?:\/\//i.test(String(sourceKey || ''));
+}
+
+function useCachedAvatarSource(sourceKey) {
+    const [cachedSource, setCachedSource] = useState(() => readAvatarImageCache(sourceKey));
+
+    useEffect(() => {
+        const current = readAvatarImageCache(sourceKey);
+        setCachedSource(current);
+        if (!isRemoteAvatarSource(sourceKey) || current) return;
+
+        const unsubscribe = subscribeAvatarImageCache((url, uri) => {
+            if (url === sourceKey) {
+                setCachedSource(uri);
+            }
+        });
+        void prefetchAvatarImage(sourceKey);
+        return unsubscribe;
+    }, [sourceKey]);
+
+    return cachedSource;
 }
 
 export function StaticAvatar({ source, size = 52, style, pointerEvents, contentFit = 'cover', bot = false }) {
     const { theme } = useTheme();
-    const { sourceKey, imageSource } = useAvatarImageSource(source);
+    const { sourceKey, imageSource, cachedSource } = useAvatarImageSource(source);
     const [loadedKey, setLoadedKey] = useState(() => (sourceKey && loadedSourceKeys.has(sourceKey) ? sourceKey : ''));
-    const imageLoaded = !!sourceKey && loadedKey === sourceKey;
+    const imageLoaded = !!sourceKey && (loadedKey === sourceKey || !!cachedSource);
 
     useEffect(() => {
         if (!sourceKey) {
@@ -117,37 +146,146 @@ function AvatarGlyph({ bot, size, color }) {
     );
 }
 
-function getMaskId(id) {
-    return `avatar-mask-${id.replace(/[^a-zA-Z0-9_-]/g, '') || 'id'}`;
-}
-
 const AvatarImage = memo(
     function AvatarImage({ href, size, loaded, onLoad }) {
-        return (
-            <SvgImage
-                href={href}
-                x="0"
-                y="0"
-                width={size}
-                height={size}
-                preserveAspectRatio="xMidYMid slice"
-                opacity={loaded ? 1 : 0}
-                onLoad={onLoad}
-            />
-        );
+        return <SvgImage href={href} x="0" y="0" width={size} height={size} preserveAspectRatio="xMidYMid slice" opacity={loaded ? 1 : 0} onLoad={onLoad} />;
     },
     (prev, next) => prev.href === next.href && prev.size === next.size && prev.loaded === next.loaded && prev.onLoad === next.onLoad
 );
 
-export default function Avatar({ source, size = 52, style, pointerEvents, active = false, selected = null, bot = false, hideFallbackUntilLoaded = false, assumeImageLoaded = false, onImageLoad }) {
+function getMaskId(id) {
+    return `avatar-mask-${id.replace(/[^a-zA-Z0-9_-]/g, '') || 'id'}`;
+}
+
+function getAdornmentSize(metrics) {
+    return metrics.outerSize ?? metrics.dotSize ?? 0;
+}
+
+function getAdornmentCenterX(metrics) {
+    return metrics.centerX ?? metrics.center ?? 0;
+}
+
+function getAdornmentCenterY(metrics) {
+    return metrics.centerY ?? metrics.center ?? 0;
+}
+
+function normalizeMaskAdornment(adornment, index) {
+    if (!adornment || adornment.show === false) return null;
+    const outerSize = getAdornmentSize(adornment);
+    if (!outerSize) return null;
+
+    return {
+        key: adornment.key ?? `adornment-${index}`,
+        centerX: getAdornmentCenterX(adornment),
+        centerY: getAdornmentCenterY(adornment),
+        radius: adornment.maskRadius ?? outerSize / 2,
+    };
+}
+
+export function getAvatarAdornmentMetrics(size, { type = 'dot' } = {}) {
+    if (type === 'action') {
+        const sizeRatio = Math.max(1, size) / 48;
+        const buttonScale = Math.sqrt(sizeRatio);
+        const iconScale = Math.pow(sizeRatio, 0.25);
+        const innerSize = Math.round(22 * buttonScale);
+        const maskInset = Math.max(3, Math.round(2.5 * buttonScale));
+        const outerSize = innerSize + maskInset * 2;
+        const centerX = size * 0.85355;
+        const centerY = size * 0.14645;
+
+        return {
+            outerSize,
+            innerSize,
+            iconSize: Math.round(14 * iconScale),
+            centerX,
+            centerY,
+            left: centerX - outerSize / 2,
+            top: centerY - outerSize / 2,
+            maskRadius: outerSize / 2,
+        };
+    }
+
+    const dot = getDotMetrics(size);
+    return {
+        ...dot,
+        outerSize: dot.dotSize,
+        centerX: dot.center,
+        centerY: dot.center,
+        maskRadius: dot.dotSize / 2,
+    };
+}
+
+export function AvatarAdornment({ metrics, show = true, icon, color, iconColor, iconSize, strokeWidth = 4, onPress, disabled = false, hitSlop = 8, style }) {
+    const { theme } = useTheme();
+    const press = useTap({ disabled: disabled || !onPress || !show, onPress, scale: 0.88 });
+    const outerSize = getAdornmentSize(metrics);
+    const innerSize = metrics?.innerSize ?? outerSize;
+    const resolvedColor = color ?? theme.active;
+    const resolvedIconColor = iconColor ?? theme.background;
+    const content = (
+        <RNAnimated.View style={{ transform: [{ scale: press.scale }] }}>
+            <View style={{ width: outerSize, height: outerSize, borderRadius: outerSize / 2, alignItems: 'center', justifyContent: 'center' }}>
+                <View style={{ width: innerSize, height: innerSize, borderRadius: innerSize / 2, alignItems: 'center', justifyContent: 'center', backgroundColor: resolvedColor }}>
+                    {icon ? <Icon icon={icon} size={iconSize ?? metrics?.iconSize ?? Math.round(innerSize * 0.58)} strokeWidth={strokeWidth} color={resolvedIconColor} /> : null}
+                </View>
+            </View>
+        </RNAnimated.View>
+    );
+    const baseStyle = [
+        {
+            position: 'absolute',
+            left: metrics?.left ?? getAdornmentCenterX(metrics) - outerSize / 2,
+            top: metrics?.top ?? getAdornmentCenterY(metrics) - outerSize / 2,
+            width: outerSize,
+            height: outerSize,
+            borderRadius: outerSize / 2,
+            alignItems: 'center',
+            justifyContent: 'center',
+        },
+        style,
+    ];
+
+    if (!show || !outerSize) {
+        return null;
+    }
+
+    if (onPress) {
+        return (
+            <Pressable {...press.props} disabled={disabled} hitSlop={hitSlop} style={baseStyle}>
+                {content}
+            </Pressable>
+        );
+    }
+
+    return (
+        <View pointerEvents="none" style={baseStyle}>
+            {content}
+        </View>
+    );
+}
+
+export default function Avatar({
+    source,
+    size = 52,
+    style,
+    pointerEvents,
+    active = false,
+    selected = null,
+    bot = false,
+    hideFallbackUntilLoaded = false,
+    assumeImageLoaded = false,
+    onImageLoad,
+    maskAdornments = [],
+}) {
     const { theme } = useTheme();
     const id = useId();
-    const { sourceKey, imageSource } = useAvatarImageSource(source);
+    const { sourceKey, imageSource, cachedSource } = useAvatarImageSource(source);
     const [loadedKey, setLoadedKey] = useState(() => (sourceKey && loadedSourceKeys.has(sourceKey) ? sourceKey : ''));
-    const imageLoaded = !!sourceKey && (assumeImageLoaded || loadedKey === sourceKey);
-    const maskId = useMemo(() => getMaskId(id), [id]);
-    const dot = useMemo(() => getDotMetrics(size), [size]);
+    const imageLoaded = !!sourceKey && (assumeImageLoaded || !!cachedSource || loadedKey === sourceKey);
+    const dot = useMemo(() => getAvatarAdornmentMetrics(size), [size]);
+    const maskItems = useMemo(() => [active ? { key: 'active', ...dot } : null, ...maskAdornments].map(normalizeMaskAdornment).filter(Boolean), [active, dot, maskAdornments]);
     const selectable = selected != null;
+    const maskId = useMemo(() => getMaskId(id), [id]);
     const selectedStroke = 3;
     const selectedRadius = size / 2 - selectedStroke / 2;
     const selectedProgress = useSharedValue(selected ? 1 : 0);
@@ -162,7 +300,6 @@ export default function Avatar({ source, size = 52, style, pointerEvents, active
         setLoadedKey(sourceKey);
         onImageLoad?.(sourceKey);
     }, [onImageLoad, sourceKey]);
-
     useEffect(() => {
         if (!sourceKey) {
             setLoadedKey('');
@@ -202,19 +339,19 @@ export default function Avatar({ source, size = 52, style, pointerEvents, active
                     <Mask id={maskId} x="0" y="0" width={size} height={size} maskUnits="userSpaceOnUse">
                         <Rect x="0" y="0" width={size} height={size} fill="black" />
                         <Circle cx={size / 2} cy={size / 2} r={size / 2} fill="white" />
-                        {active ? <Circle cx={dot.center} cy={dot.center} r={dot.dotSize / 2} fill="black" /> : null}
+                        {maskItems.map((item) => (
+                            <Circle key={item.key} cx={item.centerX} cy={item.centerY} r={item.radius} fill="black" />
+                        ))}
                     </Mask>
                 </Defs>
                 <G mask={`url(#${maskId})`}>
                     <Rect x="0" y="0" width={size} height={size} fill={theme.background} />
                     {!hideFallbackUntilLoaded || !sourceKey || imageLoaded ? <AvatarGlyph bot={bot} size={size} color={theme.foreground} /> : null}
-                    {sourceKey ? (
-                        <AvatarImage href={imageSource} size={size} loaded={imageLoaded} onLoad={handleImageLoad} />
-                    ) : null}
+                    {sourceKey ? <AvatarImage href={imageSource} size={size} loaded={imageLoaded} onLoad={handleImageLoad} /> : null}
                     {selectable ? <AnimatedCircle animatedProps={selectedProps} cx={size / 2} cy={size / 2} r={selectedRadius} fill="none" stroke={theme.active} strokeWidth={selectedStroke} /> : null}
                 </G>
             </Svg>
-            <DotBadge show={active} type="active" size={size} />
+            <AvatarAdornment metrics={dot} show={active} color={theme.active} />
         </View>
     );
 }

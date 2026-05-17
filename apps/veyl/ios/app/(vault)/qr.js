@@ -41,6 +41,7 @@ export default function QRRoute() {
 
             if (data?.kind === qr.request && data.to) {
                 if (data.to !== ownWalletPK) {
+                    const auto = settings?.sendOnScan === true && !!data.amount;
                     let peer = null;
                     try {
                         peer = await addPeer?.({ walletPK: data.to });
@@ -53,7 +54,7 @@ export default function QRRoute() {
                         params: {
                             uid: peer?.uid ?? '',
                             walletPK: peer?.walletPK ?? data.to,
-                            ...(data.amount ? { amount: data.amount, send: '1', auto: settings?.sendOnScan ? '1' : '0' } : { send: '1' }),
+                            ...(data.amount ? { amount: data.amount, send: '1', auto: auto ? '1' : '0' } : { send: '1' }),
                         },
                     });
                     return;

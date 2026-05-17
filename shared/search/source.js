@@ -1,4 +1,5 @@
 import { parseQuery } from './query.js';
+import { mergeProfiles } from './merge.js';
 
 const DEBOUNCE_MS = 300;
 
@@ -13,11 +14,20 @@ export function createProfileSource({ remote, mode = 'profiles' }) {
     return ({ context }) => {
         const { user = {}, peer = {} } = context || {};
         const { uid, blockedSet } = user;
-        const { addPeer } = peer;
+        const { addPeer, peers, recentPeers } = peer;
 
         return {
             debounceMs: DEBOUNCE_MS,
             parse: (input) => parseQuery(input, { mode }),
+            local: (parsed) => {
+                if (!parsed) return [];
+                const localPeers = [...(Array.isArray(peers) ? peers : []), ...(Array.isArray(recentPeers?.all) ? recentPeers.all : [])];
+                return mergeProfiles({
+                    local: localPeers,
+                    parsed,
+                    excludeUid: uid,
+                });
+            },
             fetch: async (parsed) => {
                 if (!parsed) return [];
                 if (parsed.kind === 'username') {
@@ -29,6 +39,13 @@ export function createProfileSource({ remote, mode = 'profiles' }) {
                 }
                 return [];
             },
+            merge: ({ local, remote, parsed }) =>
+                mergeProfiles({
+                    local,
+                    remote,
+                    parsed,
+                    excludeUid: uid,
+                }),
             filter: (results) => {
                 if (!blockedSet?.size) return results;
                 return results.filter((profile) => !blockedSet.has(profile?.uid));

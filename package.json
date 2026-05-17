@@ -1,6 +1,6 @@
 {
     "name": "veyl",
-    "version": "4.6.7",
+    "version": "4.6.8",
     "private": true,
     "workspaces": {
         "packages": [
@@ -29,21 +29,21 @@
         }
     },
     "scripts": {
-        "admin": "node scripts/admin/index.mjs",
-        "bot": "node scripts/admin/bot.mjs",
-        "push": "node scripts/repo.mjs push",
-        "merge": "node scripts/repo.mjs merge",
-        "veyl": "node scripts/veyl.mjs",
-        "make": "node scripts/build.mjs",
-        "ban": "node scripts/admin/ban.mjs",
-        "nuke": "node scripts/admin/nuke.mjs",
-        "steal": "node scripts/admin/steal.mjs",
+        "admin": "bun scripts/admin/index.mjs",
+        "bot": "bun scripts/admin/bot.mjs",
+        "push": "bun scripts/repo.mjs push",
+        "merge": "bun scripts/repo.mjs merge",
+        "veyl": "bun scripts/veyl.mjs",
+        "make": "bun scripts/build.mjs",
+        "ban": "bun scripts/admin/ban.mjs",
+        "nuke": "bun scripts/admin/nuke.mjs",
+        "steal": "bun scripts/admin/steal.mjs",
         "lint": "eslint . --quiet",
         "lint:warn": "eslint .",
         "lint:fix": "eslint . --fix",
         "update": "bun update --recursive && bun sync:frameworks",
-        "sync:frameworks": "node scripts/sync-frameworks.mjs",
-        "check:frameworks": "node scripts/sync-frameworks.mjs --check"
+        "sync:frameworks": "bun scripts/sync-frameworks.mjs",
+        "check:frameworks": "bun scripts/sync-frameworks.mjs --check"
     },
     "dependencies": {
         "@buildonspark/spark-sdk": "^0.8.0",

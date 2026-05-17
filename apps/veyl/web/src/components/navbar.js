@@ -20,7 +20,6 @@ import {
     Camera,
     HandCoins,
     Search,
-    History,
     MessageCircle,
     MessageCirclePlus,
     Eye,
@@ -109,13 +108,6 @@ export default function Navbar() {
                             </Dot>
                         </Link>
                     </Button>
-                    {hasTx ? (
-                        <Button asChild className="grower-lg">
-                            <Link href="/transactions">
-                                <History />
-                            </Link>
-                        </Button>
-                    ) : null}
                     {isAdmin ? (
                         <>
                             <Button asChild className="grower-lg">

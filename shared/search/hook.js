@@ -9,7 +9,7 @@ import { queryKey } from './query.js';
 //
 // Returns:
 //   query       — parsed query object or null
-//   results     — filtered remote results (already de-blocked)
+//   results     — filtered local+remote results (already de-blocked)
 //   searching   — true while a request is in flight
 //   search(v)   — feed the latest input string; debounced internally
 //   clearSearch — reset state
@@ -30,13 +30,13 @@ export function createSearch({ useSearchContext, sources }) {
             throw new Error(`useSearch: no source registered for "${type}"`);
         }
 
-        const { debounceMs = 0, parse, fetch, filter, onResults } = source;
+        const { debounceMs = 0, parse, local, fetch, merge, filter, onResults } = source;
         if (typeof parse !== 'function' || typeof fetch !== 'function') {
             throw new Error(`useSearch "${type}" source requires parse and fetch`);
         }
 
         const [searching, setSearching] = useState(false);
-        const [results, setResults] = useState([]);
+        const [remoteResults, setRemoteResults] = useState([]);
         const [query, setQuery] = useState(null);
 
         const debounceRef = useRef(null);
@@ -48,7 +48,7 @@ export function createSearch({ useSearchContext, sources }) {
             requestId.current += 1;
             currentKey.current = '';
             setSearching(false);
-            setResults([]);
+            setRemoteResults([]);
             setQuery(null);
         }, []);
 
@@ -58,7 +58,7 @@ export function createSearch({ useSearchContext, sources }) {
                     const next = await fetch(parsed);
                     if (searchId !== requestId.current) return;
                     const list = Array.isArray(next) ? next : [];
-                    setResults(list);
+                    setRemoteResults(list);
                     if (typeof onResults === 'function') {
                         void Promise.resolve(onResults(list, parsed)).catch((error) => {
                             console.error(`search "${type}" onResults error:`, error);
@@ -67,7 +67,7 @@ export function createSearch({ useSearchContext, sources }) {
                 } catch (error) {
                     console.error(`search "${type}" error:`, error);
                     if (searchId !== requestId.current) return;
-                    setResults([]);
+                    setRemoteResults([]);
                 } finally {
                     if (searchId === requestId.current) setSearching(false);
                 }
@@ -88,7 +88,7 @@ export function createSearch({ useSearchContext, sources }) {
                 const key = queryKey(parsed);
                 if (currentKey.current !== key) {
                     requestId.current += 1;
-                    setResults([]);
+                    setRemoteResults([]);
                 }
                 currentKey.current = key;
                 setQuery(parsed);
@@ -122,10 +122,25 @@ export function createSearch({ useSearchContext, sources }) {
             clearSearch();
         }, [clearSearch, type]);
 
+        const localResults = useMemo(() => {
+            if (!query || typeof local !== 'function') return [];
+            const next = local(query);
+            return Array.isArray(next) ? next : [];
+        }, [local, query]);
+
+        const merged = useMemo(() => {
+            if (!query) return [];
+            if (typeof merge === 'function') {
+                const next = merge({ local: localResults, remote: remoteResults, parsed: query });
+                return Array.isArray(next) ? next : [];
+            }
+            return [...localResults, ...remoteResults];
+        }, [localResults, merge, query, remoteResults]);
+
         const filtered = useMemo(() => {
-            if (typeof filter !== 'function') return results;
-            return filter(results);
-        }, [filter, results]);
+            if (typeof filter !== 'function') return merged;
+            return filter(merged);
+        }, [filter, merged]);
 
         return { query, results: filtered, searching, search, clearSearch };
     };

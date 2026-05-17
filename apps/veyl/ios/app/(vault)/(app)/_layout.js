@@ -15,7 +15,6 @@ export default function AppLayout() {
             }}
         >
             <Stack.Screen name="(home)" />
-            <Stack.Screen name="settings" />
             <Stack.Screen name="community" />
             <Stack.Screen name="exportwallet" />
             <Stack.Screen name="blocked" />

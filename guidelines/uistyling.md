@@ -21,6 +21,8 @@ Tap feedback is scale-first. Press targets shrink on press down with the shared 
 
 For controls that appear or disappear in place, use `usePop` from `src/lib/pop.js` so the item scales in and can animate width, height, or adjacent gaps. Keep normal press feedback on the child press target when a popped item is also tappable.
 
+Do not set or animate `opacity` on `GlassView` or any component built on the `GlassView` primitive, including `GlassButton`, `GlassIcon`, `GlassField`, `GlassHeader`, and `GlassFooter`, or on wrappers whose opacity controls one of those components. Native glass has a known bug where setting opacity to `0` can leave the glass surface unable to render again. Hide glass controls with conditional mounting after their scale/size exit animation finishes, or use scale, width, height, gap, or route-state changes while keeping the glass layer itself fully opaque.
+
 Use `160ms` as the default fixed animation time for responsive UI state changes, including button/toggle state changes, avatar selection borders, menu/dialog fades, search focus crossfades, and chat row layout transitions for height changes, inserts, and removals. Timings in the `100ms` to `200ms` range should usually normalize to `160ms`; keep deliberately different longer/shorter timings, springs, gesture physics, media viewer staging, and spinner behavior only when they are tuned for a specific feel.
 
 Route and toolbar buttons usually use `GlassIcon`. The common size is `56`, icon size defaults to half that, and rounded square route buttons commonly use `rounded={16}`. Full circular buttons use the default `rounded="full"`. Accent actions set `accent`, which flips to foreground tint with background-colored content.
@@ -57,6 +59,8 @@ Color should come from `useTheme()` and `src/lib/colors.js`: `background`, `glas
 
 Headers and footers are usually absolute glass overlays. Account for safe areas with `useSafeAreaInsets()`. Keep scroll content padded under overlays instead of placing content behind them.
 
+On iOS, "bottom sheet" means an Expo Router native sheet route. Add a `Stack.Screen` with `presentation: 'formSheet'`, `sheetGrabberVisible: true`, an intentional `sheetAllowedDetents` value, and the right `contentStyle` for that sheet. Use existing route-backed sheets such as `scan`, `transfer`, and `peerselector` as the model. Do not build local `Modal` or absolute-position fake sheet implementations unless the task explicitly asks for a non-route overlay.
+
 The iOS full-screen media viewer provider lives in `apps/veyl/ios/src/providers/mediaviewerprovider.js`, and its UI lives in `apps/veyl/ios/src/components/media/mediaviewer.js`. Providers should expose state/actions and mount the UI component, not own the full visual tree. Keep swipe navigation and vertical dismiss transforms separate: the rail owns horizontal translation, while exit scale, opacity, corner rounding, and save-action fade belong only to the active media slide. Neighboring slides should stay unscaled during dismiss previews.
 
 For new iOS UI, implement in this order:
@@ -66,7 +70,7 @@ For new iOS UI, implement in this order:
 3. Import lucide icons from `lucide-react-native` and render them through `Icon` or `GlassIcon`.
 4. Use `useTheme()` colors and the established font weights instead of local palettes.
 5. Use `useTap`/`tap` for custom presses; do not invent a new animation or haptic pattern.
-6. Do not animate opacity on `GlassView` or wrappers that control a `GlassView`; use scale or size transitions instead.
+6. Never set or animate opacity on `GlassView`-based components or wrappers that control them; use scale, size, gap transitions, or delayed conditional mounting instead.
 7. Prefer official Expo or React Native primitives for iOS-native UI. If a community package is needed, prefer one that is actively maintained and current with the app's Expo SDK and current iOS release.
 
 ## web

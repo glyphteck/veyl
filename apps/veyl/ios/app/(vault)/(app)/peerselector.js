@@ -56,7 +56,6 @@ const PeerCell = memo(function PeerCell({ item, onSelect, theme, selected, disab
         value: scale,
         disabled,
         onPress: () => !disabled && onSelect?.(item),
-        hapticIn: 'selection',
     });
 
     const scaleStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
@@ -105,7 +104,7 @@ const PeerScroll = forwardRef(function PeerScroll({ pad, ...props }, ref) {
 
 export default function PeerSelectorScreen() {
     const { theme } = useTheme();
-    const { peers } = usePeer() || {};
+    const { peers, recentPeers } = usePeer() || {};
     const { settings, chatPK, chatBanned } = useUser();
     const { sendMoneyWithSpark, balance, bitcoin } = useWallet();
     const { sendMessage, selectChat } = useChat();
@@ -314,8 +313,9 @@ export default function PeerSelectorScreen() {
 
     const filteredPeers = useMemo(() => {
         const list = Array.isArray(peers) ? peers : [];
+        const recent = Array.isArray(recentPeers?.all) ? recentPeers.all : [];
         const requireWalletAndChat = (peer) => mode !== 'request' || (!!peer.walletPK && !!peer.chatPK);
-        if (!search.trim()) return list.filter(requireWalletAndChat);
+        if (!search.trim()) return recent.filter(requireWalletAndChat);
         if (!query) return [];
         return mergeProfiles({
             local: list,
@@ -323,7 +323,7 @@ export default function PeerSelectorScreen() {
             parsed: query,
             extraFilter: requireWalletAndChat,
         });
-    }, [mode, peers, query, results, search]);
+    }, [mode, peers, query, recentPeers?.all, results, search]);
 
     const handleOpenChat = useCallback(() => {
         if (chatBanned) return;

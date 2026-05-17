@@ -375,7 +375,7 @@ export default function MessageList({
     const { theme } = useTheme();
     const { active: menuActive } = useMenu();
     const { setMediaItems } = useMediaViewer();
-    const { updateMessage, deleteMessage, retryMessage, readMessageFile } = useChat();
+    const { updateMessage, deleteMessage, retryMessage, readMessageFile, sendReaction } = useChat();
     const { sendMoneyWithSpark } = useWallet();
     const insets = useSafeAreaInsets();
     const { width: screenW } = useWindowDimensions();
@@ -401,7 +401,7 @@ export default function MessageList({
         chatPK,
         peerChatPK,
         messages: messagesAsc,
-        updateMessage,
+        sendReaction,
         onError: (error) => console.warn('message like failed', error),
     });
     const visibleMessagesAsc = useMemo(() => (messagesAsc || []).filter(canShowMsg), [messagesAsc]);

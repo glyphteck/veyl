@@ -29,7 +29,7 @@
 - Message payload shape is cross-platform and backend-sensitive.
 - Chat IDs are derived from participant chat public keys.
 - Messages are encrypted before storage.
-- User read receipts are encrypted append-only control payloads in the message stream (`t: 'rr'`). Do not add plaintext per-user read state to chat docs.
+- User read receipts and reactions are encrypted append-only control payloads in the message stream (`t: 'rr'` and `t: 'rxn'`). Do not add plaintext per-user read state or reaction state to chat docs.
 - Chat docs should only carry participants and the encrypted latest visible-message preview; do not reintroduce plaintext read markers.
 - When changing chat media, check shared code, web, iOS, Storage rules, and any report/deletion behavior.
 

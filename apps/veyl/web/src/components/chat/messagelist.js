@@ -434,7 +434,7 @@ const MessageRowShell = forwardRef(function MessageRowShell({ rowState = 'presen
 });
 
 export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
-    const { selectedChatId, updateMessage, retryMessage, readMessageFile } = useChat();
+    const { selectedChatId, updateMessage, retryMessage, readMessageFile, sendReaction } = useChat();
     const { avatar, chatPK } = useUser();
     const { peers } = usePeer();
     const { sendMoneyWithSpark } = useWallet();
@@ -578,7 +578,7 @@ export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
         chatPK,
         peerChatPK,
         messages: msgs,
-        updateMessage,
+        sendReaction,
         onError: (error) => console.error('message like failed', error),
     });
     const latestReadReceipt = useMemo(() => getLatestReadOutgoingReceipt(msgs, chatPK, peerChatPK), [chatPK, msgs, peerChatPK]);
