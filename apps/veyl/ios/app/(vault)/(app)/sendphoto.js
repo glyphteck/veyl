@@ -161,8 +161,8 @@ export default function SendPhotoScreen() {
     );
 
     const peerKey = useCallback((item, index) => item?.uid || item?.chatPK || `${index}`, []);
-
-    const sendLabel = selected.length > 1 ? `send to ${selected.length} people` : selected.length === 1 ? `send to ${truncateLabel(getPeerLabel(selected[0]), 12)}` : 'select recipients';
+    const hasSelection = selected.length > 0;
+    const sendLabel = selected.length > 1 ? `send to ${selected.length} people` : selected.length === 1 ? `send to ${truncateLabel(getPeerLabel(selected[0]), 12)}` : 'send';
 
     return (
         <View style={{ flex: 1, paddingHorizontal: 12 }}>
@@ -206,7 +206,7 @@ export default function SendPhotoScreen() {
                 />
             </View>
             <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, paddingHorizontal: 24, paddingBottom: insets.bottom + 12 }}>
-                <GlassButton onPress={handleSend} label={sendLabel} accent disabled={!selected.length || sending || chatBanned} />
+                <GlassButton onPress={handleSend} label={sendLabel} accent disabled={!hasSelection || sending || chatBanned} pressableStyle={{ transform: [{ scale: hasSelection ? 1 : 0.001 }] }} />
             </View>
         </View>
     );

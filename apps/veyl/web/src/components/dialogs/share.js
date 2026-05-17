@@ -53,7 +53,8 @@ export default function Share({ onShare, disabled = false, busy = false, label }
 
     const displayPeers = query ? searchPeers : allPeers;
     const selectedUids = useMemo(() => new Set(selected.map((peer) => peer.uid)), [selected]);
-    const submitLabel = label?.(selected) || (selected.length > 1 ? `send to ${selected.length} people` : selected.length === 1 ? `send to ${formatUserDisplay(selected[0], true)}` : 'select recipients');
+    const hasSelection = selected.length > 0;
+    const submitLabel = label?.(selected) || (selected.length > 1 ? `send to ${selected.length} people` : selected.length === 1 ? `send to ${formatUserDisplay(selected[0], true)}` : 'send');
 
     const handleSearchChange = useCallback(
         (event) => {
@@ -101,14 +102,16 @@ export default function Share({ onShare, disabled = false, busy = false, label }
                             ))}
                         </div>
                     ) : (
-                        <div className="flex items-center justify-center h-full text-muted text-sm">{query ? 'no results' : 'no peers yet'}</div>
+                        <div className="flex items-center justify-center h-full text-muted text-sm">{query ? 'no results' : 'search for a user'}</div>
                     )}
                 </div>
             </Card>
-            <Button onClick={handleShare} disabled={disabled || busy || !selected.length} className="w-full grower-sm button-outline">
-                {busy ? <Loader className="animate-spin size-4 mr-2" /> : null}
-                {submitLabel}
-            </Button>
+            <div aria-hidden={!hasSelection} className={`transition-opacity ${hasSelection ? 'opacity-100' : 'pointer-events-none opacity-0'}`}>
+                <Button onClick={handleShare} disabled={disabled || busy || !hasSelection} className="w-full grower-sm button-outline">
+                    {busy ? <Loader className="animate-spin size-4 mr-2" /> : null}
+                    {submitLabel}
+                </Button>
+            </div>
         </div>
     );
 }

@@ -207,7 +207,7 @@ export default function TransferScreen() {
 
         if (mode === 'request') {
             if (!peerChatPK) {
-                Alert.alert('Missing chat key', 'This peer has no chat key yet.');
+                Alert.alert('Missing chat key', 'This person has no chat key yet.');
                 return;
             }
             if (!sendMessage) {
@@ -232,7 +232,7 @@ export default function TransferScreen() {
         }
 
         if (!peerWalletPK) {
-            Alert.alert('Missing address', 'This peer has no wallet key yet.');
+            Alert.alert('Missing address', 'This person has no wallet key yet.');
             return;
         }
 

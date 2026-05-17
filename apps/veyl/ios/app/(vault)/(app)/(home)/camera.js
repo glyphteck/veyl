@@ -373,7 +373,7 @@ export default function CameraTab() {
             return;
         }
         if (!previewPeer?.chatPK || !chatPK) {
-            Alert.alert('Missing chat key', 'This peer has no chat key yet.');
+            Alert.alert('Missing chat key', 'This person has no chat key yet.');
             return;
         }
         if (!lockRoute()) return;
@@ -386,7 +386,7 @@ export default function CameraTab() {
 
     const handlePreviewSend = useCallback(() => {
         if (!previewPeer?.walletPK) {
-            Alert.alert('Missing address', 'This peer has no wallet key yet.');
+            Alert.alert('Missing address', 'This person has no wallet key yet.');
             return;
         }
         if (!lockRoute()) return;

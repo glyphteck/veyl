@@ -7,9 +7,19 @@ import { shortcuts } from '@/lib/shortcuts';
 import { Button } from '@/components/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/avatar';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuSeparator, DropdownMenuItem, DropdownMenuShortcut } from '@/components/dropdownmenu';
-import { BanknoteArrowDown, BanknoteArrowUp, KeyRound, Lock, LogOut, Settings2, Trash2, UserX } from 'lucide-react';
+import { BanknoteArrowDown, BanknoteArrowUp, KeyRound, Lock, LogOut, QrCode, Settings2, Trash2, UserX } from 'lucide-react';
 
-export default function UserMenu({ user, balance, copyFundingAddress, lock, openDialog, locked = false, className = 'shrinker-fixed hidden md:flex', disabled = false, avatarClassName = 'size-11 shadow' }) {
+export default function UserMenu({
+    user,
+    balance,
+    copyFundingAddress,
+    lock,
+    openDialog,
+    locked = false,
+    className = 'shrinker-fixed hidden md:flex',
+    disabled = false,
+    avatarClassName = 'size-11 shadow',
+}) {
     const openUserQr = () => {
         const qrData = makeUserQr(user);
         if (!qrData) return;
@@ -29,11 +39,15 @@ export default function UserMenu({ user, balance, copyFundingAddress, lock, open
                     </Avatar>
                 </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent>
+            <DropdownMenuContent className="min-w-50 pb-0.5" initialFocusIndex={user?.username ? 1 : 0}>
                 {user?.username && (
                     <>
                         <DropdownMenuItem className="text-xl font-black" onSelect={openUserQr}>
                             <span>{formatUserDisplay(user, true)}</span>
+                            <span className="sr-only">show qr code</span>
+                            <DropdownMenuShortcut className="flex items-center tracking-normal">
+                                <QrCode className="size-5" />
+                            </DropdownMenuShortcut>
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                     </>
@@ -75,6 +89,7 @@ export default function UserMenu({ user, balance, copyFundingAddress, lock, open
                             <UserX />
                             <span>blocked users</span>
                         </DropdownMenuItem>
+                        <DropdownMenuSeparator />
                     </>
                 )}
                 {!locked && (

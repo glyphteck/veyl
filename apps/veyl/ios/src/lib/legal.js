@@ -33,7 +33,7 @@ export const LEGAL_SECTIONS = {
             {
                 title: 'Public profile boundary',
                 body: [
-                    'Your username, avatar, wallet public key, chat public key, and presence status may be visible to other authenticated users so the product can resolve peers, route payments, and open chats.',
+                    'Your username, avatar, wallet public key, chat public key, and presence status may be visible to other authenticated users so the product can resolve users, route payments, and open chats.',
                     'Your vault password, encrypted vault contents, and private keys are not public profile data.',
                 ],
             },
@@ -55,7 +55,7 @@ export const LEGAL_SECTIONS = {
                 title: 'Safety, enforcement, and reports',
                 body: [
                     'veyl does not support or condone unlawful content, unlawful transactions, harassment, abuse, scams, exploitation, or other harmful conduct.',
-                    'Glyphteck Corp. may suspend, restrict, or terminate accounts or features, including chat, uploads, peer discovery, and usernames, when we reasonably believe the service is being used in violation of law, policy, or these Terms.',
+                    'Glyphteck Corp. may suspend, restrict, or terminate accounts or features, including chat, uploads, user discovery, and usernames, when we reasonably believe the service is being used in violation of law, policy, or these Terms.',
                 ],
             },
             {
@@ -84,7 +84,7 @@ export const LEGAL_SECTIONS = {
             {
                 title: 'Non-custodial service',
                 body: [
-                    'You control your password, encrypted vault, private keys, wallet actions, and peer interactions. Glyphteck Corp. does not take custody of your funds or private keys.',
+                    'You control your password, encrypted vault, private keys, wallet actions, and interactions with other users. Glyphteck Corp. does not take custody of your funds or private keys.',
                     'Blockchain transfers are irreversible. We cannot cancel, reverse, modify, or recover a completed transfer.',
                 ],
             },

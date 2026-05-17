@@ -169,7 +169,7 @@ export default function NewChat({ close }) {
                             ))}
                         </div>
                     ) : (
-                        <div className="flex items-center justify-center h-full text-muted text-sm">{query ? 'no results' : 'no peers yet'}</div>
+                        <div className="flex items-center justify-center h-full text-muted text-sm">{query ? 'no results' : 'search for a user'}</div>
                     )}
                 </div>
             </Card>

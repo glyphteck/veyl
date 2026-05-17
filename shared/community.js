@@ -40,7 +40,7 @@ export const COMMUNITY_SECTIONS = [
     {
         title: 'Safety and enforcement',
         body: [
-            'We may warn, restrict, suspend, or permanently disable chat, uploads, usernames, peer discovery, or full account access when abuse, unlawful use, or repeat credible reports indicate elevated risk.',
+            'We may warn, restrict, suspend, or permanently disable chat, uploads, usernames, user discovery, or full account access when abuse, unlawful use, or repeat credible reports indicate elevated risk.',
             'Repeated abuse reports may result in permanent loss of chat features even if wallet access remains separate.',
         ],
     },

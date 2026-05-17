@@ -145,11 +145,12 @@ const DropdownMenuTrigger = React.forwardRef(function DropdownMenuTrigger({ asCh
     );
 });
 
-const DropdownMenuContent = React.forwardRef(function DropdownMenuContent({ className, sideOffset = 6, style, ...props }, ref) {
+const DropdownMenuContent = React.forwardRef(function DropdownMenuContent({ className, initialFocusIndex = 0, sideOffset = 6, style, ...props }, ref) {
     const menu = React.useContext(DropdownMenuContext);
     const contentRef = React.useRef(null);
     const [mounted, setMounted] = React.useState(false);
     const [position, setPosition] = React.useState(null);
+    const [shown, setShown] = React.useState(false);
 
     React.useEffect(() => {
         setMounted(true);
@@ -177,11 +178,36 @@ const DropdownMenuContent = React.forwardRef(function DropdownMenuContent({ clas
         const gap = 8;
         const triggerRect = menu.triggerRef.current.getBoundingClientRect();
         const contentHeight = contentRef.current.offsetHeight || 0;
+        const contentWidth = contentRef.current.offsetWidth || 0;
         const top = clamp(triggerRect.bottom + sideOffset, gap, window.innerHeight - contentHeight - gap);
         const right = Math.max(gap, window.innerWidth - triggerRect.right);
+        const left = window.innerWidth - right - contentWidth;
+        const originX = triggerRect.left + triggerRect.width / 2 - left;
+        const originY = triggerRect.top + triggerRect.height / 2 - top;
 
-        setPosition({ top, right });
+        setPosition({ top, right, origin: `${originX}px ${originY}px` });
     }, [menu, sideOffset]);
+
+    React.useLayoutEffect(() => {
+        if (!menu?.open) {
+            setShown(false);
+            return;
+        }
+
+        updatePosition();
+
+        let secondFrame;
+        const firstFrame = requestAnimationFrame(() => {
+            secondFrame = requestAnimationFrame(() => setShown(true));
+        });
+
+        return () => {
+            cancelAnimationFrame(firstFrame);
+            if (secondFrame) {
+                cancelAnimationFrame(secondFrame);
+            }
+        };
+    }, [menu?.open, updatePosition]);
 
     const getItems = React.useCallback(() => {
         if (!contentRef.current) {
@@ -225,8 +251,8 @@ const DropdownMenuContent = React.forwardRef(function DropdownMenuContent({ clas
             return;
         }
 
-        focusItem(0);
-    }, [focusItem, menu?.open]);
+        focusItem(initialFocusIndex);
+    }, [focusItem, initialFocusIndex, menu?.open]);
 
     const handleKeyDown = React.useCallback(
         (event) => {
@@ -261,19 +287,26 @@ const DropdownMenuContent = React.forwardRef(function DropdownMenuContent({ clas
         return null;
     }
 
+    const active = menu?.open && shown;
+    const opacityTransition = active ? 'opacity 90ms cubic-bezier(0.2, 0, 0, 1)' : 'opacity 220ms cubic-bezier(0.2, 0, 0, 1)';
+
     return createPortal(
         <div
             ref={setRefs}
             role="menu"
             aria-hidden={!menu?.open}
             className={cn(
-                'fixed z-30 min-w-48 overflow-y-auto rounded-round bg-background/70 shadow backdrop-blur-sm outline-none transition-opacity ease-out',
-                menu?.open ? 'opacity-100' : 'pointer-events-none opacity-0',
+                'fixed z-30 min-w-48 overflow-y-auto rounded-round bg-background/70 shadow backdrop-blur-sm outline-none',
+                active ? 'opacity-100' : 'pointer-events-none opacity-0',
                 className
             )}
             style={{
                 top: position?.top ?? -1000,
                 right: position?.right ?? 8,
+                transform: active ? 'translate3d(0, 0, 0) scale(1)' : 'translate3d(0, 0, 0) scale(0.88)',
+                transformOrigin: position?.origin ?? 'top right',
+                transition: `${opacityTransition}, transform var(--default-transition-duration) cubic-bezier(0.2, 0, 0, 1)`,
+                willChange: 'opacity, transform',
                 ...style,
             }}
             onClick={(event) => event.stopPropagation()}

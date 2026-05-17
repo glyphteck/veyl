@@ -173,7 +173,7 @@ export default function ReviewPage() {
                         </div>
                         <div>iOS and web require acknowledgement of the latest community rules before vault/app access.</div>
                         <div>
-                            Glyphteck Corp reviews reports through internal admin tooling and can restrict accounts, chat, usernames, uploads, peer discovery, or bot behavior when needed for safety or
+                            Glyphteck Corp reviews reports through internal admin tooling and can restrict accounts, chat, usernames, uploads, user discovery, or bot behavior when needed for safety or
                             policy enforcement.
                         </div>
                         <div>

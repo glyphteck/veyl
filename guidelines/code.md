@@ -49,8 +49,8 @@ Use [workflow.md](workflow.md) for the detailed task-file, branch, worktree, han
 
 ## Product Language
 
-- In user-facing copy, call other accounts people, users, or friends.
-- Reserve `peer` for internal code references only.
+- In user-facing copy, call other accounts people, users, or friends. Keep app language casual and familiar.
+- `peer` and `peers` are internal naming for code, providers, and data. Never show those words in visible labels, empty states, buttons, alerts, placeholders, review/legal copy, or toasts.
 
 ## Platform-Sensitive Work
 

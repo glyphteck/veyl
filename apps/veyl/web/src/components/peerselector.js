@@ -9,7 +9,7 @@ import { useSearch } from '@/lib/search/usesearch';
 import { useUser } from '@/components/providers/userprovider';
 import { usePeer } from '@/components/providers/peerprovider';
 
-export default function PeerSelector({ selectedPeer, onPeerChange, disabled = false, active = false, openOnActive = false, filterPeers, label = 'peer', className = '' }) {
+export default function PeerSelector({ selectedPeer, onPeerChange, disabled = false, active = false, openOnActive = false, filterPeers, label = 'user', className = '' }) {
     const [popoverOpen, setPopoverOpen] = useState(false);
     const [searchValue, setSearchValue] = useState('');
     const [mounted, setMounted] = useState(false);
@@ -231,7 +231,7 @@ export default function PeerSelector({ selectedPeer, onPeerChange, disabled = fa
                                       );
                                   })
                               ) : (
-                                  <div className="flex justify-center py-1.5 text-muted">{query ? 'no result' : 'no recent wallet peers'}</div>
+                                  <div className="flex justify-center py-1.5 text-muted">{query ? 'no result' : 'search for a user'}</div>
                               )}
                           </div>
                       </div>

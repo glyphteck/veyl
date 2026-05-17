@@ -78,7 +78,7 @@ const terms = [
     {
         title: 'Enforcement',
         body: [
-            'Glyphteck Corp may investigate misuse and may warn, restrict, suspend, or terminate accounts or features, including chat, uploads, usernames, peer discovery, or full account access, when needed to protect users, the service, third parties, or to comply with law or platform rules.',
+            'Glyphteck Corp may investigate misuse and may warn, restrict, suspend, or terminate accounts or features, including chat, uploads, usernames, user discovery, or full account access, when needed to protect users, the service, third parties, or to comply with law or platform rules.',
             'Repeated credible abuse reports, unlawful activity, or serious policy violations may result in permanent loss of chat features or permanent loss of service access.',
         ],
     },
