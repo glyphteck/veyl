@@ -10,6 +10,12 @@ function getCacheKey(msg) {
     return `${msg?.p || ''}:${msg?.k || ''}`;
 }
 
+function hasRemoteImageKey(msg) {
+    const path = typeof msg?.p === 'string' ? msg.p.trim() : '';
+    const fileKey = typeof msg?.k === 'string' ? msg.k.trim() : '';
+    return msg?.t === 'img' && !!path && !!fileKey && !path.startsWith('local:') && fileKey !== 'local';
+}
+
 function isPromise(value) {
     return !!value && typeof value.then === 'function';
 }
@@ -130,7 +136,7 @@ function warmImage(url) {
 }
 
 export function preloadMsgImage(peerChatPK, msg, readMessageFile, options = {}) {
-    if (msg?.t !== 'img' || !peerChatPK || !msg?.p || !msg?.k || typeof readMessageFile !== 'function') {
+    if (!hasRemoteImageKey(msg) || !peerChatPK || typeof readMessageFile !== 'function') {
         return Promise.resolve('');
     }
 
@@ -161,6 +167,13 @@ export function preloadMsgImage(peerChatPK, msg, readMessageFile, options = {}) 
 
     setPendingEntry(key, task);
     return task;
+}
+
+export function seedMsgImage(msg, url, options = {}) {
+    if (!hasRemoteImageKey(msg) || !url) {
+        return '';
+    }
+    return setReadyEntry(getCacheKey(msg), url, options);
 }
 
 function withTimeout(promise, ms) {
@@ -199,7 +212,7 @@ export function useMsgImage(peerChatPK, msg) {
             return;
         }
 
-        if (msg?.t !== 'img' || !peerChatPK || !msg?.p || !msg?.k) {
+        if (!hasRemoteImageKey(msg) || !peerChatPK) {
             setSrc(null);
             setLoading(false);
             setError(null);

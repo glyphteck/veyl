@@ -1,13 +1,15 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { DIALOG_CLOSE_MS } from '@/components/dialog';
 import Alert from './alert';
 import { logout } from '@/lib/useractions';
 import { userAvatarCache } from '@/lib/useravatarcache';
 
-export default function RememberAccount({ data }) {
+export default function RememberAccount({ data, close }) {
     const [busy, setBusy] = useState(false);
     const [ready, setReady] = useState(false);
+    const logoutStartedRef = useRef(false);
     const account = data?.user || null;
     const uid = account?.uid || null;
 
@@ -51,15 +53,16 @@ export default function RememberAccount({ data }) {
         };
     }, [account, uid]);
 
-    const choose = async (remember) => {
-        if (busy) return;
-        setBusy(true);
-        try {
-            await logout({ remember, account });
-        } catch (error) {
-            console.error('logout failed', error);
-            setBusy(false);
-        }
+    const choose = (remember) => {
+        if (logoutStartedRef.current) return;
+        logoutStartedRef.current = true;
+        close?.();
+        window.setTimeout(() => {
+            logout({ remember, account }).catch((error) => {
+                console.error('logout failed', error);
+                logoutStartedRef.current = false;
+            });
+        }, DIALOG_CLOSE_MS);
     };
 
     if (!ready) return null;

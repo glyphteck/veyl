@@ -15,7 +15,6 @@ import { cn } from '@/lib/utils';
 export default function ExportWallet() {
     const { encSeed } = useVault();
     const { openDialog } = useDialog();
-    const inputRef = useRef(null);
     const walletMnemonicRef = useRef(null);
     const [password, setPassword] = useState('');
     const [walletMnemonic, setWalletMnemonic] = useState(null);
@@ -80,10 +79,6 @@ export default function ExportWallet() {
     }, [walletMnemonic]);
 
     useEffect(() => {
-        inputRef.current?.focus({ preventScroll: true });
-    }, []);
-
-    useEffect(() => {
         return () => {
             zeroBytes(walletMnemonicRef.current);
             walletMnemonicRef.current = null;
@@ -117,10 +112,10 @@ export default function ExportWallet() {
             {!walletMnemonic ? (
                 <form onSubmit={loadWalletMnemonic} className="flex flex-col gap-3">
                     <Input
-                        ref={inputRef}
                         start={<Lock className="pointer-events-none select-none" />}
                         type="password"
                         placeholder="password"
+                        autoFocus
                         value={password}
                         onChange={handlePasswordChange}
                         disabled={isLoading}

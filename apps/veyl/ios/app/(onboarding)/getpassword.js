@@ -10,7 +10,7 @@ import GlassField from '@/components/glass/glassfield';
 import Icon from '@/components/icon';
 import { packSeedData } from '@glyphteck/shared/crypto/pack';
 import { encryptSeed } from '@/lib/crypto/seed';
-import { getPasswordError, isPassword, MAX_PASSWORD, normalizePassword } from '@glyphteck/shared/password';
+import { getPasswordFeedback, isPassword, MAX_PASSWORD, normalizePassword } from '@glyphteck/shared/password';
 import { useTap } from '@/lib/tap';
 
 export default function NewUserPassword() {
@@ -24,9 +24,10 @@ export default function NewUserPassword() {
     const [submitError, setSubmitError] = useState('');
 
     const { labelText, status } = useMemo(() => {
-        if (!password) return { labelText: 'create a strong password', status: 'idle' };
-        const error = getPasswordError(password);
-        if (error) return { labelText: 'create a different password', status: 'invalid' };
+        const feedback = getPasswordFeedback(password);
+        if (feedback.status === 'idle') return { labelText: 'create a strong password', status: 'idle' };
+        if (feedback.status === 'short') return { labelText: 'create a longer password', status: 'idle' };
+        if (feedback.status === 'invalid') return { labelText: 'create a different password', status: 'invalid' };
         return { labelText: 'create a strong password', status: 'valid' };
     }, [password]);
 

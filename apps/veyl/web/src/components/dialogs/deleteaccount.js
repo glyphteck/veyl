@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { BanknoteArrowUp, KeyRound, Loader, Lock, Trash2 } from 'lucide-react';
 import { httpsCallable } from 'firebase/functions';
 import { Card } from '@/components/card';
@@ -23,7 +23,6 @@ export default function DeleteAccount({ close }) {
     const [isVerifying, setIsVerifying] = useState(false);
     const [isPasswordValid, setIsPasswordValid] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
-    const passwordInputRef = useRef(null);
     const { openDialog } = useDialog();
     const { balance, bitcoin } = useWallet();
     const { settings, clearAvatar } = useUser();
@@ -75,11 +74,6 @@ export default function DeleteAccount({ close }) {
             }
         }
     }, [clearAvatar, close, localCache, lock]);
-
-    useEffect(() => {
-        if (step !== 'confirm') return;
-        passwordInputRef.current?.focus({ preventScroll: true });
-    }, [step]);
 
     useEffect(() => {
         if (!isPasswordValid) return;
@@ -162,12 +156,10 @@ export default function DeleteAccount({ close }) {
                         <form onSubmit={verifyPassword} className="flex flex-col gap-3">
                             <Input
                                 id="delete-password"
-                                ref={(el) => {
-                                    passwordInputRef.current = el;
-                                }}
                                 start={<Lock className="pointer-events-none select-none" />}
                                 type="password"
                                 placeholder="password"
+                                autoFocus
                                 value={password}
                                 onChange={(event) => {
                                     setPassword(event.target.value);

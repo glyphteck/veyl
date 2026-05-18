@@ -24,7 +24,6 @@ export default function ExportWalletScreen() {
     const router = useRouter();
     const { encSeed } = useVault();
     const walletMnemonicRef = useRef(null);
-    const inputRef = useRef(null);
 
     const [step, setStep] = useState('intro');
     const [password, setPassword] = useState('');
@@ -90,12 +89,6 @@ export default function ExportWalletScreen() {
             setIsLoading(false);
         }
     }, [canLoad, encSeed, password, replaceWalletMnemonic, yieldToUi]);
-
-    useEffect(() => {
-        if (step !== 'unlock' || isLoading) return;
-        const timer = setTimeout(() => inputRef.current?.focus?.(), 50);
-        return () => clearTimeout(timer);
-    }, [step, isLoading]);
 
     useEffect(() => {
         if (step !== 'seed') return;
@@ -202,7 +195,6 @@ export default function ExportWalletScreen() {
                                 <GlassField disabled={isLoading} style={{ gap: 8, paddingHorizontal: 14 }}>
                                     <Icon icon={Lock} size={22} color={error ? theme.destructive : theme.inflow} />
                                     <TextInput
-                                        ref={inputRef}
                                         value={password}
                                         onChangeText={handlePasswordChange}
                                         placeholder="password"

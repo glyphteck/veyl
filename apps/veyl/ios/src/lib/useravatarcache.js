@@ -11,6 +11,9 @@ function metaKey(uid) {
 }
 
 function readVersion(value) {
+    if (value == null || value === '' || (typeof value !== 'number' && typeof value !== 'string')) {
+        return null;
+    }
     const version = Number(value);
     return Number.isSafeInteger(version) && version >= 0 ? version : null;
 }

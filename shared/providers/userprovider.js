@@ -11,6 +11,7 @@ import { resolveWalletPK } from '../walletkeys.js';
 export const defaultUser = {
     uid: null,
     authReady: false,
+    profileReady: false,
     username: null,
     avatar: null,
     avatarVersion: null,
@@ -73,6 +74,9 @@ function getActiveBan(ban) {
 }
 
 function readAvatarVersion(value) {
+    if (value == null || value === '' || (typeof value !== 'number' && typeof value !== 'string')) {
+        return null;
+    }
     const version = Number(value);
     return Number.isSafeInteger(version) && version >= 0 ? version : null;
 }
@@ -425,6 +429,7 @@ export function createUserProvider({ auth, db, storage, getStorage, network, ava
                             const avatarVersion = readAvatarVersion(profileData.avatar);
                             const avatar = avatarVersion == null ? null : prevUser.avatar;
                             if (
+                                prevUser.profileReady &&
                                 prevUser.uid === authUser.uid &&
                                 prevUser.username === username &&
                                 prevUser.walletPK === walletPK &&
@@ -437,7 +442,7 @@ export function createUserProvider({ auth, db, storage, getStorage, network, ava
                             ) {
                                 return prevUser;
                             }
-                            return { ...prevUser, uid: authUser.uid, username, walletPKs, walletPK, chatPK, active, hasAvatarEntry, avatarVersion, avatar };
+                            return { ...prevUser, uid: authUser.uid, profileReady: true, username, walletPKs, walletPK, chatPK, active, hasAvatarEntry, avatarVersion, avatar };
                         });
                         const avatarVersion = readAvatarVersion(profileData.avatar);
                         if (avatarVersion == null) {
@@ -452,6 +457,7 @@ export function createUserProvider({ auth, db, storage, getStorage, network, ava
                         setUser((prevUser) => ({
                             ...prevUser,
                             uid: authUser.uid,
+                            profileReady: true,
                             username: null,
                             walletPKs: null,
                             walletPK: null,

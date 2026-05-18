@@ -24,6 +24,7 @@ export default function NewUserAvatar() {
     const isUploading = !!pendingAction;
     const hasSelectedAsset = !!selectedAsset;
     const desiredAction = hasSelectedAsset ? 'confirm' : 'skip';
+    const targetAction = isUploading ? null : desiredAction;
     const [visibleAction, setVisibleAction] = useState(desiredAction);
     const [actionOpen, setActionOpen] = useState(true);
     const visibleActionRef = useRef(desiredAction);
@@ -33,7 +34,8 @@ export default function NewUserAvatar() {
     const routeLockTimerRef = useRef(null);
     const acceptedRules = hasCurrentCommunityRules({ communityRulesVersion, communityRulesAcceptedAt, communityRulesPending });
     const isOnboarding = !hasAvatarEntry || !encSeed || !acceptedRules;
-    const pendingLabel = pendingAction === 'upload' ? 'uplaoding' : pendingAction === 'skip' ? 'confirming' : '';
+    const pendingLabel = pendingAction === 'upload' ? 'uploading avatar' : pendingAction === 'skip' ? 'confirming' : '';
+    const title = pendingLabel || 'set your avatar';
     const lockRoute = useCallback((ms = 1200) => {
         if (routeLockRef.current) return false;
         routeLockRef.current = true;
@@ -58,7 +60,17 @@ export default function NewUserAvatar() {
         actionTransitionRef.current = transition;
         actionScaleValue.stopAnimation();
 
-        if (visibleActionRef.current === desiredAction) {
+        if (!targetAction) {
+            setActionOpen(false);
+            Animated.timing(actionScaleValue, {
+                toValue: 0,
+                duration: ACTION_SWITCH_MS,
+                useNativeDriver: true,
+            }).start();
+            return undefined;
+        }
+
+        if (visibleActionRef.current === targetAction) {
             setActionOpen(true);
             Animated.timing(actionScaleValue, {
                 toValue: 1,
@@ -75,8 +87,8 @@ export default function NewUserAvatar() {
             useNativeDriver: true,
         }).start(({ finished }) => {
             if (!finished || actionTransitionRef.current !== transition) return;
-            visibleActionRef.current = desiredAction;
-            setVisibleAction(desiredAction);
+            visibleActionRef.current = targetAction;
+            setVisibleAction(targetAction);
             actionScaleValue.setValue(0);
             setActionOpen(true);
             Animated.timing(actionScaleValue, {
@@ -90,7 +102,7 @@ export default function NewUserAvatar() {
             actionTransitionRef.current += 1;
             actionScaleValue.stopAnimation();
         };
-    }, [actionScaleValue, desiredAction]);
+    }, [actionScaleValue, targetAction]);
 
     const handleSkip = useCallback(async () => {
         if (isUploading) return;
@@ -175,7 +187,10 @@ export default function NewUserAvatar() {
     return (
         <View style={{ flex: 1, padding: 24 }}>
             <View style={{ position: 'absolute', top: '36%', left: 24, right: 24, alignItems: 'center', gap: 12 }}>
-                <Text style={{ fontSize: 28, fontWeight: '900', color: theme.foreground, textAlign: 'center' }}>set your avatar</Text>
+                <View style={{ minHeight: 34, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+                    {pendingLabel ? <ActivityIndicator size="small" color={theme.foreground} /> : null}
+                    <Text style={{ fontSize: 28, fontWeight: '900', color: theme.foreground, textAlign: 'center' }}>{title}</Text>
+                </View>
                 <AvatarPicker
                     size={140}
                     disabled={isUploading}
@@ -189,13 +204,8 @@ export default function NewUserAvatar() {
 
             <View style={{ position: 'absolute', left: 24, right: 24, bottom: '14%', alignItems: 'center', gap: 12 }}>
                 <View style={{ width: 256, height: 54, alignItems: 'center', justifyContent: 'center' }}>
-                    <Animated.View pointerEvents={pendingLabel ? 'none' : actionOpen ? 'auto' : 'none'} style={{ position: 'absolute', alignItems: 'center', justifyContent: 'center', transform: [{ scale: actionScaleValue }] }}>
-                        {pendingLabel ? (
-                            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-                                <ActivityIndicator size="small" color={theme.muted} />
-                                <Text style={{ color: theme.muted, fontSize: 16, fontWeight: '700' }}>{pendingLabel}</Text>
-                            </View>
-                        ) : visibleAction === 'confirm' ? (
+                    <Animated.View pointerEvents={actionOpen ? 'auto' : 'none'} style={{ position: 'absolute', alignItems: 'center', justifyContent: 'center', transform: [{ scale: actionScaleValue }] }}>
+                        {visibleAction === 'confirm' ? (
                             <GlassButton onPress={handleContinue} icon={ImageUp} label="confirm" accent disabled={!canContinue} style={{ width: 256 }} />
                         ) : (
                             <Pressable {...skipFeedback.props} disabled={isUploading}>

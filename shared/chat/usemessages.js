@@ -109,6 +109,7 @@ export function createUseChatMessages({ db, useChat, useUser, useVault, appState
             subscribeMessageBatch,
             getMessageBatch: getSharedMessageBatch,
             getChatRowLastMsgKey,
+            adoptConfirmedMessages,
         } = useChat();
         const { chatPK } = useUser();
         const { chatPrivateKey, localCache } = useVault();
@@ -251,7 +252,8 @@ export function createUseChatMessages({ db, useChat, useUser, useVault, appState
                     return;
                 }
 
-                const chatMessages = filterChatMessages(msgBatch.messages, chatPK, peerChatPK);
+                const filteredMessages = filterChatMessages(msgBatch.messages, chatPK, peerChatPK);
+                const chatMessages = adoptConfirmedMessages?.(chatId, filteredMessages) || filteredMessages;
 
                 if (chatId && wasChatDeletedLocally?.(chatId)) {
                     ackDeletedChat?.(chatId);
@@ -298,10 +300,7 @@ export function createUseChatMessages({ db, useChat, useUser, useVault, appState
                 liveRef.current = chatMessages;
                 setStateScope(scopeKey);
                 setLive(chatMessages);
-                ackMessages(
-                    chatId,
-                    chatMessages.map((message) => message?.cid)
-                );
+                ackMessages(chatId, chatMessages);
                 setExists(true);
                 setReady(true);
             };
@@ -321,6 +320,7 @@ export function createUseChatMessages({ db, useChat, useUser, useVault, appState
         }, [
             ackDeletedChat,
             ackMessages,
+            adoptConfirmedMessages,
             chatExists,
             chatId,
             chatPK,

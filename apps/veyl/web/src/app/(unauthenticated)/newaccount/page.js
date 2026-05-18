@@ -36,7 +36,6 @@ export default function NewAccountPage() {
     const [accountName, setAccountName] = useState('');
     const [authState, setAuthState] = useState('idle');
     const registeringRef = useRef(false);
-    const inputRef = useRef(null);
     const isLoading = authState !== 'idle';
     const hidden = isLoading;
     const createDisabled = isLoading || !accountName.trim();
@@ -77,13 +76,12 @@ export default function NewAccountPage() {
     }
 
     return (
-        <div className="relative h-screen flex items-center justify-center" onClick={() => (!isLoading ? inputRef.current?.focus() : null)}>
+        <div className="relative h-screen flex items-center justify-center">
             <div className={`flex flex-col gap-2 items-start select-none transition-opacity ease-out ${hidden ? 'pointer-events-none opacity-0' : 'pointer-events-auto opacity-100'}`} aria-hidden={hidden}>
                 <label htmlFor="passkey-name" className="px-3 text-xl font-black leading-none select-none">
                     label your passkey
                 </label>
                 <Input
-                    ref={inputRef}
                     id="passkey-name"
                     className="min-w-80 disabled:!opacity-100"
                     type="text"

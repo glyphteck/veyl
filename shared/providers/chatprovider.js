@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { getLatestOwnReadReceiptTarget, getLatestReadReceiptTarget, isLongTxt, makeSharedAttachment } from '../chat/messages.js';
+import { getChatId } from '../crypto/chat.js';
 import {
     attachmentBytes,
     getAttachmentType,
@@ -62,6 +63,13 @@ import { dropCachedChat, readCachedChats, readCachedMedia, writeCachedChats, wri
 
 export const DEFAULT_READ_RECEIPT_WRITE_DELAY_MS = 1200;
 export const DEFAULT_MSG_BATCH_SIZE = MSG_BATCH_SIZE;
+
+function localMediaAdoptionKey(chatId, cid, message) {
+    if (!chatId || !cid || !message?.p || !message?.k || String(message.p).startsWith('local:') || message.k === 'local') {
+        return '';
+    }
+    return `${chatId}\n${cid}\n${message.p}\n${message.k}`;
+}
 
 export function createChat({ db, storage, getStorage, uploadAttachment: uploadAttachmentImpl, uploadImage: uploadImageImpl, readMessageFile: readMessageFileImpl }) {
     if (!db) {
@@ -128,7 +136,7 @@ export function createChat({ db, storage, getStorage, uploadAttachment: uploadAt
     };
 }
 
-export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDelay = DEFAULT_READ_RECEIPT_WRITE_DELAY_MS, appState, chatWarming = false, preloadMessageMedia }) {
+export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDelay = DEFAULT_READ_RECEIPT_WRITE_DELAY_MS, appState, chatWarming = false, preloadMessageMedia, adoptLocalMessageMedia }) {
     if (!chat) {
         throw new Error('createChatProvider requires chat');
     }
@@ -168,6 +176,8 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
         const sendQueueScheduledRef = useRef(false);
         const lastHydratedCacheKeyRef = useRef('');
         const chatsRef = useRef([]);
+        const adoptedLocalMediaRef = useRef(new Set());
+        const cachedLocalMediaRef = useRef(new Set());
 
         useEffect(() => {
             localByChatRef.current = localByChat;
@@ -268,6 +278,8 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
             keepSelectedDeletedChatIdsRef.current = new Set();
             readCacheRef.current = new Map();
             localByChatRef.current = new Map();
+            adoptedLocalMediaRef.current.clear();
+            cachedLocalMediaRef.current.clear();
 
             clearReadWrites(pendingReadRef.current);
             pendingReadRef.current = new Map();
@@ -284,8 +296,8 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
             sendQueueScheduledRef.current = false;
         }, [clearMessageBatches]);
 
-        const ackMessages = useCallback((chatId, keys) => {
-            const acked = new Set((keys || []).filter(Boolean));
+        const ackMessages = useCallback((chatId, messages) => {
+            const acked = new Set((messages || []).map((message) => (typeof message === 'string' ? message : message?.cid || message?.id)).filter(Boolean));
             if (!chatId || !acked.size) {
                 return;
             }
@@ -343,6 +355,67 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
                 };
             });
         }, []);
+
+        const adoptConfirmedMessages = useCallback(
+            (chatId, messages) => {
+                const locals = localByChatRef.current.get(chatId);
+                if (!chatId || !locals?.length || !messages?.length) {
+                    return messages || [];
+                }
+
+                const localByCid = new Map();
+                for (const local of locals) {
+                    if (local?.cid && local?.t === 'img' && (local.localUri || local.localData != null)) {
+                        localByCid.set(local.cid, local);
+                    }
+                }
+                if (!localByCid.size) {
+                    return messages;
+                }
+
+                let changed = false;
+                const nextMessages = messages.map((message) => {
+                    const local = localByCid.get(message?.cid);
+                    const stored = message?.t === 'img' && message?.p && message?.k && !String(message.p).startsWith('local:') && message.k !== 'local';
+                    if (!local || !stored) {
+                        return message;
+                    }
+
+                    const mediaKey = localMediaAdoptionKey(chatId, message.cid, message);
+                    if (mediaKey && !cachedLocalMediaRef.current.has(mediaKey) && local.localData != null) {
+                        cachedLocalMediaRef.current.add(mediaKey);
+                        saveMedia(localCache, message, local.localData, message);
+                    }
+                    if (mediaKey && !adoptedLocalMediaRef.current.has(mediaKey)) {
+                        adoptedLocalMediaRef.current.add(mediaKey);
+                        adoptLocalMessageMedia?.(message, local);
+                    }
+
+                    if (!local.localUri || message.localUri === local.localUri) {
+                        return message;
+                    }
+
+                    changed = true;
+                    return {
+                        ...message,
+                        localUri: local.localUri,
+                    };
+                });
+
+                return changed ? nextMessages : messages;
+            },
+            [adoptLocalMessageMedia, localCache]
+        );
+
+        const rememberCachedLocalMedia = useCallback((peerChatPK, cid, message) => {
+            if (!chatPK || !peerChatPK) {
+                return;
+            }
+            const key = localMediaAdoptionKey(getChatId(chatPK, peerChatPK), cid, message);
+            if (key) {
+                cachedLocalMediaRef.current.add(key);
+            }
+        }, [chatPK]);
 
         const flushSendQueue = useCallback(() => {
             if (sendQueueRunningRef.current || sendQueueScheduledRef.current) {
@@ -726,6 +799,7 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
                     if (!chatPK || !chatPrivateKey || !peerChatPK) {
                         const uploaded = await chat.uploadAttachment(chatPK, chatPrivateKey, peerChatPK, { cid, ...attachment, meta: attachment });
                         saveMedia(localCache, uploaded, attachment.data, attachment);
+                        rememberCachedLocalMedia(peerChatPK, cid, uploaded);
                         return chat.sendMessage(chatPK, chatPrivateKey, peerChatPK, makeSentLongTxtMessage(chatPK, cid, uploaded, message));
                     }
 
@@ -734,6 +808,7 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
                     return queueSend(peerChatPK, localMessage, async () => {
                         const uploaded = await chat.uploadAttachment(chatPK, chatPrivateKey, peerChatPK, { cid, ...attachment, meta: attachment });
                         saveMedia(localCache, uploaded, attachment.data, attachment);
+                        rememberCachedLocalMedia(peerChatPK, cid, uploaded);
                         await chat.sendMessage(chatPK, chatPrivateKey, peerChatPK, makeSentLongTxtMessage(chatPK, cid, uploaded, message));
                     });
                 }
@@ -745,7 +820,7 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
 
                 return queueSend(peerChatPK, queued.message, () => chat.sendMessage(chatPK, chatPrivateKey, peerChatPK, queued.message));
             },
-            [chat, chatBanned, chatPK, chatPrivateKey, localCache, queueSend]
+            [chat, chatBanned, chatPK, chatPrivateKey, localCache, queueSend, rememberCachedLocalMedia]
         );
 
         const retryMessage = useCallback(
@@ -786,6 +861,7 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
                                     meta,
                                 });
                                 saveMedia(localCache, uploaded, localData, meta);
+                                rememberCachedLocalMedia(peerChatPK, cid, uploaded);
                                 await chat.sendMessage(chatPK, chatPrivateKey, peerChatPK, { ...uploaded, cid, s: chatPK });
                             },
                         });
@@ -803,7 +879,7 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
                     flushSendQueue();
                 });
             },
-            [chat, chatBanned, chatPK, chatPrivateKey, flushSendQueue, localCache, markLocalStatus]
+            [chat, chatBanned, chatPK, chatPrivateKey, flushSendQueue, localCache, markLocalStatus, rememberCachedLocalMedia]
         );
 
         const sendAttachment = useCallback(
@@ -816,16 +892,18 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
                 if (!chatPK || !chatPrivateKey || !peerChatPK) {
                     const uploaded = await chat.uploadAttachment(chatPK, chatPrivateKey, peerChatPK, nextAttachment);
                     saveMedia(localCache, uploaded, attachment?.data, attachment);
+                    rememberCachedLocalMedia(peerChatPK, cid, uploaded);
                     return chat.sendMessage(chatPK, chatPrivateKey, peerChatPK, { ...uploaded, cid, s: chatPK });
                 }
 
                 return queueSend(peerChatPK, localMessage, async () => {
                     const uploaded = await chat.uploadAttachment(chatPK, chatPrivateKey, peerChatPK, nextAttachment);
                     saveMedia(localCache, uploaded, attachment?.data, attachment);
+                    rememberCachedLocalMedia(peerChatPK, cid, uploaded);
                     await chat.sendMessage(chatPK, chatPrivateKey, peerChatPK, { ...uploaded, cid, s: chatPK });
                 });
             },
-            [chat, chatBanned, chatPK, chatPrivateKey, localCache, queueSend]
+            [chat, chatBanned, chatPK, chatPrivateKey, localCache, queueSend, rememberCachedLocalMedia]
         );
         const sendImage = useCallback((peerChatPK, image) => sendAttachment(peerChatPK, { ...image, type: 'img' }), [sendAttachment]);
         const shareAttachment = useCallback(
@@ -956,6 +1034,7 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
                 readMessageFile,
                 readMessagePreview,
                 writeMessagePreview,
+                adoptConfirmedMessages,
                 ackMessages,
                 lastChat,
                 ensureMessageBatch,
@@ -992,6 +1071,7 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
                 readMessageFile,
                 readMessagePreview,
                 writeMessagePreview,
+                adoptConfirmedMessages,
                 ackMessages,
                 lastChat,
                 ensureMessageBatch,

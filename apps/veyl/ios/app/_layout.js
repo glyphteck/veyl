@@ -35,7 +35,10 @@ function AppContent() {
         return unsub;
     }, []);
 
-    const loaded = authReady && (!auth.currentUser || (user.settingsReady && seedReady));
+    const hasAuthSession = !!auth.currentUser || !!user.uid;
+    const signedIn = !!user.uid;
+    const routeReady = !hasAuthSession || (signedIn && user.profileReady && user.settingsReady && seedReady);
+    const loaded = authReady && (!hasAuthSession || routeReady);
 
     useEffect(() => {
         if (loaded && !ready) setReady(true);
@@ -46,12 +49,13 @@ function AppContent() {
         SplashScreen.hideAsync().catch(() => {});
     }, [ready]);
 
-    const isAuthed = !!user.uid;
     const hasUsername = !!user.username;
     const hasAvatarEntry = !!user.hasAvatarEntry;
     const hasSeed = !!encSeed;
     const acceptedRules = hasCurrentCommunityRules(user);
     const onboardingComplete = hasUsername && hasAvatarEntry && hasSeed && acceptedRules;
+    const showLogin = !signedIn || !routeReady;
+    const showAuthed = signedIn && routeReady;
 
     if (!ready) {
         return null;
@@ -68,7 +72,7 @@ function AppContent() {
                     contentStyle: { backgroundColor: theme?.background },
                 }}
             >
-                <Stack.Protected guard={!isAuthed}>
+                <Stack.Protected guard={showLogin}>
                     <Stack.Screen name="login" />
                     <Stack.Screen
                         name="quicklogin"
@@ -81,11 +85,11 @@ function AppContent() {
                     />
                     <Stack.Screen name="newaccount" />
                 </Stack.Protected>
-                <Stack.Protected guard={isAuthed && onboardingComplete}>
+                <Stack.Protected guard={showAuthed && onboardingComplete}>
                     <Stack.Screen name="index" />
                     <Stack.Screen name="(vault)" />
                 </Stack.Protected>
-                <Stack.Protected guard={isAuthed && !onboardingComplete}>
+                <Stack.Protected guard={showAuthed && !onboardingComplete}>
                     <Stack.Screen name="(onboarding)" />
                 </Stack.Protected>
             </Stack>

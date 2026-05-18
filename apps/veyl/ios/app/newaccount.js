@@ -19,7 +19,6 @@ const PASSKEY_AVATAR_SUCCESS_MS = 500;
 export default function NewAccount() {
     const { theme } = useTheme();
     const router = useRouter();
-    const inputRef = useRef(null);
     const registeringRef = useRef(false);
     const [accountName, setAccountName] = useState('');
     const [authState, setAuthState] = useState('idle');
@@ -122,7 +121,6 @@ export default function NewAccount() {
                     <Text style={{ fontSize: 20, fontWeight: '700', color: theme.foreground, paddingLeft: 4 }}>what will you call this account?</Text>
                     <GlassField disabled={isLoading} style={{ paddingHorizontal: 14 }}>
                         <TextInput
-                            ref={inputRef}
                             value={accountName}
                             onChangeText={setAccountName}
                             placeholder="account name"
@@ -131,7 +129,6 @@ export default function NewAccount() {
                             autoCapitalize="none"
                             spellCheck={false}
                             editable={!isLoading}
-                            autoFocus
                             returnKeyType="go"
                             onSubmitEditing={() => {
                                 if (accountName.trim()) register(accountName.trim());

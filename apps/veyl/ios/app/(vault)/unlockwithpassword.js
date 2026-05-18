@@ -23,7 +23,6 @@ export default function UnlockScreen() {
     const { unlockWithPsw, lockState, encSeed, lock } = useVault();
     const user = useUser();
 
-    const inputRef = useRef(null);
     const [password, setPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
     const [status, setStatus] = useState('idle'); // idle | loading | error
@@ -65,12 +64,6 @@ export default function UnlockScreen() {
     }, [lockOpacity, unlockOpacity]);
 
     // Guards in (vault)/_layout.js handle navigation once unlocked
-
-    useEffect(() => {
-        if (!disabled) {
-            setTimeout(() => inputRef.current?.focus?.(), 50);
-        }
-    }, [disabled]);
 
     const yieldToUi = async () => {
         await new Promise((r) => requestAnimationFrame(r));
@@ -176,7 +169,6 @@ export default function UnlockScreen() {
                             <GlassField disabled={disabled} style={{ gap: 8, paddingHorizontal: 14 }}>
                                 <Icon icon={disabled ? LockOpen : Lock} size={22} color={status === 'error' ? theme.destructive : theme.inflow} />
                                 <TextInput
-                                    ref={inputRef}
                                     value={password}
                                     onChangeText={(value) => setPassword(value.slice(0, MAX_PASSWORD))}
                                     placeholder="password"

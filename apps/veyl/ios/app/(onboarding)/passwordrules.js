@@ -17,9 +17,8 @@ export default function PasswordRulesScreen() {
                 it is always better to use computer generated passwords. it is hard for a human to create randomness, which is the best kind of password.
             </Text>
             <Text style={{ fontSize: 18, fontWeight: '500', color: theme.foreground }}>• Use 12 to 64 characters.</Text>
-            <Text style={{ fontSize: 18, fontWeight: '500', color: theme.foreground }}>• Most visible letters, numbers, symbols, emoji, and spaces are allowed.</Text>
-            <Text style={{ fontSize: 18, fontWeight: '500', color: theme.foreground }}>• Spaces work inside the password, but not at the beginning or end.</Text>
-            <Text style={{ fontSize: 18, fontWeight: '500', color: theme.foreground }}>• Tabs, newlines, and other invisible or control characters are not allowed.</Text>
+            <Text style={{ fontSize: 18, fontWeight: '500', color: theme.foreground }}>• Most visible letters, numbers, symbols, and emoji are allowed.</Text>
+            <Text style={{ fontSize: 18, fontWeight: '500', color: theme.foreground }}>• Spaces are allowed, but tabs, newlines, and other invisible or control characters are not.</Text>
 
             <GlassButton onPress={() => router.back()} label="ok" accent style={{ paddingTop: 24 }} />
         </View>

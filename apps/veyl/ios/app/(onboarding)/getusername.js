@@ -15,7 +15,6 @@ function isTakenError(error) {
 
 export default function NewUserUsername() {
     const { theme } = useTheme();
-    const inputRef = useRef(null);
     const resetRef = useRef(null);
     const [username, setUsername] = useState('');
     const [status, setStatus] = useState('idle');
@@ -67,10 +66,6 @@ export default function NewUserUsername() {
     }, [status, username]);
 
     useEffect(() => {
-        inputRef.current?.focus();
-    }, []);
-
-    useEffect(() => {
         return () => clearTimeout(resetRef.current);
     }, []);
 
@@ -109,7 +104,6 @@ export default function NewUserUsername() {
                 <GlassField disabled={disabled} style={{ gap: 8, paddingHorizontal: 14, marginBottom: 1 }}>
                     <Text style={{ fontSize: 20, fontWeight: '800', color: theme.muted, paddingVertical: 10 }}>@</Text>
                     <TextInput
-                        ref={inputRef}
                         value={username}
                         onChangeText={changeUsername}
                         placeholder="username"

@@ -7,6 +7,7 @@ import { db, getStorage } from '@/lib/firebase/firebaseclient';
 import { useUser } from '@/components/providers/userprovider';
 import { useVault } from '@/components/providers/vaultprovider';
 import { preloadMessageMedia } from '@/components/chat/mediapreload';
+import { seedMsgImage } from '@/components/chat/usemsgimage';
 
 const chat = createChat({ db, getStorage });
 
@@ -28,6 +29,11 @@ const { ChatProvider: SharedChatProvider, useChat } = createChatProvider({
     useVault,
     chatWarming,
     preloadMessageMedia,
+    adoptLocalMessageMedia(message, local) {
+        if (local?.localUri) {
+            seedMsgImage(message, local.localUri, { priority: 4 });
+        }
+    },
 });
 
 const ChatInputContext = createContext(null);

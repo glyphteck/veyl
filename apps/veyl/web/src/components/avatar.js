@@ -25,7 +25,7 @@ const Avatar = React.forwardRef(function Avatar({ className, active = false, sel
     return (
         <AvatarContext.Provider value={{ status, setStatus, bot }}>
             <div ref={ref} className={cn('avatar shadow-sm relative flex size-10 shrink-0 overflow-visible rounded-full', className)} {...props}>
-                <Dot show={active} type="active" className="size-full" maskTargetClassName="relative size-full overflow-hidden rounded-full">
+                <Dot show={active} type="active" vectorMask className="size-full" maskTargetClassName="relative size-full overflow-hidden rounded-full">
                     {children}
                     {selectable ? (
                         <span className={cn('pointer-events-none absolute inset-0 rounded-full border-[3px] transition-colors ease-out', selected ? 'border-active' : 'border-transparent')} aria-hidden />

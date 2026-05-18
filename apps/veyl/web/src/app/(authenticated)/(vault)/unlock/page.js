@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Loading from '@/components/loading';
 import { useChat } from '@/components/providers/chatprovider';
@@ -34,7 +34,6 @@ const lockLabels = {
 
 export default function UnlockPage() {
     const router = useRouter();
-    const inputRef = useRef(null);
     const { unlock, lockState } = useVault();
     const { isChatDataReady } = useChat();
     const { openDialog } = useDialog();
@@ -58,25 +57,7 @@ export default function UnlockPage() {
         mode: 'onChange',
     });
 
-    const togglePasswordVisibility = () => {
-        setShowPassword(!showPassword);
-        if (inputRef.current) {
-            setTimeout(() => inputRef.current.focus(), 0);
-        }
-    };
-
-    const handlePageClick = (e) => {
-        if (!inputRef.current) return;
-        if (e.target !== inputRef.current && !inputRef.current.contains(e.target)) {
-            inputRef.current.focus();
-        }
-    };
-
-    useEffect(() => {
-        if (!disabled && inputRef.current) {
-            inputRef.current.focus();
-        }
-    }, [disabled]);
+    const togglePasswordVisibility = () => setShowPassword((prev) => !prev);
 
     useEffect(() => {
         if (isUnlocked && isChatDataReady) {
@@ -123,7 +104,7 @@ export default function UnlockPage() {
     if (!user.uid || !user.settingsReady) return <Loading />;
 
     return (
-        <div className="pointer-events-auto inset-0 fixed items-center flex justify-center" onClick={handlePageClick}>
+        <div className="pointer-events-auto inset-0 fixed items-center flex justify-center">
             {user?.isAdmin ? <ShieldUser className="stroke-2 pointer-events-none absolute top-2.25 left-2 z-20 size-10 text-active" /> : null}
             <UserMenu
                 user={user}
@@ -150,22 +131,12 @@ export default function UnlockPage() {
                                 id="unlock-password"
                                 aria-describedby="unlock-password-help"
                                 aria-invalid={fieldState.invalid}
-                                ref={(el) => {
-                                    field.ref(el);
-                                    inputRef.current = el;
-                                }}
+                                ref={field.ref}
                                 start={disabled ? <LockOpen className="pointer-events-none select-none" /> : <Lock className="pointer-events-none select-none" />}
                                 end={
                                     <Button
                                         type="button"
-                                        onClick={(e) => {
-                                            e.preventDefault();
-                                            e.stopPropagation();
-                                            togglePasswordVisibility();
-                                        }}
-                                        onMouseDown={(e) => {
-                                            e.preventDefault();
-                                        }}
+                                        onClick={togglePasswordVisibility}
                                         disabled={disabled}
                                         className="grower-lg text-muted hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
                                     >
@@ -177,6 +148,7 @@ export default function UnlockPage() {
                                 type={showPassword ? 'text' : 'password'}
                                 maxLength={MAX_PASSWORD}
                                 placeholder="password"
+                                autoFocus
                                 required
                                 spellCheck="false"
                                 autoCorrect="off"

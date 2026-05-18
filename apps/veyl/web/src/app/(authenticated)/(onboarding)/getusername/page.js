@@ -21,7 +21,6 @@ function isTakenError(error) {
 
 const GetUsername = () => {
     const router = useRouter();
-    const inputRef = useRef(null);
     const resetRef = useRef(null);
 
     // state for loading and error
@@ -55,18 +54,6 @@ const GetUsername = () => {
         return () => clearTimeout(resetRef.current);
     }, []);
 
-    // focus on page load
-    useEffect(() => {
-        inputRef.current?.focus();
-    }, []);
-
-    // focus on disabled end
-    useEffect(() => {
-        if (!disabled && inputRef.current) {
-            inputRef.current.focus();
-        }
-    }, [disabled]);
-
     const onSubmit = async ({ username: raw }) => {
         const username = normalizeUsername(raw);
         const valid = usernameSchema.safeParse({ username }).success;
@@ -89,7 +76,7 @@ const GetUsername = () => {
     };
 
     return (
-        <div className="pointer-events-auto select-none inset-0 absolute items-center flex justify-center" onClick={() => inputRef.current?.focus()}>
+        <div className="pointer-events-auto select-none inset-0 absolute items-center flex justify-center">
             <form onSubmit={form.handleSubmit(onSubmit)} noValidate>
                 <Controller
                     control={form.control}
@@ -105,10 +92,7 @@ const GetUsername = () => {
                                 {...field}
                                 id="username"
                                 aria-invalid={fieldState.invalid}
-                                ref={(el) => {
-                                    field.ref(el);
-                                    inputRef.current = el;
-                                }}
+                                ref={field.ref}
                                 start={<span className="text-xl font-black">@</span>}
                                 startPad="pl-9"
                                 className="min-w-80"
@@ -116,6 +100,7 @@ const GetUsername = () => {
                                 type="text"
                                 maxLength={MAX_USERNAME}
                                 placeholder="username"
+                                autoFocus
                                 required
                                 spellCheck="false"
                                 autoCorrect="off"

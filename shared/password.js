@@ -2,16 +2,18 @@ export const MIN_PASSWORD = 12;
 export const MAX_PASSWORD = 64;
 export const rules = [
     `Use ${MIN_PASSWORD} to ${MAX_PASSWORD} characters.`,
-    'Most visible letters, numbers, symbols, emoji, and spaces are allowed.',
-    'Spaces work inside the password, but not at the beginning or end.',
-    'Tabs, newlines, and other invisible or control characters are not allowed.',
+    'Most visible letters, numbers, symbols, and emoji are allowed.',
+    'Spaces are allowed, but tabs, newlines, and other invisible or control characters are not.',
 ];
 
 const controlCharRegex = /\p{C}/u;
-const edgeWhitespaceRegex = /^\s|\s$/u;
 
 export function normalizePassword(value = '') {
     return String(value ?? '').normalize('NFC');
+}
+
+function hasControlChars(value = '') {
+    return controlCharRegex.test(normalizePassword(value));
 }
 
 export function getPasswordError(value = '') {
@@ -20,10 +22,7 @@ export function getPasswordError(value = '') {
     if (!password) {
         return 'required';
     }
-    if (edgeWhitespaceRegex.test(password)) {
-        return 'edgewhitespace';
-    }
-    if (controlCharRegex.test(password)) {
+    if (hasControlChars(password)) {
         return 'controlchars';
     }
     if (password.length < MIN_PASSWORD) {
@@ -34,6 +33,30 @@ export function getPasswordError(value = '') {
     }
 
     return '';
+}
+
+export function getPasswordFeedback(value = '') {
+    const password = normalizePassword(value);
+
+    if (!password) {
+        return { error: 'required', status: 'idle' };
+    }
+
+    if (hasControlChars(password)) {
+        return { error: 'controlchars', status: 'invalid' };
+    }
+
+    const error = getPasswordError(password);
+
+    if (!error || error === 'required') {
+        return { error, status: error ? 'idle' : 'valid' };
+    }
+
+    if (error === 'tooshort') {
+        return { error, status: 'short' };
+    }
+
+    return { error, status: 'invalid' };
 }
 
 export function isPassword(value = '') {

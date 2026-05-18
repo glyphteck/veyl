@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Animated as RNAnimated, DeviceEventEmitter, Linking, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import * as MediaLibrary from 'expo-media-library';
+import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import { Image } from 'expo-image';
 import { useIsFocused } from '@react-navigation/native';
 import { router } from 'expo-router';
@@ -44,11 +45,25 @@ const PREVIEW_CHECK = 250;
 const SCAN_COOLDOWN = 700;
 const ACTION_GAP = 48;
 const EXIT_HOLD = 500;
+const PHOTO_SAVE_COMPRESS = 0.92;
 
 function getNormalZoom(device) {
     const minZoom = Number.isFinite(device?.minZoom) ? device.minZoom : NORMAL_ZOOM;
     const maxZoom = Number.isFinite(device?.maxZoom) ? device.maxZoom : NORMAL_ZOOM;
     return Math.min(maxZoom, Math.max(minZoom, NORMAL_ZOOM));
+}
+
+async function stageCapturedPhoto(uri) {
+    const normalized = await ImageManipulator.manipulate(uri).renderAsync();
+    const saved = await normalized.saveAsync({
+        compress: PHOTO_SAVE_COMPRESS,
+        format: SaveFormat.JPEG,
+    });
+    return {
+        uri: saved.uri,
+        width: saved.width,
+        height: saved.height,
+    };
 }
 
 export default function CameraTab() {
@@ -236,7 +251,7 @@ export default function CameraTab() {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
             const path = await photo.saveToTemporaryFileAsync();
             const uri = path.startsWith('file://') ? path : `file://${path}`;
-            setStagedPhoto({ uri, width: photo.width, height: photo.height });
+            setStagedPhoto(await stageCapturedPhoto(uri));
         } catch (err) {
             console.warn('take picture failed', err);
             Alert.alert('Capture failed', 'Could not take the photo.');

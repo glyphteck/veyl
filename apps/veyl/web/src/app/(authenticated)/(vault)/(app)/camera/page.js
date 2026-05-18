@@ -15,6 +15,36 @@ import { isAddressOnNetwork } from '@glyphteck/shared/network';
 
 const SCAN_INTERVAL = 200;
 
+function mirrorPhotoDataUri(src) {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+            const width = img.naturalWidth || img.width;
+            const height = img.naturalHeight || img.height;
+            if (!width || !height) {
+                reject(new Error('photo unavailable'));
+                return;
+            }
+
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+                reject(new Error('canvas unavailable'));
+                return;
+            }
+
+            ctx.translate(width, 0);
+            ctx.scale(-1, 1);
+            ctx.drawImage(img, 0, 0, width, height);
+            resolve(canvas.toDataURL('image/jpeg', 0.92));
+        };
+        img.onerror = reject;
+        img.src = src;
+    });
+}
+
 export default function CameraPage() {
     const webcamRef = useRef(null);
     const detectorRef = useRef(null);
@@ -140,9 +170,15 @@ export default function CameraPage() {
         };
     }, [handleQr, photo]);
 
-    const takePhoto = useCallback(() => {
+    const takePhoto = useCallback(async () => {
         const src = webcamRef.current?.getScreenshot();
-        if (src) setPhoto(src);
+        if (!src) return;
+        try {
+            setPhoto(await mirrorPhotoDataUri(src));
+        } catch (error) {
+            console.error('photo mirror failed:', error);
+            setPhoto(src);
+        }
     }, []);
 
     const discardPhoto = useCallback(() => {
@@ -164,14 +200,16 @@ export default function CameraPage() {
 
     return (
         <div className="h-full relative overflow-hidden rounded-round">
-            <div className="absolute inset-0 -scale-x-100">
-                <Webcam
-                    ref={webcamRef}
-                    audio={false}
-                    screenshotFormat="image/jpeg"
-                    videoConstraints={{ facingMode: 'environment' }}
-                    className={`absolute inset-0 w-full h-full object-cover transition-all duration-300 ${cloaked ? 'blur-3xl scale-110' : ''}`}
-                />
+            <div className="absolute inset-0">
+                <div className="absolute inset-0 -scale-x-100">
+                    <Webcam
+                        ref={webcamRef}
+                        audio={false}
+                        screenshotFormat="image/jpeg"
+                        videoConstraints={{ facingMode: 'environment' }}
+                        className={`absolute inset-0 w-full h-full object-cover transition-all duration-300 ${cloaked ? 'blur-3xl scale-110' : ''}`}
+                    />
+                </div>
                 {photo && <img src={photo} alt="preview" className="absolute inset-0 w-full h-full object-cover" />}
             </div>
             <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-8">

@@ -44,7 +44,6 @@ export default function DeleteAccountScreen() {
     const { encSeed, localCache, lock } = useVault();
     const { uid, settings, clearAvatar } = useUser();
     const { balance, bitcoin } = useWallet();
-    const inputRef = useRef(null);
     const openRef = useRef(true);
     const [step, setStep] = useState('intro');
     const [password, setPassword] = useState('');
@@ -75,12 +74,6 @@ export default function DeleteAccountScreen() {
             openRef.current = false;
         };
     }, []);
-
-    useEffect(() => {
-        if (step !== 'unlock' || isVerifying) return;
-        const timer = setTimeout(() => inputRef.current?.focus?.(), 50);
-        return () => clearTimeout(timer);
-    }, [isVerifying, step]);
 
     useEffect(() => {
         if (step !== 'unlock') {
@@ -232,7 +225,6 @@ export default function DeleteAccountScreen() {
                                 <GlassField disabled={isDeleting} style={{ gap: 8, paddingHorizontal: 14 }}>
                                     <Icon icon={Lock} size={22} color={error ? theme.destructive : theme.inflow} />
                                     <TextInput
-                                        ref={inputRef}
                                         value={password}
                                         onChangeText={handlePasswordChange}
                                         placeholder="password"

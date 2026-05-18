@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { auth, db } from '@/lib/firebase/firebaseclient';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
@@ -13,7 +13,7 @@ import { Button } from '@/components/button';
 import { useDialog } from '@/components/providers/dialogprovider';
 import { packSeedData } from '@glyphteck/shared/crypto/pack';
 import { encryptSeed } from '@/lib/crypto/seed';
-import { getPasswordError, isPassword, MAX_PASSWORD, normalizePassword } from '@glyphteck/shared/password';
+import { getPasswordFeedback, isPassword, MAX_PASSWORD, normalizePassword } from '@glyphteck/shared/password';
 
 const passwordSchema = z.object({
     password: z.string().refine((value) => isPassword(value)),
@@ -22,13 +22,13 @@ const passwordSchema = z.object({
 const GetPsw = () => {
     const router = useRouter();
     const { openDialog } = useDialog();
-    const inputRef = useRef(null);
     const [status, setStatus] = useState('idle');
     const [showPassword, setShowPassword] = useState(false);
 
     const getLabelText = () => {
         if (status === 'submitting') return 'encrypting your password';
         if (status === 'invalid') return 'create a different password';
+        if (status === 'short') return 'create a longer password';
         return 'create a strong password';
     };
 
@@ -51,19 +51,8 @@ const GetPsw = () => {
             setStatus('idle');
             return;
         }
-        const error = getPasswordError(passwordValue);
-        if (!error) {
-            setStatus('valid');
-            return;
-        }
-
-        setStatus('invalid');
+        setStatus(getPasswordFeedback(passwordValue).status);
     }, [passwordValue]);
-
-    //focus on page load
-    useEffect(() => {
-        inputRef.current?.focus();
-    }, []);
 
     const onSubmit = async ({ password: raw }) => {
         const password = normalizePassword(raw);
@@ -88,7 +77,7 @@ const GetPsw = () => {
     };
 
     return (
-        <div className="pointer-events-auto select-none inset-0 absolute items-center flex justify-center" onClick={() => inputRef.current?.focus()}>
+        <div className="pointer-events-auto select-none inset-0 absolute items-center flex justify-center">
             <form onSubmit={form.handleSubmit(onSubmit)} noValidate>
                 <Controller
                     control={form.control}
@@ -109,7 +98,6 @@ const GetPsw = () => {
                                             e.stopPropagation();
                                             openDialog('passwordrules');
                                         }}
-                                        onMouseDown={(e) => e.preventDefault()}
                                         disabled={disabled}
                                         className="grower-lg text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
                                         title="password rules"
@@ -123,11 +111,8 @@ const GetPsw = () => {
                                 id="password"
                                 aria-describedby="password-help"
                                 aria-invalid={fieldState.invalid}
-                                ref={(el) => {
-                                    field.ref(el);
-                                    inputRef.current = el;
-                                }}
-                                start={<KeyRound className={`${!passwordValue ? 'text-muted' : showError ? 'text-outflow' : 'text-inflow'}`} />}
+                                ref={field.ref}
+                                start={<KeyRound className={`${status === 'valid' ? 'text-inflow' : showError ? 'text-outflow' : 'text-muted'}`} />}
                                 end={
                                     <Button
                                         type="button"
@@ -144,6 +129,7 @@ const GetPsw = () => {
                                 type={showPassword ? 'text' : 'password'}
                                 maxLength={MAX_PASSWORD}
                                 placeholder="password"
+                                autoFocus
                                 required
                                 spellCheck="false"
                                 autoCorrect="off"
