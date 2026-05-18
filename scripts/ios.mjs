@@ -16,16 +16,19 @@ function resolveIosApp(name) {
 
 const args = process.argv.slice(2);
 const knownNetworks = new Set(['mainnet', 'regtest']);
-const knownFlags = new Set(['tunnel', 'clear', 'local']);
+const knownFlags = new Set(['tunnel', 'clear']);
 
 let app = 'veyl';
 let network = null;
 let tunnel = false;
 let clear = false;
-let local = false;
 const extra = [];
 
 for (const arg of args) {
+    if (arg === 'local') {
+        console.error('The local iOS variant is no longer supported. Use dev, test, or prod.');
+        process.exit(1);
+    }
     if (resolveIosApp(arg)) {
         app = arg;
         continue;
@@ -45,30 +48,16 @@ for (const arg of args) {
         if (arg === 'clear') {
             clear = true;
         }
-        if (arg === 'local') {
-            local = true;
-        }
         continue;
     }
     extra.push(arg);
 }
 
-if (local && network === 'mainnet') {
-    console.error('The local iOS build always runs on regtest.');
-    process.exit(1);
-}
-if (local) {
-    network = 'regtest';
-}
-
-const env = { ...process.env };
+const env = { ...process.env, VEYL_IOS_VARIANT: 'dev', EXPO_PUBLIC_NETWORK: 'REGTEST' };
 if (network === 'mainnet') {
     env.EXPO_PUBLIC_NETWORK = 'MAINNET';
 } else if (network === 'regtest') {
     env.EXPO_PUBLIC_NETWORK = 'REGTEST';
-}
-if (local) {
-    env.VEYL_IOS_VARIANT = 'local';
 }
 
 const config = resolveIosApp(app);
@@ -104,12 +93,6 @@ function run(command) {
 }
 
 async function main() {
-    if (local) {
-        await run(['x', 'expo', 'prebuild', '-p', 'ios']);
-        await run(['x', 'expo', 'run:ios', '--device', process.env.VEYL_IOS_DEVICE || 'zak 15', '--configuration', 'Release', '--no-bundler', ...extra]);
-        return;
-    }
-
     const command = ['x', 'expo', 'start'];
     if (tunnel) {
         command.push('--tunnel');

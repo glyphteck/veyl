@@ -158,7 +158,7 @@ export function DialogHost({ allow }) {
                     <DialogTitle>{dialog.type}</DialogTitle>
                     <DialogDescription></DialogDescription>
                 </DialogHeader>
-                <Comp data={dialog.data} close={closeDialog} />
+                <Comp data={dialog.data} close={closeDialog} open={dialog.open} />
             </DialogContent>
         </Dialog>
     );

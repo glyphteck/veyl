@@ -1,9 +1,9 @@
 import { onDocumentCreated } from 'firebase-functions/v2/firestore';
 import { db } from '../lib/admin.js';
 import { isBlocked, isChatBanned, resolveChatActors, shortChatKey } from '../lib/chatroute.js';
-import { getPushDocs, sendPush } from '../lib/push.js';
+import { getPushDocs, pushSecrets, sendPush } from '../lib/push.js';
 
-export const onChatMessage = onDocumentCreated('chats/{chatId}/messages/{msgId}', async (event) => {
+export const onChatMessage = onDocumentCreated({ document: 'chats/{chatId}/messages/{msgId}', secrets: pushSecrets }, async (event) => {
     const msg = event.data?.data();
     const senderChatPK = typeof msg?.head?.from === 'string' ? msg.head.from : null;
     const actors = await resolveChatActors(event.params.chatId, senderChatPK);

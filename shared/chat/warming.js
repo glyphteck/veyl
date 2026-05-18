@@ -214,12 +214,6 @@ export function useChatWarming({ chat, chatPK, chatPrivateKey, chatBanned, isAct
         batchesRef.current.clear();
     }, []);
 
-    useEffect(() => {
-        if (!isActive) {
-            clear();
-        }
-    }, [clear, isActive]);
-
     const buildMediaTasks = useCallback(() => {
         const mediaConfig = warming.media;
         if (!mediaConfig.enabled || !isActive || !chatPK || !chatPrivateKey || chatBanned) {
@@ -463,6 +457,10 @@ export function useChatWarming({ chat, chatPK, chatPrivateKey, chatBanned, isAct
             if (!entry) {
                 return;
             }
+            if (!isActive && source === 'route') {
+                notify(entry);
+                return;
+            }
             if (source === 'warm') {
                 entry.warm = false;
             } else {
@@ -470,7 +468,7 @@ export function useChatWarming({ chat, chatPK, chatPrivateKey, chatBanned, isAct
             }
             maybeCloseBatch(entry);
         },
-        [maybeCloseBatch]
+        [isActive, maybeCloseBatch, notify]
     );
 
     const subscribeMessageBatch = useCallback((chatId, callback) => {

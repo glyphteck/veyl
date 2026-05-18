@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="apps/veyl/web/public/wallet.png" alt="veyl" width="256">
+  <img src="shared/logos/wallet.png" alt="veyl" width="256">
 </p>
 
 <h1 align="center">veyl</h1>
@@ -137,7 +137,7 @@ The wrapper URL is intentional for veyl-specific actions. On iOS, the veyl web h
 - Peer payments use the other user’s stored `walletPK`.
 - The app also tracks funding addresses, claims on-chain deposits, withdrawals, balance, and transfer history.
 - The `ghost wallet` setting enables Spark Bitcoin privacy mode for the unlocked wallet, hiding Bitcoin activity from public read-only Spark lookups while keeping the owner wallet fully usable in veyl. Spark privacy mode does not currently hide token transactions.
-- Wallet push notifications are registered after wallet unlock: the client asks Functions for a stable Spark webhook URL, registers it with the initialized Spark wallet, then the webhook receiver sends generic iOS push copy without server-side wallet keys or claim capability.
+- Wallet push notifications are registered after wallet unlock: the client asks Functions for a stable Spark webhook URL, registers it with the initialized Spark wallet, and shares the active static funding address for deposit watching. Spark webhooks notify completed Spark wallet events. A scheduled Function also watches the stored funding address for confirmed unclaimed deposit UTXOs and sends generic iOS push copy without server-side wallet keys or claim capability. This means Veyl's backend can associate the funding address with the account for notification delivery, but the client still owns every fund-moving action after vault unlock.
 - Withdrawal flows must reject addresses that do not match the active wallet network. That check exists in scanner/QR entry points, form disabled states, and the shared wallet withdraw function.
 - Transaction history hydrates from the vaulted local cache on unlock, then Spark pagination fetches recent pages until it reaches a stable cached transfer boundary. Balance remains live-only.
 
@@ -273,14 +273,14 @@ Root-domain auth files live in the separate Website repo. App-owned Veyl web she
 
 ```bash
 bun veyl ios
-bun veyl ios local
 bun veyl ios mainnet
 bun veyl ios regtest
 bun veyl ios tunnel
 bun veyl ios submit
 bun make ios
-bun make ios local
+bun make ios test
 bun make ios prod
+bun make ios store
 bun make backend
 bun make db
 bun make rules
@@ -288,9 +288,15 @@ bun make cors
 bun make fns
 ```
 
-`bun veyl ios local` installs/runs a standalone `veyl local` iOS build on `REGTEST` with bundle id `com.glyphteck.veyl.local`, so it can remain on a device separately from the normal dev build and does not require the Expo server after install. `bun make ios local` uses the same build type.
+`bun make ios` prebuilds, builds, and installs the dev client build on the configured device. The dev app is `dev.veyl`, uses bundle id `com.glyphteck.veyl.dev`, runs on `REGTEST`, and expects an already-running Expo dev server. The command uses Expo only for prebuild/config sync, then builds with `xcodebuild` and installs with `devicectl` to avoid Expo's device-install hang.
 
-`bun make ios prod` starts a cloud EAS App Store production build. After it finishes, `bun veyl ios submit` submits the latest EAS iOS build to App Store Connect using the production submit profile.
+Use `bun make ios reset` after signing, associated-domain, or app-identity changes. It uninstalls the target app before reinstalling, so it clears that app's on-device data.
+
+`bun make ios test` prebuilds, builds, and installs the standalone test build on the configured device. The test app is `test.veyl`, uses bundle id `com.glyphteck.veyl.test`, runs on `REGTEST`, and does not require the Expo server after install.
+
+`bun make ios prod` prebuilds, builds, and installs the standalone production build on the configured device. The prod app is `veyl`, uses bundle id `com.glyphteck.veyl`, runs on `MAINNET`, and does not require the Expo server after install.
+
+`bun make ios store` starts a cloud EAS App Store production build. After it finishes, `bun veyl ios submit` submits the latest EAS iOS build to App Store Connect using the prod submit profile.
 
 If native iOS dependencies change, refresh pods:
 

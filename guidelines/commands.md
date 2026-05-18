@@ -23,15 +23,15 @@ bun veyl web clear
 bun veyl web mainnet
 bun veyl web regtest
 bun veyl ios
-bun veyl ios local
 bun veyl ios clear
 bun veyl ios mainnet
 bun veyl ios regtest
 bun veyl ios tunnel
 bun veyl ios submit
 bun make ios
-bun make ios local
+bun make ios test
 bun make ios prod
+bun make ios store
 bun make backend
 bun make db
 bun make rules
@@ -126,21 +126,26 @@ bun make cors
 - `bun veyl web clear` clears only the veyl web `.next` cache before starting.
 - `bun veyl web mem` starts web with V8 heap snapshots near the heap limit; combine with `trace` for Turbopack trace output or `inspect` for Chrome DevTools memory profiling.
 - `bun veyl ios clear` clears only the veyl iOS `.expo` and Metro caches before starting.
-- `bun veyl ios local` installs/runs the standalone `veyl local` iOS build on `REGTEST` with bundle id `com.glyphteck.veyl.local`.
+- `bun make ios` installs the `dev.veyl` Expo dev-client build on `REGTEST` with bundle id `com.glyphteck.veyl.dev`. It does not start Metro; run the dev server separately with `bun veyl ios` or the combined runtime.
+- `bun make ios reset` uninstalls the dev app before reinstalling it, which clears on-device app data and forces iOS to reprocess the current app identity.
+- `bun make ios test` installs the standalone test `test.veyl` build on `REGTEST` with bundle id `com.glyphteck.veyl.test`.
+- `bun make ios prod` installs the standalone production `veyl` build on `MAINNET` with bundle id `com.glyphteck.veyl`.
 - `bun veyl mainnet` and `bun veyl regtest` apply the selected network to web, iOS, and bot.
 
 ## iOS Production Builds
 
-`bun make ios prod` starts a cloud EAS App Store production build and waits for it to finish:
+`bun make ios prod` prebuilds, builds, and installs the standalone production build on the configured iPhone:
 
 ```bash
 bun make ios prod
 ```
 
-The command builds `com.glyphteck.veyl` on `MAINNET`, uses the production iOS build profile, lets EAS manage the App Store signing/build artifact, and does not upload anything to App Store Connect. Pass extra EAS build flags after `prod` when needed, for example:
+The command builds `com.glyphteck.veyl` on `MAINNET` with the Release configuration and does not require the Expo dev server after install. Local iOS make commands use Expo for prebuild/config sync only, then run `xcodebuild` and install the finished `.app` with `devicectl` because Expo's device-install wrapper hangs on this machine.
+
+Use `bun make ios store` for the cloud EAS App Store build:
 
 ```bash
-bun make ios prod --clear-cache
+bun make ios store --clear-cache
 ```
 
 After the App Store Connect app record exists and the EAS build is ready, upload the latest EAS iOS build with:
@@ -149,7 +154,7 @@ After the App Store Connect app record exists and the EAS build is ready, upload
 bun veyl ios submit
 ```
 
-`bun veyl ios submit` runs EAS Submit from `apps/veyl/ios` with the production profile. It defaults to `--latest` and forwards extra EAS Submit flags, so a specific build still works with `bun veyl ios submit --id <build-id>`. EAS Submit can use the preset non-secret values in `apps/veyl/ios/eas.json`, but the Apple account, App Store Connect app id, or API key still need to come from Apple.
+`bun veyl ios submit` runs EAS Submit from `apps/veyl/ios` with the prod profile. It defaults to `--latest` and forwards extra EAS Submit flags, so a specific build still works with `bun veyl ios submit --id <build-id>`. EAS Submit can use the preset non-secret values in `apps/veyl/ios/eas.json`, but the Apple account, App Store Connect app id, or API key still need to come from Apple.
 
 ## Local Web Hosts
 

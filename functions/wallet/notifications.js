@@ -1,9 +1,13 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import { SparkReadonlyClient } from '@buildonspark/spark-sdk';
 import { HttpsError, onCall, onRequest } from 'firebase-functions/v2/https';
+import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { FieldValue, OK, db, projectId } from '../lib/admin.js';
-import { sendPushToUid } from '../lib/push.js';
+import { pushSecrets, sendPushToUid } from '../lib/push.js';
 
 const REGION = 'us-central1';
+const DEPOSIT_WATCH_LIMIT = 100;
+const DEPOSIT_ROUTE_LIMIT = 200;
 const WALLET_NETWORKS = new Set(['MAINNET', 'REGTEST', 'TESTNET', 'SIGNET', 'LOCAL']);
 const WALLET_PK_RE = /^0[2-3][0-9a-f]{64}$/i;
 const EVENT_TYPES = [
@@ -14,6 +18,7 @@ const EVENT_TYPES = [
 ];
 const SECRET_HEADERS = ['x-spark-webhook-secret', 'x-spark-secret', 'spark-secret', 'x-webhook-secret'];
 const SIGNATURE_HEADERS = ['x-spark-webhook-signature', 'x-spark-signature', 'x-webhook-signature', 'x-signature'];
+const readonlyClients = new Map();
 
 function normalizeNetwork(value) {
     const next = String(value ?? '').trim().toUpperCase();
@@ -29,6 +34,31 @@ function normalizeWalletPK(value) {
         throw new HttpsError('invalid-argument', 'Invalid wallet public key.');
     }
     return walletPK;
+}
+
+function normalizeFundingAddress(value, network) {
+    const fundingAddress = typeof value === 'string' ? value.trim().toLowerCase() : '';
+    if (!fundingAddress) {
+        return null;
+    }
+
+    if (!/^[a-z0-9]{20,120}$/.test(fundingAddress)) {
+        throw new HttpsError('invalid-argument', 'Invalid wallet funding address.');
+    }
+
+    if (network === 'MAINNET' && !fundingAddress.startsWith('bc1')) {
+        throw new HttpsError('invalid-argument', 'Funding address does not match wallet network.');
+    }
+
+    if ((network === 'TESTNET' || network === 'SIGNET') && !fundingAddress.startsWith('tb1')) {
+        throw new HttpsError('invalid-argument', 'Funding address does not match wallet network.');
+    }
+
+    if ((network === 'REGTEST' || network === 'LOCAL') && !fundingAddress.startsWith('bcrt1')) {
+        throw new HttpsError('invalid-argument', 'Funding address does not match wallet network.');
+    }
+
+    return fundingAddress;
 }
 
 function routeIdFor(network, walletPK) {
@@ -171,12 +201,115 @@ function walletPushBody(eventType) {
     };
 }
 
+function depositPushBody() {
+    return {
+        title: 'veyl',
+        body: 'deposit waiting',
+        data: {
+            type: 'wallet',
+            reason: 'deposit',
+        },
+    };
+}
+
+function getReadonlyClient(network) {
+    if (!readonlyClients.has(network)) {
+        readonlyClients.set(network, SparkReadonlyClient.createPublic({ network }));
+    }
+    return readonlyClients.get(network);
+}
+
+function utxoKey(utxo) {
+    const txid = typeof utxo?.txid === 'string' ? utxo.txid.trim().toLowerCase() : '';
+    const vout = Number.isInteger(utxo?.vout) ? utxo.vout : -1;
+    return txid && vout >= 0 ? `${txid}:${vout}` : '';
+}
+
+async function getDepositUtxos(network, fundingAddress) {
+    const client = getReadonlyClient(network);
+    const utxos = [];
+    let offset = 0;
+
+    while (true) {
+        const page = await client.getUtxosForDepositAddress({
+            depositAddress: fundingAddress,
+            excludeClaimed: true,
+            limit: DEPOSIT_WATCH_LIMIT,
+            offset,
+        });
+        const pageUtxos = Array.isArray(page?.utxos) ? page.utxos : [];
+        utxos.push(...pageUtxos);
+        if (pageUtxos.length < DEPOSIT_WATCH_LIMIT) {
+            break;
+        }
+        offset = Number.isInteger(page?.offset) && page.offset > offset ? page.offset : offset + pageUtxos.length;
+    }
+
+    return utxos;
+}
+
+async function reserveDepositEvent(route, routeId, key) {
+    const eventRef = db.collection('walletDepositEvents').doc(hashValue(`${routeId}:${key}`));
+    const event = {
+        routeId,
+        uid: route.uid,
+        network: route.network,
+        utxoHash: hashValue(key),
+        receivedAt: FieldValue.serverTimestamp(),
+        source: 'spark-deposit-address-watch',
+    };
+
+    try {
+        await eventRef.create(event);
+        return { eventRef, skip: false };
+    } catch (error) {
+        if (error?.code !== 6 && error?.code !== 'already-exists' && error?.code !== 'ALREADY_EXISTS') {
+            throw error;
+        }
+
+        const existing = await eventRef.get();
+        return { eventRef, skip: !!existing.data()?.pushedAt };
+    }
+}
+
+async function notifyDeposit(route, routeId, key) {
+    const { eventRef, skip } = await reserveDepositEvent(route, routeId, key);
+    if (skip) {
+        return false;
+    }
+
+    try {
+        const result = await sendPushToUid(route.uid, depositPushBody());
+        await eventRef.set(
+            {
+                pushedAt: FieldValue.serverTimestamp(),
+                pushSent: result.sent,
+                pushAttempts: FieldValue.increment(1),
+                pushError: FieldValue.delete(),
+            },
+            { merge: true }
+        );
+        return true;
+    } catch (error) {
+        await eventRef.set(
+            {
+                pushError: error?.message || String(error),
+                pushFailedAt: FieldValue.serverTimestamp(),
+                pushAttempts: FieldValue.increment(1),
+            },
+            { merge: true }
+        );
+        throw error;
+    }
+}
+
 export const prepareWalletNotifications = onCall(async ({ auth, data }) => {
     if (!auth?.uid) throw new HttpsError('unauthenticated', 'auth');
 
     const uid = auth.uid;
     const network = normalizeNetwork(data?.network);
     const walletPK = normalizeWalletPK(data?.walletPK);
+    const fundingAddress = normalizeFundingAddress(data?.fundingAddress, network);
     await assertWalletOwner(uid, network, walletPK);
 
     const routeId = routeIdFor(network, walletPK);
@@ -197,6 +330,12 @@ export const prepareWalletNotifications = onCall(async ({ auth, data }) => {
             url,
             eventTypes: EVENT_TYPES,
             enabled: true,
+            ...(fundingAddress
+                ? {
+                      fundingAddress,
+                      fundingAddressUpdatedAt: FieldValue.serverTimestamp(),
+                  }
+                : {}),
             preparedAt: route?.preparedAt || FieldValue.serverTimestamp(),
             updatedAt: FieldValue.serverTimestamp(),
         },
@@ -254,7 +393,7 @@ export const confirmWalletNotifications = onCall(async ({ auth, data }) => {
     return OK;
 });
 
-export const sparkWalletWebhook = onRequest(async (req, res) => {
+export const sparkWalletWebhook = onRequest({ secrets: pushSecrets }, async (req, res) => {
     if (req.method === 'OPTIONS') {
         res.status(204).send('');
         return;
@@ -362,3 +501,67 @@ export const sparkWalletWebhook = onRequest(async (req, res) => {
 
     res.status(200).json({ ok: true });
 });
+
+export const checkWalletDepositNotifications = onSchedule(
+    {
+        schedule: '* * * * *',
+        timeZone: 'Etc/UTC',
+        timeoutSeconds: 120,
+        maxInstances: 1,
+        secrets: pushSecrets,
+    },
+    async () => {
+        const snap = await db.collection('walletWebhookRoutes').where('enabled', '==', true).limit(DEPOSIT_ROUTE_LIMIT).get();
+        let scanned = 0;
+        let notified = 0;
+
+        for (const docSnap of snap.docs) {
+            const route = docSnap.data();
+            const fundingAddress = typeof route?.fundingAddress === 'string' ? route.fundingAddress : '';
+            if (!route?.uid || !WALLET_NETWORKS.has(route?.network) || !fundingAddress) {
+                continue;
+            }
+
+            scanned += 1;
+            const routeRef = docSnap.ref;
+            try {
+                const utxos = await getDepositUtxos(route.network, fundingAddress);
+                let routeNotified = 0;
+
+                for (const utxo of utxos) {
+                    const key = utxoKey(utxo);
+                    if (!key) {
+                        continue;
+                    }
+                    if (await notifyDeposit(route, docSnap.id, key)) {
+                        routeNotified += 1;
+                    }
+                }
+
+                notified += routeNotified;
+                await routeRef.set(
+                    {
+                        lastDepositWatchAt: FieldValue.serverTimestamp(),
+                        lastDepositWatchUtxos: utxos.length,
+                        lastDepositWatchNotified: routeNotified,
+                        depositWatcherError: FieldValue.delete(),
+                        depositWatcherFailedAt: FieldValue.delete(),
+                        updatedAt: FieldValue.serverTimestamp(),
+                    },
+                    { merge: true }
+                );
+            } catch (error) {
+                await routeRef.set(
+                    {
+                        depositWatcherError: error?.message || String(error),
+                        depositWatcherFailedAt: FieldValue.serverTimestamp(),
+                        updatedAt: FieldValue.serverTimestamp(),
+                    },
+                    { merge: true }
+                );
+            }
+        }
+
+        console.info('wallet deposit watcher results', { scanned, notified });
+    }
+);

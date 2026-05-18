@@ -9,6 +9,7 @@ import { useTheme } from '@/providers/themeprovider';
 import Avatar, { AvatarAdornment, getAvatarAdornmentMetrics } from '@/components/avatar';
 import GlassButton from '@/components/glass/glassbutton';
 import GlassIcon from '@/components/glass/glassicon';
+import { walletLogoSource } from '@/lib/brand';
 import { useTap } from '@/lib/tap';
 
 const REMEMBERED_INLINE_LIMIT = 2;
@@ -165,7 +166,7 @@ export default function Login() {
     return (
         <View style={{ flex: 1 }}>
             <View style={{ position: 'absolute', top: '22%', left: 0, right: 0, alignItems: 'center', zIndex: 50 }}>
-                <Image source={require('../assets/wallet.png')} style={{ width: 192, height: 192 }} contentFit="contain" />
+                <Image source={walletLogoSource} style={{ width: 192, height: 192 }} contentFit="contain" />
                 {isBusy ? (
                     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                         <ActivityIndicator color={theme.muted || theme.foreground} />

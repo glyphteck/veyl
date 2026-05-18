@@ -84,6 +84,24 @@ export function matchCommands(input, { mode = 'mainmenu' } = {}) {
     return commands.filter((cmd) => cmd.name.startsWith(namePart) || cmd.aliases?.some((alias) => alias.startsWith(namePart)));
 }
 
+export function completeCommandPrefix(input, { mode = 'mainmenu' } = {}) {
+    const raw = String(input ?? '');
+    const match = raw.match(/^\/([^\s]*)/);
+    if (!match) return null;
+
+    const namePart = match[1].toLowerCase();
+    if (!namePart) return null;
+
+    const matched = matchCommands(`/${namePart}`, { mode });
+    if (matched.length !== 1) return null;
+
+    const cmd = matched[0];
+    const rest = raw.slice(match[0].length);
+    const next = rest ? `/${cmd.name}${rest}` : `/${cmd.name} `;
+
+    return next === raw ? null : next;
+}
+
 // Parses a command string into structured data.
 // Returns null if the input is not a command string or the command is unknown.
 // Returns { name, args: { username?, amount?, message? }, complete }
@@ -168,7 +186,7 @@ export function getCommandContext(input, { mode = 'mainmenu' } = {}) {
 
     if (matched.length === 1) {
         return {
-            kind: 'syntax',
+            kind: completeCommandPrefix(raw, { mode }) ? 'pick' : 'syntax',
             items: [matched[0].syntax],
         };
     }

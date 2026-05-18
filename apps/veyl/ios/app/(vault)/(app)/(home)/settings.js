@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Animated, AppState, Linking, Pressable, ScrollView, Switch, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CircleDollarSign, FileText, Ghost, KeyRound, Lock, LogOut, QrCode, ScanQrCode, Settings, Shield, Timer, Trash2, UserX } from 'lucide-react-native';
+import { useIsFocused } from '@react-navigation/native';
 import { useNavigation, useRouter } from 'expo-router';
 
 import AvatarPicker from '@/components/avatarpicker';
@@ -147,11 +148,12 @@ function Row({ icon, left, label, description, onPress, color, right, animateRig
     );
 }
 
-function ClearCacheRow({ localCache, disabled = false }) {
+function ClearCacheRow({ localCache, disabled = false, focused = true }) {
     const { theme } = useTheme();
     const [cacheSize, setCacheSize] = useState(0);
     const mountedRef = useRef(true);
     const clearingRef = useRef(false);
+    const refreshRef = useRef(0);
 
     useEffect(() => {
         return () => {
@@ -160,15 +162,18 @@ function ClearCacheRow({ localCache, disabled = false }) {
     }, []);
 
     const refreshCacheSize = useCallback(async () => {
+        const requestId = refreshRef.current + 1;
+        refreshRef.current = requestId;
         const vaultSize = await (localCache?.estimateSize?.() || Promise.resolve(0));
-        if (mountedRef.current) {
+        if (mountedRef.current && refreshRef.current === requestId) {
             setCacheSize(Number(vaultSize) || 0);
         }
     }, [localCache]);
 
     useEffect(() => {
+        if (!focused) return;
         void refreshCacheSize().catch(() => {});
-    }, [refreshCacheSize]);
+    }, [focused, refreshCacheSize]);
 
     const handleClearCache = useCallback(async () => {
         if (clearingRef.current) return;
@@ -333,6 +338,7 @@ export default function SettingsScreen() {
     const { theme } = useTheme();
     const navigation = useNavigation();
     const router = useRouter();
+    const isFocused = useIsFocused();
     const insets = useSafeAreaInsets();
     const user = useUser();
     const { encSeed, localCache } = useVault();
@@ -664,7 +670,7 @@ export default function SettingsScreen() {
 
                 {deviceRows && (cacheRows || supportRows || accountRows || dangerRows) ? <SectionDivider /> : null}
 
-                {cacheRows ? <ClearCacheRow localCache={localCache} disabled={isBusy} /> : null}
+                {cacheRows ? <ClearCacheRow localCache={localCache} disabled={isBusy} focused={isFocused} /> : null}
 
                 {cacheRows && (supportRows || accountRows || dangerRows) ? <SectionDivider /> : null}
 

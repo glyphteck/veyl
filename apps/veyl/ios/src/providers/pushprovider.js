@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { useRouter } from 'expo-router';
+import { useGlobalSearchParams, usePathname, useRouter } from 'expo-router';
 import { AppState } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { useUser } from '@/providers/userprovider';
+import { useVault } from '@/providers/vaultprovider';
+import { useWallet } from '@/providers/walletprovider';
+import { useChat } from '@/providers/chatprovider';
 import { dropPush, getPushState, setPush } from '@/lib/push';
 
 Notifications.setNotificationHandler({
@@ -19,25 +22,58 @@ Notifications.setNotificationHandler({
 });
 
 function getNotificationData(response) {
-    return response?.notification?.request?.content?.data;
+    const content = response?.notification?.request?.content;
+    const data = content?.data;
+    if (data && typeof data === 'object') {
+        return data;
+    }
+    const payloadBody = response?.notification?.request?.trigger?.payload?.body;
+    return payloadBody && typeof payloadBody === 'object' ? payloadBody : null;
 }
 
 function getChatId(response) {
-    const data = response?.notification?.request?.content?.data;
+    const data = getNotificationData(response);
     const chatId = typeof data?.chatId === 'string' ? data.chatId : null;
     return data?.type === 'chat' && chatId ? chatId : null;
 }
 
-function isWalletNotification(response) {
-    return getNotificationData(response)?.type === 'wallet';
+function getWalletNotification(response) {
+    const data = getNotificationData(response);
+    return data?.type === 'wallet' ? data : null;
+}
+
+function readParam(value) {
+    return Array.isArray(value) ? value[0] : value;
 }
 
 export function PushProvider({ children }) {
     const router = useRouter();
-    const { uid, chatPK, chatBanned } = useUser();
+    const pathname = usePathname();
+    const params = useGlobalSearchParams();
+    const { uid, chatPK, chatBanned, settings, settingsReady } = useUser();
+    const { lockState } = useVault();
+    const { wallet, refresh: refreshWallet } = useWallet();
+    const { selectChat } = useChat();
     const lastKeyRef = useRef(null);
     const pendingChatRef = useRef(null);
-    const pendingWalletRef = useRef(false);
+    const pendingWalletRef = useRef(null);
+    const pendingWalletRefreshRef = useRef(false);
+    const protectedAppReady = !!uid && lockState === 'unlocked' && settingsReady && typeof settings?.faceID === 'boolean';
+    const walletReady = !!wallet;
+    const activeChatId = pathname === '/currentchat' ? readParam(params?.id) : null;
+    const activeWallet = pathname === '/wallet';
+
+    const refreshWalletFromPush = useCallback(() => {
+        if (!walletReady || typeof refreshWallet !== 'function') {
+            pendingWalletRefreshRef.current = true;
+            return;
+        }
+
+        pendingWalletRefreshRef.current = false;
+        void refreshWallet().catch((error) => {
+            console.warn('wallet push refresh failed', error);
+        });
+    }, [refreshWallet, walletReady]);
 
     const openChat = useCallback(
         (chatId, key = chatId) => {
@@ -45,8 +81,10 @@ export function PushProvider({ children }) {
                 return;
             }
 
-            if (!uid) {
-                pendingChatRef.current = chatId;
+            const routeKey = key || chatId;
+            if (!protectedAppReady) {
+                pendingChatRef.current = { chatId, key: routeKey };
+                pendingWalletRef.current = null;
                 return;
             }
 
@@ -55,57 +93,95 @@ export function PushProvider({ children }) {
                 return;
             }
 
-            if (lastKeyRef.current === key) {
+            pendingChatRef.current = null;
+            pendingWalletRef.current = null;
+            if (activeChatId === chatId) {
+                lastKeyRef.current = routeKey;
                 return;
             }
 
-            lastKeyRef.current = key;
-            router.push({ pathname: '/currentchat', params: { id: chatId } });
+            if (lastKeyRef.current === routeKey) {
+                return;
+            }
+
+            lastKeyRef.current = routeKey;
+            selectChat?.(chatId);
+            const href = { pathname: '/currentchat', params: { id: chatId } };
+            if (activeChatId) {
+                router.replace(href);
+            } else {
+                router.push(href);
+            }
         },
-        [chatBanned, router, uid]
+        [activeChatId, chatBanned, protectedAppReady, router, selectChat]
     );
 
     const openWallet = useCallback(
-        (key = 'wallet') => {
-            if (!uid) {
-                pendingWalletRef.current = true;
+        (key = 'wallet', { refresh = false } = {}) => {
+            const routeKey = key || 'wallet';
+            if (!protectedAppReady) {
+                pendingWalletRef.current = { key: routeKey, refresh };
+                pendingChatRef.current = null;
                 return;
             }
 
-            pendingWalletRef.current = false;
-            if (lastKeyRef.current === key) {
+            pendingWalletRef.current = null;
+            pendingChatRef.current = null;
+            if (activeWallet) {
+                lastKeyRef.current = routeKey;
+                if (refresh) {
+                    refreshWalletFromPush();
+                }
                 return;
             }
 
-            lastKeyRef.current = key;
+            if (lastKeyRef.current === routeKey) {
+                return;
+            }
+
+            lastKeyRef.current = routeKey;
             router.push('/wallet');
+            if (refresh) {
+                refreshWalletFromPush();
+            }
         },
-        [router, uid]
+        [activeWallet, protectedAppReady, refreshWalletFromPush, router]
     );
 
     useEffect(() => {
-        if (!uid || chatBanned || !pendingChatRef.current) {
+        if (!protectedAppReady || chatBanned || !pendingChatRef.current) {
             return;
         }
 
-        const chatId = pendingChatRef.current;
+        const { chatId, key } = pendingChatRef.current;
         pendingChatRef.current = null;
-        openChat(chatId);
-    }, [chatBanned, uid, openChat]);
+        openChat(chatId, key);
+    }, [chatBanned, protectedAppReady, openChat]);
 
     useEffect(() => {
-        if (!uid || !pendingWalletRef.current) {
+        if (!protectedAppReady || !pendingWalletRef.current) {
             return;
         }
 
-        openWallet();
-    }, [uid, openWallet]);
+        const pending = pendingWalletRef.current;
+        pendingWalletRef.current = null;
+        openWallet(pending.key, { refresh: pending.refresh });
+    }, [protectedAppReady, openWallet]);
+
+    useEffect(() => {
+        if (!protectedAppReady || !walletReady || !pendingWalletRefreshRef.current) {
+            return;
+        }
+
+        refreshWalletFromPush();
+    }, [protectedAppReady, refreshWalletFromPush, walletReady]);
 
     useEffect(() => {
         const sub = Notifications.addNotificationResponseReceivedListener((response) => {
             const key = response?.notification?.request?.identifier;
-            if (isWalletNotification(response)) {
-                openWallet(key ?? 'wallet');
+            const walletNotification = getWalletNotification(response);
+            if (walletNotification) {
+                openWallet(key ?? 'wallet', { refresh: true });
                 return;
             }
 
@@ -116,8 +192,9 @@ export function PushProvider({ children }) {
         void Notifications.getLastNotificationResponseAsync()
             .then((response) => {
                 const key = response?.notification?.request?.identifier;
-                if (isWalletNotification(response)) {
-                    openWallet(key ?? 'wallet');
+                const walletNotification = getWalletNotification(response);
+                if (walletNotification) {
+                    openWallet(key ?? 'wallet', { refresh: true });
                     return;
                 }
 
@@ -150,11 +227,11 @@ export function PushProvider({ children }) {
                     return;
                 }
 
-                if (push.status !== 'ready' || !push.token) {
+                if (push.status !== 'ready' || (!push.token && !push.nativeToken)) {
                     return;
                 }
 
-                await setPush(push.token, uid);
+                await setPush(push.token, uid, push.meta, push.nativeToken);
             } catch (error) {
                 console.warn('push sync failed', error);
             }

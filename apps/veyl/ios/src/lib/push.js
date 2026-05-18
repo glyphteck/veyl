@@ -7,8 +7,28 @@ import { auth, db } from '@/lib/firebase';
 
 const DID_KEY = 'push.did';
 const SYNC_KEY = 'push.sync';
-const TOKEN_RE = /^(Expo|Exponent)PushToken\[[^\]]+\]$/;
 const inflightSync = new Set();
+const variantAliases = {
+    development: 'dev',
+    production: 'prod',
+};
+const pushVariants = {
+    dev: {
+        appVariant: 'dev',
+        apnsTopic: 'com.glyphteck.veyl.dev',
+        apnsEnvironment: 'development',
+    },
+    test: {
+        appVariant: 'test',
+        apnsTopic: 'com.glyphteck.veyl.test',
+        apnsEnvironment: 'production',
+    },
+    prod: {
+        appVariant: 'prod',
+        apnsTopic: 'com.glyphteck.veyl',
+        apnsEnvironment: 'production',
+    },
+};
 
 function makeId() {
     try {
@@ -40,12 +60,27 @@ export async function getDid() {
     return did;
 }
 
-function getProjectId() {
-    return Constants?.expoConfig?.extra?.eas?.projectId ?? Constants?.easConfig?.projectId ?? null;
+function getPushMeta() {
+    const rawVariant = String(Constants?.expoConfig?.extra?.variant || 'dev').trim().toLowerCase();
+    const appVariant = variantAliases[rawVariant] || rawVariant;
+    return pushVariants[appVariant] || pushVariants.dev;
 }
 
-function getSyncKey(uid, did, token) {
-    return uid && did && token ? `${uid}:${did}:ios:${token}` : '';
+function getTokenData(token) {
+    return typeof token?.data === 'string' && token.data ? token.data : null;
+}
+
+async function getDeviceToken(devicePushToken) {
+    if (getTokenData(devicePushToken)) {
+        return devicePushToken;
+    }
+
+    return Notifications.getDevicePushTokenAsync();
+}
+
+function getSyncKey(uid, did, token, meta, nativeToken) {
+    const deliveryToken = nativeToken || token;
+    return uid && did && deliveryToken ? `${uid}:${did}:ios:apns:${meta.apnsTopic}:${meta.apnsEnvironment}:${deliveryToken}` : '';
 }
 
 async function getSavedSyncKey() {
@@ -94,24 +129,20 @@ export async function getPushState(devicePushToken) {
         return { status: 'disabled', token: null };
     }
 
-    const projectId = getProjectId();
-    if (!projectId) {
-        console.warn('push registration skipped: missing Expo project id');
-        return { status: 'unavailable', token: null };
+    let nativeDeviceToken = null;
+    try {
+        nativeDeviceToken = await getDeviceToken(devicePushToken);
+    } catch (error) {
+        console.warn('native push token unavailable', error);
     }
 
-    const token = (
-        await Notifications.getExpoPushTokenAsync({
-            projectId,
-            ...(devicePushToken ? { devicePushToken } : {}),
-        })
-    ).data;
-    return TOKEN_RE.test(token) ? { status: 'ready', token } : { status: 'unavailable', token: null };
+    const nativeToken = getTokenData(nativeDeviceToken);
+    return nativeToken ? { status: 'ready', token: null, nativeToken, meta: getPushMeta() } : { status: 'unavailable', token: null };
 }
 
-export async function setPush(token, uid = auth.currentUser?.uid) {
+export async function setPush(token, uid = auth.currentUser?.uid, meta = getPushMeta(), nativeToken = null) {
     const did = await getDid();
-    const key = getSyncKey(uid, did, token);
+    const key = getSyncKey(uid, did, token, meta, nativeToken);
     if (!key) {
         return false;
     }
@@ -130,7 +161,12 @@ export async function setPush(token, uid = auth.currentUser?.uid) {
         await setDoc(doc(db, 'users', uid, 'push', did), {
             did,
             token,
+            nativeToken: nativeToken || null,
             platform: 'ios',
+            provider: nativeToken ? 'apns' : 'expo',
+            appVariant: meta.appVariant,
+            apnsTopic: meta.apnsTopic,
+            apnsEnvironment: meta.apnsEnvironment,
             enabled: true,
             updatedAt: serverTimestamp(),
         });

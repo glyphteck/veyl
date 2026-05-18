@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { Command, CommandInput, CommandList, CommandGroup, CommandItem, CommandSeparator, CommandShortcut, CommandEmpty } from '@/components/command';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/avatar';
@@ -34,7 +34,7 @@ import { usePeer } from '@/components/providers/peerprovider';
 import { useCloak } from '@glyphteck/shared/providers/cloakprovider';
 import { mergeProfiles } from '@glyphteck/shared/search/merge';
 import { sortProfiles } from '@glyphteck/shared/search/sort';
-import { getTypingUsername, matchCommands, parseCommand, parseCommandAmountSats } from '@glyphteck/shared/commands';
+import { completeCommandPrefix, getTypingUsername, matchCommands, parseCommand, parseCommandAmountSats } from '@glyphteck/shared/commands';
 import { useChat } from '@/components/providers/chatprovider';
 import { formatUserDisplay, renderMoney, formatFullDateTime } from '@/lib/utils';
 import { useSearch } from '@/lib/search/usesearch';
@@ -54,7 +54,7 @@ function formatCacheSize(bytes) {
     return `${(value / 1024 / 1024 / 1024).toFixed(1)} GB`;
 }
 
-export default function MainMenu({ close, data }) {
+export default function MainMenu({ close, data, open = true }) {
     const router = useRouter();
     const { openDialog } = useDialog();
     const { uid, username, settings, chatPK, chatBanned, isAdmin, avatar, walletPK } = useUser();
@@ -70,6 +70,7 @@ export default function MainMenu({ close, data }) {
     const [cacheSize, setCacheSize] = useState(0);
     const inputRef = useRef(null);
     const clearingCacheRef = useRef(false);
+    const cacheRefreshRef = useRef(0);
     const hasBalance = balance && balance > 0;
     const hasUnseenChats = !!chats?.some((c) => c?.unseen);
     const showWalletDot = false;
@@ -190,6 +191,25 @@ export default function MainMenu({ close, data }) {
             search(value);
         }
     };
+
+    const handleInputKeyDown = (event) => {
+        if (event.key !== 'Tab' || event.shiftKey || event.metaKey || event.ctrlKey || event.altKey) {
+            return;
+        }
+        const next = completeCommandPrefix(searchValue, { mode: 'mainmenu' });
+        if (!next) {
+            return;
+        }
+        event.preventDefault();
+        handleSearchChange(next);
+        requestAnimationFrame(() => {
+            const input = inputRef.current;
+            if (!input) return;
+            input.focus({ preventScroll: true });
+            input.setSelectionRange?.(next.length, next.length);
+        });
+    };
+
     // if search value passed on mount
     useEffect(() => {
         if (searchValue) handleSearchChange(searchValue);
@@ -209,19 +229,33 @@ export default function MainMenu({ close, data }) {
         return () => window.clearTimeout(timeout);
     }, [data?.searchInput]);
 
-    useEffect(() => {
-        let cancelled = false;
+    const refreshCacheSize = useCallback(() => {
+        const requestId = cacheRefreshRef.current + 1;
+        cacheRefreshRef.current = requestId;
         if (!localCache?.estimateSize) {
             setCacheSize(0);
             return;
         }
+
         localCache.estimateSize().then((size) => {
-            if (!cancelled) {
+            if (cacheRefreshRef.current === requestId) {
                 setCacheSize(Number(size) || 0);
             }
+        }).catch(() => {
+            if (cacheRefreshRef.current === requestId) {
+                setCacheSize(0);
+            }
         });
+    }, [localCache]);
+
+    useEffect(() => {
+        if (!open) return;
+        refreshCacheSize();
+    }, [open, refreshCacheSize]);
+
+    useEffect(() => {
         return () => {
-            cancelled = true;
+            cacheRefreshRef.current += 1;
         };
     }, [localCache]);
 
@@ -269,7 +303,7 @@ export default function MainMenu({ close, data }) {
     return (
         <div className="flex flex-col items-center gap-2">
             <Command className="w-lg max-h-105 pt-px">
-                <CommandInput ref={inputRef} placeholder="search for anything" value={searchValue} onValueChange={handleSearchChange} />
+                <CommandInput ref={inputRef} placeholder="search for anything" value={searchValue} onValueChange={handleSearchChange} onKeyDown={handleInputKeyDown} />
                 <CommandList>
                 {searching && query?.value && (
                     <CommandEmpty>

@@ -10,7 +10,6 @@ import { MediaViewerProvider } from '@/providers/mediaviewerprovider';
 import { UserProvider, useUser } from '@/providers/userprovider';
 import { BitcoinProvider } from '@/providers/bitcoinprovider';
 import { VaultProvider, useVault } from '@/providers/vaultprovider';
-import { PushProvider } from '@/providers/pushprovider';
 import { Stack } from 'expo-router';
 import { onAuthStateChanged } from 'firebase/auth';
 import * as SplashScreen from 'expo-splash-screen';
@@ -105,19 +104,17 @@ export default function Root() {
                 <KeyboardRootProvider>
                     <SafeAreaProvider>
                         <UserProvider>
-                            <PushProvider>
-                                <BitcoinProvider>
-                                    <VaultProvider>
-                                        <AudioProvider>
-                                            <MediaViewerProvider>
-                                                <MenuProvider>
-                                                    <AppContent />
-                                                </MenuProvider>
-                                            </MediaViewerProvider>
-                                        </AudioProvider>
-                                    </VaultProvider>
-                                </BitcoinProvider>
-                            </PushProvider>
+                            <BitcoinProvider>
+                                <VaultProvider>
+                                    <AudioProvider>
+                                        <MediaViewerProvider>
+                                            <MenuProvider>
+                                                <AppContent />
+                                            </MenuProvider>
+                                        </MediaViewerProvider>
+                                    </AudioProvider>
+                                </VaultProvider>
+                            </BitcoinProvider>
                         </UserProvider>
                     </SafeAreaProvider>
                 </KeyboardRootProvider>

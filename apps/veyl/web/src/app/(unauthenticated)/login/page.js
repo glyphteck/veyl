@@ -9,6 +9,7 @@ import { isPasskeyEnvironmentMismatchError, isPasskeyRpMismatchError, passkeyLog
 import { userAvatarCache } from '@/lib/useravatarcache';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/avatar';
 import { Card } from '@/components/card';
+import { walletLogoSrc } from '@/lib/brand';
 
 function isUnlinkedPasskeyError(error) {
     return error?.code === 'passkey-unlinked';
@@ -92,7 +93,7 @@ export default function LoginPage() {
 
     return (
         <div className="h-screen overflow-y-auto">
-            <img src="/wallet.png" className="pointer-events-none fixed top-[calc(50%-260px)] left-1/2 size-64 -translate-x-1/2 select-none" alt="" />
+            <img src={walletLogoSrc} className="pointer-events-none fixed top-[calc(50%-260px)] left-1/2 size-64 -translate-x-1/2 select-none" alt="" />
             {uiReady ? (
                 <div className={`fixed top-[calc(50%+20px)] left-1/2 flex w-3xs -translate-x-1/2 flex-col gap-2 transition-opacity ${isLoading ? 'pointer-events-none opacity-0' : 'opacity-100'}`} aria-hidden={isLoading}>
                     {accounts.length ? (

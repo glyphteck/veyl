@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils';
 import { CircleArrowRight, HandCoins, Paperclip, Reply, SquarePen, X } from 'lucide-react';
 import { useCloak } from '@glyphteck/shared/providers/cloakprovider';
 import { forwardRef, useEffect, useRef, useState } from 'react';
-import { getCommandContext, parseCommand } from '@glyphteck/shared/commands';
+import { completeCommandPrefix, getCommandContext, parseCommand } from '@glyphteck/shared/commands';
 
 const ChatTextarea = forwardRef(function ChatTextarea({ className, maxRows = Infinity, onInput, ...props }, ref) {
     const handleInput = (event) => {
@@ -190,6 +190,21 @@ export function ChatInput({ onSendMessage, onEditMessage, onSendAttachment, onSe
         onSendMessage(messageToSend, nextDraft);
     };
 
+    const handleKeyDown = (e) => {
+        if (e.key === 'Tab' && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+            const next = completeCommandPrefix(msgInput, { mode: 'chat' });
+            if (next) {
+                e.preventDefault();
+                applyCommandPrefix(next);
+                return;
+            }
+        }
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            handleSendMsg();
+        }
+    };
+
     const handlePickAttachment = () => {
         if (disabled) return;
         fileRef.current?.click?.();
@@ -244,12 +259,7 @@ export function ChatInput({ onSendMessage, onEditMessage, onSendAttachment, onSe
                     className={`min-h-9 flex-1 bg-transparent pl-1.5 pr-1 py-1 shadow-none resize-none ${cloaked ? 'cloaked' : ''}`}
                     value={msgInput}
                     onChange={(e) => setMsgInput(e.target.value)}
-                    onKeyPress={(e) => {
-                        if (e.key === 'Enter' && !e.shiftKey) {
-                            e.preventDefault();
-                            handleSendMsg();
-                        }
-                    }}
+                    onKeyDown={handleKeyDown}
                     maxRows={12}
                     maxLength={5000}
                     placeholder="send a message"

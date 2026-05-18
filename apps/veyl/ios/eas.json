@@ -4,18 +4,37 @@
         "appVersionSource": "remote"
     },
     "build": {
+        "dev": {
+            "developmentClient": true,
+            "distribution": "internal",
+            "env": {
+                "VEYL_IOS_VARIANT": "dev",
+                "EXPO_PUBLIC_NETWORK": "REGTEST"
+            }
+        },
         "development": {
             "developmentClient": true,
-            "distribution": "internal"
+            "distribution": "internal",
+            "env": {
+                "VEYL_IOS_VARIANT": "dev",
+                "EXPO_PUBLIC_NETWORK": "REGTEST"
+            }
         },
         "preview": {
             "distribution": "internal"
         },
-        "local": {
+        "test": {
             "distribution": "internal",
             "env": {
-                "VEYL_IOS_VARIANT": "local",
+                "VEYL_IOS_VARIANT": "test",
                 "EXPO_PUBLIC_NETWORK": "REGTEST"
+            }
+        },
+        "prod": {
+            "autoIncrement": true,
+            "env": {
+                "VEYL_IOS_VARIANT": "prod",
+                "EXPO_PUBLIC_NETWORK": "MAINNET"
             }
         },
         "production": {
@@ -27,6 +46,16 @@
         }
     },
     "submit": {
+        "prod": {
+            "ios": {
+                "appleTeamId": "HHTM355M49",
+                "bundleIdentifier": "com.glyphteck.veyl",
+                "sku": "com.glyphteck.veyl",
+                "language": "en-US",
+                "companyName": "Glyphteck Corp",
+                "appName": "veyl"
+            }
+        },
         "production": {
             "ios": {
                 "appleTeamId": "HHTM355M49",

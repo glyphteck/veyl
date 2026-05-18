@@ -4,6 +4,7 @@ import { WalletProvider } from '@/providers/walletprovider';
 import { TxDataProvider } from '@/providers/txdataprovider';
 import { ChatProvider } from '@/providers/chatprovider';
 import { PeerProvider } from '@/providers/peerprovider';
+import { PushProvider } from '@/providers/pushprovider';
 import { useTheme } from '@/providers/themeprovider';
 import { useUser } from '@/providers/userprovider';
 import { useVault } from '@/providers/vaultprovider';
@@ -51,9 +52,11 @@ export default function VaultLayout() {
         <WalletProvider>
             <TxDataProvider>
                 <ChatProvider>
-                    <PeerProvider>
-                        <VaultContent />
-                    </PeerProvider>
+                    <PushProvider>
+                        <PeerProvider>
+                            <VaultContent />
+                        </PeerProvider>
+                    </PushProvider>
                 </ChatProvider>
             </TxDataProvider>
         </WalletProvider>

@@ -566,7 +566,7 @@ if (target === 'ios' && rest[0] === 'submit') {
         '--platform',
         'ios',
         '--profile',
-        'production',
+        'prod',
         ...(hasBuildSource ? [] : ['--latest']),
         ...submitArgs,
     ];

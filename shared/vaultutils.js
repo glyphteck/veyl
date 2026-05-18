@@ -55,7 +55,13 @@ function sameEventSet(left, right) {
 }
 
 function readWebhookId(result) {
-    return typeof result?.webhook_id === 'string' && result.webhook_id ? result.webhook_id : typeof result?.webhookId === 'string' && result.webhookId ? result.webhookId : null;
+    if (typeof result?.id === 'string' && result.id) {
+        return result.id;
+    }
+    if (typeof result?.webhook_id === 'string' && result.webhook_id) {
+        return result.webhook_id;
+    }
+    return typeof result?.webhookId === 'string' && result.webhookId ? result.webhookId : null;
 }
 
 async function findRegisteredWebhook(wallet, url, eventTypes) {
@@ -69,9 +75,6 @@ async function findRegisteredWebhook(wallet, url, eventTypes) {
 }
 
 async function registerWalletNotifications(wallet, user, walletPK, { httpsCallable, functions, network } = {}) {
-    if (user?.walletNotifications?.[network]?.registered === true) {
-        return;
-    }
     if (typeof wallet?.registerSparkWalletWebhook !== 'function') {
         return;
     }
@@ -79,7 +82,8 @@ async function registerWalletNotifications(wallet, user, walletPK, { httpsCallab
     try {
         const prepare = httpsCallable(functions, 'prepareWalletNotifications');
         const confirm = httpsCallable(functions, 'confirmWalletNotifications');
-        const prepared = await prepare({ network, walletPK });
+        const fundingAddress = typeof wallet?.getStaticDepositAddress === 'function' ? await wallet.getStaticDepositAddress().catch(() => null) : null;
+        const prepared = await prepare({ network, walletPK, fundingAddress });
         const url = typeof prepared?.data?.url === 'string' ? prepared.data.url : '';
         const secret = typeof prepared?.data?.secret === 'string' ? prepared.data.secret : '';
         const eventTypes = Array.isArray(prepared?.data?.eventTypes) && prepared.data.eventTypes.length ? prepared.data.eventTypes : WALLET_WEBHOOK_EVENT_TYPES;

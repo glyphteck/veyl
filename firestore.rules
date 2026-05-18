@@ -141,19 +141,44 @@ service cloud.firestore {
     }
 
     function isPushToken(v) {
-      return v is string && v.matches('^(Expo|Exponent)PushToken\\[[^\\]]+\\]$');
+      return v == null || (v is string && v.matches('^(Expo|Exponent)PushToken\\[[^\\]]+\\]$'));
     }
 
     function isPushPlatform(v) {
       return v in ['ios', 'android', 'web'];
     }
 
+    function isPushProvider(v) {
+      return v in ['apns', 'expo'];
+    }
+
+    function isPushVariant(v) {
+      return v in ['dev', 'test', 'prod'];
+    }
+
+    function isPushEnvironment(v) {
+      return v in ['development', 'production'];
+    }
+
+    function isApnsTopic(v) {
+      return v in ['com.glyphteck.veyl.dev', 'com.glyphteck.veyl.test', 'com.glyphteck.veyl'];
+    }
+
+    function isNativePushToken(v) {
+      return v == null || (v is string && v.size() >= 16 && v.size() <= 512);
+    }
+
     function pushDocValid(did, data) {
-      return data.keys().hasOnly(['did', 'token', 'platform', 'enabled', 'updatedAt'])
+      return data.keys().hasOnly(['did', 'token', 'nativeToken', 'platform', 'provider', 'appVariant', 'apnsTopic', 'apnsEnvironment', 'enabled', 'updatedAt'])
         && data.did == did
         && isPushDid(data.did)
         && isPushToken(data.token)
+        && isNativePushToken(mapGet(data, 'nativeToken'))
         && isPushPlatform(data.platform)
+        && isPushProvider(data.provider)
+        && isPushVariant(data.appVariant)
+        && isApnsTopic(data.apnsTopic)
+        && isPushEnvironment(data.apnsEnvironment)
         && data.enabled is bool
         && data.updatedAt == request.time;
     }
