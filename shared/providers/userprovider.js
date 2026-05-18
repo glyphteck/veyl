@@ -28,6 +28,7 @@ export const defaultUser = {
     communityRulesDate: null,
     communityRulesAcceptedAt: null,
     communityRulesPending: false,
+    walletNotifications: null,
     blockedReady: false,
     blocked: [],
     settingsReady: false,
@@ -349,6 +350,7 @@ export function createUserProvider({ auth, db, storage, getStorage, network, ava
                             communityRulesDate: privateData.communityRulesDate ?? null,
                             communityRulesAcceptedAt: privateData.communityRulesAcceptedAt ?? null,
                             communityRulesPending: privateSnap.metadata.hasPendingWrites,
+                            walletNotifications: privateData.walletNotifications && typeof privateData.walletNotifications === 'object' ? privateData.walletNotifications : null,
                             settingsReady: prevUser.settingsReady || !privateSnap.metadata.fromCache,
                             settings: {
                                 ...defaultUser.settings,

@@ -20,6 +20,8 @@ export const deleteAccount = onCall(async (context) => {
     }
 
     await db.recursiveDelete(db.collection('users').doc(uid));
+    const walletEvents = await db.collection('walletWebhookEvents').where('uid', '==', uid).get();
+    await Promise.all(walletEvents.docs.map((d) => d.ref.delete()));
 
     // delete avatar
     await bucket.file(`${uid}/avatar.webp`).delete({ ignoreNotFound: true });
@@ -36,6 +38,8 @@ export const deleteAccount = onCall(async (context) => {
     unameSnap.forEach((d) => batch.delete(d.ref));
     const pks = await db.collection('passkeys').where('uid', '==', uid).get();
     pks.forEach((d) => batch.delete(d.ref));
+    const walletRoutes = await db.collection('walletWebhookRoutes').where('uid', '==', uid).get();
+    walletRoutes.forEach((d) => batch.delete(d.ref));
     await batch.commit();
 
     // delete user

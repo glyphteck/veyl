@@ -17,5 +17,8 @@ export { submitReport } from './user/actions/report.js';
 // chat functions
 export { onChatMessage } from './chat/messagepush.js';
 
+// wallet functions
+export { confirmWalletNotifications, prepareWalletNotifications, sparkWalletWebhook } from './wallet/notifications.js';
+
 // bot functions
 export { setBotPower } from './admin/setbotpower.js';

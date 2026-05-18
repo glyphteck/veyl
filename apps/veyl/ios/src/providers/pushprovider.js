@@ -18,10 +18,18 @@ Notifications.setNotificationHandler({
     },
 });
 
+function getNotificationData(response) {
+    return response?.notification?.request?.content?.data;
+}
+
 function getChatId(response) {
     const data = response?.notification?.request?.content?.data;
     const chatId = typeof data?.chatId === 'string' ? data.chatId : null;
     return data?.type === 'chat' && chatId ? chatId : null;
+}
+
+function isWalletNotification(response) {
+    return getNotificationData(response)?.type === 'wallet';
 }
 
 export function PushProvider({ children }) {
@@ -29,6 +37,7 @@ export function PushProvider({ children }) {
     const { uid, chatPK, chatBanned } = useUser();
     const lastKeyRef = useRef(null);
     const pendingChatRef = useRef(null);
+    const pendingWalletRef = useRef(false);
 
     const openChat = useCallback(
         (chatId, key = chatId) => {
@@ -56,6 +65,24 @@ export function PushProvider({ children }) {
         [chatBanned, router, uid]
     );
 
+    const openWallet = useCallback(
+        (key = 'wallet') => {
+            if (!uid) {
+                pendingWalletRef.current = true;
+                return;
+            }
+
+            pendingWalletRef.current = false;
+            if (lastKeyRef.current === key) {
+                return;
+            }
+
+            lastKeyRef.current = key;
+            router.push('/wallet');
+        },
+        [router, uid]
+    );
+
     useEffect(() => {
         if (!uid || chatBanned || !pendingChatRef.current) {
             return;
@@ -67,24 +94,42 @@ export function PushProvider({ children }) {
     }, [chatBanned, uid, openChat]);
 
     useEffect(() => {
+        if (!uid || !pendingWalletRef.current) {
+            return;
+        }
+
+        openWallet();
+    }, [uid, openWallet]);
+
+    useEffect(() => {
         const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+            const key = response?.notification?.request?.identifier;
+            if (isWalletNotification(response)) {
+                openWallet(key ?? 'wallet');
+                return;
+            }
+
             const chatId = getChatId(response);
-            const key = response?.notification?.request?.identifier ?? chatId;
-            openChat(chatId, key);
+            openChat(chatId, key ?? chatId);
         });
 
         void Notifications.getLastNotificationResponseAsync()
             .then((response) => {
+                const key = response?.notification?.request?.identifier;
+                if (isWalletNotification(response)) {
+                    openWallet(key ?? 'wallet');
+                    return;
+                }
+
                 const chatId = getChatId(response);
-                const key = response?.notification?.request?.identifier ?? chatId;
-                openChat(chatId, key);
+                openChat(chatId, key ?? chatId);
             })
             .catch(() => {});
 
         return () => {
             sub.remove();
         };
-    }, [openChat]);
+    }, [openChat, openWallet]);
 
     useEffect(() => {
         if (!uid || !chatPK) {
