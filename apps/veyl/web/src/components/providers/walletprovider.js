@@ -5,6 +5,7 @@ import { createWalletProvider } from '@glyphteck/shared/wallet';
 import { resolveNetwork } from '@glyphteck/shared/network';
 import { useVault } from '@/components/providers/vaultprovider';
 import { useCloak } from '@glyphteck/shared/providers/cloakprovider';
+import { useUser } from '@/components/providers/userprovider';
 import { toast } from 'sonner';
 import { Copy } from 'lucide-react';
 
@@ -38,10 +39,16 @@ function useWalletExtras({ fundingAddress, getFundingAddress }) {
     );
 }
 
+function useWalletSettings() {
+    const { settings } = useUser();
+    return settings;
+}
+
 const { WalletProvider, useWallet } = createWalletProvider({
     useVault,
     network: resolveNetwork({ NEXT_PUBLIC_NETWORK: process.env.NEXT_PUBLIC_NETWORK }),
     useWalletExtras,
+    useWalletSettings,
 });
 
 export { WalletProvider, useWallet };

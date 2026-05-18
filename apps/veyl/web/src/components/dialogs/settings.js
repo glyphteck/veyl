@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { z } from 'zod';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { ArrowUpRight, CircleDollarSign, CircleUserRound, EyeOff, Focus, Lock, LockOpen, ScanQrCode, Settings2, ShieldCheck, Timer, UserRoundCog } from 'lucide-react';
+import { ArrowUpRight, CircleDollarSign, CircleUserRound, EyeOff, Focus, Ghost, Lock, LockOpen, ScanQrCode, Settings2, ShieldCheck, Timer, UserRoundCog } from 'lucide-react';
 
 import { Button } from '@/components/button';
 import { Card } from '@/components/card';
@@ -15,6 +15,7 @@ import { deleteAvatar, uploadAvatar } from '@/lib/useractions';
 
 const settingsSchema = z.object({
     moneyFormat: z.enum(['btc', 'usd', 'sats']),
+    ghostWallet: z.boolean(),
     sendOnScan: z.boolean(),
     confirmSend: z.boolean(),
     autolock: z.object({
@@ -44,6 +45,7 @@ export default function Settings({ data, close }) {
         resolver: zodResolver(settingsSchema),
         defaultValues: {
             moneyFormat: settings.moneyFormat,
+            ghostWallet: settings.ghostWallet,
             sendOnScan: settings.sendOnScan,
             confirmSend: settings.confirmSend,
             autolock: {
@@ -57,6 +59,7 @@ export default function Settings({ data, close }) {
     useEffect(() => {
         form.reset({
             moneyFormat: settings.moneyFormat,
+            ghostWallet: settings.ghostWallet,
             sendOnScan: settings.sendOnScan,
             confirmSend: settings.confirmSend,
             autolock: {
@@ -118,6 +121,7 @@ export default function Settings({ data, close }) {
         const values = form.getValues();
         await updateSettings({
             moneyFormat: values.moneyFormat,
+            ghostWallet: values.ghostWallet,
             sendOnScan: values.sendOnScan,
             confirmSend: values.confirmSend,
             autolock: {
@@ -241,6 +245,40 @@ export default function Settings({ data, close }) {
                                     </ToggleGroupItem>
                                 </ToggleGroup>
                             </div>
+
+                            <div className="bg-border h-px w-full shrink-0 rounded-full" aria-hidden />
+
+                            <Field
+                                control={form.control}
+                                name="ghostWallet"
+                                render={({ field, labelProps, controlProps }) => (
+                                    <div className="flex items-center justify-between gap-4 py-4">
+                                        <div>
+                                            <label {...labelProps} className="pl-[5px] flex items-center gap-2 text-lg font-black leading-none select-none">
+                                                <Ghost />
+                                                <span className="hidden sm:inline">ghost wallet</span>
+                                            </label>
+                                            <p className="mt-1 pl-9 text-sm text-muted">hide bitcoin activity from public lookups.</p>
+                                        </div>
+                                        <ToggleGroup
+                                            {...controlProps}
+                                            type="single"
+                                            value={field.value ? 'on' : 'off'}
+                                            onValueChange={(v) => {
+                                                if (v) field.onChange(v === 'on');
+                                            }}
+                                            required
+                                        >
+                                            <ToggleGroupItem value="off" onMouseEnter={() => setTooltip('make bitcoin activity visible to public lookups')} onMouseLeave={() => setTooltip('save')}>
+                                                off
+                                            </ToggleGroupItem>
+                                            <ToggleGroupItem value="on" onMouseEnter={() => setTooltip('hide bitcoin activity from public lookups')} onMouseLeave={() => setTooltip('save')}>
+                                                on
+                                            </ToggleGroupItem>
+                                        </ToggleGroup>
+                                    </div>
+                                )}
+                            />
 
                             <div className="bg-border h-px w-full shrink-0 rounded-full" aria-hidden />
 

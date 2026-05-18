@@ -3,6 +3,7 @@ import { doc, getDoc, setDoc } from 'firebase/firestore';
 export const defaultSettings = {
     glass: true,
     moneyFormat: 'usd',
+    ghostWallet: false,
     sendOnScan: false,
     confirmSend: false,
     faceID: null,
@@ -67,6 +68,9 @@ export function normalizeSettings(settings, base = defaultSettings) {
     }
     if (typeof next.glass !== 'boolean') {
         throw new Error('glass must be boolean');
+    }
+    if (typeof next.ghostWallet !== 'boolean') {
+        throw new Error('ghostWallet must be boolean');
     }
     if (typeof next.sendOnScan !== 'boolean') {
         throw new Error('sendOnScan must be boolean');

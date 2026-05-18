@@ -41,6 +41,7 @@ const CLAIM_PAGE_SIZE = 100;
 const RECENT_TRANSFER_LIMIT = 50;
 const INITIAL_TRANSFER_LIMIT = RECENT_TRANSFER_LIMIT;
 const EMPTY_EXTRAS = Object.freeze({});
+const EMPTY_WALLET_SETTINGS = Object.freeze({});
 const WALLET_EVENTS = Object.freeze({
     balance: 'balance:update',
     tokenBalance: 'token-balance:update',
@@ -169,7 +170,7 @@ async function getClaimableDepositUtxos(wallet, getFundingAddress) {
     }
 }
 
-export function createWalletProvider({ useVault, network, appState, useWalletExtras = () => EMPTY_EXTRAS }) {
+export function createWalletProvider({ useVault, network, appState, useWalletExtras = () => EMPTY_EXTRAS, useWalletSettings = () => EMPTY_WALLET_SETTINGS }) {
     if (typeof useVault !== 'function') {
         throw new Error('createWalletProvider requires useVault');
     }
@@ -178,6 +179,8 @@ export function createWalletProvider({ useVault, network, appState, useWalletExt
 
     function WalletProvider({ children }) {
         const { wallet, localCache } = useVault();
+        const walletSettings = useWalletSettings();
+        const ghostWallet = walletSettings?.ghostWallet === true;
 
         const [balance, setBalance] = useState(null);
         const [satsBalance, setSatsBalance] = useState(null);
@@ -194,6 +197,8 @@ export function createWalletProvider({ useVault, network, appState, useWalletExt
         const claimPromiseRef = useRef(null);
         const fundingAddressPromiseRef = useRef(null);
         const fundingAddressRef = useRef(null);
+        const desiredPrivacyRef = useRef(ghostWallet);
+        const privacySyncRef = useRef(Promise.resolve());
         const transfersRef = useRef([]);
         const hasPendingTxs = transfers.slice(0, RECENT_TRANSFER_LIMIT).some(isPendingTransfer);
 
@@ -232,6 +237,36 @@ export function createWalletProvider({ useVault, network, appState, useWalletExt
         useEffect(() => {
             transfersRef.current = transfers;
         }, [transfers]);
+
+        useEffect(() => {
+            desiredPrivacyRef.current = ghostWallet;
+        }, [ghostWallet]);
+
+        useEffect(() => {
+            if (!wallet || typeof wallet.setPrivacyEnabled !== 'function') {
+                return;
+            }
+
+            let cancelled = false;
+            privacySyncRef.current = privacySyncRef.current
+                .catch(() => {})
+                .then(async () => {
+                    const desired = desiredPrivacyRef.current === true;
+                    const current = typeof wallet.getWalletSettings === 'function' ? await wallet.getWalletSettings() : null;
+                    if (cancelled || (current?.privateEnabled === true) === desired) {
+                        return;
+                    }
+
+                    await wallet.setPrivacyEnabled(desired);
+                })
+                .catch((error) => {
+                    console.debug?.('could not update wallet privacy', error?.message ?? error);
+                });
+
+            return () => {
+                cancelled = true;
+            };
+        }, [wallet, ghostWallet]);
 
         const getBalance = useCallback(async () => {
             if (!wallet) {

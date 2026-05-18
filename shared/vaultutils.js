@@ -15,6 +15,20 @@ function getBootWalletClass(SparkWallet, { enableTokenSync = false } = {}) {
     };
 }
 
+async function syncWalletPrivacy(wallet, ghostWallet) {
+    if (typeof wallet?.setPrivacyEnabled !== 'function') {
+        return;
+    }
+
+    const desired = ghostWallet === true;
+    const current = typeof wallet.getWalletSettings === 'function' ? await wallet.getWalletSettings() : null;
+    if ((current?.privateEnabled === true) === desired) {
+        return;
+    }
+
+    await wallet.setPrivacyEnabled(desired);
+}
+
 function bytesToHex(bytes) {
     return Array.from(bytes || [])
         .map((b) => b.toString(16).padStart(2, '0'))
@@ -37,6 +51,7 @@ export async function bootWallet(walletMnemonic, user, { SparkWallet, httpsCalla
             tokenOptimizationOptions: { enabled: false },
         },
     }));
+    await syncWalletPrivacy(wallet, user?.settings?.ghostWallet);
 
     const idPk = await wallet.getIdentityPublicKey();
 

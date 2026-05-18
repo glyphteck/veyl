@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Animated, AppState, Linking, Pressable, ScrollView, Switch, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { CircleDollarSign, FileText, KeyRound, Lock, LogOut, QrCode, ScanQrCode, Settings, Shield, Timer, Trash2, UserX } from 'lucide-react-native';
+import { CircleDollarSign, FileText, Ghost, KeyRound, Lock, LogOut, QrCode, ScanQrCode, Settings, Shield, Timer, Trash2, UserX } from 'lucide-react-native';
 import { useNavigation, useRouter } from 'expo-router';
 
 import AvatarPicker from '@/components/avatarpicker';
@@ -48,6 +48,9 @@ function buildPatch(next, prev) {
 
     if (next.moneyFormat !== prev.moneyFormat) {
         patch.moneyFormat = next.moneyFormat;
+    }
+    if (next.ghostWallet !== prev.ghostWallet) {
+        patch.ghostWallet = next.ghostWallet;
     }
     if (next.sendOnScan !== prev.sendOnScan) {
         patch.sendOnScan = next.sendOnScan;
@@ -373,6 +376,7 @@ export default function SettingsScreen() {
     }, []);
 
     const moneyFormat = settings.moneyFormat;
+    const ghostWallet = settings.ghostWallet === true;
     const sendOnScan = settings.sendOnScan === true;
     const faceIDEnabled = settings.faceID === true;
     const autolock = settings.autolock;
@@ -398,6 +402,13 @@ export default function SettingsScreen() {
     const handleSendOnScan = useCallback(
         (value) => {
             applySettings((current) => ({ ...current, sendOnScan: typeof value === 'boolean' ? value : !current.sendOnScan }));
+        },
+        [applySettings]
+    );
+
+    const handleGhostWallet = useCallback(
+        (value) => {
+            applySettings((current) => ({ ...current, ghostWallet: typeof value === 'boolean' ? value : !current.ghostWallet }));
         },
         [applySettings]
     );
@@ -551,6 +562,7 @@ export default function SettingsScreen() {
     );
     const match = (...terms) => !search || terms.some((term) => String(term || '').toLowerCase().includes(search));
     const showMoney = match('display currency', 'money format', 'btc sats usd');
+    const showGhostWallet = match('ghost wallet', 'wallet privacy', 'private bitcoin activity');
     const showAutoSend = match('auto send on scan', 'qr payment behaviour', 'send immediately');
     const showLockTimer = match('lock timeout', 'autolock timer');
     const showLockBackground = match('lock on app background', 'background lock');
@@ -563,7 +575,7 @@ export default function SettingsScreen() {
     const showExportWallet = match('export wallet', 'seed backup key');
     const showLogout = match('logout', 'sign out');
     const showDeleteAccount = match('delete account', 'remove account');
-    const paymentRows = showMoney || showAutoSend;
+    const paymentRows = showMoney || showGhostWallet || showAutoSend;
     const lockRows = showLockTimer || showLockBackground;
     const deviceRows = showFaceID;
     const cacheRows = showCache;
@@ -597,6 +609,16 @@ export default function SettingsScreen() {
                 {paymentRows ? (
                     <>
                         {showMoney ? <Row icon={CircleDollarSign} label="display currency" onPress={cycleMoneyFormat} right={<ValuePill label={MONEY_LABELS[moneyFormat]} />} animateRight disabled={isBusy} /> : null}
+                        {showGhostWallet ? (
+                            <Row
+                                icon={Ghost}
+                                label="ghost wallet"
+                                description="hide bitcoin activity from public lookups."
+                                onPress={() => handleGhostWallet(!ghostWallet)}
+                                right={<Switch value={ghostWallet} onValueChange={handleGhostWallet} {...switchProps} />}
+                                disabled={isBusy}
+                            />
+                        ) : null}
                         {showAutoSend ? (
                             <Row
                                 icon={ScanQrCode}

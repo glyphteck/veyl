@@ -41,6 +41,7 @@
 - User-facing transfer flows must treat Bitcoin and blockchain transfers as irreversible.
 - Wallet changes can touch vault boot, address derivation, transfer history, payment requests, and peer analytics.
 - Wallet transaction history may hydrate from the vaulted local cache, but wallet balance must remain live-only and must come from Spark balance calls or wallet events.
+- `ghost wallet` is the user-facing setting for Spark Bitcoin privacy mode. Keep it synced through `wallet.setPrivacyEnabled(...)`; it can be toggled after wallet initialization and should also be applied during wallet boot before handing the wallet to providers. Spark docs say this hides Bitcoin activity from public read-only lookups, but token transactions remain visible and wallet-owner/authenticated access still works.
 - Withdrawal flows must reject addresses that do not match the active network at every entry point: scanner/QR handling, form validation and disabled state, and the shared wallet withdraw function.
 - Account deletion UX must warn users when their balance is at or above the practical withdrawal minimum and keep withdraw/export paths visible before destructive deletion.
 

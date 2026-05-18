@@ -3,11 +3,18 @@ import { AppState } from 'react-native';
 import { createWalletProvider } from '@glyphteck/shared/wallet';
 import { resolveNetwork } from '@glyphteck/shared/network';
 import { useVault } from '@/providers/vaultprovider';
+import { useUser } from '@/providers/userprovider';
+
+function useWalletSettings() {
+    const { settings } = useUser();
+    return settings;
+}
 
 const { WalletProvider: BaseWalletProvider, useWallet } = createWalletProvider({
     useVault,
     network: resolveNetwork(globalThis?.process?.env ?? {}),
     appState: AppState,
+    useWalletSettings,
 });
 
 function isSparkClaimTransportError(error) {
