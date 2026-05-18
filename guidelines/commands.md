@@ -36,6 +36,7 @@ bun make backend
 bun make db
 bun make rules
 bun make fns
+bun dirty
 bun lint
 bun lint:warn
 bun lint:fix
@@ -72,6 +73,10 @@ bun merge --pr 123 --version patch --message "merge wallet fee controls"
 ```
 
 Use `bun push --help` or `bun merge --help` for the script's current usage text.
+
+## Dirty Tree Summary
+
+Use `bun dirty` to print a colorized changed-file summary with total and per-file added and removed line counts. Tracked changes come from `git diff HEAD`; untracked text files count as added lines.
 
 ## Worktrees
 

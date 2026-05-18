@@ -5,12 +5,17 @@ export const STATIC_DEPOSIT_FEE_ESTIMATE_SATS = 99;
 const DEFAULT_FEE_RATE_SPEED = 'medium';
 
 const FEE_RATE_FALLBACKS = Object.freeze({
-    default: Object.freeze(['default', 'medium', 'halfHour', 'hour', 'high', 'fastest', 'average', 'minimum']),
-    high: Object.freeze(['high', 'fastest', 'halfHour', 'medium', 'hour', 'average', 'minimum']),
-    medium: Object.freeze(['medium', 'halfHour', 'hour', 'high', 'fastest', 'low', 'average', 'minimum']),
-    low: Object.freeze(['low', 'economy', 'hour', 'medium', 'average', 'minimum']),
-    noPriority: Object.freeze(['noPriority', 'minimum', 'economy', 'low', 'average']),
-    average: Object.freeze(['average', 'medium', 'halfHour', 'hour', 'minimum']),
+    default: Object.freeze(['medium', 'low', 'high']),
+    high: Object.freeze(['high', 'medium', 'low']),
+    fastest: Object.freeze(['high', 'medium', 'low']),
+    medium: Object.freeze(['medium', 'low', 'high']),
+    halfHour: Object.freeze(['medium', 'high', 'low']),
+    hour: Object.freeze(['medium', 'low', 'high']),
+    low: Object.freeze(['low', 'medium', 'high']),
+    economy: Object.freeze(['low', 'medium', 'high']),
+    minimum: Object.freeze(['low', 'medium', 'high']),
+    noPriority: Object.freeze(['low', 'medium', 'high']),
+    average: Object.freeze(['medium', 'low', 'high']),
 });
 
 const WITHDRAWAL_FEE_FIELDS = Object.freeze({
@@ -144,12 +149,11 @@ export function normalizeStaticDepositQuote(quote, deposit = {}) {
 
 export function getFeeRateSatsPerVbyte(bitcoin, speed = DEFAULT_FEE_RATE_SPEED) {
     const rates = bitcoin?.fees?.satPerVbyte;
-    const priority = bitcoin?.fees?.priority;
     const key = String(speed || DEFAULT_FEE_RATE_SPEED);
     const keys = FEE_RATE_FALLBACKS[key] ?? [key, ...FEE_RATE_FALLBACKS.default];
 
     for (const rateKey of keys) {
-        const rate = Number(rates?.[rateKey] ?? priority?.[rateKey] ?? (rateKey === 'average' ? bitcoin?.fees?.averageSatPerVbyte : null));
+        const rate = Number(rates?.[rateKey]);
         if (Number.isFinite(rate) && rate >= 0) {
             return rate;
         }

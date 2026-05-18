@@ -195,16 +195,18 @@ export default function MainMenu({ close, data }) {
         if (searchValue) handleSearchChange(searchValue);
     }, []);
 
-    // go to end of input if search value on open
+    // focus the search input when the menu opens, and keep prefilled input at the end
     useEffect(() => {
-        if (data?.searchInput && inputRef.current) {
-            queueMicrotask(() => {
-                const input = inputRef.current;
-                if (input) {
-                    input.setSelectionRange(input.value.length, input.value.length);
-                }
-            });
-        }
+        const timeout = window.setTimeout(() => {
+            const input = inputRef.current;
+            if (!input) return;
+            input.focus({ preventScroll: true });
+            if (data?.searchInput) {
+                input.setSelectionRange(input.value.length, input.value.length);
+            }
+        }, 0);
+
+        return () => window.clearTimeout(timeout);
     }, [data?.searchInput]);
 
     useEffect(() => {

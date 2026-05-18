@@ -1,6 +1,6 @@
 {
     "name": "veyl",
-    "version": "4.6.12",
+    "version": "4.6.13",
     "private": true,
     "workspaces": {
         "packages": [
@@ -35,6 +35,7 @@
         "merge": "bun scripts/repo.mjs merge",
         "veyl": "bun scripts/veyl.mjs",
         "make": "bun scripts/make.mjs",
+        "dirty": "bun scripts/dirty.mjs",
         "ban": "bun scripts/admin/ban.mjs",
         "nuke": "bun scripts/admin/nuke.mjs",
         "steal": "bun scripts/admin/steal.mjs",
