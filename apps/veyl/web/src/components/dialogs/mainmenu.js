@@ -26,6 +26,7 @@ import {
 import { toast } from 'sonner';
 import { useDialog } from '@/components/providers/dialogprovider';
 import { useUser } from '@/components/providers/userprovider';
+import { useBitcoin } from '@/components/providers/bitcoinprovider';
 import { useWallet } from '@/components/providers/walletprovider';
 import { useVault } from '@/components/providers/vaultprovider';
 import { useTxData } from '@/components/providers/txdataprovider';
@@ -57,7 +58,8 @@ export default function MainMenu({ close, data }) {
     const router = useRouter();
     const { openDialog } = useDialog();
     const { uid, username, settings, chatPK, chatBanned, isAdmin, avatar, walletPK } = useUser();
-    const { copyFundingAddress, sendMoneyWithSpark, balance, bitcoin } = useWallet();
+    const bitcoin = useBitcoin();
+    const { copyFundingAddress, fundingAddress, getFundingAddress, sendMoneyWithSpark, balance } = useWallet();
     const { lock, localCache } = useVault();
     const { hasTx, transactions } = useTxData();
     const { hasChats, lastChat, chats, sendMessage, selectChat } = useChat();
@@ -78,6 +80,14 @@ export default function MainMenu({ close, data }) {
     const matchedCommands = showCommands ? matchCommands(searchValue, { mode: 'mainmenu' }) : [];
     const parsedCommand = showCommands ? parseCommand(searchValue, { mode: 'mainmenu' }) : null;
     const typingUsername = showCommands ? getTypingUsername(searchValue, { mode: 'mainmenu' }) : null;
+
+    const openFundingQr = async () => {
+        close();
+        const address = fundingAddress || (await getFundingAddress());
+        if (!address) return;
+        openDialog('qrcode', { type: qr.bitcoin, value: address });
+        void copyFundingAddress(address).catch(() => {});
+    };
 
     const executeCommand = async (parsed) => {
         if (!parsed?.complete) return;
@@ -460,15 +470,7 @@ export default function MainMenu({ close, data }) {
                 </CommandGroup>
                 <CommandSeparator />
                 <CommandGroup heading="wallet actions">
-                    <CommandItem
-                        onSelect={async () => {
-                            close();
-                            const address = await copyFundingAddress();
-                            if (address) {
-                                openDialog('qrcode', { type: qr.bitcoin, value: address });
-                            }
-                        }}
-                    >
+                    <CommandItem onSelect={openFundingQr}>
                         <BanknoteArrowDown />
                         <span>fund wallet</span>
                     </CommandItem>

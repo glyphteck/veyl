@@ -7,12 +7,14 @@ import { shortcuts } from '@/lib/shortcuts';
 import { Button } from '@/components/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/avatar';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuSeparator, DropdownMenuItem, DropdownMenuShortcut } from '@/components/dropdownmenu';
-import { BanknoteArrowDown, BanknoteArrowUp, KeyRound, Lock, LogOut, QrCode, Settings2, Trash2, UserX } from 'lucide-react';
+import { BanknoteArrowDown, BanknoteArrowUp, KeyRound, Lock, LogOut, QrCode, Settings2, UserX } from 'lucide-react';
 
 export default function UserMenu({
     user,
     balance,
     copyFundingAddress,
+    fundingAddress,
+    getFundingAddress,
     lock,
     openDialog,
     locked = false,
@@ -29,6 +31,13 @@ export default function UserMenu({
         });
     };
 
+    const openFundingQr = async () => {
+        const address = fundingAddress || (await getFundingAddress?.());
+        if (!address) return;
+        openDialog('qrcode', { type: qr.bitcoin, value: address });
+        void copyFundingAddress?.(address).catch(() => {});
+    };
+
     return (
         <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -43,7 +52,7 @@ export default function UserMenu({
                 {user?.username && (
                     <>
                         <DropdownMenuItem className="text-xl font-black" onSelect={openUserQr}>
-                            <span>{formatUserDisplay(user, true)}</span>
+                            <span className="min-w-0 flex-1 truncate pr-4">{formatUserDisplay(user, true)}</span>
                             <span className="sr-only">show qr code</span>
                             <DropdownMenuShortcut className="flex items-center tracking-normal">
                                 <QrCode className="size-5" />
@@ -54,26 +63,19 @@ export default function UserMenu({
                 )}
                 {!locked && (
                     <>
-                        <DropdownMenuItem
-                            onSelect={async () => {
-                                const address = await copyFundingAddress?.();
-                                if (address) {
-                                    openDialog('qrcode', { type: qr.bitcoin, value: address });
-                                }
-                            }}
-                        >
+                        <DropdownMenuItem onSelect={openFundingQr}>
                             <BanknoteArrowDown />
-                            <span>fund wallet</span>
+                            <span className="pr-4">fund wallet</span>
                         </DropdownMenuItem>
                         {balance != null && balance >= minWithdrawalSats && (
                             <DropdownMenuItem onSelect={() => openDialog('withdraw')}>
                                 <BanknoteArrowUp />
-                                <span>withdraw funds</span>
+                                <span className="pr-4">withdraw funds</span>
                             </DropdownMenuItem>
                         )}
                         <DropdownMenuItem onSelect={() => openDialog('exportwallet')}>
                             <KeyRound />
-                            <span>export wallet</span>
+                            <span className="pr-4">export wallet</span>
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                     </>
@@ -82,12 +84,12 @@ export default function UserMenu({
                     <>
                         <DropdownMenuItem onClick={() => openDialog('settings')}>
                             <Settings2 />
-                            <span>settings</span>
+                            <span className="pr-4">settings</span>
                             <DropdownMenuShortcut>{shortcuts.settings}</DropdownMenuShortcut>
                         </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => openDialog('blocked')}>
                             <UserX />
-                            <span>blocked users</span>
+                            <span className="pr-4">blocked users</span>
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                     </>
@@ -95,21 +97,15 @@ export default function UserMenu({
                 {!locked && (
                     <DropdownMenuItem onClick={lock}>
                         <Lock />
-                        <span>lock vault</span>
+                        <span className="pr-4">lock vault</span>
                         <DropdownMenuShortcut>{shortcuts.lock}</DropdownMenuShortcut>
                     </DropdownMenuItem>
                 )}
                 <DropdownMenuItem onClick={() => openDialog('rememberaccount', { user })}>
                     <LogOut />
-                    <span>logout</span>
+                    <span className="pr-4">logout</span>
                     <DropdownMenuShortcut>{shortcuts.logout}</DropdownMenuShortcut>
                 </DropdownMenuItem>
-                {!locked && (
-                    <DropdownMenuItem className="text-destructive" onSelect={() => openDialog('deleteaccount')}>
-                        <Trash2 />
-                        <span>delete account</span>
-                    </DropdownMenuItem>
-                )}
             </DropdownMenuContent>
         </DropdownMenu>
     );

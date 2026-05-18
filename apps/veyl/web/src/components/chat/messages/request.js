@@ -1,6 +1,7 @@
 'use client';
 
 import { Button } from '@/components/button';
+import { useBitcoin } from '@/components/providers/bitcoinprovider';
 import { useDialog } from '@/components/providers/dialogprovider';
 import { useTxData } from '@/components/providers/txdataprovider';
 import { useUser } from '@/components/providers/userprovider';
@@ -13,7 +14,8 @@ import { stopClick } from './utils';
 
 export default function RequestMessage({ msg, fromPeer = false, peerDisplayName, onPay, isPaying = false }) {
     const { settings } = useUser();
-    const { bitcoin, balance } = useWallet();
+    const bitcoin = useBitcoin();
+    const { balance } = useWallet();
     const { getTxById } = useTxData();
     const { openDialog } = useDialog();
     const { cloaked } = useCloak();

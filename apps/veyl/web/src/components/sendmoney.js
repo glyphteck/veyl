@@ -10,6 +10,7 @@ import { Button } from '@/components/button';
 import { Loader, Coins, PiggyBank, ScanQrCode } from 'lucide-react';
 import { formatUserDisplay, toSats, toDisplay, renderMoney } from '@/lib/utils';
 import { Card } from '@/components/card';
+import { useBitcoin } from '@/components/providers/bitcoinprovider';
 import { useWallet } from '@/components/providers/walletprovider';
 import { useUser } from '@/components/providers/userprovider';
 import { useDialog } from '@/components/providers/dialogprovider';
@@ -20,7 +21,8 @@ import PeerSelector from '@/components/peerselector';
 export default function SendMoney({ peer, amount }) {
     const [receiver, setReceiver] = useState(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
-    const { sendMoneyWithSpark, balance, bitcoin } = useWallet();
+    const bitcoin = useBitcoin();
+    const { sendMoneyWithSpark, balance } = useWallet();
     const { settings, walletPK: currentUserWalletPK } = useUser();
     const { closeDialog, openDialog } = useDialog();
     const router = useRouter();

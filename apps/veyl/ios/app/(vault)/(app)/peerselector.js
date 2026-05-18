@@ -10,6 +10,7 @@ import { toSats, toDisplay, formatUserDisplay, satsInABitcoin } from '@glyphteck
 import { getChatId } from '@glyphteck/shared/crypto/chat';
 import { makeReq } from '@glyphteck/shared/chat/messages';
 
+import { useBitcoin } from '@/providers/bitcoinprovider';
 import { useTheme } from '@/providers/themeprovider';
 import { usePeer } from '@/providers/peerprovider';
 import { useUser } from '@/providers/userprovider';
@@ -106,7 +107,8 @@ export default function PeerSelectorScreen() {
     const { theme } = useTheme();
     const { peers, recentPeers } = usePeer() || {};
     const { settings, chatPK, chatBanned } = useUser();
-    const { sendMoneyWithSpark, balance, bitcoin } = useWallet();
+    const bitcoin = useBitcoin();
+    const { sendMoneyWithSpark, balance } = useWallet();
     const { sendMessage, selectChat } = useChat();
     const { searching, results, query, search: runSearch, clearSearch } = useSearch('profiles');
     const router = useRouter();

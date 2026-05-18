@@ -9,7 +9,7 @@ import { Button } from '@/components/button';
 import { Loader, CircleCheck, QrCode } from 'lucide-react';
 import { formatUserDisplay, toSats, toDisplay, renderMoney, satsInABitcoin } from '@/lib/utils';
 import { Card } from '@/components/card';
-import { useWallet } from '@/components/providers/walletprovider';
+import { useBitcoin } from '@/components/providers/bitcoinprovider';
 import { useUser } from '@/components/providers/userprovider';
 import { useDialog } from '@/components/providers/dialogprovider';
 import { useChat } from '@/components/providers/chatprovider';
@@ -22,7 +22,7 @@ import PeerSelector from '@/components/peerselector';
 export default function RequestMoney({ peer, amount }) {
     const [sender, setSender] = useState(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
-    const { bitcoin } = useWallet();
+    const bitcoin = useBitcoin();
     const { settings, walletPK: currentUserWalletPK } = useUser();
     const { closeDialog, openDialog } = useDialog();
     const { sendMessage } = useChat();

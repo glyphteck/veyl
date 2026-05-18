@@ -28,7 +28,25 @@ export default function AppLayout() {
             <Stack.Screen name="[username]" />
             <Stack.Screen name="history" />
             <Stack.Screen
-                name="scan"
+                name="userscan"
+                options={{
+                    presentation: 'formSheet',
+                    sheetGrabberVisible: true,
+                    sheetAllowedDetents: 'fitToContents',
+                    contentStyle: { backgroundColor: 'transparent' },
+                }}
+            />
+            <Stack.Screen
+                name="fundwallet"
+                options={{
+                    presentation: 'formSheet',
+                    sheetGrabberVisible: true,
+                    sheetAllowedDetents: 'fitToContents',
+                    contentStyle: { backgroundColor: 'transparent' },
+                }}
+            />
+            <Stack.Screen
+                name="fundinginfo"
                 options={{
                     presentation: 'formSheet',
                     sheetGrabberVisible: true,

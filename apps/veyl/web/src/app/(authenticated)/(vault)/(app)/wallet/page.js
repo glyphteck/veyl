@@ -12,9 +12,16 @@ import { qr } from '@glyphteck/shared/qrutils';
 
 export default function WalletPage() {
     const txData = useTxData();
-    const { copyFundingAddress, isWalletDataLoaded, txReady } = useWallet();
+    const { copyFundingAddress, fundingAddress, getFundingAddress, isWalletDataLoaded, txReady } = useWallet();
     const { openDialog } = useDialog();
     const hasTransactions = txData?.hasTx || false;
+
+    const openFundingQr = async () => {
+        const address = fundingAddress || (await getFundingAddress());
+        if (!address) return;
+        openDialog('qrcode', { type: qr.bitcoin, value: address });
+        void copyFundingAddress(address).catch(() => {});
+    };
 
     if (!isWalletDataLoaded) {
         return (
@@ -30,12 +37,7 @@ export default function WalletPage() {
                 <div className="text-center">
                     <p className="text-lg text-muted">Start by funding your wallet, or ask a friend to send you some sats.</p>
                     <Button
-                        onClick={async () => {
-                            const address = await copyFundingAddress();
-                            if (address) {
-                                openDialog('qrcode', { type: qr.bitcoin, value: address });
-                            }
-                        }}
+                        onClick={openFundingQr}
                         className="button-fill shrinker text-lg w-3xs mt-4"
                     >
                         <BanknoteArrowDown />

@@ -33,6 +33,9 @@ Forced auth, vault, and onboarding flows are route-guard owned. After a required
 - Shared wallet provider factory: `shared/wallet.js`
 - Web wallet provider wrapper: `apps/veyl/web/src/components/providers/walletprovider.js`
 - iOS wallet provider wrapper: `apps/veyl/ios/src/providers/walletprovider.js`
+- Shared Bitcoin provider factory: `shared/providers/bitcoinprovider.js`
+- Web Bitcoin provider wrapper: `apps/veyl/web/src/components/providers/bitcoinprovider.js`
+- iOS Bitcoin provider wrapper: `apps/veyl/ios/src/providers/bitcoinprovider.js`
 - Shared tx aggregation: `shared/providers/txdataprovider.js`
 - Web withdraw dialog: `apps/veyl/web/src/components/dialogs/withdraw.js`
 - iOS withdraw route: `apps/veyl/ios/app/(vault)/(app)/withdraw.js`

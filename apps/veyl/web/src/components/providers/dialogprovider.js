@@ -13,6 +13,7 @@ const dialogLoaders = {
     payments: () => import('@/components/dialogs/payments'),
     settings: () => import('@/components/dialogs/settings'),
     withdraw: () => import('@/components/dialogs/withdraw'),
+    fundinginfo: () => import('@/components/dialogs/fundinginfo'),
     mainmenu: () => import('@/components/dialogs/mainmenu'),
     qrcode: () => import('@/components/dialogs/qrcode'),
     deleteaccount: () => import('@/components/dialogs/deleteaccount'),
@@ -30,7 +31,7 @@ const dialogLoaders = {
 const dialogComponents = new Map();
 const dialogPromises = new Map();
 const authDialogs = ['passwordrules', 'rememberaccount'];
-const unlockDialogs = ['qrcode'];
+const unlockDialogs = ['qrcode', 'fundinginfo'];
 const appDialogs = [
     'userdetails',
     'block',
@@ -38,6 +39,7 @@ const appDialogs = [
     'payments',
     'settings',
     'withdraw',
+    'fundinginfo',
     'mainmenu',
     'qrcode',
     'deleteaccount',

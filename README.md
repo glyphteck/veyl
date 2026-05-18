@@ -207,7 +207,7 @@ Main Firestore collections:
 - `usernames/{username}`: username reservation
 - `chats/{chatId}`: 1:1 chat metadata, including participants and encrypted last message preview
 - `chats/{chatId}/messages/{messageId}`: encrypted user-visible messages and encrypted control payloads such as read receipts and reactions
-- `bitcoin/current`: cached BTC price and block height
+- `bitcoin/current`: public cached BTC price, block height, fee rates, and mempool stats watched by the app-level Bitcoin provider
 - `passkeys/{credentialId}`: stored passkey credentials
 - `chatkeys/{chatPK}`: chat public key to uid lookup cache
 

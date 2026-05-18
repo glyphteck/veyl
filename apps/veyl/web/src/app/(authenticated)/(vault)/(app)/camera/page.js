@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Webcam from 'react-webcam';
+import { useBitcoin } from '@/components/providers/bitcoinprovider';
 import { useDialog } from '@/components/providers/dialogprovider';
 import { usePeer } from '@/components/providers/peerprovider';
 import { useUser } from '@/components/providers/userprovider';
@@ -53,7 +54,8 @@ export default function CameraPage() {
     const { openDialog } = useDialog();
     const { addPeer } = usePeer();
     const { settings, username, walletPK } = useUser();
-    const { sendMoneyWithSpark, bitcoin, network } = useWallet();
+    const bitcoin = useBitcoin();
+    const { sendMoneyWithSpark, network } = useWallet();
     const { cloaked } = useCloak();
     const [photo, setPhoto] = useState(null);
 

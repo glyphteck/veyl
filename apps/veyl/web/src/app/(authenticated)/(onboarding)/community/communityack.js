@@ -15,6 +15,7 @@ export default function CommunityAck() {
     const [status, setStatus] = useState('idle');
     const isSubmitting = status === 'submitting';
     const isError = status === 'error';
+    const titleText = isSubmitting ? 'saving acknowledgement' : 'community rules';
 
     const handleScroll = useCallback(
         (event) => {
@@ -81,7 +82,10 @@ export default function CommunityAck() {
                 <div className="grid min-h-16 w-full grid-cols-[56px_minmax(0,1fr)_56px] items-center px-4">
                     <div />
                     <div className="min-w-0 text-center">
-                        <h1 className="text-2xl font-extrabold leading-tight">community rules</h1>
+                        <h1 className="flex items-center justify-center gap-2 text-2xl font-extrabold leading-tight" aria-live="polite">
+                            {titleText}
+                            {isSubmitting ? <Loader className="mt-0.5 animate-spin" /> : null}
+                        </h1>
                         <div className="text-xs font-bold text-muted">
                             issued {COMMUNITY_RULES_EFFECTIVE}
                         </div>
@@ -97,10 +101,13 @@ export default function CommunityAck() {
                             Could not save your acknowledgement. Try again.
                         </p>
                     )}
-                    <Button type="button" className="button-fill shrinker pointer-events-auto min-w-48" disabled={!canAccept || isSubmitting} onClick={accept}>
-                        {isSubmitting ? <Loader className="animate-spin" /> : null}
-                        agree & continue
-                    </Button>
+                    <div className="relative h-10 min-w-48">
+                        <div className="pop absolute inset-0" data-open={!isSubmitting} aria-hidden={isSubmitting}>
+                            <Button type="button" className="button-fill shrinker pointer-events-auto w-full" disabled={!canAccept || isSubmitting} onClick={accept} tabIndex={isSubmitting ? -1 : 0}>
+                                agree & continue
+                            </Button>
+                        </div>
+                    </div>
                 </div>
             </div>
         </main>

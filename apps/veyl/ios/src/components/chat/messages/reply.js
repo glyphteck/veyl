@@ -1,6 +1,7 @@
 import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 import { Image } from 'expo-image';
 import { File } from 'lucide-react-native';
+import { useBitcoin } from '@/providers/bitcoinprovider';
 import { useTheme } from '@/providers/themeprovider';
 import { useTxData } from '@/providers/txdataprovider';
 import { useUser } from '@/providers/userprovider';
@@ -33,7 +34,7 @@ function ReplyText({ reply, replyFromPeer, onReplyPress }) {
 function ReplyRequest({ reply, replyFromPeer, peerDisplayName, onReplyPress }) {
     const { theme } = useTheme();
     const { settings } = useUser();
-    const { bitcoin } = useWallet();
+    const bitcoin = useBitcoin();
     const { getTxById } = useTxData();
     const msgTx = reply.tx ? getTxById?.(reply.tx) : null;
     const displayAmount = msgTx ? Math.abs(Number(msgTx.amount)) : Number(reply.a);

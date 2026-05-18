@@ -8,7 +8,7 @@ import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Input } from '@/components/input';
 import { Controller, useForm } from 'react-hook-form';
-import { KeyRound, Loader, Eye, EyeOff, CircleQuestionMark } from 'lucide-react';
+import { KeyRound, Loader, Eye, EyeOff, CircleQuestionMark, TriangleAlert } from 'lucide-react';
 import { Button } from '@/components/button';
 import { useDialog } from '@/components/providers/dialogprovider';
 import { packSeedData } from '@glyphteck/shared/crypto/pack';
@@ -33,8 +33,9 @@ const GetPsw = () => {
     };
 
     const labelText = getLabelText();
-    const disabled = status === 'submitting';
-    const showError = status === 'invalid';
+    const isSubmitting = status === 'submitting';
+    const disabled = isSubmitting;
+    const showError = status === 'invalid' || status === 'short';
 
     const form = useForm({
         resolver: zodResolver(passwordSchema),
@@ -85,12 +86,11 @@ const GetPsw = () => {
                     render={({ field, fieldState }) => (
                         <div className="flex flex-col w-full gap-2">
                             <div className="flex min-w-xs items-center justify-between px-3">
-                                <label htmlFor="password" className="text-xl font-black leading-none select-none">
+                                <label htmlFor="password" className="flex items-center gap-2 text-xl font-black leading-none select-none">
                                     {labelText}
+                                    {isSubmitting ? <Loader className="mt-0.5 animate-spin" /> : showError ? <TriangleAlert className="mt-0.5" /> : null}
                                 </label>
-                                {status === 'submitting' ? (
-                                    <Loader className="mt-0.5 animate-spin" />
-                                ) : (
+                                {!isSubmitting ? (
                                     <Button
                                         type="button"
                                         onClick={(e) => {
@@ -104,7 +104,7 @@ const GetPsw = () => {
                                     >
                                         <CircleQuestionMark />
                                     </Button>
-                                )}
+                                ) : null}
                             </div>
                             <Input
                                 {...field}
@@ -114,14 +114,16 @@ const GetPsw = () => {
                                 ref={field.ref}
                                 start={<KeyRound className={`${status === 'valid' ? 'text-inflow' : showError ? 'text-outflow' : 'text-muted'}`} />}
                                 end={
-                                    <Button
-                                        type="button"
-                                        onClick={togglePasswordVisibility}
-                                        disabled={disabled}
-                                        className="grower-lg text-muted hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
-                                    >
-                                        {showPassword ? <Eye /> : <EyeOff />}
-                                    </Button>
+                                    !isSubmitting ? (
+                                        <Button
+                                            type="button"
+                                            onClick={togglePasswordVisibility}
+                                            disabled={disabled}
+                                            className="grower-lg text-muted hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                            {showPassword ? <Eye /> : <EyeOff />}
+                                        </Button>
+                                    ) : null
                                 }
                                 startPad="pl-10"
                                 className="min-w-xs"

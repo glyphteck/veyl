@@ -3,18 +3,18 @@
 import { useCallback, useMemo } from 'react';
 import { createWalletProvider } from '@glyphteck/shared/wallet';
 import { resolveNetwork } from '@glyphteck/shared/network';
-import { db } from '@/lib/firebase/firebaseclient';
 import { useVault } from '@/components/providers/vaultprovider';
 import { useCloak } from '@glyphteck/shared/providers/cloakprovider';
 import { toast } from 'sonner';
 import { Copy } from 'lucide-react';
 
-function useWalletExtras({ getFundingAddress }) {
+function useWalletExtras({ fundingAddress, getFundingAddress }) {
     const { cloaked } = useCloak();
 
-    const copyFundingAddress = useCallback(async () => {
+    const copyFundingAddress = useCallback(async (addressInput = null) => {
         try {
-            const address = await getFundingAddress();
+            const readyAddress = typeof addressInput === 'string' && addressInput.trim() ? addressInput.trim() : null;
+            const address = readyAddress || fundingAddress || (await getFundingAddress());
             if (!address) return;
 
             await navigator.clipboard.writeText(address);
@@ -28,7 +28,7 @@ function useWalletExtras({ getFundingAddress }) {
             toast.error('Failed to get funding address');
             throw error;
         }
-    }, [cloaked, getFundingAddress]);
+    }, [cloaked, fundingAddress, getFundingAddress]);
 
     return useMemo(
         () => ({
@@ -40,7 +40,6 @@ function useWalletExtras({ getFundingAddress }) {
 
 const { WalletProvider, useWallet } = createWalletProvider({
     useVault,
-    db,
     network: resolveNetwork({ NEXT_PUBLIC_NETWORK: process.env.NEXT_PUBLIC_NETWORK }),
     useWalletExtras,
 });

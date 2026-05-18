@@ -14,9 +14,9 @@ import { Input } from '@/components/input';
 import { Controller, useForm } from 'react-hook-form';
 import { Lock, LockOpen, Loader, AlertCircle, Eye, EyeOff, ShieldUser } from 'lucide-react';
 import { Button } from '@/components/button';
-import { cn } from '@/lib/utils';
 import { logout } from '@/lib/useractions';
 import { isPassword, MAX_PASSWORD, normalizePassword } from '@glyphteck/shared/password';
+import RegtestTag from '@/components/regtesttag';
 import UserMenu from '@/components/usermenu';
 
 const passwordSchema = z.object({
@@ -45,8 +45,8 @@ export default function UnlockPage() {
     const lockLabel = lockLabels[lockState];
     const lockPending = !!lockLabel || isUnlocked;
     const disabled = status === 'loading' || status === 'error' || lockPending;
-    const avatarHidden = lockPending;
     const showError = status === 'error';
+    const showPending = !showError && (status === 'loading' || lockPending);
     let labelText = lockLabel || (status === 'loading' ? 'unlocking' : 'unlock your vault');
     if (isUnlocked) labelText = isOpeningChats ? 'opening chats' : 'launching app';
     if (status === 'error') labelText = 'wrong password';
@@ -106,14 +106,17 @@ export default function UnlockPage() {
     return (
         <div className="pointer-events-auto inset-0 fixed items-center flex justify-center">
             {user?.isAdmin ? <ShieldUser className="stroke-2 pointer-events-none absolute top-2.25 left-2 z-20 size-10 text-active" /> : null}
-            <UserMenu
-                user={user}
-                openDialog={openDialog}
-                locked
-                disabled={disabled}
-                className="shrinker-fixed absolute top-2.25 right-2 z-20 disabled:opacity-100"
-                avatarClassName={cn('size-11 shadow transition-opacity', avatarHidden && 'opacity-0')}
-            />
+            <div className="pop absolute top-2.25 right-2 z-20 flex items-center gap-2" data-open={!showPending} aria-hidden={showPending}>
+                <RegtestTag />
+                <UserMenu
+                    user={user}
+                    openDialog={openDialog}
+                    locked
+                    disabled={disabled}
+                    className="shrinker-fixed disabled:opacity-100"
+                    avatarClassName="size-11 shadow"
+                />
+            </div>
             <form onSubmit={form.handleSubmit(onSubmit)} noValidate>
                 <Controller
                     control={form.control}
@@ -121,10 +124,10 @@ export default function UnlockPage() {
                     render={({ field, fieldState }) => (
                         <div className="flex flex-col w-full gap-2">
                             <div className="flex items-center gap-2 px-3">
-                                <label htmlFor="unlock-password" className="text-xl font-black leading-none select-none">
+                                <label htmlFor="unlock-password" className="flex items-center gap-2 text-xl font-black leading-none select-none">
                                     {labelText}
+                                    {showError ? <AlertCircle className="mt-0.5" /> : showPending ? <Loader className="mt-0.5 animate-spin!" /> : null}
                                 </label>
-                                {showError ? <AlertCircle className="mt-0.5" /> : disabled && <Loader className="mt-0.5 animate-spin!" />}
                             </div>
                             <Input
                                 {...field}
@@ -134,14 +137,16 @@ export default function UnlockPage() {
                                 ref={field.ref}
                                 start={disabled ? <LockOpen className="pointer-events-none select-none" /> : <Lock className="pointer-events-none select-none" />}
                                 end={
-                                    <Button
-                                        type="button"
-                                        onClick={togglePasswordVisibility}
-                                        disabled={disabled}
-                                        className="grower-lg text-muted hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
-                                    >
-                                        {showPassword ? <Eye /> : <EyeOff />}
-                                    </Button>
+                                    !showPending ? (
+                                        <Button
+                                            type="button"
+                                            onClick={togglePasswordVisibility}
+                                            disabled={disabled}
+                                            className="grower-lg text-muted hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                            {showPassword ? <Eye /> : <EyeOff />}
+                                        </Button>
+                                    ) : null
                                 }
                                 disabled={disabled}
                                 className="w-xs"

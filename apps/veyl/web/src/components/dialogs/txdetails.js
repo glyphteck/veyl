@@ -4,7 +4,7 @@ import { Card } from '@/components/card';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/avatar';
 import { Button } from '@/components/button';
 import { formatUserDisplay, formatFullDateTime, renderMoney } from '@/lib/utils';
-import { useWallet } from '@/components/providers/walletprovider';
+import { useBitcoin } from '@/components/providers/bitcoinprovider';
 import { useUser } from '@/components/providers/userprovider';
 import { usePeer } from '@/components/providers/peerprovider';
 import { useDialog } from '@/components/providers/dialogprovider';
@@ -13,7 +13,7 @@ import { Clock, HandCoins, Check, Copy, BanknoteArrowDown, BanknoteArrowUp } fro
 import { toast } from 'sonner';
 
 export default function TxDetails({ data, close }) {
-    const { bitcoin } = useWallet();
+    const bitcoin = useBitcoin();
     const user = useUser();
     const { peers } = usePeer();
     const { openDialog } = useDialog();

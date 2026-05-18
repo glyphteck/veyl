@@ -1,16 +1,40 @@
 'use client';
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { doc, getDoc } from 'firebase/firestore';
 import { readCachedTransfers, writeCachedTransfers } from './localdatacache.js';
 import { walletPKtoSparkAddress } from './spark.js';
 import { isAddressOnNetwork } from './network.js';
+import {
+    DEFAULT_EXIT_SPEED,
+    getExitSpeed,
+    getWithdrawalFeeAmountSats,
+    normalizeLightningFeeEstimate,
+    normalizeLightningPaymentResult,
+    normalizeLightningReceiveRequest,
+    normalizeWithdrawalFeeQuote,
+    toSafeNonNegativeSats,
+    toSafeSats,
+} from './walletfees.js';
 
 export { walletPKtoSparkAddress } from './spark.js';
+export {
+    DEFAULT_EXIT_SPEED,
+    EXIT_SPEEDS,
+    estimateOnchainFeeSats,
+    getFeeRateSatsPerVbyte,
+    getWithdrawalFeeAmountSats,
+    getExpectedVbytes,
+    weightUnitsToVbytes,
+    normalizeOnchainFeeEstimate,
+    normalizeLightningFeeEstimate,
+    normalizeLightningPaymentResult,
+    normalizeLightningReceiveRequest,
+    normalizeStaticDepositQuote,
+    normalizeWithdrawalFeeQuote,
+} from './walletfees.js';
 
 const RATE_LIMIT = 5 * 1000;
 const POLL_TXS_RATE = 10 * 1000;
-const UPDATE_BTC_DATA_RATE = 15 * 60 * 1000;
 const ACTIVE_CLAIM_RATE = 20 * 1000;
 const AUTO_CLAIM_MAX_FEE_SATS = 5000;
 const CLAIM_PAGE_SIZE = 100;
@@ -39,13 +63,6 @@ function getSatsBalance(result) {
         return null;
     }
     return satsBalance;
-}
-
-function getWithdrawalFeeAmountSats(feeQuote, exitSpeed) {
-    const speed = String(exitSpeed || '').toLowerCase();
-    const userFee = feeQuote?.[`userFee${speed.charAt(0).toUpperCase()}${speed.slice(1)}`]?.originalValue ?? 0;
-    const l1Fee = feeQuote?.[`l1BroadcastFee${speed.charAt(0).toUpperCase()}${speed.slice(1)}`]?.originalValue ?? 0;
-    return Number(userFee) + Number(l1Fee);
 }
 
 function clearTimer(ref) {
@@ -152,12 +169,9 @@ async function getClaimableDepositUtxos(wallet, getFundingAddress) {
     }
 }
 
-export function createWalletProvider({ useVault, db, network, appState, useWalletExtras = () => EMPTY_EXTRAS }) {
+export function createWalletProvider({ useVault, network, appState, useWalletExtras = () => EMPTY_EXTRAS }) {
     if (typeof useVault !== 'function') {
         throw new Error('createWalletProvider requires useVault');
-    }
-    if (!db) {
-        throw new Error('createWalletProvider requires db');
     }
 
     const WalletContext = createContext(null);
@@ -169,7 +183,6 @@ export function createWalletProvider({ useVault, db, network, appState, useWalle
         const [satsBalance, setSatsBalance] = useState(null);
         const [tokenBalances, setTokenBalances] = useState(() => new Map());
         const [transfers, setTransfers] = useState([]);
-        const [bitcoin, setBitcoin] = useState({ price: null, block: null });
         const [fundingAddress, setFundingAddress] = useState(null);
         const [balanceReady, setBalanceReady] = useState(false);
         const [txReady, setTxReady] = useState(false);
@@ -180,6 +193,7 @@ export function createWalletProvider({ useVault, db, network, appState, useWalle
         const pollIntervalRef = useRef(null);
         const claimPromiseRef = useRef(null);
         const fundingAddressPromiseRef = useRef(null);
+        const fundingAddressRef = useRef(null);
         const transfersRef = useRef([]);
         const hasPendingTxs = transfers.slice(0, RECENT_TRANSFER_LIMIT).some(isPendingTransfer);
 
@@ -366,12 +380,23 @@ export function createWalletProvider({ useVault, db, network, appState, useWalle
             [wallet, setNextTransfers]
         );
 
+        const setNextFundingAddress = useCallback((address) => {
+            const nextAddress = typeof address === 'string' && address.trim() ? address.trim() : null;
+            if (!nextAddress) {
+                return null;
+            }
+
+            fundingAddressRef.current = nextAddress;
+            setFundingAddress((currentAddress) => (currentAddress === nextAddress ? currentAddress : nextAddress));
+            return nextAddress;
+        }, []);
+
         const getFundingAddress = useCallback(async () => {
             if (!wallet) {
                 return null;
             }
-            if (fundingAddress) {
-                return fundingAddress;
+            if (fundingAddressRef.current) {
+                return fundingAddressRef.current;
             }
 
             if (fundingAddressPromiseRef.current) {
@@ -380,16 +405,13 @@ export function createWalletProvider({ useVault, db, network, appState, useWalle
 
             fundingAddressPromiseRef.current = wallet
                 .getStaticDepositAddress()
-                .then((address) => {
-                    setFundingAddress(address);
-                    return address;
-                })
+                .then(setNextFundingAddress)
                 .finally(() => {
                     fundingAddressPromiseRef.current = null;
                 });
 
             return fundingAddressPromiseRef.current;
-        }, [wallet, fundingAddress]);
+        }, [wallet, setNextFundingAddress]);
 
         const claimDeposits = useCallback(async () => {
             if (!wallet) {
@@ -541,38 +563,257 @@ export function createWalletProvider({ useVault, db, network, appState, useWalle
             [wallet, network, updateWalletData]
         );
 
-        const withdrawFunds = useCallback(
-            async ({ onchainAddress, amountSats, exitSpeed }) => {
+        const createLightningInvoice = useCallback(
+            async ({ amountSats = 0, memo, expirySeconds, includeSparkAddress = false, includeSparkInvoice = false, receiverIdentityPubkey, descriptionHash } = {}) => {
                 if (!wallet) {
                     return { success: false, error: new Error('wallet not ready') };
                 }
-                if (!isAddressOnNetwork(onchainAddress, network)) {
-                    return { success: false, error: new Error(`refusing to withdraw — address is not a ${network} address`) };
+                if (memo && descriptionHash) {
+                    return { success: false, error: new Error('lightning invoice memo and descriptionHash are mutually exclusive') };
+                }
+                if (includeSparkAddress && includeSparkInvoice) {
+                    return { success: false, error: new Error('includeSparkAddress and includeSparkInvoice are mutually exclusive') };
                 }
 
                 try {
-                    const feeQuote = await wallet.getWithdrawalFeeQuote({
-                        amountSats,
-                        withdrawalAddress: onchainAddress,
+                    const safeAmountSats = toSafeNonNegativeSats(amountSats);
+                    const request = await wallet.createLightningInvoice({
+                        amountSats: safeAmountSats,
+                        ...(memo ? { memo } : {}),
+                        ...(expirySeconds != null ? { expirySeconds } : {}),
+                        includeSparkAddress,
+                        includeSparkInvoice,
+                        ...(receiverIdentityPubkey ? { receiverIdentityPubkey } : {}),
+                        ...(descriptionHash ? { descriptionHash } : {}),
                     });
-                    if (!feeQuote?.id) {
-                        throw new Error('withdrawal fee quote unavailable');
-                    }
-                    const tx = await wallet.withdraw({
-                        onchainAddress,
-                        amountSats,
-                        exitSpeed,
-                        feeQuoteId: feeQuote.id,
-                        feeAmountSats: getWithdrawalFeeAmountSats(feeQuote, exitSpeed),
-                        deductFeeFromWithdrawalAmount: true,
-                    });
-                    await updateWalletData();
-                    return { success: true, tx };
+
+                    return {
+                        success: true,
+                        request,
+                        invoice: normalizeLightningReceiveRequest(request),
+                    };
                 } catch (error) {
                     return { success: false, error };
                 }
             },
-            [wallet, network, updateWalletData]
+            [wallet]
+        );
+
+        const quoteLightningFees = useCallback(
+            async ({ invoice, amountSats } = {}) => {
+                if (!wallet) {
+                    return { success: false, error: new Error('wallet not ready') };
+                }
+
+                const encodedInvoice = typeof invoice === 'string' ? invoice.trim() : '';
+                if (!encodedInvoice) {
+                    return { success: false, error: new Error('lightning invoice required') };
+                }
+
+                try {
+                    const params = { encodedInvoice };
+                    if (amountSats != null) {
+                        params.amountSats = toSafeSats(amountSats);
+                    }
+
+                    const feeAmountSats = await wallet.getLightningSendFeeEstimate(params);
+                    return {
+                        success: true,
+                        feeAmountSats,
+                        fees: normalizeLightningFeeEstimate(feeAmountSats),
+                    };
+                } catch (error) {
+                    return { success: false, error };
+                }
+            },
+            [wallet]
+        );
+
+        const sendLightningPayment = useCallback(
+            async ({ invoice, maxFeeSats, preferSpark = false, amountSatsToSend, idempotencyKey } = {}) => {
+                if (!wallet) {
+                    return { success: false, error: new Error('wallet not ready') };
+                }
+
+                const encodedInvoice = typeof invoice === 'string' ? invoice.trim() : '';
+                if (!encodedInvoice) {
+                    return { success: false, error: new Error('lightning invoice required') };
+                }
+
+                try {
+                    const params = {
+                        invoice: encodedInvoice,
+                        maxFeeSats: toSafeNonNegativeSats(maxFeeSats, 'maxFeeSats'),
+                        preferSpark: !!preferSpark,
+                    };
+                    if (amountSatsToSend != null) {
+                        params.amountSatsToSend = toSafeSats(amountSatsToSend, 'amountSatsToSend');
+                    }
+                    if (idempotencyKey) {
+                        params.idempotencyKey = idempotencyKey;
+                    }
+
+                    const payment = await wallet.payLightningInvoice(params);
+                    await updateWalletData();
+                    return {
+                        success: true,
+                        payment,
+                        result: normalizeLightningPaymentResult(payment),
+                    };
+                } catch (error) {
+                    return { success: false, error };
+                }
+            },
+            [wallet, updateWalletData]
+        );
+
+        const getLightningReceiveRequest = useCallback(
+            async (id) => {
+                if (!wallet) {
+                    return { success: false, error: new Error('wallet not ready') };
+                }
+
+                const requestId = typeof id === 'string' ? id.trim() : '';
+                if (!requestId) {
+                    return { success: false, error: new Error('lightning receive request id required') };
+                }
+
+                try {
+                    const request = await wallet.getLightningReceiveRequest(requestId);
+                    return {
+                        success: true,
+                        request,
+                        invoice: normalizeLightningReceiveRequest(request),
+                    };
+                } catch (error) {
+                    return { success: false, error };
+                }
+            },
+            [wallet]
+        );
+
+        const getLightningSendRequest = useCallback(
+            async (id) => {
+                if (!wallet) {
+                    return { success: false, error: new Error('wallet not ready') };
+                }
+
+                const requestId = typeof id === 'string' ? id.trim() : '';
+                if (!requestId) {
+                    return { success: false, error: new Error('lightning send request id required') };
+                }
+
+                try {
+                    const request = await wallet.getLightningSendRequest(requestId);
+                    return {
+                        success: true,
+                        request,
+                        result: normalizeLightningPaymentResult(request),
+                    };
+                } catch (error) {
+                    return { success: false, error };
+                }
+            },
+            [wallet]
+        );
+
+        const quoteWithdrawalFees = useCallback(
+            async ({ onchainAddress, amountSats } = {}) => {
+                if (!wallet) {
+                    return { success: false, error: new Error('wallet not ready') };
+                }
+
+                const address = typeof onchainAddress === 'string' ? onchainAddress.trim() : '';
+                if (!isAddressOnNetwork(address, network)) {
+                    return { success: false, error: new Error(`refusing to withdraw — address is not a ${network} address`) };
+                }
+
+                try {
+                    const safeAmountSats = toSafeSats(amountSats);
+                    const feeQuote = await wallet.getWithdrawalFeeQuote({
+                        amountSats: safeAmountSats,
+                        withdrawalAddress: address,
+                    });
+                    if (!feeQuote?.id) {
+                        throw new Error('withdrawal fee quote unavailable');
+                    }
+
+                    const sparkFees = normalizeWithdrawalFeeQuote(feeQuote);
+                    return {
+                        success: true,
+                        feeQuote,
+                        fees: {
+                            spark: sparkFees,
+                        },
+                        sparkFees,
+                        amountSats: safeAmountSats,
+                        onchainAddress: address,
+                    };
+                } catch (error) {
+                    return { success: false, error };
+                }
+            },
+            [wallet, network]
+        );
+
+        const withdrawFunds = useCallback(
+            async ({ onchainAddress, amountSats, exitSpeed = DEFAULT_EXIT_SPEED, feeQuote = null, feeQuoteId = null, feeAmountSats = null, deductFeeFromWithdrawalAmount = true }) => {
+                if (!wallet) {
+                    return { success: false, error: new Error('wallet not ready') };
+                }
+                const address = typeof onchainAddress === 'string' ? onchainAddress.trim() : '';
+                if (!isAddressOnNetwork(address, network)) {
+                    return { success: false, error: new Error(`refusing to withdraw — address is not a ${network} address`) };
+                }
+
+                try {
+                    const safeAmountSats = toSafeSats(amountSats);
+                    const safeExitSpeed = getExitSpeed(exitSpeed);
+                    let readyFeeQuote = feeQuote;
+
+                    if (!readyFeeQuote && (!feeQuoteId || feeAmountSats == null)) {
+                        const quoted = await quoteWithdrawalFees({
+                            onchainAddress: address,
+                            amountSats: safeAmountSats,
+                        });
+                        if (!quoted.success) {
+                            return quoted;
+                        }
+                        readyFeeQuote = quoted.feeQuote;
+                    }
+
+                    const readyFeeQuoteId = feeQuoteId || readyFeeQuote?.id;
+                    const readyFeeAmountSats = feeAmountSats == null ? getWithdrawalFeeAmountSats(readyFeeQuote, safeExitSpeed) : toSafeNonNegativeSats(feeAmountSats, 'feeAmountSats');
+
+                    if (!readyFeeQuoteId || readyFeeAmountSats == null) {
+                        throw new Error('withdrawal fee quote unavailable');
+                    }
+
+                    const tx = await wallet.withdraw({
+                        onchainAddress: address,
+                        amountSats: safeAmountSats,
+                        exitSpeed: safeExitSpeed,
+                        feeQuoteId: readyFeeQuoteId,
+                        feeAmountSats: readyFeeAmountSats,
+                        deductFeeFromWithdrawalAmount,
+                    });
+                    await updateWalletData();
+                    return {
+                        success: true,
+                        tx,
+                        feeQuote: readyFeeQuote,
+                        fees: readyFeeQuote
+                            ? {
+                                  spark: normalizeWithdrawalFeeQuote(readyFeeQuote),
+                              }
+                            : null,
+                        feeAmountSats: readyFeeAmountSats,
+                    };
+                } catch (error) {
+                    return { success: false, error };
+                }
+            },
+            [wallet, network, quoteWithdrawalFees, updateWalletData]
         );
 
         const extras = useWalletExtras({
@@ -581,7 +822,7 @@ export function createWalletProvider({ useVault, db, network, appState, useWalle
             satsBalance,
             tokenBalances,
             transfers,
-            bitcoin,
+            fundingAddress,
             getFundingAddress,
             refresh: refreshWallet,
         });
@@ -599,12 +840,16 @@ export function createWalletProvider({ useVault, db, network, appState, useWalle
                 setIsBalanceLoading(false);
                 setIsTxLoading(false);
                 claimPromiseRef.current = null;
+                fundingAddressRef.current = null;
                 fundingAddressPromiseRef.current = null;
                 return;
             }
 
             let cancelled = false;
             const boot = async () => {
+                void getFundingAddress().catch((error) => {
+                    console.debug?.('could not get funding address', error?.message ?? error);
+                });
                 const [, firstTxPage] = await Promise.all([getBalance(), getRecentTxs()]);
                 if (cancelled || !firstTxPage?.transfers?.length || !firstTxPage.hasMore) {
                     return;
@@ -621,7 +866,7 @@ export function createWalletProvider({ useVault, db, network, appState, useWalle
                 cancelled = true;
                 stopPoll();
             };
-        }, [wallet, getAllTxs, getBalance, getRecentTxs, stopPoll]);
+        }, [wallet, getAllTxs, getBalance, getFundingAddress, getRecentTxs, stopPoll]);
 
         useEffect(() => {
             if (!wallet || !localCache) {
@@ -697,37 +942,6 @@ export function createWalletProvider({ useVault, db, network, appState, useWalle
             };
         }, [isActive, wallet, refreshClaims]);
 
-        useEffect(() => {
-            let active = true;
-
-            const getBitcoinData = async () => {
-                try {
-                    const snap = await getDoc(doc(db, 'bitcoin', 'current'));
-                    const data = snap.data();
-                    if (!active || !data) {
-                        return;
-                    }
-
-                    setBitcoin((current) => ({
-                        price: data.price ?? current?.price ?? null,
-                        block: data.block ?? current?.block ?? null,
-                    }));
-                } catch (error) {
-                    console.debug?.('Failed to get Bitcoin data', error?.message ?? error);
-                }
-            };
-
-            void getBitcoinData();
-            const intervalId = setInterval(() => {
-                void getBitcoinData();
-            }, UPDATE_BTC_DATA_RATE);
-
-            return () => {
-                active = false;
-                clearInterval(intervalId);
-            };
-        }, [db]);
-
         const value = useMemo(
             () => ({
                 wallet,
@@ -736,7 +950,6 @@ export function createWalletProvider({ useVault, db, network, appState, useWalle
                 satsBalance,
                 tokenBalances,
                 transfers,
-                bitcoin,
                 fundingAddress,
                 balanceReady,
                 txReady,
@@ -748,10 +961,39 @@ export function createWalletProvider({ useVault, db, network, appState, useWalle
                 claimDeposits,
                 getFundingAddress,
                 sendMoneyWithSpark,
+                createLightningInvoice,
+                quoteLightningFees,
+                sendLightningPayment,
+                getLightningReceiveRequest,
+                getLightningSendRequest,
+                quoteWithdrawalFees,
                 withdrawFunds,
                 ...extras,
             }),
-            [wallet, balance, satsBalance, tokenBalances, transfers, bitcoin, fundingAddress, balanceReady, txReady, isBalanceLoading, isTxLoading, refreshWallet, claimDeposits, getFundingAddress, sendMoneyWithSpark, withdrawFunds, extras]
+            [
+                wallet,
+                balance,
+                satsBalance,
+                tokenBalances,
+                transfers,
+                fundingAddress,
+                balanceReady,
+                txReady,
+                isBalanceLoading,
+                isTxLoading,
+                refreshWallet,
+                claimDeposits,
+                getFundingAddress,
+                sendMoneyWithSpark,
+                createLightningInvoice,
+                quoteLightningFees,
+                sendLightningPayment,
+                getLightningReceiveRequest,
+                getLightningSendRequest,
+                quoteWithdrawalFees,
+                withdrawFunds,
+                extras,
+            ]
         );
 
         return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>;

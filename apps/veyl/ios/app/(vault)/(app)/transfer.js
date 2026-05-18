@@ -8,6 +8,7 @@ import Avatar from '@/components/avatar';
 import GlassButton from '@/components/glass/glassbutton';
 import GlassField from '@/components/glass/glassfield';
 import GlassIcon from '@/components/glass/glassicon';
+import { useBitcoin } from '@/providers/bitcoinprovider';
 import { useChat } from '@/providers/chatprovider';
 import { usePeer } from '@/providers/peerprovider';
 import { useTheme } from '@/providers/themeprovider';
@@ -34,7 +35,8 @@ function flag(value) {
 export default function TransferScreen() {
     const { theme, isDark } = useTheme();
     const { settings, walletPK: ownWalletPK, chatBanned } = useUser();
-    const { sendMoneyWithSpark, bitcoin, balance } = useWallet();
+    const bitcoin = useBitcoin();
+    const { sendMoneyWithSpark, balance } = useWallet();
     const { sendMessage } = useChat() || {};
     const { peers, addPeer } = usePeer() || {};
     const params = useLocalSearchParams();

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { Coins, Loader } from 'lucide-react';
 import Loading from '@/components/loading';
+import { useBitcoin } from '@/components/providers/bitcoinprovider';
 import { useDialog } from '@/components/providers/dialogprovider';
 import { usePeer } from '@/components/providers/peerprovider';
 import { useUser } from '@/components/providers/userprovider';
@@ -20,7 +21,8 @@ export default function QRPage() {
     const { openDialog } = useDialog();
     const { addPeer } = usePeer();
     const { settings, username, walletPK: ownWalletPK } = useUser();
-    const { sendMoneyWithSpark, bitcoin, network } = useWallet();
+    const bitcoin = useBitcoin();
+    const { sendMoneyWithSpark, network } = useWallet();
     const { cloaked } = useCloak();
 
     useEffect(() => {

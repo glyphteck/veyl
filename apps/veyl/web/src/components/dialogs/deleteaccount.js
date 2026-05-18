@@ -10,6 +10,7 @@ import { getFunctions } from '@/lib/firebase/firebaseclient';
 import { logout } from '@/lib/useractions';
 import { useVault } from '@/components/providers/vaultprovider';
 import { useDialog } from '@/components/providers/dialogprovider';
+import { useBitcoin } from '@/components/providers/bitcoinprovider';
 import { useWallet } from '@/components/providers/walletprovider';
 import { useUser } from '@/components/providers/userprovider';
 import { minWithdrawalSats } from '@glyphteck/shared/spark';
@@ -24,7 +25,8 @@ export default function DeleteAccount({ close }) {
     const [isPasswordValid, setIsPasswordValid] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
     const { openDialog } = useDialog();
-    const { balance, bitcoin } = useWallet();
+    const bitcoin = useBitcoin();
+    const { balance } = useWallet();
     const { settings, clearAvatar } = useUser();
     const { encSeed, localCache, lock } = useVault();
     const showWithdraw = balance != null && balance >= minWithdrawalSats;

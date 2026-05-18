@@ -219,7 +219,7 @@ function SettingsHeader({ value, onChangeText, onClear, onLayout, disabled = fal
         disabled,
         onPress: () => {
             if (!lockRoute()) return;
-            router.push('/scan?type=share');
+            router.push('/userscan');
         },
     });
 

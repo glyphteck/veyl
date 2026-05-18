@@ -3,7 +3,7 @@
 import { useUser } from '@/components/providers/userprovider';
 import { useChat } from '@/components/providers/chatprovider';
 import { usePeer } from '@/components/providers/peerprovider';
-import { useWallet } from '@/components/providers/walletprovider';
+import { useBitcoin } from '@/components/providers/bitcoinprovider';
 import { useCloak } from '@glyphteck/shared/providers/cloakprovider';
 import { formatUserDisplay } from '@/lib/utils';
 import { getMsgPreview as displayLastMsg } from '@glyphteck/shared/chat/messages';
@@ -13,7 +13,7 @@ export default function ChatTitleLayout({ children }) {
     const { chatPK, settings } = useUser();
     const { chats, selectedChatId, isChatDataReady } = useChat();
     const { peers } = usePeer();
-    const { bitcoin } = useWallet();
+    const bitcoin = useBitcoin();
     const { cloaked } = useCloak();
 
     useEffect(() => {

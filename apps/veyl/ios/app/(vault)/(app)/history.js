@@ -10,6 +10,7 @@ import GlassFooter from '@/components/glass/glassfooter';
 import GlassHeader from '@/components/glass/glassheader';
 import Icon from '@/components/icon';
 import { useTap } from '@/lib/tap';
+import { useBitcoin } from '@/providers/bitcoinprovider';
 import { usePeer } from '@/providers/peerprovider';
 import { useTheme } from '@/providers/themeprovider';
 import { useTxData } from '@/providers/txdataprovider';
@@ -73,7 +74,7 @@ export default function HistoryRoute() {
     const params = useLocalSearchParams();
     const { peers } = usePeer() || {};
     const { settings, avatar } = useUser();
-    const { bitcoin } = useWallet();
+    const bitcoin = useBitcoin();
     const { getPeerStats, getPeerTxs } = useTxData();
     const [displayFormat, setDisplayFormat] = useState(null);
     const [headerHeight, setHeaderHeight] = useState(0);

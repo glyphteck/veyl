@@ -11,6 +11,7 @@ import { Input } from '@/components/input';
 import { Button } from '@/components/button';
 import { ToggleGroup, ToggleGroupItem } from '@/components/togglegroup';
 import { Rabbit, Turtle, Snail, Loader, PiggyBank, CircleCheck, ScanQrCode } from 'lucide-react';
+import { useBitcoin } from '@/components/providers/bitcoinprovider';
 import { useWallet } from '@/components/providers/walletprovider';
 import { useUser } from '@/components/providers/userprovider';
 import { useCloak } from '@glyphteck/shared/providers/cloakprovider';
@@ -22,8 +23,8 @@ import { toast } from 'sonner';
 export default function Withdraw({ data, close }) {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const router = useRouter();
-    const { balance, bitcoin, withdrawFunds, network } = useWallet();
-    const isTestEnv = !isMainnet(network);
+    const bitcoin = useBitcoin();
+    const { balance, withdrawFunds, network } = useWallet();
     const { settings } = useUser();
     const { cloaked } = useCloak();
     const amountInputRef = useRef(null);
@@ -198,9 +199,6 @@ export default function Withdraw({ data, close }) {
                     />
                 </div>
                 <div className="px-4 py-6">
-                    {isTestEnv ? (
-                        <p className="mb-3 text-center text-sm font-black text-destructive uppercase">you are in test environment. do not send real bitcoin.</p>
-                    ) : null}
                     <form id="withdraw-funds-form" onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-3">
                         <Field
                             control={form.control}

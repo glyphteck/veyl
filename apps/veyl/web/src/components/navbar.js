@@ -14,6 +14,7 @@ import { handleAppShortcut, shortcuts } from '@/lib/shortcuts';
 import { logout } from '@/lib/useractions';
 import { Button } from '@/components/button';
 import { Dot } from '@/components/dot';
+import RegtestTag from '@/components/regtesttag';
 import UserMenu from '@/components/usermenu';
 import {
     Wallet,
@@ -33,7 +34,7 @@ export default function Navbar() {
     const pathname = usePathname();
     const { openDialog } = useDialog();
     const user = useUser();
-    const { copyFundingAddress, balance } = useWallet();
+    const { copyFundingAddress, fundingAddress, getFundingAddress, balance } = useWallet();
     const { lock } = useVault();
     const { hasTx } = useTxData();
     const { hasChats, chats } = useChat();
@@ -151,7 +152,10 @@ export default function Navbar() {
                     )}
                 </div>
                 {/* profile menu */}
-                <UserMenu user={user} balance={balance} copyFundingAddress={copyFundingAddress} lock={lock} openDialog={openDialog} />
+                <div className="flex items-center gap-2">
+                    <RegtestTag />
+                    <UserMenu user={user} balance={balance} copyFundingAddress={copyFundingAddress} fundingAddress={fundingAddress} getFundingAddress={getFundingAddress} lock={lock} openDialog={openDialog} />
+                </div>
             </div>
         </nav>
     );

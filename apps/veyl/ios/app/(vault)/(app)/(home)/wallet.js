@@ -2,8 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Animated, Pressable, Text, View, FlatList } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { BanknoteArrowDown, BanknoteArrowUp, QrCode, UserRoundPlus } from 'lucide-react-native';
+import { BanknoteArrowDown, BanknoteArrowUp, UserRoundPlus } from 'lucide-react-native';
 
+import { useBitcoin } from '@/providers/bitcoinprovider';
 import { useTheme } from '@/providers/themeprovider';
 import { useWallet } from '@/providers/walletprovider';
 import { useUser } from '@/providers/userprovider';
@@ -135,7 +136,8 @@ export default function Wallet() {
     const { theme } = useTheme();
     const router = useRouter();
     const insets = useSafeAreaInsets();
-    const { balance, bitcoin, txReady } = useWallet();
+    const bitcoin = useBitcoin();
+    const { balance, txReady } = useWallet();
     const { settings, chatBanned } = useUser();
     const txData = useTxData();
     const routeLockRef = useRef(false);
@@ -331,15 +333,13 @@ export default function Wallet() {
                     </View>
 
                     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 4 }}>
-                        <GlassIcon glassEffectStyle="regular" rounded={16} icon={BanknoteArrowDown} onPress={() => openRoute({ pathname: '/scan', params: { type: 'fund' } })} />
+                        <GlassIcon glassEffectStyle="regular" rounded={16} icon={BanknoteArrowDown} onPress={() => openRoute('/fundwallet')} />
                         <View style={{ width: 24 }} />
                         <Animated.View pointerEvents={withdrawPop.pointerEvents} style={[withdrawPop.style, { alignItems: 'center', justifyContent: 'center', overflow: 'visible' }]}>
                             <Animated.View style={withdrawPop.childStyle}>
                                 <GlassIcon glassEffectStyle="regular" rounded={16} icon={BanknoteArrowUp} onPress={() => showBalance && openRoute('/withdraw')} />
                             </Animated.View>
                         </Animated.View>
-                        <GlassIcon glassEffectStyle="regular" rounded={16} icon={QrCode} onPress={() => openRoute({ pathname: '/scan', params: { type: 'share' } })} />
-                        <View style={{ width: 24 }} />
                         <GlassIcon glassEffectStyle="regular" rounded={16} icon={UserRoundPlus} onPress={() => openRoute('/peerselector')} disabled={chatBanned} />
                     </View>
                 </GlassHeader>

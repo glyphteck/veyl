@@ -6,6 +6,7 @@ import { Avatar, AvatarImage, AvatarFallback } from '@/components/avatar';
 import { Card } from '@/components/card';
 import { History } from 'lucide-react';
 import { formatUserDisplay, formatFullDateTime, renderMoney } from '@/lib/utils';
+import { useBitcoin } from '@/components/providers/bitcoinprovider';
 import { useWallet } from '@/components/providers/walletprovider';
 import { useUser } from '@/components/providers/userprovider';
 import { useTxData } from '@/components/providers/txdataprovider';
@@ -15,7 +16,8 @@ import { useCloak } from '@glyphteck/shared/providers/cloakprovider';
 
 export function RecentTxList() {
     const { openDialog } = useDialog();
-    const { bitcoin, txReady } = useWallet();
+    const bitcoin = useBitcoin();
+    const { txReady } = useWallet();
     const user = useUser();
     const { settings } = user;
     const moneyFormat = settings.moneyFormat;

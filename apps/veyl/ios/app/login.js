@@ -3,7 +3,6 @@ import { Image } from 'expo-image';
 import { Fingerprint, UserRoundPlus, UsersRound, X } from 'lucide-react-native';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'expo-router';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { passkeyLogin, isUnlinkedPasskeyError, isPasskeyRpMismatchError } from '@/lib/passkeys';
 import { forgetQuickLoginAccount, listQuickLoginAccounts, subscribeQuickLoginRequest, touchQuickLoginAccount } from '@/lib/quicklogin';
 import { useTheme } from '@/providers/themeprovider';
@@ -11,7 +10,6 @@ import Avatar, { AvatarAdornment, getAvatarAdornmentMetrics } from '@/components
 import GlassButton from '@/components/glass/glassbutton';
 import GlassIcon from '@/components/glass/glassicon';
 import { useTap } from '@/lib/tap';
-import { resolveNetwork } from '@glyphteck/shared/network';
 
 const REMEMBERED_INLINE_LIMIT = 2;
 const QUICK_AVATAR_SIZE = 72;
@@ -46,21 +44,17 @@ function QuickLoginCell({ account, disabled = false, onPress, onForget }) {
 export default function Login() {
     const { theme } = useTheme();
     const router = useRouter();
-    const insets = useSafeAreaInsets();
     const [authState, setAuthState] = useState('idle');
     const [feedback, setFeedback] = useState('');
     const [remembered, setRemembered] = useState([]);
     const feedbackTimerRef = useRef(null);
     const loadingCoverOpacity = useRef(new RNAnimated.Value(0)).current;
     const isBusy = authState !== 'idle';
-    const network = resolveNetwork(globalThis?.process?.env ?? {});
-    const isTestEnv = network !== 'MAINNET';
     const accounts = remembered;
     const visibleAccounts = accounts.slice(0, REMEMBERED_INLINE_LIMIT);
     const hasMoreAccounts = accounts.length > REMEMBERED_INLINE_LIMIT;
     const quickLoginItemCount = visibleAccounts.length + (hasMoreAccounts ? 1 : 0);
     const quickLoginRowFull = quickLoginItemCount >= 3;
-    const warningTop = insets.top + 10;
 
     const clearFeedback = useCallback(() => {
         if (feedbackTimerRef.current) {
@@ -239,13 +233,6 @@ export default function Login() {
                     <GlassButton onPress={handleNewAccount} icon={UserRoundPlus} label="new account" style={{ width: 256 }} />
                 </View>
             </RNAnimated.View>
-            {isTestEnv ? (
-                <View style={{ position: 'absolute', left: 24, right: 24, top: warningTop, alignItems: 'center' }}>
-                    <Text style={{ color: theme.destructive, fontSize: 12, fontWeight: '900', textAlign: 'center', lineHeight: 18 }}>
-                        YOU ARE CURRENTLY IN TEST ENVIRONMENT. DO NOT SEND REAL BITCOIN TO YOUR ACCOUNT.
-                    </Text>
-                </View>
-            ) : null}
         </View>
     );
 }

@@ -1,5 +1,6 @@
 'use client';
 
+import { useBitcoin } from '@/components/providers/bitcoinprovider';
 import { useWallet } from '@/components/providers/walletprovider';
 import { useUser } from '@/components/providers/userprovider';
 import { useCloak } from '@glyphteck/shared/providers/cloakprovider';
@@ -7,7 +8,8 @@ import { renderMoney } from '@/lib/utils';
 import { useEffect } from 'react';
 
 export default function WalletTitleLayout({ children }) {
-    const { balance, bitcoin } = useWallet();
+    const bitcoin = useBitcoin();
+    const { balance } = useWallet();
     const { settings } = useUser();
     const { cloaked } = useCloak();
     const moneyFormat = settings.moneyFormat;

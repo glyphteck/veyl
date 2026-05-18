@@ -4,10 +4,10 @@ import { Avatar, AvatarImage, AvatarFallback } from '@/components/avatar';
 import { Card } from '@/components/card';
 import { formatUserDisplay, formatFullDateTime } from '@/lib/utils';
 import { getMsgPreview as displayLastMsg } from '@glyphteck/shared/chat/messages';
+import { useBitcoin } from '@/components/providers/bitcoinprovider';
 import { useUser } from '@/components/providers/userprovider';
 import { useChat, useChatInput } from '@/components/providers/chatprovider';
 import { usePeer } from '@/components/providers/peerprovider';
-import { useWallet } from '@/components/providers/walletprovider';
 import { useCloak } from '@glyphteck/shared/providers/cloakprovider';
 
 export function RecentChatsList() {
@@ -15,7 +15,7 @@ export function RecentChatsList() {
     const { chats, isChatDataReady, selectChat, selectedChatId } = useChat();
     const { focusChatInput } = useChatInput();
     const { peers, updatePeer } = usePeer();
-    const { bitcoin } = useWallet();
+    const bitcoin = useBitcoin();
     const { cloaked } = useCloak();
 
     const handleChatClick = (chatId) => {

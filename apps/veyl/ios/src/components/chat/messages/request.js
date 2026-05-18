@@ -1,5 +1,6 @@
 import { ActivityIndicator, Text, View } from 'react-native';
 import { ArrowUpRight } from 'lucide-react-native';
+import { useBitcoin } from '@/providers/bitcoinprovider';
 import { useTheme } from '@/providers/themeprovider';
 import { useTxData } from '@/providers/txdataprovider';
 import { useUser } from '@/providers/userprovider';
@@ -50,7 +51,8 @@ function RequestBubble({ card, menuId, menuItems, onHold, reactions = [], reacti
 export default function RequestMessage({ msg, fromPeer = false, peerDisplayName, onPay, isPaying = false, menuId, menuItems, onHold, reactions = [], reactionUsers, reactionPreviewInset = 0 }) {
     const { theme } = useTheme();
     const { settings } = useUser();
-    const { bitcoin, balance } = useWallet();
+    const bitcoin = useBitcoin();
+    const { balance } = useWallet();
     const { getTxById } = useTxData();
     const msgTx = msg.tx ? getTxById?.(msg.tx) : null;
     const displayAmount = msgTx ? Math.abs(Number(msgTx.amount)) : Number(msg.a);

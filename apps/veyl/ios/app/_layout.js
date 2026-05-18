@@ -8,6 +8,7 @@ import { MenuProvider } from '@/providers/menuprovider';
 import { AudioProvider } from '@/providers/audioprovider';
 import { MediaViewerProvider } from '@/providers/mediaviewerprovider';
 import { UserProvider, useUser } from '@/providers/userprovider';
+import { BitcoinProvider } from '@/providers/bitcoinprovider';
 import { VaultProvider, useVault } from '@/providers/vaultprovider';
 import { PushProvider } from '@/providers/pushprovider';
 import { Stack } from 'expo-router';
@@ -105,15 +106,17 @@ export default function Root() {
                     <SafeAreaProvider>
                         <UserProvider>
                             <PushProvider>
-                                <VaultProvider>
-                                    <AudioProvider>
-                                        <MediaViewerProvider>
-                                            <MenuProvider>
-                                                <AppContent />
-                                            </MenuProvider>
-                                        </MediaViewerProvider>
-                                    </AudioProvider>
-                                </VaultProvider>
+                                <BitcoinProvider>
+                                    <VaultProvider>
+                                        <AudioProvider>
+                                            <MediaViewerProvider>
+                                                <MenuProvider>
+                                                    <AppContent />
+                                                </MenuProvider>
+                                            </MediaViewerProvider>
+                                        </AudioProvider>
+                                    </VaultProvider>
+                                </BitcoinProvider>
                             </PushProvider>
                         </UserProvider>
                     </SafeAreaProvider>

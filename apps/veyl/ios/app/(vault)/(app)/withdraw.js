@@ -7,6 +7,7 @@ import { toSats, toDisplay } from '@glyphteck/shared/utils';
 import { minWithdrawalSats } from '@glyphteck/shared/spark';
 import { isAddressOnNetwork, isMainnet } from '@glyphteck/shared/network';
 
+import { useBitcoin } from '@/providers/bitcoinprovider';
 import { useTheme } from '@/providers/themeprovider';
 import { useUser } from '@/providers/userprovider';
 import { useWallet } from '@/providers/walletprovider';
@@ -20,8 +21,8 @@ const UNITS = ['sats', 'btc', 'usd'];
 export default function Withdraw() {
     const { theme, isDark } = useTheme();
     const { settings } = useUser();
-    const { balance, bitcoin, withdrawFunds, network } = useWallet();
-    const isTestEnv = !isMainnet(network);
+    const bitcoin = useBitcoin();
+    const { balance, withdrawFunds, network } = useWallet();
     const { address: prefillAddress = '' } = useLocalSearchParams();
 
     const amountInputRef = useRef(null);
@@ -138,11 +139,6 @@ export default function Withdraw() {
 
     return (
         <View style={{ flex: 1, paddingHorizontal: 16, paddingTop: 32, gap: 12 }}>
-            {isTestEnv ? (
-                <Text style={{ color: theme.destructive, fontSize: 12, fontWeight: '900', textAlign: 'center', lineHeight: 18 }}>
-                    YOU ARE IN TEST ENVIRONMENT. DO NOT SEND REAL BITCOIN.
-                </Text>
-            ) : null}
             {/* receiving address */}
             <GlassField disabled={isSubmitting} style={{ gap: 6, paddingRight: 12, paddingLeft: 14, paddingVertical: 8 }}>
                 <TextInput

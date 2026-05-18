@@ -8,6 +8,7 @@ import { useChat, useChatInput } from '@/components/providers/chatprovider';
 import { useUser } from '@/components/providers/userprovider';
 import { usePeer } from '@/components/providers/peerprovider';
 import { useDialog } from '@/components/providers/dialogprovider';
+import { useBitcoin } from '@/components/providers/bitcoinprovider';
 import { useWallet } from '@/components/providers/walletprovider';
 import { formatUserDisplay, renderMoney } from '@/lib/utils';
 import { prepareChatFile } from '@/lib/chatfiles';
@@ -28,7 +29,8 @@ export function Chatbox() {
     const { chats, selectedChatId, sendMessage, sendAttachment, updateMessage } = useChat();
     const { focusChatInput, chatInputRef } = useChatInput();
     const { chatPK, chatBanned, settings } = useUser();
-    const { sendMoneyWithSpark, bitcoin } = useWallet();
+    const bitcoin = useBitcoin();
+    const { sendMoneyWithSpark } = useWallet();
     const { peers, updatePeer } = usePeer();
     const { openDialog } = useDialog();
     const dragDepthRef = useRef(0);

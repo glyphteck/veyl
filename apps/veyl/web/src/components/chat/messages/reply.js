@@ -1,9 +1,9 @@
 'use client';
 
 import { File, Loader } from 'lucide-react';
+import { useBitcoin } from '@/components/providers/bitcoinprovider';
 import { useTxData } from '@/components/providers/txdataprovider';
 import { useUser } from '@/components/providers/userprovider';
-import { useWallet } from '@/components/providers/walletprovider';
 import { bubbleBg, imageWidth } from '@/lib/messages';
 import { renderMoney } from '@/lib/utils';
 import { getAttachmentCaption, getAttachmentTitle, getImageAspect } from '@glyphteck/shared/chat/messages';
@@ -40,7 +40,7 @@ function ReplyText({ reply, replyFromPeer, onReplyPress }) {
 
 function ReplyRequest({ reply, replyFromPeer, peerDisplayName, onReplyPress }) {
     const { settings } = useUser();
-    const { bitcoin } = useWallet();
+    const bitcoin = useBitcoin();
     const { getTxById } = useTxData();
     const msgTx = reply.tx ? getTxById?.(reply.tx) : null;
     const displayAmount = msgTx ? Math.abs(Number(msgTx.amount)) : Number(reply.a);

@@ -3,11 +3,9 @@ import { AppState } from 'react-native';
 import { createWalletProvider } from '@glyphteck/shared/wallet';
 import { resolveNetwork } from '@glyphteck/shared/network';
 import { useVault } from '@/providers/vaultprovider';
-import { db } from '@/lib/firebase';
 
 const { WalletProvider: BaseWalletProvider, useWallet } = createWalletProvider({
     useVault,
-    db,
     network: resolveNetwork(globalThis?.process?.env ?? {}),
     appState: AppState,
 });

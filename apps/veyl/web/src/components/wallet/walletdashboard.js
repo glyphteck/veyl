@@ -3,6 +3,7 @@ import { Card } from '@/components/card';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/avatar';
 import { ToggleGroup, ToggleGroupItem } from '@/components/togglegroup';
 import { BalanceChart } from '@/components/wallet/charts/balance';
+import { useBitcoin } from '@/components/providers/bitcoinprovider';
 import { useWallet } from '@/components/providers/walletprovider';
 import { useUser } from '@/components/providers/userprovider';
 import { useTxData } from '@/components/providers/txdataprovider';
@@ -20,7 +21,8 @@ function renderBalanceDescription(amount, moneyFormat, price) {
 }
 
 export function WalletDashboard() {
-    const { balance, bitcoin } = useWallet();
+    const bitcoin = useBitcoin();
+    const { balance } = useWallet();
     const { settings } = useUser();
     const { getSeries, getHourlySeries, getTxsInRange, first, transactions } = useTxData();
     const { peers } = usePeer();

@@ -14,7 +14,7 @@ export default function GetAvatar() {
     const [selectedImage, setSelectedImage] = useState(null);
     const [status, setStatus] = useState('idle');
     const busy = status !== 'idle';
-    const statusLabel = status === 'uploading' ? 'uplaoding' : status === 'confirming' ? 'confirming' : '';
+    const labelText = status === 'uploading' ? 'uploading avatar' : status === 'confirming' ? 'skipping avatar' : 'set your avatar';
 
     const handleConfirm = async () => {
         if (!selectedImage || busy || avatarBanned) return;
@@ -52,7 +52,10 @@ export default function GetAvatar() {
     return (
         <div className="absolute inset-0 items-center flex justify-center">
             <div className="flex flex-col items-center gap-4">
-                <div className="flex items-center gap-2 text-xl font-black leading-none select-none">set your avatar</div>
+                <div className="flex items-center gap-2 text-xl font-black leading-none select-none" aria-live="polite">
+                    {labelText}
+                    {busy ? <Loader className="mt-0.5 animate-spin" /> : null}
+                </div>
                 <UpdateAvatar
                     className="size-48"
                     disabled={busy || avatarBanned}
@@ -64,16 +67,12 @@ export default function GetAvatar() {
                 />
                 <div className="flex flex-col gap-1">
                     <div className="relative h-10 w-3xs">
-                        <div className="pop absolute inset-0 flex items-center justify-center gap-2 text-sm font-black text-muted select-none" data-open={!!statusLabel}>
-                            <Loader className="size-4 animate-spin" />
-                            <span>{statusLabel}</span>
-                        </div>
-                        <div className="pop absolute inset-0 flex items-center justify-center" data-open={!selectedImage && !busy}>
+                        <div className="pop absolute inset-0 flex items-center justify-center" data-open={!selectedImage && !busy} aria-hidden={!!selectedImage || busy}>
                             <Button type="button" className="grower w-full text-muted hover:text-foreground" disabled={busy} onClick={handleSkip} tabIndex={!selectedImage && !busy ? 0 : -1}>
                                 skip for now
                             </Button>
                         </div>
-                        <div className="pop absolute inset-0 flex items-center justify-center" data-open={!!selectedImage && !busy}>
+                        <div className="pop absolute inset-0 flex items-center justify-center" data-open={!!selectedImage && !busy} aria-hidden={!selectedImage || busy}>
                             <Button type="button" className="button-outline shrinker w-full" disabled={!selectedImage || busy || avatarBanned} onClick={handleConfirm} tabIndex={selectedImage && !busy ? 0 : -1}>
                                 <ImageUp className="stroke-2" />
                                 confirm

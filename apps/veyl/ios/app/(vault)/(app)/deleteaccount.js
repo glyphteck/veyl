@@ -18,6 +18,7 @@ import { clearFaceIdPassword } from '@/lib/faceid';
 import { dropPush } from '@/lib/push';
 import { useTap } from '@/lib/tap';
 import { userAvatarCache } from '@/lib/useravatarcache';
+import { useBitcoin } from '@/providers/bitcoinprovider';
 import { useTheme } from '@/providers/themeprovider';
 import { useUser } from '@/providers/userprovider';
 import { useVault } from '@/providers/vaultprovider';
@@ -43,7 +44,8 @@ export default function DeleteAccountScreen() {
     const router = useRouter();
     const { encSeed, localCache, lock } = useVault();
     const { uid, settings, clearAvatar } = useUser();
-    const { balance, bitcoin } = useWallet();
+    const bitcoin = useBitcoin();
+    const { balance } = useWallet();
     const openRef = useRef(true);
     const [step, setStep] = useState('intro');
     const [password, setPassword] = useState('');
