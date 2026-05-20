@@ -93,12 +93,16 @@ service cloud.firestore {
       return value == null || value is timestamp;
     }
 
+    function maxInitialTtl() {
+      return request.time + duration.value(21, 'd') + duration.value(10, 'm');
+    }
+
     function initialTtlValueAllowed(value) {
       return value == null
         || (
           value is timestamp
           && value >= request.time
-          && value <= request.time + duration.value(21, 'd')
+          && value <= maxInitialTtl()
         );
     }
 
