@@ -117,6 +117,7 @@ The wrapper URL is intentional for veyl-specific actions. On iOS, the veyl web h
 - `glyphteck.com` is the canonical passkey root and serves the root-domain well-known files.
 - Web also issues an HTTP-only Firebase session cookie through Next.js route handlers.
 - Web and iOS both use the Firebase JS SDK config from `shared/firebaseconfig.js`. Keep the Firebase project to one app registration named `veyl` unless the iOS app moves to a native Firebase SDK path that needs a native iOS app registration.
+- The shared Firebase API key must not use browser referrer or iOS bundle-id application restrictions because iOS uses the JS SDK over REST. Keep API target restrictions on the key instead.
 
 ### Vault and key derivation
 
