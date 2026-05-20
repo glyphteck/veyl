@@ -110,6 +110,12 @@ service cloud.firestore {
       return value is timestamp;
     }
 
+    function freshChatTsAllowed(value) {
+      return value is timestamp
+        && value >= request.time - duration.value(10, 'm')
+        && value <= request.time + duration.value(10, 'm');
+    }
+
     function lastMsgValueAllowed(newLast) {
       return newLast == null
         || (
@@ -198,10 +204,17 @@ service cloud.firestore {
 
     function chatTsUpdateAllowed() {
       let changed = request.resource.data.diff(resource.data).affectedKeys();
+      let newLast = mapGet(request.resource.data, 'lastMsg');
+      let oldLast = mapGet(resource.data, 'lastMsg');
       return !changed.hasAny(['ts'])
         || (
-          request.resource.data.ts == request.time
-          && lastMsgFreshSendAllowed(mapGet(request.resource.data, 'lastMsg'))
+          freshChatTsAllowed(request.resource.data.ts)
+          && newLast is map
+          && (
+            oldLast == null
+            || mapGet(newLast, 'head') != mapGet(oldLast, 'head')
+          )
+          && initialTtlValueAllowed(mapGet(newLast, 'ttl'))
         );
     }
 
@@ -509,7 +522,7 @@ service cloud.firestore {
                     && 'lastMsg' in request.resource.data
                     && 'ts' in request.resource.data
                     && lastMsgCreateAllowed()
-                    && request.resource.data.ts == request.time
+                    && freshChatTsAllowed(request.resource.data.ts)
                     && chatSettingsFreshAllowed();
 
       allow update: if participantsWritable(resource.data.participants)
