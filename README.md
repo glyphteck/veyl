@@ -116,6 +116,7 @@ The wrapper URL is intentional for veyl-specific actions. On iOS, the veyl web h
 - Passkey registration and login are handled by Firebase Functions using `fido2-lib`.
 - `glyphteck.com` is the canonical passkey root and serves the root-domain well-known files.
 - Web also issues an HTTP-only Firebase session cookie through Next.js route handlers.
+- Web and iOS both use the Firebase JS SDK config from `shared/firebaseconfig.js`. Keep the Firebase project to one app registration named `veyl` unless the iOS app moves to a native Firebase SDK path that needs a native iOS app registration.
 
 ### Vault and key derivation
 
