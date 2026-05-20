@@ -30,8 +30,9 @@ function sameChatShape(a, b) {
     if (!a || !b) return a === b;
     return (
         a.id === b.id &&
-        a.lastMsgTime === b.lastMsgTime &&
+        a.ts === b.ts &&
         a.unseen === b.unseen &&
+        a.settings?.retention === b.settings?.retention &&
         a.lastMsg?.cid === b.lastMsg?.cid &&
         a.lastMsg?.t === b.lastMsg?.t &&
         a.lastMsg?.pending === b.lastMsg?.pending &&
@@ -50,7 +51,7 @@ export function sameChats(prev, next) {
 export function sameLastChat(prev, next) {
     if (!prev && !next) return true;
     if (!prev || !next) return false;
-    return prev.peerChatPK === next.peerChatPK && sameChatShape({ id: 0, lastMsgTime: 0, unseen: false, lastMsg: prev.lastMsg }, { id: 0, lastMsgTime: 0, unseen: false, lastMsg: next.lastMsg });
+    return prev.peerChatPK === next.peerChatPK && sameChatShape({ id: 0, ts: prev.ts || 0, unseen: false, lastMsg: prev.lastMsg }, { id: 0, ts: next.ts || 0, unseen: false, lastMsg: next.lastMsg });
 }
 
 export function getLastChat(chats, chatPK) {
@@ -59,7 +60,7 @@ export function getLastChat(chats, chatPK) {
     }
 
     const latest = chats.reduce((current, chat) => {
-        if (!current || (chat.lastMsgTime && chat.lastMsgTime > (current.lastMsgTime || 0))) {
+        if (!current || (chat.ts && chat.ts > (current.ts || 0))) {
             return chat;
         }
         return current;
@@ -72,6 +73,7 @@ export function getLastChat(chats, chatPK) {
     const peerChatPK = latest.participants?.find?.((participant) => participant !== chatPK) ?? null;
     return {
         lastMsg: latest.lastMsg,
+        ts: latest.ts || 0,
         peerChatPK,
     };
 }
@@ -91,7 +93,7 @@ export function getPeersFromChats(chats, chatPK) {
 
 function sortChats(chats) {
     return [...chats].sort((a, b) => {
-        const delta = (b?.lastMsgTime || 0) - (a?.lastMsgTime || 0);
+        const delta = (b?.ts || 0) - (a?.ts || 0);
         if (delta !== 0) {
             return delta;
         }
@@ -140,7 +142,7 @@ export function setLocalChats(chats, localByChat) {
             continue;
         }
 
-        const lastMsgTime = typeof lastMsg.ts?.toMillis === 'function' ? lastMsg.ts.toMillis() : 0;
+        const ts = typeof lastMsg.ts?.toMillis === 'function' ? lastMsg.ts.toMillis() : 0;
         const currentIndex = indexById.get(chatId);
         const current = currentIndex != null ? next[currentIndex] : null;
         const participants = current?.participants?.length
@@ -153,7 +155,7 @@ export function setLocalChats(chats, localByChat) {
             ...(current || {}),
             participants,
             lastMsg,
-            lastMsgTime,
+            ts,
             unseen: false,
         };
 
@@ -163,7 +165,7 @@ export function setLocalChats(chats, localByChat) {
             continue;
         }
 
-        if (lastMsgTime >= (current?.lastMsgTime || 0)) {
+        if (ts >= (current?.ts || 0)) {
             next[currentIndex] = chat;
         }
     }

@@ -22,7 +22,6 @@ export function ChatMessageType({
     reply,
     replyFromPeer = false,
     onReplyPress,
-    onMediaUnavailable,
     onLike,
     reactions = [],
     reactionUsers,
@@ -30,7 +29,7 @@ export function ChatMessageType({
 }) {
     switch (msg?.t) {
         case 'txt':
-            return msg?.r && reply ? (
+            return msg?.r ? (
                 <ReplyMessage
                     msg={msg}
                     fromPeer={fromPeer}
@@ -55,7 +54,7 @@ export function ChatMessageType({
         case 'mp3':
             return <AudioMessage msg={msg} peerChatPK={peerChatPK} fromPeer={fromPeer} menuItems={menuItems} menuId={menuId} reactions={reactions} reactionUsers={reactionUsers} reactionPreviewInset={reactionPreviewInset} />;
         case 'mp4':
-            return <VideoMessage msg={msg} peerChatPK={peerChatPK} fromPeer={fromPeer} menuItems={menuItems} menuId={menuId} onUnavailable={onMediaUnavailable} onLike={onLike} reactions={reactions} reactionUsers={reactionUsers} reactionPreviewInset={reactionPreviewInset} />;
+            return <VideoMessage msg={msg} peerChatPK={peerChatPK} fromPeer={fromPeer} menuItems={menuItems} menuId={menuId} onLike={onLike} reactions={reactions} reactionUsers={reactionUsers} reactionPreviewInset={reactionPreviewInset} />;
         case 'file':
             return <AttachmentMessage msg={msg} peerChatPK={peerChatPK} fromPeer={fromPeer} menuItems={menuItems} menuId={menuId} reactions={reactions} reactionUsers={reactionUsers} reactionPreviewInset={reactionPreviewInset} />;
         default:

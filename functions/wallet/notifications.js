@@ -36,31 +36,6 @@ function normalizeWalletPK(value) {
     return walletPK;
 }
 
-function normalizeFundingAddress(value, network) {
-    const fundingAddress = typeof value === 'string' ? value.trim().toLowerCase() : '';
-    if (!fundingAddress) {
-        return null;
-    }
-
-    if (!/^[a-z0-9]{20,120}$/.test(fundingAddress)) {
-        throw new HttpsError('invalid-argument', 'Invalid wallet funding address.');
-    }
-
-    if (network === 'MAINNET' && !fundingAddress.startsWith('bc1')) {
-        throw new HttpsError('invalid-argument', 'Funding address does not match wallet network.');
-    }
-
-    if ((network === 'TESTNET' || network === 'SIGNET') && !fundingAddress.startsWith('tb1')) {
-        throw new HttpsError('invalid-argument', 'Funding address does not match wallet network.');
-    }
-
-    if ((network === 'REGTEST' || network === 'LOCAL') && !fundingAddress.startsWith('bcrt1')) {
-        throw new HttpsError('invalid-argument', 'Funding address does not match wallet network.');
-    }
-
-    return fundingAddress;
-}
-
 function routeIdFor(network, walletPK) {
     return createHash('sha256').update(`${network}:${walletPK}`).digest('hex');
 }
@@ -309,7 +284,6 @@ export const prepareWalletNotifications = onCall(async ({ auth, data }) => {
     const uid = auth.uid;
     const network = normalizeNetwork(data?.network);
     const walletPK = normalizeWalletPK(data?.walletPK);
-    const fundingAddress = normalizeFundingAddress(data?.fundingAddress, network);
     await assertWalletOwner(uid, network, walletPK);
 
     const routeId = routeIdFor(network, walletPK);
@@ -330,12 +304,9 @@ export const prepareWalletNotifications = onCall(async ({ auth, data }) => {
             url,
             eventTypes: EVENT_TYPES,
             enabled: true,
-            ...(fundingAddress
-                ? {
-                      fundingAddress,
-                      fundingAddressUpdatedAt: FieldValue.serverTimestamp(),
-                  }
-                : {}),
+            depositWatchEnabled: false,
+            fundingAddress: FieldValue.delete(),
+            fundingAddressUpdatedAt: FieldValue.delete(),
             preparedAt: route?.preparedAt || FieldValue.serverTimestamp(),
             updatedAt: FieldValue.serverTimestamp(),
         },
@@ -518,7 +489,7 @@ export const checkWalletDepositNotifications = onSchedule(
         for (const docSnap of snap.docs) {
             const route = docSnap.data();
             const fundingAddress = typeof route?.fundingAddress === 'string' ? route.fundingAddress : '';
-            if (!route?.uid || !WALLET_NETWORKS.has(route?.network) || !fundingAddress) {
+            if (route?.depositWatchEnabled !== true || !route?.uid || !WALLET_NETWORKS.has(route?.network) || !fundingAddress) {
                 continue;
             }
 

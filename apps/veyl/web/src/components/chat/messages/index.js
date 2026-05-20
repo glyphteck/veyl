@@ -15,7 +15,7 @@ export function ChatMessageType({ msg, fromPeer = false, peerChatPK, peerDisplay
 
     switch (msg?.t) {
         case 'txt':
-            body = msg?.r && reply ? (
+            body = msg?.r ? (
                 <ReplyMessage msg={msg} fromPeer={fromPeer} reply={reply} replyFromPeer={replyFromPeer} peerChatPK={peerChatPK} peerDisplayName={peerDisplayName} onReplyPress={onReplyPress} />
             ) : (
                 <TextMessage msg={msg} fromPeer={fromPeer} />

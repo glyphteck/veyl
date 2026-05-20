@@ -53,11 +53,11 @@ export function addLocalMessageToChats(chats, chatId, local, currentLocals = [])
 }
 
 export function updateLastChatWithLocal(current, peerChatPK, local, ms) {
-    const currentMs = typeof current?.lastMsg?.ts?.toMillis === 'function' ? current.lastMsg.ts.toMillis() : 0;
+    const currentMs = Number(current?.ts || 0);
     if (currentMs > ms) {
         return current;
     }
-    return { lastMsg: local, peerChatPK };
+    return { lastMsg: local, ts: ms, peerChatPK };
 }
 
 export function patchLocalMessageMap(localByChat, chatId, cid, patch) {

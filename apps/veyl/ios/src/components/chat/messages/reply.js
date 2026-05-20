@@ -8,7 +8,7 @@ import { useUser } from '@/providers/userprovider';
 import { useWallet } from '@/providers/walletprovider';
 import { bubbleTint, imageWidth } from '@/lib/messages';
 import { useMsgImage } from '@/lib/usemsgimage';
-import { getAttachmentCaption, getAttachmentTitle, getImageAspect } from '@glyphteck/shared/chat/messages';
+import { UNAVAILABLE_REPLY_MSG_TYPE, getAttachmentCaption, getAttachmentTitle, getImageAspect, makeUnavailableReply } from '@glyphteck/shared/chat/messages';
 import { renderMoney } from '@glyphteck/shared/utils';
 import GlassView from '@/components/glass/glassview';
 import Menu from '@/components/menu';
@@ -27,6 +27,27 @@ function ReplyText({ reply, replyFromPeer, onReplyPress }) {
     return (
         <ReplyPressable onReplyPress={onReplyPress}>
             <TextBubble msg={reply} fromPeer={replyFromPeer} compact singleLine muted allowEmoji={false} />
+        </ReplyPressable>
+    );
+}
+
+function ReplyUnavailable({ reply, onReplyPress }) {
+    const { theme } = useTheme();
+    return (
+        <ReplyPressable onReplyPress={onReplyPress}>
+            <View
+                style={{
+                    maxWidth: '100%',
+                    borderRadius: 20,
+                    paddingHorizontal: 10,
+                    paddingVertical: 7,
+                    backgroundColor: theme.foreground,
+                }}
+            >
+                <Text numberOfLines={1} style={{ color: theme.background, fontSize: 15, fontWeight: '600' }}>
+                    {reply?.c}
+                </Text>
+            </View>
         </ReplyPressable>
     );
 }
@@ -149,6 +170,8 @@ function ReplyAttachment({ reply, replyFromPeer, onReplyPress }) {
 
 function ReplyPreview({ reply, replyFromPeer, peerChatPK, peerDisplayName, onReplyPress }) {
     switch (reply?.t) {
+        case UNAVAILABLE_REPLY_MSG_TYPE:
+            return <ReplyUnavailable reply={reply} onReplyPress={onReplyPress} />;
         case 'txt':
             return <ReplyText reply={reply} replyFromPeer={replyFromPeer} onReplyPress={onReplyPress} />;
         case 'req':
@@ -172,14 +195,15 @@ export default function ReplyMessage({ msg, fromPeer = false, menuItems, menuId,
             </ReactionTray>
         </Menu>
     );
+    const replyPreview = reply || (msg?.r ? makeUnavailableReply() : null);
 
-    if (!reply) {
+    if (!replyPreview) {
         return body;
     }
 
     return (
         <View style={{ maxWidth: '100%', gap: 6, alignItems: fromPeer ? 'flex-start' : 'flex-end' }}>
-            <ReplyPreview reply={reply} replyFromPeer={replyFromPeer} peerChatPK={peerChatPK} peerDisplayName={peerDisplayName} onReplyPress={onReplyPress} />
+            <ReplyPreview reply={replyPreview} replyFromPeer={replyFromPeer} peerChatPK={peerChatPK} peerDisplayName={peerDisplayName} onReplyPress={onReplyPress} />
             <View style={{ maxWidth: '100%' }}>
                 {body}
             </View>

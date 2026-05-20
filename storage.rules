@@ -5,10 +5,6 @@ service firebase.storage {
       return request.auth != null;
     }
 
-    function myChatPK() {
-      return firestore.get(/databases/(default)/documents/profiles/$(request.auth.uid)).data.chatPK;
-    }
-
     function isAdmin() {
       return signedIn()
         && firestore.exists(/databases/(default)/documents/admins/$(request.auth.uid));
@@ -22,11 +18,6 @@ service firebase.storage {
           firestore.get(/databases/(default)/documents/moderation/$(uid)).data.banned.full is map
           || firestore.get(/databases/(default)/documents/moderation/$(uid)).data.banned.avatar is map
         );
-    }
-
-    function isChatId(chatId) {
-      return chatId is string
-        && chatId.matches('^[0-9a-fA-F]{64}_[0-9a-fA-F]{64}$');
     }
 
     function isAvatarWrite() {
@@ -47,17 +38,6 @@ service firebase.storage {
         || request.resource.size < 20 * 1024 * 1024;
     }
 
-    function isChatMember(chatId) {
-      let chatPK = myChatPK();
-      return signedIn()
-        && chatPK is string
-        && isChatId(chatId)
-        && (
-          chatId.matches('^' + chatPK + '_[0-9a-fA-F]{64}$')
-          || chatId.matches('^[0-9a-fA-F]{64}_' + chatPK + '$')
-        );
-    }
-
     match /{uid}/avatar.webp {
       allow read: if signedIn();
       allow write: if (
@@ -71,10 +51,14 @@ service firebase.storage {
       );
     }
 
-    match /chatmedia/{chatId}/{cid}/{slot} {
+    match /media/{mediaId}/{slot} {
       allow get: if signedIn();
       allow list: if false;
-      allow write: if isChatMember(chatId) && isChatBlob();
+      allow create: if signedIn()
+        && mediaId.matches('^[0-9a-fA-F]{32}$')
+        && slot == 'main'
+        && isChatBlob();
+      allow update, delete: if false;
     }
 
     match /reports/{reporterUid}/{targetUid}/{evidenceId} {

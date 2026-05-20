@@ -1,6 +1,7 @@
 import { AppState } from 'react-native';
+import { httpsCallable } from 'firebase/functions';
 import { createChat, createChatProvider } from '@glyphteck/shared/providers/chatprovider';
-import { db, storage } from '@/lib/firebase';
+import { db, functions, storage } from '@/lib/firebase';
 import { readMessageFileNative, uploadAttachmentMsgNative } from '@/lib/chatmedia';
 import { preloadMessageMediaUri } from '@/lib/chatdownloads';
 import { useVault } from '@/providers/vaultprovider';
@@ -14,6 +15,10 @@ const chat = createChat({
     },
     readMessageFile(storageInstance, userChatPK, userPrivKey, peerChatPK, message) {
         return readMessageFileNative(storageInstance, userChatPK, userPrivKey, peerChatPK, message);
+    },
+    async setMediaSaved(path, stayId, saved) {
+        await httpsCallable(functions, 'setMediaSaved')({ path, stayId, saved });
+        return true;
     },
 });
 

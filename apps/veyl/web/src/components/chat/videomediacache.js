@@ -1,6 +1,7 @@
 'use client';
 
 import { getMessagePreviewCacheKey, MESSAGE_PREVIEW_COMPRESS, MESSAGE_PREVIEW_MAX_EDGE, MESSAGE_PREVIEW_MIME } from '@glyphteck/shared/chat/previews';
+import { isExpiredAttachmentMsg } from '@glyphteck/shared/chat/messages';
 
 const videoCache = new Map();
 const videoPosterCache = new Map();
@@ -118,12 +119,13 @@ export function loadVideoObjectUrl(peerChatPK, msg, readMessageFile, options = {
     }
 
     const key = getVideoCacheKey(peerChatPK, msg);
-    const cached = getReadyEntry(key);
+    const expired = isExpiredAttachmentMsg(msg);
+    const cached = expired ? null : getReadyEntry(key);
     if (cached?.url) {
         return Promise.resolve(cached.url);
     }
 
-    const current = videoCache.get(key);
+    const current = expired ? null : videoCache.get(key);
     if (current?.status === 'pending' && isPromise(current.promise)) {
         return current.promise;
     }

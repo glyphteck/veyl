@@ -5,7 +5,7 @@ import { Loader, Pause, Play } from 'lucide-react';
 import { useChat } from '@/components/providers/chatprovider';
 import { bubbleBg } from '@/lib/messages';
 import { clear, play } from '@/lib/media';
-import { getAttachmentCaption, getAttachmentTitle } from '@glyphteck/shared/chat/messages';
+import { getAttachmentCaption, getAttachmentTitle, isExpiredAttachmentMsg } from '@glyphteck/shared/chat/messages';
 import { useCloak } from '@glyphteck/shared/providers/cloakprovider';
 import { stopClick } from './utils';
 
@@ -115,7 +115,7 @@ export default function AudioMessage({ msg, peerChatPK, fromPeer = false }) {
     const { readMessageFile } = useChat();
     const { cloaked } = useCloak();
     const audioRef = useRef(null);
-    const [src, setSrc] = useState(() => (typeof msg?.localUri === 'string' && msg.localUri ? msg.localUri : ''));
+    const [src, setSrc] = useState(() => (!isExpiredAttachmentMsg(msg) && typeof msg?.localUri === 'string' && msg.localUri ? msg.localUri : ''));
     const [loading, setLoading] = useState(() => msg?.t === 'mp3' && !msg?.localUri && !!msg?.p && !!msg?.k);
     const [error, setError] = useState('');
     const [playing, setPlaying] = useState(false);
@@ -136,7 +136,8 @@ export default function AudioMessage({ msg, peerChatPK, fromPeer = false }) {
     useEffect(() => {
         let cancelled = false;
         let retainedKey = null;
-        const localUri = typeof msg?.localUri === 'string' && msg.localUri ? msg.localUri : '';
+        const expired = isExpiredAttachmentMsg(msg);
+        const localUri = !expired && typeof msg?.localUri === 'string' && msg.localUri ? msg.localUri : '';
         if (localUri) {
             setSrc(localUri);
             setLoading(false);
@@ -152,8 +153,8 @@ export default function AudioMessage({ msg, peerChatPK, fromPeer = false }) {
         }
 
         const key = getCacheKey(peerChatPK, msg);
-        const cached = audioCache.get(key);
-        const cachedUrl = retainAudio(key);
+        const cached = expired ? null : audioCache.get(key);
+        const cachedUrl = expired ? null : retainAudio(key);
         if (cachedUrl) {
             retainedKey = key;
             setSrc(cachedUrl);

@@ -383,7 +383,6 @@ export default function MessageList({
     const submitReport = useMemo(() => httpsCallable(functions, 'submitReport'), []);
     const [payingMessages, setPayingMessages] = useState(new Set());
     const [reportedMessageKeys, setReportedMessageKeys] = useState(new Set());
-    const [hiddenMessageKeys, setHiddenMessageKeys] = useState(new Set());
     const time = useSharedValue(0);
     const userAvatarSource = useMemo(() => (avatar ? { uri: avatar } : null), [avatar]);
     const reactionUsers = useMemo(
@@ -405,7 +404,7 @@ export default function MessageList({
         onError: (error) => console.warn('message like failed', error),
     });
     const visibleMessagesAsc = useMemo(() => (messagesAsc || []).filter(canShowMsg), [messagesAsc]);
-    const messages = useMemo(() => [...visibleMessagesAsc].filter((msg) => !hiddenMessageKeys.has(getMsgKey(msg))).reverse(), [hiddenMessageKeys, visibleMessagesAsc]);
+    const messages = useMemo(() => [...visibleMessagesAsc].reverse(), [visibleMessagesAsc]);
     const latestReadReceipt = useMemo(() => getLatestReadOutgoingReceipt(messagesAsc, chatPK, peerChatPK), [chatPK, messagesAsc, peerChatPK]);
     const latestReadReceiptKey = getMsgKey(latestReadReceipt?.message);
     const latestReadReceiptStamp = useMemo(() => getMsgStamp(latestReadReceipt?.receipt), [latestReadReceipt?.receipt?.cid, latestReadReceipt?.receipt?.id, latestReadReceipt?.receipt?.ts]);
@@ -414,7 +413,7 @@ export default function MessageList({
             visibleMessagesAsc
                 .filter((msg) => {
                     const key = getMsgKey(msg);
-                    return isMediaViewerMsg(msg) && hasMsgFile(msg) && (!key || (!hiddenMessageKeys.has(key) && !reportedMessageKeys.has(key)));
+                    return isMediaViewerMsg(msg) && hasMsgFile(msg) && (!key || !reportedMessageKeys.has(key));
                 })
                 .map((msg) => ({
                     id: getMediaViewerKey(peerChatPK, msg),
@@ -424,7 +423,7 @@ export default function MessageList({
                     readMessageFile,
                 }))
                 .filter((item) => item.id),
-        [hiddenMessageKeys, peerChatPK, readMessageFile, reportedMessageKeys, visibleMessagesAsc]
+        [peerChatPK, readMessageFile, reportedMessageKeys, visibleMessagesAsc]
     );
     const replyMap = useMemo(() => {
         const map = new Map();
@@ -446,7 +445,6 @@ export default function MessageList({
     const nativeListGesture = useMemo(() => Gesture.Native(), []);
 
     useEffect(() => {
-        setHiddenMessageKeys(new Set());
         setMediaItems([]);
         loadingOlderRef.current = false;
     }, [chatId, setMediaItems]);
@@ -775,21 +773,6 @@ export default function MessageList({
         [chatId, patchMessage, peerChatPK, peerWalletPK, sendMoneyWithSpark, updateMessage]
     );
 
-    const hideMediaMessage = useCallback((msg) => {
-        const key = getMsgKey(msg);
-        if (!key) {
-            return;
-        }
-        setHiddenMessageKeys((prev) => {
-            if (prev.has(key)) {
-                return prev;
-            }
-            const next = new Set(prev);
-            next.add(key);
-            return next;
-        });
-    }, []);
-
     const canLikeMessage = useCallback(
         (msg) => {
             return !!(chatId && chatPK && peerChatPK && msg?.id && !String(msg.id).startsWith('local:') && !msg.pending && !msg.failed);
@@ -854,7 +837,6 @@ export default function MessageList({
                                         reply={reply}
                                         replyFromPeer={replyFromPeer}
                                         onReplyPress={() => jumpToReply(msg.r)}
-                                        onMediaUnavailable={hideMediaMessage}
                                         onLike={canLike ? handleLike : undefined}
                                         reactions={reactions}
                                         reactionUsers={reactionUsers}
@@ -877,7 +859,6 @@ export default function MessageList({
             getMenuItems,
             handleLike,
             handlePay,
-            hideMediaMessage,
             jumpToReply,
             latestReadReceiptKey,
             latestReadReceiptStamp,

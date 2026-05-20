@@ -21,18 +21,15 @@ export function decodeFileKey(key) {
     return toBytes32(key, 'file key');
 }
 
-export function getFileAad(pair, scope) {
-    return getFileAadForChat(pair?.chatId, scope);
-}
-
-export function getFileAadForChat(chatId, scope) {
-    if (!chatId) {
-        throw new Error('file chat id required');
-    }
+export function getFileAadForPath(scope) {
     if (!scope) {
         throw new Error('file scope required');
     }
-    return encodeScope(FILE_SCOPE, [chatId, scope]);
+    return encodeScope(FILE_SCOPE, [scope]);
+}
+
+export function getFileAad(_pair, scope) {
+    return getFileAadForPath(scope);
 }
 
 function getSubtleCrypto() {
@@ -48,8 +45,7 @@ async function importAesKey(key, usages) {
 }
 
 // Scope should include a stable object id so a blob can't be replayed onto another path.
-export async function sealFile(pair, key, bytes, scope) {
-    const chatId = pair?.chatId;
+export async function sealFile(_pair, key, bytes, scope) {
     const fileKey = new Uint8Array(toBytes32(key, 'file key'));
     try {
         const cryptoKey = await importAesKey(fileKey, ['encrypt']);
@@ -59,7 +55,7 @@ export async function sealFile(pair, key, bytes, scope) {
                 name: 'AES-GCM',
                 iv,
                 tagLength: FILE_TAG_BYTES * 8,
-                additionalData: getFileAadForChat(chatId, scope),
+                additionalData: getFileAadForPath(scope),
             },
             cryptoKey,
             toBytes(bytes, 'plaintext')
@@ -70,11 +66,11 @@ export async function sealFile(pair, key, bytes, scope) {
     }
 }
 
-export async function openFile(pair, key, body, scope) {
-    return openFileForChat(pair?.chatId, key, body, scope);
+export async function openFile(_pair, key, body, scope) {
+    return openFileForPath(key, body, scope);
 }
 
-export async function openFileForChat(chatId, key, body, scope) {
+export async function openFileForPath(key, body, scope) {
     const fileKey = new Uint8Array(toBytes32(key, 'file key'));
     try {
         const cryptoKey = await importAesKey(fileKey, ['decrypt']);
@@ -84,7 +80,7 @@ export async function openFileForChat(chatId, key, body, scope) {
                 name: 'AES-GCM',
                 iv: nonce,
                 tagLength: FILE_TAG_BYTES * 8,
-                additionalData: getFileAadForChat(chatId, scope),
+                additionalData: getFileAadForPath(scope),
             },
             cryptoKey,
             ct

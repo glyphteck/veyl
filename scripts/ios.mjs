@@ -93,7 +93,7 @@ function run(command) {
 }
 
 async function main() {
-    const command = ['x', 'expo', 'start'];
+    const command = ['x', 'expo', 'start', '--dev-client'];
     if (tunnel) {
         command.push('--tunnel');
     }

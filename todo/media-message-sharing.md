@@ -1,10 +1,10 @@
-# Media Message Sharing
+# Media Destructive Deletion
 
-## Deletion And Shared File Privacy
+## Open Question
 
-Sharing by reference improves upload/download efficiency, but it creates a deletion contract problem: if the original message owner deletes their message, deleting the Storage object breaks every forwarded reference, while keeping it means the file still exists on the backend after the user tried to delete it.
+Media files now use opaque encrypted `media/{mediaId}/main` Storage objects with a 21-day lifecycle TTL. Per-message permanence keeps the same Storage object and records encrypted random message stays while Firestore stores only opaque per-file stay counts. Cloud Storage temporary holds are derived from those stay counts instead of moving, copying, or reuploading bytes. Chat/message deletion is intentionally separate from Storage retention, so normal message deletion does not break forwarded messages that reference the same file capability.
 
-The product needs an explicit design before this becomes final behavior. Users should be able to understand whether deleting a media message only removes that chat message or removes the backend file wherever it was shared. They also need a way to truly remove sensitive media from the backend when that is their intent.
+The unresolved product question is whether Veyl should add a manual destructive media-delete action before the TTL expires. Users would need to understand whether deleting a media message only removes that chat message or removes the backend file wherever it was shared.
 
 Tradeoffs:
 

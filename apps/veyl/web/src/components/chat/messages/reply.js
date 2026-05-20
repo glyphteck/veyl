@@ -6,7 +6,7 @@ import { useTxData } from '@/components/providers/txdataprovider';
 import { useUser } from '@/components/providers/userprovider';
 import { bubbleBg, imageWidth } from '@/lib/messages';
 import { renderMoney } from '@/lib/utils';
-import { getAttachmentCaption, getAttachmentTitle, getImageAspect } from '@glyphteck/shared/chat/messages';
+import { UNAVAILABLE_REPLY_MSG_TYPE, getAttachmentCaption, getAttachmentTitle, getImageAspect, makeUnavailableReply } from '@glyphteck/shared/chat/messages';
 import { useCloak } from '@glyphteck/shared/providers/cloakprovider';
 import { useMsgImage } from '../usemsgimage';
 import { TextBubble } from './text';
@@ -33,6 +33,16 @@ function ReplyText({ reply, replyFromPeer, onReplyPress }) {
         <ReplyButton onReplyPress={onReplyPress}>
             <div className={`backdrop-blur-sm min-w-0 max-w-full rounded-full px-2 py-0.5 shadow-sm opacity-65 ${bubbleBg(replyFromPeer)}`}>
                 <p className={`truncate whitespace-nowrap text-md ${cloaked ? 'cloaked' : ''}`}>{reply?.c}</p>
+            </div>
+        </ReplyButton>
+    );
+}
+
+function ReplyUnavailable({ reply, onReplyPress }) {
+    return (
+        <ReplyButton onReplyPress={onReplyPress}>
+            <div className="min-w-0 max-w-full rounded-full bg-foreground px-2.5 py-1 shadow-sm">
+                <p className="truncate whitespace-nowrap text-[15px] font-medium text-background">{reply?.c}</p>
             </div>
         </ReplyButton>
     );
@@ -99,6 +109,8 @@ function ReplyAttachment({ reply, replyFromPeer, onReplyPress }) {
 
 function ReplyPreview({ reply, replyFromPeer, peerChatPK, peerDisplayName, onReplyPress }) {
     switch (reply?.t) {
+        case UNAVAILABLE_REPLY_MSG_TYPE:
+            return <ReplyUnavailable reply={reply} onReplyPress={onReplyPress} />;
         case 'txt':
             return <ReplyText reply={reply} replyFromPeer={replyFromPeer} onReplyPress={onReplyPress} />;
         case 'req':
@@ -116,14 +128,15 @@ function ReplyPreview({ reply, replyFromPeer, peerChatPK, peerDisplayName, onRep
 
 export default function ReplyMessage({ msg, fromPeer = false, reply, replyFromPeer = false, peerChatPK, peerDisplayName, onReplyPress }) {
     const body = <TextBubble msg={msg} fromPeer={fromPeer} allowEmoji={false} />;
+    const replyPreview = reply || (msg?.r ? makeUnavailableReply() : null);
 
-    if (!reply) {
+    if (!replyPreview) {
         return body;
     }
 
     return (
         <div className={`flex min-w-0 max-w-full flex-col gap-1.5 ${fromPeer ? 'items-start' : 'items-end'}`}>
-            <ReplyPreview reply={reply} replyFromPeer={replyFromPeer} peerChatPK={peerChatPK} peerDisplayName={peerDisplayName} onReplyPress={onReplyPress} />
+            <ReplyPreview reply={replyPreview} replyFromPeer={replyFromPeer} peerChatPK={peerChatPK} peerDisplayName={peerDisplayName} onReplyPress={onReplyPress} />
             <div className="min-w-0 max-w-full">
                 {body}
             </div>

@@ -4,10 +4,9 @@ import { ref, uploadBytes } from 'firebase/storage';
 import { AESEncryptionKey, AESSealedData, aesDecryptAsync, aesEncryptAsync } from 'expo-crypto';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import { createVideoPlayer } from 'expo-video';
-import { closeChatPair, openChatPair } from '@glyphteck/shared/crypto/chat';
-import { CHAT_FILE_SIZE_LIMIT_ENABLED, MAX_CHAT_FILE_BYTES } from '@glyphteck/shared/chat/filepayload';
-import { chatFilePath, getChatFileChatId, readFile } from '@glyphteck/shared/files';
-import { createFileKey, decodeFileKey, encodeFileKey, FILE_IV_BYTES, FILE_TAG_BYTES, getFileAadForChat } from '@glyphteck/shared/crypto/file';
+import { CHAT_FILE_SIZE_LIMIT_ENABLED, CHAT_MEDIA_TTL_MS, MAX_CHAT_FILE_BYTES } from '@glyphteck/shared/chat/filepayload';
+import { getMediaFileId, mediaFilePath, readFile } from '@glyphteck/shared/files';
+import { createFileKey, decodeFileKey, encodeFileKey, FILE_IV_BYTES, FILE_TAG_BYTES, getFileAadForPath } from '@glyphteck/shared/crypto/file';
 import { cleanBytes, randomBytes, toBytes } from '@glyphteck/shared/crypto/core';
 import { packRawData, unpackBodyData } from '@glyphteck/shared/crypto/pack';
 import { makeAttachment } from '@glyphteck/shared/chat/messages';
@@ -151,13 +150,13 @@ export async function uploadStorageBytesNative(storage, path, data, metadata = {
     }
 }
 
-async function sealChatFileNative(pair, key, bytes, path) {
+async function sealChatFileNative(key, bytes, path) {
     const fileKey = new Uint8Array(decodeFileKey(key));
     try {
         const aesKey = await AESEncryptionKey.import(fileKey);
         const sealed = await aesEncryptAsync(bytes, aesKey, {
             nonce: { bytes: randomBytes(FILE_IV_BYTES) },
-            additionalData: getFileAadForChat(pair?.chatId, path),
+            additionalData: getFileAadForPath(path),
         });
         const nonce = new Uint8Array(await sealed.iv());
         const ciphertext = new Uint8Array(await sealed.ciphertext({ includeTag: true }));
@@ -167,7 +166,7 @@ async function sealChatFileNative(pair, key, bytes, path) {
     }
 }
 
-async function openChatFileNative(chatId, key, body, path) {
+async function openChatFileNative(key, body, path) {
     const fileKey = new Uint8Array(decodeFileKey(key));
     try {
         const aesKey = await AESEncryptionKey.import(fileKey);
@@ -175,7 +174,7 @@ async function openChatFileNative(chatId, key, body, path) {
         const sealed = AESSealedData.fromParts(nonce, ct, FILE_TAG_BYTES);
         return new Uint8Array(
             await aesDecryptAsync(sealed, aesKey, {
-                additionalData: getFileAadForChat(chatId, path),
+                additionalData: getFileAadForPath(path),
             })
         );
     } finally {
@@ -183,27 +182,25 @@ async function openChatFileNative(chatId, key, body, path) {
     }
 }
 
-async function makeChatFileUploadNative(pair, cid, data, meta = {}) {
-    const path = chatFilePath(pair?.chatId, cid);
+async function makeChatFileUploadNative(_cid, data, meta = {}) {
+    const stayId = typeof meta?.stay === 'string' ? meta.stay.trim() : '';
+    const path = mediaFilePath();
     const key = createFileKey();
     try {
         const uploadBytes = toBytes(data, 'upload bytes');
         assertChatFileSize(uploadBytes);
         return {
             path,
-            body: await sealChatFileNative(pair, key, uploadBytes, path),
+            body: await sealChatFileNative(key, uploadBytes, path),
             metadata: {
                 contentType: meta?.contentType || 'application/octet-stream',
                 cacheControl: meta?.cacheControl || 'private, max-age=0, no-transform',
-                customMetadata: {
-                    chatId: pair.chatId,
-                    cid,
-                    slot: 'main',
-                },
             },
             file: {
                 p: path,
                 k: encodeFileKey(key),
+                x: Date.now() + CHAT_MEDIA_TTL_MS,
+                ...(stayId ? { stay: stayId } : {}),
             },
         };
     } finally {
@@ -298,7 +295,7 @@ export async function prepareAssetForChatUpload(asset) {
     };
 }
 
-export async function uploadAttachmentMsgNative(storage, senderPubkey, senderPrivkey, receiverChatPK, attachment = {}) {
+export async function uploadAttachmentMsgNative(storage, senderPubkey, senderPrivkey, _receiverChatPK, attachment = {}) {
     if (!storage) {
         throw new Error('storage required');
     }
@@ -314,11 +311,10 @@ export async function uploadAttachmentMsgNative(storage, senderPubkey, senderPri
     const type = typeof attachment?.type === 'string' && attachment.type ? attachment.type : 'file';
     const data = attachment?.data;
     const meta = attachment?.meta || {};
-    const pair = await openChatPair(senderPubkey, senderPrivkey, receiverChatPK);
     let upload = null;
 
     try {
-        upload = await makeChatFileUploadNative(pair, nextCid, data, meta);
+        upload = await makeChatFileUploadNative(nextCid, data, meta);
         await uploadStorageBytesNative(storage, upload.path, upload.body, upload.metadata);
         return makeAttachment(type, {
             ...upload.file,
@@ -330,8 +326,6 @@ export async function uploadAttachmentMsgNative(storage, senderPubkey, senderPri
             error.path = error?.path || upload?.path || null;
         }
         throw error;
-    } finally {
-        closeChatPair(pair);
     }
 }
 
@@ -344,9 +338,9 @@ export async function readMessageFileNative(storage, userChatPK, userPrivKey, pe
     }
 
     try {
-        const chatId = getChatFileChatId(msg.p);
+        getMediaFileId(msg.p);
         const body = await readFile(storage, msg.p);
-        return await openChatFileNative(chatId, msg.k, body, msg.p);
+        return await openChatFileNative(msg.k, body, msg.p);
     } catch (error) {
         if (error && typeof error === 'object') {
             error.path = error?.path || msg?.p || null;

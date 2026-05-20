@@ -1,0 +1,16 @@
+{
+  "ignore_dirs": [
+    "apps/veyl/web/.next",
+    "node_modules",
+    "functions/node_modules",
+    "apps/veyl/ios/.expo",
+    "apps/veyl/web/node_modules",
+    "apps/veyl/ios/node_modules",
+    "apps/veyl/bot/node_modules",
+    "shared/node_modules",
+    "build",
+    "coverage",
+    "DerivedData"
+  ],
+  "fsevents_latency": 0.1
+}

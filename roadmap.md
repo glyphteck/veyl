@@ -75,19 +75,7 @@
 - Use conservative, neutral, and excessive usage models for each user plateau.
 - Move bot operation from local/manual runtime management to dedicated hosted infrastructure.
 - Compare Firebase, AWS, and low-cost self-hosted options for bot scale.
-
-### Ideas: Synthetic Data Blending
-
-- Explore whether real backend records can be harder to distinguish by mixing them with large volumes of generated decoy data.
-- Treat this as an anonymity-layer research idea, not a substitute for end-to-end encryption, local vaulting, strict rules, or minimal backend metadata.
-- Prototype with fake user profiles, encrypted-looking chat envelopes, generated image/media attachments, fake report payloads, and wallet-like non-spendable metadata that never touches real Spark funds.
-- Make decoys structurally indistinguishable from normal server records where possible: similar document sizes, timing patterns, attachment dimensions, storage paths, and lifecycle events.
-- Keep all fake data clearly segregated at the trust boundary so clients never show it as real people, chats, media, balances, reports, or notifications.
-- Model the cost and quota impact before implementation. Storage, Firestore reads/writes, indexes, CDN egress, moderation queues, and backup/export tooling could become the limiting factor.
-- Define cleanup and expiry rules so generated data does not become permanent operational debt.
-- Evaluate whether scheduled churn, delayed writes, dummy reads, or cover traffic gives more privacy value than static fake records.
-- Review abuse, compliance, and moderation risks. Generated media and messages must not create reportable illegal content, spam another user, poison admin review queues, or mislead auditors.
-- Measure privacy value honestly against simpler alternatives such as reducing plaintext metadata, opaque payload envelopes, batching writes, delaying presence, wallet rotation, and minimizing searchable indexes.
+- Keep dormant architecture and privacy research ideas in [ideas.md](ideas.md) instead of treating them as active roadmap commitments.
 
 ## Moderation And Public Accountability
 

@@ -1,11 +1,11 @@
 'use client';
 
 import { deleteObject, getBytes, getDownloadURL, ref, uploadBytes } from 'firebase/storage';
-import { decodeFileKey, openFileForChat } from './crypto/file.js';
+import { decodeFileKey, openFileForPath } from './crypto/file.js';
 import { randomBytes, toBytes, toHex } from './crypto/core.js';
-import { CHAT_SLOT, MAX_CHAT_FILE_BYTES, chatFilePath, getChatFileChatId, makeChatFileUploadPayload } from './chat/filepayload.js';
+import { CHAT_SLOT, MAX_CHAT_FILE_BYTES, getMediaFileId, makeChatFileUploadPayload, mediaFilePath } from './chat/filepayload.js';
 
-export { MAX_CHAT_FILE_BYTES, chatFilePath, getChatFileChatId };
+export { MAX_CHAT_FILE_BYTES, getMediaFileId, mediaFilePath };
 
 export function avatarPath(uid) {
     if (!uid) {
@@ -103,16 +103,17 @@ export async function dropAvatar(storage, uid) {
     return removeFile(storage, avatarPath(uid));
 }
 
-export async function makeChatFileUpload(pair, cid, data, { slot = CHAT_SLOT, contentType = 'application/octet-stream', cacheControl = 'private, max-age=0, no-transform' } = {}) {
+export async function makeChatFileUpload(pair, cid, data, { slot = CHAT_SLOT, contentType = 'application/octet-stream', cacheControl = 'private, max-age=0, no-transform', stay = '' } = {}) {
     try {
         return await makeChatFileUploadPayload(pair, cid, data, {
             slot,
             contentType,
             cacheControl,
+            stay,
         });
     } catch (error) {
         throw setErrorStage(error, 'encrypt', {
-            path: chatFilePath(pair?.chatId, cid, slot),
+            ...(error?.path ? { path: error.path } : {}),
             cid,
         });
     }
@@ -139,7 +140,8 @@ export async function readChatFile(storage, _pair, file) {
     }
 
     try {
-        const bytes = await openFileForChat(getChatFileChatId(file?.p), decodeFileKey(file?.k), body, file?.p);
+        getMediaFileId(file?.p);
+        const bytes = await openFileForPath(decodeFileKey(file?.k), body, file?.p);
         return bytes;
     } catch (error) {
         error.path = file?.p || null;

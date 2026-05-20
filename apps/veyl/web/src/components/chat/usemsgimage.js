@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useChat } from '@/components/providers/chatprovider';
+import { isExpiredAttachmentMsg } from '@glyphteck/shared/chat/messages';
 
 const imageCache = new Map();
 const MAX_IMAGE_CACHE = 40;
@@ -141,12 +142,13 @@ export function preloadMsgImage(peerChatPK, msg, readMessageFile, options = {}) 
     }
 
     const key = getCacheKey(msg);
-    const cached = getReadyEntry(key);
+    const expired = isExpiredAttachmentMsg(msg);
+    const cached = expired ? null : getReadyEntry(key);
     if (cached?.url) {
         return Promise.resolve(cached.url);
     }
 
-    const current = imageCache.get(key);
+    const current = expired ? null : imageCache.get(key);
     if (current?.status === 'pending' && isPromise(current.promise)) {
         return current.promise;
     }
@@ -197,14 +199,15 @@ function withTimeout(promise, ms) {
 
 export function useMsgImage(peerChatPK, msg) {
     const { readMessageFile } = useChat();
-    const [src, setSrc] = useState(() => (typeof msg?.localUri === 'string' && msg.localUri ? msg.localUri : null));
+    const [src, setSrc] = useState(() => (!isExpiredAttachmentMsg(msg) && typeof msg?.localUri === 'string' && msg.localUri ? msg.localUri : null));
     const [loading, setLoading] = useState(() => msg?.t === 'img' && !msg?.localUri);
     const [error, setError] = useState(null);
 
     useEffect(() => {
         let cancelled = false;
         let retainedKey = null;
-        const localUri = typeof msg?.localUri === 'string' && msg.localUri ? msg.localUri : null;
+        const expired = isExpiredAttachmentMsg(msg);
+        const localUri = !expired && typeof msg?.localUri === 'string' && msg.localUri ? msg.localUri : null;
         if (localUri) {
             setSrc(localUri);
             setLoading(false);
@@ -220,8 +223,8 @@ export function useMsgImage(peerChatPK, msg) {
         }
 
         const key = getCacheKey(msg);
-        const cached = imageCache.get(key);
-        const cachedUrl = retainImage(key);
+        const cached = expired ? null : imageCache.get(key);
+        const cachedUrl = expired ? null : retainImage(key);
         if (cachedUrl) {
             retainedKey = key;
             setSrc(cachedUrl);

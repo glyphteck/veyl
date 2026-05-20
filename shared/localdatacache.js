@@ -4,8 +4,8 @@ import { AES_IV_BYTES, openAes, sealAes } from './crypto/aes.js';
 import { makeMessagePreviewMedia } from './chat/previews.js';
 import { cleanBytes, decoder, encoder, toBytes, toHex } from './crypto/core.js';
 
-export const LOCAL_DATA_CACHE_VERSION = 1;
-export const LOCAL_DATA_CACHE_LABEL = 'local-cache-v1';
+export const LOCAL_DATA_CACHE_VERSION = 2;
+export const LOCAL_DATA_CACHE_LABEL = 'local-cache-v2';
 
 const WRITE_DELAY_MS = 350;
 const MEDIA_CACHE_MAX_BYTES = 128 * 1024 * 1024;
@@ -565,6 +565,14 @@ function serializeMsg(msg) {
     } else {
         delete clean.ts;
     }
+    const ttl = timestampMs(msg.ttl);
+    if (ttl != null) {
+        clean.ttl = ttl;
+    } else if (msg.ttl == null && 'ttl' in msg) {
+        clean.ttl = null;
+    } else {
+        delete clean.ttl;
+    }
     return clean;
 }
 
@@ -573,10 +581,14 @@ function reviveMsg(msg) {
         return null;
     }
 
-    return {
+    const next = {
         ...msg,
         ts: makeTs(msg.ts),
     };
+    if ('ttl' in msg) {
+        next.ttl = msg.ttl == null ? null : makeTs(msg.ttl);
+    }
+    return next;
 }
 
 function serializeChat(chat) {
@@ -587,8 +599,9 @@ function serializeChat(chat) {
     return {
         id: chat.id,
         participants: Array.isArray(chat.participants) ? chat.participants.filter(Boolean) : [],
+        settings: isObject(chat.settings) ? jsonClean(chat.settings) : undefined,
         lastMsg: serializeMsg(chat.lastMsg),
-        lastMsgTime: Number(chat.lastMsgTime || timestampMs(chat.lastMsg?.ts) || 0),
+        ts: timestampMs(chat.ts) || 0,
         unseen: !!chat.unseen,
     };
 }
@@ -602,8 +615,9 @@ function reviveChat(chat) {
     return {
         id: chat.id,
         participants: Array.isArray(chat.participants) ? chat.participants.filter(Boolean) : [],
+        settings: isObject(chat.settings) ? chat.settings : undefined,
         lastMsg,
-        lastMsgTime: Number(chat.lastMsgTime || timestampMs(lastMsg?.ts) || 0),
+        ts: timestampMs(chat.ts) || 0,
         unseen: !!chat.unseen,
     };
 }
@@ -616,7 +630,7 @@ export function readCachedChats(cache) {
     return Object.values(payload.chatsById)
         .map(reviveChat)
         .filter(Boolean)
-        .sort((a, b) => (b.lastMsgTime || 0) - (a.lastMsgTime || 0));
+        .sort((a, b) => (b.ts || 0) - (a.ts || 0));
 }
 
 export function writeCachedChats(cache, chats) {

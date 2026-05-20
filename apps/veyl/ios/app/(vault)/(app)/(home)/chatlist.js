@@ -343,7 +343,7 @@ export default function ChatList() {
             const title = formatUserDisplay({ username: profile?.username, chatPK: peerChatPK });
             const avatarSource = profile?.avatar ? { uri: profile.avatar } : null;
             const subtitle = getMsgPreview(chat?.lastMsg, chatPK, null, null) || ' ';
-            const lastMs = typeof chat?.lastMsg?.ts?.toMillis === 'function' ? chat.lastMsg.ts.toMillis() : null;
+            const lastMs = chat?.ts || null;
             const rightLabel = lastMs ? formatFullDateTime(lastMs) : '';
             const isActive = !!profile?.active;
 

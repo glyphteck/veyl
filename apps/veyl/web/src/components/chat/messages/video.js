@@ -5,7 +5,7 @@ import { Loader, Pause, Play } from 'lucide-react';
 import { useChat } from '@/components/providers/chatprovider';
 import { imageWidth } from '@/lib/messages';
 import { clear, play } from '@/lib/media';
-import { getAttachmentCaption, getImageAspect } from '@glyphteck/shared/chat/messages';
+import { getAttachmentCaption, getImageAspect, isExpiredAttachmentMsg } from '@glyphteck/shared/chat/messages';
 import { getMessagePreviewCacheKey } from '@glyphteck/shared/chat/previews';
 import { useCloak } from '@glyphteck/shared/providers/cloakprovider';
 import { getReadyPoster, getVideoCacheKey, loadVideoObjectUrl, loadVideoPoster, releaseVideo, retainVideo } from '../videomediacache';
@@ -25,13 +25,14 @@ export default function VideoMessage({ msg, peerChatPK }) {
     const videoRef = useRef(null);
     const cacheKey = getVideoCacheKey(peerChatPK, msg);
     const posterKey = getMessagePreviewCacheKey(peerChatPK, msg) || cacheKey;
-    const [src, setSrc] = useState(() => (typeof msg?.localUri === 'string' && msg.localUri ? msg.localUri : ''));
+    const expired = isExpiredAttachmentMsg(msg);
+    const [src, setSrc] = useState(() => (!expired && typeof msg?.localUri === 'string' && msg.localUri ? msg.localUri : ''));
     const [loading, setLoading] = useState(() => msg?.t === 'mp4' && !msg?.localUri && !!msg?.p && !!msg?.k);
     const [error, setError] = useState('');
     const [playing, setPlaying] = useState(false);
     const [rowHover, setRowHover] = useState(false);
     const [surfaceHover, setSurfaceHover] = useState(false);
-    const [poster, setPoster] = useState(() => getReadyPoster(posterKey));
+    const [poster, setPoster] = useState(() => (expired ? '' : getReadyPoster(posterKey)));
     const [time, setTime] = useState(0);
     const [duration, setDuration] = useState(Number.isFinite(msg?.d) ? msg.d : 0);
     const aspect = getImageAspect(msg, 16 / 9);
@@ -54,7 +55,7 @@ export default function VideoMessage({ msg, peerChatPK }) {
     }, [src]);
 
     useEffect(() => {
-        if (!posterKey || error) {
+        if (!posterKey || error || expired) {
             setPoster('');
             return;
         }
@@ -81,12 +82,13 @@ export default function VideoMessage({ msg, peerChatPK }) {
         return () => {
             cancelled = true;
         };
-    }, [error, msg, posterKey, readMessagePreview, src, writeMessagePreview]);
+    }, [error, expired, msg, posterKey, readMessagePreview, src, writeMessagePreview]);
 
     useEffect(() => {
         let cancelled = false;
         let retainedKey = null;
-        const localUri = typeof msg?.localUri === 'string' && msg.localUri ? msg.localUri : '';
+        const expired = isExpiredAttachmentMsg(msg);
+        const localUri = !expired && typeof msg?.localUri === 'string' && msg.localUri ? msg.localUri : '';
 
         if (localUri) {
             setSrc(localUri);

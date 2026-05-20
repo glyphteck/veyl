@@ -59,7 +59,7 @@ export default function SendPhotoScreen() {
     const { theme } = useTheme();
     const { peers, recentPeers } = usePeer() || {};
     const { uid, chatPK, chatBanned } = useUser();
-    const { sendImage, selectChat } = useChat();
+    const { sendImageMany, selectChat } = useChat();
     const { searching, results, query, search: runSearch, clearSearch } = useSearch('profiles');
     const router = useRouter();
     const insets = useSafeAreaInsets();
@@ -134,14 +134,20 @@ export default function SendPhotoScreen() {
             mimeType: 'image/jpeg',
         })
             .then(async (prepared) => {
+                const results = await sendImageMany(
+                    selected.map((peer) => peer.chatPK),
+                    prepared
+                );
+                const resultByChatPK = new Map(results.map((result) => [result.peerChatPK, result]));
+
                 for (const peer of selected) {
-                    try {
-                        await sendImage(peer.chatPK, prepared);
+                    const result = resultByChatPK.get(peer.chatPK);
+                    if (result?.ok) {
                         if (selected.length === 1) {
                             selectChat(getChatId(chatPK, peer.chatPK));
                         }
-                    } catch (error) {
-                        console.warn('send photo failed:', error);
+                    } else {
+                        console.warn('send photo failed:', result?.error);
                     }
                 }
             })
@@ -151,7 +157,7 @@ export default function SendPhotoScreen() {
             .finally(() => {
                 busyRef.current = false;
             });
-    }, [chatBanned, chatPK, photoHeight, photoUri, photoWidth, router, selectChat, selected, sendImage, sending]);
+    }, [chatBanned, chatPK, photoHeight, photoUri, photoWidth, router, selectChat, selected, sendImageMany, sending]);
 
     const selectedUids = useMemo(() => new Set(selected.map((p) => p.uid)), [selected]);
 

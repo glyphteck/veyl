@@ -316,7 +316,7 @@ export function createPeerProvider({ useChat, useUser, useTxData, useVault, peer
                 const participants = Array.isArray(chat?.participants) ? chat.participants : [];
                 const peerChatPK = participants.find((participant) => participant && participant !== chatPK);
                 const uid = peerChatPK ? chatPkToUid.get(peerChatPK) : null;
-                const ms = timeMs(chat?.lastMsgTime) ?? timeMs(chat?.lastMsg?.ts) ?? 0;
+                const ms = timeMs(chat?.ts) ?? 0;
                 if (uid) {
                     setRecent(uid, 'chat', ms);
                 }

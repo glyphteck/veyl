@@ -50,6 +50,27 @@ export function makeAttachmentUnavailableError(type = 'file') {
     return error;
 }
 
+export function makeFileGoneError() {
+    const error = new Error('this file is no longer available');
+    error.code = 'file-gone';
+    return error;
+}
+
+export function isFileGoneError(error) {
+    if (!error || typeof error !== 'object') {
+        return false;
+    }
+    const code = typeof error.code === 'string' ? error.code : '';
+    if (code === 'file-gone' || code === 'storage/object-not-found' || code.endsWith('/object-not-found')) {
+        return true;
+    }
+    if (error.status === 404) {
+        return true;
+    }
+    const message = String(error.message || '').toLowerCase();
+    return message.includes('object') && message.includes('not found');
+}
+
 export function makeTxtFileAttachment(message) {
     const text = String(message?.c ?? '');
     return {

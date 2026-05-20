@@ -101,16 +101,16 @@ export function createFido2Lib(rpId) {
     });
 }
 
-/* Store challenge in Firestore with expiration */
+/* Store challenge in Firestore with TTL */
 export async function storeChallenge(challengeString, ttlMs = 300_000) {
-    const expires = Timestamp.fromMillis(Date.now() + ttlMs);
-    await db.collection('passkey_challenges').doc(challengeString).set({ expires });
+    const ttl = Timestamp.fromMillis(Date.now() + ttlMs);
+    await db.collection('passkey_challenges').doc(challengeString).set({ ttl });
 }
 
 /* Retrieve and delete challenge from Firestore */
 export async function consumeChallenge(challengeString) {
     const doc = await db.collection('passkey_challenges').doc(challengeString).get();
-    if (!doc.exists || doc.data().expires.toMillis() < Date.now()) {
+    if (!doc.exists || doc.data().ttl.toMillis() < Date.now()) {
         return null;
     }
     await doc.ref.delete();

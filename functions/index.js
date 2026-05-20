@@ -15,6 +15,7 @@ export { deleteChat } from './user/actions/deletechat.js';
 export { submitReport } from './user/actions/report.js';
 
 // chat functions
+export { setMediaSaved } from './chat/media.js';
 export { onChatMessage } from './chat/messagepush.js';
 
 // wallet functions

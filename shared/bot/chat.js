@@ -1,6 +1,9 @@
 import { closeChatPair, getChatId, hasMsgData, openChatPair, openMsg, resealMsgBody, sealMsg } from '../crypto/chat.js';
 import { orderChatKeys } from '../crypto/pair.js';
 import { putBotAttachment, readBotAttachment } from './storage.js';
+import { canStoreMsg } from '../chat/messages.js';
+import { openChatSettingsForPair } from '../chat/settings.js';
+import { newMessageTtlMs } from '../chat/ttl.js';
 
 const pairCache = new Map();
 const MAX_PAIR_CACHE = 256;
@@ -49,9 +52,24 @@ function normalizeMessage(msgData, message) {
         return null;
     }
 
-    return {
+    const normalized = {
         ...message,
         ts: msgData?.ts ?? null,
+        ttl: msgData?.ttl ?? null,
+    };
+    return canStoreMsg(normalized) ? normalized : null;
+}
+
+function makeTtl(retention) {
+    const ms = newMessageTtlMs(retention);
+    return Number.isFinite(ms) ? new Date(ms) : null;
+}
+
+function makeChatLastMsg(msgData) {
+    return {
+        head: msgData.head,
+        body: msgData.body,
+        ttl: msgData.ttl,
     };
 }
 
@@ -63,6 +81,15 @@ export async function decryptBotMsg(msgData, userChatPK, userChatPrivKey, peerCh
     const pair = await getCachedPair(userChatPK, userChatPrivKey, peerChatPK);
     const message = await openMsg(pair, msgData);
     return normalizeMessage(msgData, message);
+}
+
+export async function decryptBotChatSettings(settingsData, userChatPK, userChatPrivKey, peerChatPK) {
+    if (!userChatPK || !userChatPrivKey || !peerChatPK) {
+        return null;
+    }
+
+    const pair = await getCachedPair(userChatPK, userChatPrivKey, peerChatPK);
+    return openChatSettingsForPair(pair, settingsData);
 }
 
 export async function sendBotMsg(db, FieldValue, senderChatPK, senderChatPrivKey, receiverChatPK, message, options = {}) {
@@ -89,12 +116,13 @@ export async function sendBotMsg(db, FieldValue, senderChatPK, senderChatPrivKey
         head,
         body: rawBody,
         ts: FieldValue.serverTimestamp(),
+        ttl: makeTtl(options?.retention ?? options?.ttlMode),
     };
 
     const batch = db.batch();
     batch.set(msgRef, msgData);
     if (updateLastMsg) {
-        batch.set(chatRef, { participants: sortedKeys, lastMsg: msgData }, { merge: true });
+        batch.set(chatRef, { participants: sortedKeys, lastMsg: makeChatLastMsg(msgData), ts: FieldValue.serverTimestamp() }, { merge: true });
     }
     await batch.commit();
 

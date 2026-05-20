@@ -82,8 +82,7 @@ async function registerWalletNotifications(wallet, user, walletPK, { httpsCallab
     try {
         const prepare = httpsCallable(functions, 'prepareWalletNotifications');
         const confirm = httpsCallable(functions, 'confirmWalletNotifications');
-        const fundingAddress = typeof wallet?.getStaticDepositAddress === 'function' ? await wallet.getStaticDepositAddress().catch(() => null) : null;
-        const prepared = await prepare({ network, walletPK, fundingAddress });
+        const prepared = await prepare({ network, walletPK });
         const url = typeof prepared?.data?.url === 'string' ? prepared.data.url : '';
         const secret = typeof prepared?.data?.secret === 'string' ? prepared.data.secret : '';
         const eventTypes = Array.isArray(prepared?.data?.eventTypes) && prepared.data.eventTypes.length ? prepared.data.eventTypes : WALLET_WEBHOOK_EVENT_TYPES;

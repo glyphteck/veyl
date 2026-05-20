@@ -87,7 +87,7 @@ async function resolveBotTargets(target) {
     }];
 }
 
-async function deleteBotChats(bucket, chatPK) {
+async function deleteBotChats(chatPK) {
     if (!chatPK) {
         return 0;
     }
@@ -95,7 +95,6 @@ async function deleteBotChats(bucket, chatPK) {
     const chats = await db.collection('chats').where('participants', 'array-contains', chatPK).get();
     for (const docSnap of chats.docs) {
         await db.recursiveDelete(docSnap.ref);
-        await bucket.deleteFiles({ prefix: `chatmedia/${docSnap.id}/` }).catch(() => {});
     }
 
     return chats.docs.length;
@@ -117,7 +116,7 @@ async function deleteBot(target, options = {}) {
 
     await setBotPowerState(target.uid, false).catch(() => {});
 
-    const chatsDeleted = await deleteBotChats(bucket, chatPK);
+    const chatsDeleted = await deleteBotChats(chatPK);
 
     await Promise.all([
         db.recursiveDelete(usersRef).catch(() => {}),

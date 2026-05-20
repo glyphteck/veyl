@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Text, View } from 'react-native';
 import { Image } from 'expo-image';
 import { Play } from 'lucide-react-native';
@@ -10,7 +10,7 @@ import { getCachedMessageFileUri, resolveMessageFileUri } from '@/lib/chatdownlo
 import { getMediaViewerKey } from '@/lib/chatmediaitems';
 import { getCachedVideoPreviewUri, loadVideoPreviewUri } from '@/lib/chatvideopreview';
 import { imageWidth } from '@/lib/messages';
-import { getAttachmentCaption, getImageAspect } from '@glyphteck/shared/chat/messages';
+import { getAttachmentCaption, getImageAspect, isExpiredAttachmentMsg } from '@glyphteck/shared/chat/messages';
 import { getMessagePreviewCacheKey } from '@glyphteck/shared/chat/previews';
 import Icon from '@/components/icon';
 import Menu from '@/components/menu';
@@ -28,7 +28,7 @@ function normalizeUri(uri) {
     return /^[a-z][a-z0-9+.-]*:\/\//i.test(uri) ? uri : `file://${uri}`;
 }
 
-export default function VideoMessage({ msg, peerChatPK, fromPeer = false, menuItems, menuId, onUnavailable, onLike, reactions = [], reactionUsers, reactionPreviewInset = 0 }) {
+export default function VideoMessage({ msg, peerChatPK, fromPeer = false, menuItems, menuId, onLike, reactions = [], reactionUsers, reactionPreviewInset = 0 }) {
     const { theme } = useTheme();
     const { readMessageFile, readMessagePreview, writeMessagePreview } = useChat();
     const { activeMediaId, openMedia } = useMediaViewer();
@@ -38,18 +38,19 @@ export default function VideoMessage({ msg, peerChatPK, fromPeer = false, menuIt
     const msgMime = msg?.m;
     const msgName = msg?.n;
     const msgLocalUri = msg?.localUri;
+    const msgExpiresAt = msg?.x;
     const fileMsg = useMemo(
-        () => ({ t: msgType, p: msgPath, k: msgKey, m: msgMime, n: msgName, localUri: msgLocalUri }),
-        [msgKey, msgLocalUri, msgMime, msgName, msgPath, msgType]
+        () => ({ t: msgType, p: msgPath, k: msgKey, m: msgMime, n: msgName, localUri: msgLocalUri, x: msgExpiresAt }),
+        [msgExpiresAt, msgKey, msgLocalUri, msgMime, msgName, msgPath, msgType]
     );
-    const msgRef = useRef(msg);
+    const expired = isExpiredAttachmentMsg(fileMsg);
     const initialUri = normalizeUri(getCachedMessageFileUri(fileMsg, peerChatPK));
     const [uri, setUri] = useState(() => initialUri);
     const [loading, setLoading] = useState(() => msgType === 'mp4' && !initialUri && !!msgPath && !!msgKey);
     const [error, setError] = useState('');
     const key = getMediaViewerKey(peerChatPK, msg);
     const previewKey = getMessagePreviewCacheKey(peerChatPK, fileMsg);
-    const [previewUri, setPreviewUri] = useState(() => getCachedVideoPreviewUri(peerChatPK, fileMsg));
+    const [previewUri, setPreviewUri] = useState(() => (expired ? '' : getCachedVideoPreviewUri(peerChatPK, fileMsg)));
     const aspect = getImageAspect(msg, 16 / 9);
     const width = imageWidth(aspect);
     const caption = getAttachmentCaption(msg);
@@ -57,11 +58,7 @@ export default function VideoMessage({ msg, peerChatPK, fromPeer = false, menuIt
     const disabled = loading || !!error || !uri || !key;
 
     useEffect(() => {
-        msgRef.current = msg;
-    }, [msg]);
-
-    useEffect(() => {
-        if (!previewKey || error) {
+        if (!previewKey || error || expired) {
             setPreviewUri('');
             return;
         }
@@ -88,7 +85,7 @@ export default function VideoMessage({ msg, peerChatPK, fromPeer = false, menuIt
         return () => {
             cancelled = true;
         };
-    }, [error, fileMsg, peerChatPK, previewKey, readMessagePreview, uri, width, writeMessagePreview]);
+    }, [error, expired, fileMsg, peerChatPK, previewKey, readMessagePreview, uri, width, writeMessagePreview]);
 
     useEffect(() => {
         let cancelled = false;
@@ -122,13 +119,12 @@ export default function VideoMessage({ msg, peerChatPK, fromPeer = false, menuIt
                 console.warn('chat video load failed', nextError);
                 setError(nextError?.message || 'video unavailable');
                 setLoading(false);
-                onUnavailable?.(msgRef.current);
             });
 
         return () => {
             cancelled = true;
         };
-    }, [fileMsg, msgKey, msgPath, msgType, onUnavailable, peerChatPK, readMessageFile]);
+    }, [fileMsg, msgKey, msgPath, msgType, peerChatPK, readMessageFile]);
 
     const openFullscreen = useCallback(() => {
         if (disabled || activeMediaId === key) {

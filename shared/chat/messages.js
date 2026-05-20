@@ -2,9 +2,12 @@
 
 import { renderMoney } from '../utils.js';
 import { getMessageOrderMs } from './state.js';
-import { getChatFileChatId } from './filepayload.js';
+import { CHAT_MEDIA_TTL_MS, getMediaFileId } from './filepayload.js';
+import { isTtlExpired } from './ttl.js';
 
 export const ATTACHMENT_MSG_TYPES = ['img', 'mp3', 'mp4', 'file'];
+export const UNAVAILABLE_REPLY_MSG_TYPE = 'uav';
+export const UNAVAILABLE_REPLY_TEXT = 'this message is no longer available';
 export const MAX_TXT_CHARS = 2048;
 export const READ_RECEIPT_MSG_TYPE = 'rr';
 export const REACTION_MSG_TYPE = 'rxn';
@@ -79,30 +82,31 @@ export function splitLinks(text) {
     return parts.length ? parts : [{ t: 'txt', c: value }];
 }
 
-function hasFileRef(msg) {
+export function hasLocalFileRef(msg) {
     if (!hasText(msg?.p) || !hasText(msg?.k)) {
         return false;
     }
-    if (String(msg.p).startsWith('local:') || msg.k === 'local') {
-        return true;
-    }
-    return true;
+    return String(msg.p).startsWith('local:') || msg.k === 'local';
 }
 
-function hasStoredFileRef(msg) {
+export function hasStoredFileRef(msg) {
     if (!hasText(msg?.p) || !hasText(msg?.k)) {
         return false;
     }
-    if (String(msg.p).startsWith('local:') || msg.k === 'local') {
+    if (hasLocalFileRef(msg)) {
         return false;
     }
 
     try {
-        getChatFileChatId(msg.p);
+        getMediaFileId(msg.p);
         return true;
     } catch {
         return false;
     }
+}
+
+function hasFileRef(msg) {
+    return hasLocalFileRef(msg) || hasStoredFileRef(msg);
 }
 
 function charLength(value) {
@@ -207,7 +211,14 @@ export function isControlMsg(msg) {
 }
 
 export function canStoreMsg(msg) {
+    if (isExpiredMsg(msg)) {
+        return false;
+    }
     return canShowMsg(msg) || isControlMsg(msg);
+}
+
+export function isExpiredMsg(msg, now = Date.now()) {
+    return isTtlExpired(msg?.ttl, now);
 }
 
 function sameReactions(a, b) {
@@ -393,6 +404,10 @@ export function getAttachmentCaption(msg) {
     return caption && caption !== getAttachmentTitle(msg) ? caption : '';
 }
 
+export function isExpiredAttachmentMsg(msg, now = Date.now()) {
+    return isAttachmentMsgType(msg?.t) && !hasText(msg?.stay) && Number.isFinite(msg?.x) && msg.x <= now;
+}
+
 export function getImageAspect(msg, fallback = 4 / 3) {
     const width = Number(msg?.w);
     const height = Number(msg?.h);
@@ -496,8 +511,17 @@ export function makeAttachment(t, file) {
         ...(Number.isFinite(file?.w) ? { w: Math.max(0, Math.trunc(file.w)) } : {}),
         ...(Number.isFinite(file?.h) ? { h: Math.max(0, Math.trunc(file.h)) } : {}),
         ...(Number.isFinite(file?.d) ? { d: Math.max(0, Math.trunc(file.d)) } : {}),
+        ...(Number.isFinite(file?.x) ? { x: Math.max(0, Math.trunc(file.x)) } : {}),
+        ...(hasText(file?.stay) ? { stay: String(file.stay).trim() } : {}),
         ...(file?.n ? { n: String(file.n) } : {}),
         ...(typeof file?.c === 'string' && file.c.trim() ? { c: file.c.trim() } : {}),
+    };
+}
+
+export function makeUnavailableReply() {
+    return {
+        t: UNAVAILABLE_REPLY_MSG_TYPE,
+        c: UNAVAILABLE_REPLY_TEXT,
     };
 }
 
@@ -508,7 +532,7 @@ export function canShareAttachmentMsg(msg) {
     if (msg.pending || msg.failed) {
         return false;
     }
-    return isAttachmentMsgType(msg?.t) && hasStoredFileRef(msg);
+    return isAttachmentMsgType(msg?.t) && !isExpiredAttachmentMsg(msg) && hasStoredFileRef(msg);
 }
 
 export function makeSharedAttachment(msg) {
@@ -516,6 +540,7 @@ export function makeSharedAttachment(msg) {
         throw new Error('file unavailable');
     }
 
+    const x = hasText(msg?.stay) && (!Number.isFinite(msg?.x) || msg.x <= Date.now()) ? Date.now() + CHAT_MEDIA_TTL_MS : msg.x;
     return makeAttachment(msg.t, {
         p: msg.p,
         k: msg.k,
@@ -524,6 +549,7 @@ export function makeSharedAttachment(msg) {
         ...(Number.isFinite(msg?.w) ? { w: msg.w } : {}),
         ...(Number.isFinite(msg?.h) ? { h: msg.h } : {}),
         ...(Number.isFinite(msg?.d) ? { d: msg.d } : {}),
+        ...(Number.isFinite(x) ? { x } : {}),
         ...(msg?.n ? { n: msg.n } : {}),
         ...(typeof msg?.c === 'string' && msg.c.trim() ? { c: msg.c } : {}),
     });
@@ -546,11 +572,14 @@ export function makeFile(file) {
 }
 
 export function isAttachmentMsg(msg) {
-    return isAttachmentMsgType(msg?.t) && hasFileRef(msg);
+    return isAttachmentMsgType(msg?.t) && !isExpiredAttachmentMsg(msg) && hasFileRef(msg);
 }
 
 export function canShowMsg(msg) {
     if (!msg || typeof msg !== 'object' || Array.isArray(msg)) {
+        return false;
+    }
+    if (isExpiredMsg(msg)) {
         return false;
     }
 
@@ -584,10 +613,13 @@ export function getMsgPreview(lastMsg, chatPK, settings, btcPrice) {
     if (!lastMsg) return '';
     if (typeof lastMsg === 'string') return lastMsg;
     if (lastMsg.t === 'txt' && typeof lastMsg.c === 'string') return lastMsg.c;
-    if (lastMsg.t === 'img') return 'sent an image';
-    if (lastMsg.t === 'mp3') return 'sent audio';
-    if (lastMsg.t === 'mp4') return 'sent a video';
-    if (isAttachmentMsgType(lastMsg?.t)) return 'sent a file';
+    if (isAttachmentMsgType(lastMsg?.t)) {
+        if (!canShowMsg(lastMsg)) return '';
+        if (lastMsg.t === 'img') return 'sent an image';
+        if (lastMsg.t === 'mp3') return 'sent audio';
+        if (lastMsg.t === 'mp4') return 'sent a video';
+        return 'sent a file';
+    }
     if (!canShowMsg(lastMsg)) return '';
     if (lastMsg.t === 'req') {
         const amount = Number(lastMsg.a || 0);

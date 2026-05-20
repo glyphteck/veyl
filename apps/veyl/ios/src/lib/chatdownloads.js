@@ -10,6 +10,7 @@ import {
   loadCachedMsgImage,
 } from "@/lib/msgimagecache";
 import { loadVideoPreviewUri } from "@/lib/chatvideopreview";
+import { isExpiredAttachmentMsg } from "@glyphteck/shared/chat/messages";
 
 const READY_DOWNLOAD_BYTES = 8 * 1024 * 1024;
 
@@ -108,6 +109,10 @@ export function getMessageFileName(msg) {
 }
 
 export function getCachedMessageFileUri(msg, peerChatPK) {
+  if (isExpiredAttachmentMsg(msg)) {
+    return null;
+  }
+
   const localUri = normalizeUri(msg?.localUri);
   if (localUri) {
     return localUri;
@@ -165,7 +170,8 @@ function canUseLocalUri(msg) {
 }
 
 async function resolveImageUri(msg, peerChatPK, readMessageFile, options = {}) {
-  const localUri = normalizeUri(msg?.localUri);
+  const expired = isExpiredAttachmentMsg(msg);
+  const localUri = expired ? null : normalizeUri(msg?.localUri);
 
   if (localUri) {
     return localUri;
@@ -181,7 +187,7 @@ async function resolveImageUri(msg, peerChatPK, readMessageFile, options = {}) {
   }
 
   const key = getImageKey(peerChatPK, msg);
-  const cached = getCachedMsgImage(key);
+  const cached = expired ? null : getCachedMsgImage(key);
   if (cached && !isImageUri(cached)) {
     dropCachedMsgFile(key);
   }
@@ -201,7 +207,8 @@ async function resolveImageUri(msg, peerChatPK, readMessageFile, options = {}) {
 }
 
 async function resolveFileUri(msg, peerChatPK, readMessageFile, options = {}) {
-  const localUri = normalizeUri(msg?.localUri);
+  const expired = isExpiredAttachmentMsg(msg);
+  const localUri = expired ? null : normalizeUri(msg?.localUri);
   if (localUri) {
     return localUri;
   }
@@ -220,7 +227,7 @@ async function resolveFileUri(msg, peerChatPK, readMessageFile, options = {}) {
   }
 
   const key = getFileKey(peerChatPK, msg);
-  const cached = getCachedMsgFile(key);
+  const cached = expired ? null : getCachedMsgFile(key);
   return (
     cached ||
     (await loadCachedMsgFile(

@@ -1,15 +1,23 @@
 'use client';
 
 import { createContext, useCallback, useContext, useMemo, useRef } from 'react';
+import { httpsCallable } from 'firebase/functions';
 import { createChat, createChatProvider } from '@glyphteck/shared/providers/chatprovider';
 import { MSG_BATCH_SIZE } from '@glyphteck/shared/chat/utils';
-import { db, getStorage } from '@/lib/firebase/firebaseclient';
+import { db, getFunctions, getStorage } from '@/lib/firebase/firebaseclient';
 import { useUser } from '@/components/providers/userprovider';
 import { useVault } from '@/components/providers/vaultprovider';
 import { preloadMessageMedia } from '@/components/chat/mediapreload';
 import { seedMsgImage } from '@/components/chat/usemsgimage';
 
-const chat = createChat({ db, getStorage });
+const chat = createChat({
+    db,
+    getStorage,
+    async setMediaSaved(path, stayId, saved) {
+        await httpsCallable(getFunctions(), 'setMediaSaved')({ path, stayId, saved });
+        return true;
+    },
+});
 
 const chatWarming = {
     enabled: true,

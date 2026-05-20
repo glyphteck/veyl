@@ -1,9 +1,10 @@
 import { BOT_MODE, BOT_UNDERFUNDED_TEXT } from '@glyphteck/shared/bot/events';
 import { bootBotAccount, closeBotAccount } from '@glyphteck/shared/bot/account';
-import { clearBotChatPairCache, decryptBotMsg, readBotMsgAttachment, sendBotMsg, updateBotMsg, uploadBotAttachmentMsg } from '@glyphteck/shared/bot/chat';
+import { clearBotChatPairCache, decryptBotChatSettings, decryptBotMsg, readBotMsgAttachment, sendBotMsg, updateBotMsg, uploadBotAttachmentMsg } from '@glyphteck/shared/bot/chat';
 import { getBotBalance, mirrorBotTransfer } from '@glyphteck/shared/bot/wallet';
 import { isControlMsg, makeReadReceipt, makeReq, makeTxt, setReqTx } from '@glyphteck/shared/chat/messages';
 import { makeCid } from '@glyphteck/shared/chat/state';
+import { CHAT_RETENTION_24H, CHAT_RETENTION_SEEN, onSeenMessageTtlMs, seenMessageTtlMs, shouldShortenTtl } from '@glyphteck/shared/chat/ttl';
 import { resolveNetwork } from '@glyphteck/shared/network';
 import { resolveWalletPK } from '@glyphteck/shared/walletkeys';
 import { SparkWallet, SparkWalletEvent } from '@buildonspark/spark-sdk';
@@ -729,16 +730,26 @@ export class BotRuntime {
         if (!peerChatPK) {
             return;
         }
+        const settings = await decryptBotChatSettings(chat?.settings, session.chatPK, session.chatPrivKey, peerChatPK);
+        if (!settings) {
+            return;
+        }
+        const retention = settings.retention;
+
+        const chatRecencyMs = tsMs(chat?.ts);
+        if (!chatRecencyMs) {
+            return;
+        }
 
         const localReadMs = tsMs(session.chatRead?.get(chat.id));
         const storedReadMs = await this.readChatMs(session, chat.id);
         const sinceMs = Math.max(session.resumeAtMs, localReadMs, storedReadMs);
-        if (tsMs(chat?.lastMsg?.ts) <= sinceMs) {
+        if (chatRecencyMs <= sinceMs) {
             return;
         }
 
         let msgsSnap = await chat.ref.collection('messages').where('ts', '>', Timestamp.fromMillis(sinceMs)).orderBy('ts', 'asc').get();
-        if (msgsSnap.empty && tsMs(chat?.lastMsg?.ts) > sinceMs) {
+        if (msgsSnap.empty && chatRecencyMs > sinceMs) {
             // A brand-new chat can surface in the parent collection just before its
             // first message becomes readable via the subcollection query.
             await sleep(250);
@@ -793,11 +804,22 @@ export class BotRuntime {
                     peerUid: peer.uid,
                     peerChatPK,
                     peerWalletPK: peer.walletPK || null,
+                    retention,
                 },
                 msgData
             );
             if (viewed) {
                 receiptTarget = msgData?.head?.cid || msgSnap.id;
+                if (retention === CHAT_RETENTION_24H || retention === CHAT_RETENTION_SEEN) {
+                    const seenTtlMs = retention === CHAT_RETENTION_SEEN ? onSeenMessageTtlMs() : seenMessageTtlMs();
+                    if (shouldShortenTtl(msgData?.ttl, seenTtlMs)) {
+                        const ttl = Timestamp.fromMillis(seenTtlMs);
+                        await msgSnap.ref.update({ ttl }).catch(() => {});
+                        if (chat?.lastMsg?.head?.cid && chat.lastMsg.head.cid === msgData?.head?.cid) {
+                            await chat.ref.update({ 'lastMsg.ttl': ttl }).catch(() => {});
+                        }
+                    }
+                }
             }
 
             readMs = Math.max(readMs, msgMs);
@@ -805,7 +827,7 @@ export class BotRuntime {
         }
 
         if (receiptTarget) {
-            await this.sendReadReceipt(session, peerChatPK, receiptTarget).catch((error) => {
+            await this.sendReadReceipt(session, peerChatPK, receiptTarget, retention).catch((error) => {
                 console.warn('bot read receipt failed', chat.id, statusMessage(error));
             });
         }
@@ -835,13 +857,14 @@ export class BotRuntime {
                 type: msg.t,
                 data: body,
                 meta: attachmentMeta(msg),
-            }, { msgId: botReplyId(context, 'file') });
+            }, { msgId: botReplyId(context, 'file'), retention: context.retention });
             return true;
         }
 
         await this.sendPayload(session, context.peerChatPK, cleanPayload(msg), {
             cid: botReplyCid(context, 'reply'),
             msgId: botReplyId(context, 'reply'),
+            retention: context.retention,
         });
         return true;
     }
@@ -870,6 +893,7 @@ export class BotRuntime {
             await this.sendPayload(session, context.peerChatPK, makeTxt(BOT_UNDERFUNDED_TEXT), {
                 cid: botReplyCid(context, 'funds'),
                 msgId: botReplyId(context, 'funds'),
+                retention: context.retention,
             });
             return;
         }
@@ -886,6 +910,7 @@ export class BotRuntime {
         await this.sendPayload(session, context.peerChatPK, makeReq(amount), {
             cid: botReplyCid(context, 'req'),
             msgId: botReplyId(context, 'req'),
+            retention: context.retention,
         });
 
         const nextBalance = await this.refreshBalance(session);
@@ -900,10 +925,10 @@ export class BotRuntime {
         return sendBotMsg(db, FieldValue, session.chatPK, session.chatPrivKey, peerChatPK, {
             ...payload,
             cid: options.cid || makeCid(),
-        }, options.msgId ? { msgId: options.msgId } : {});
+        }, { ...(options.msgId ? { msgId: options.msgId } : {}), retention: options.retention });
     }
 
-    async sendReadReceipt(session, peerChatPK, target) {
+    async sendReadReceipt(session, peerChatPK, target, retention) {
         return sendBotMsg(
             db,
             FieldValue,
@@ -915,7 +940,7 @@ export class BotRuntime {
                 cid: makeCid(),
                 s: session.chatPK,
             },
-            { updateLastMsg: false }
+            { updateLastMsg: false, retention }
         );
     }
 }

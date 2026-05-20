@@ -1,26 +1,33 @@
 'use client';
 
 import { createFileKey, encodeFileKey, sealFile } from '../crypto/file.js';
-import { cleanBytes, toBytes } from '../crypto/core.js';
+import { cleanBytes, randomBytes, toBytes, toHex } from '../crypto/core.js';
 
-export const CHAT_MEDIA_ROOT = 'chatmedia';
+export const CHAT_MEDIA_ROOT = 'media';
 export const CHAT_SLOT = 'main';
+export const CHAT_MEDIA_TTL_DAYS = 21;
+export const CHAT_MEDIA_TTL_MS = CHAT_MEDIA_TTL_DAYS * 24 * 60 * 60 * 1000;
 export const MAX_CHAT_FILE_BYTES = 20 * 1024 * 1024;
 export const CHAT_FILE_SIZE_LIMIT_ENABLED = false;
-const CHAT_ID_PATTERN = '[0-9a-fA-F]{64}_[0-9a-fA-F]{64}';
-const CHAT_FILE_PATTERN = new RegExp(`^${CHAT_MEDIA_ROOT}/(${CHAT_ID_PATTERN})/[^/]+/[^/]+$`);
+const MEDIA_ID_BYTES = 16;
+const MEDIA_ID_PATTERN = '[0-9a-fA-F]{32}';
+const MEDIA_FILE_PATTERN = new RegExp(`^${CHAT_MEDIA_ROOT}/(${MEDIA_ID_PATTERN})/${CHAT_SLOT}$`);
 
-export function chatFilePath(chatId, cid, slot = CHAT_SLOT) {
-    if (!chatId || !cid || !slot) {
-        throw new Error('chat file path parts required');
-    }
-    return `${CHAT_MEDIA_ROOT}/${chatId}/${cid}/${slot}`;
+export function makeMediaId() {
+    return toHex(randomBytes(MEDIA_ID_BYTES));
 }
 
-export function getChatFileChatId(path) {
-    const match = String(path || '').trim().match(CHAT_FILE_PATTERN);
+export function mediaFilePath(mediaId = makeMediaId(), slot = CHAT_SLOT) {
+    if (!mediaId || !slot) {
+        throw new Error('media file path parts required');
+    }
+    return `${CHAT_MEDIA_ROOT}/${mediaId}/${slot}`;
+}
+
+export function getMediaFileId(path) {
+    const match = String(path || '').trim().match(MEDIA_FILE_PATTERN);
     if (!match?.[1]) {
-        throw new Error('invalid chat file path');
+        throw new Error('invalid media file path');
     }
     return match[1];
 }
@@ -61,29 +68,35 @@ function assertChatFileSize(bytes) {
     }
 }
 
-export async function makeChatFileUploadPayload(pair, cid, data, { slot = CHAT_SLOT, contentType = 'application/octet-stream', cacheControl = 'private, max-age=0, no-transform' } = {}) {
-    const path = chatFilePath(pair?.chatId, cid, slot);
+export async function makeChatFileUploadPayload(_pair, cid, data, { slot = CHAT_SLOT, contentType = 'application/octet-stream', cacheControl = 'private, max-age=0, no-transform', stay = '' } = {}) {
+    const mediaId = makeMediaId();
+    const path = mediaFilePath(mediaId, slot);
+    const expiresAt = Date.now() + CHAT_MEDIA_TTL_MS;
+    const stayId = typeof stay === 'string' ? stay.trim() : '';
     const key = createFileKey();
     try {
         const uploadBytes = await toUploadBytes(data);
         assertChatFileSize(uploadBytes);
         return {
             path,
-            body: await sealFile(pair, key, uploadBytes, path),
+            body: await sealFile(_pair, key, uploadBytes, path),
             metadata: {
                 contentType,
                 cacheControl,
-                customMetadata: {
-                    chatId: pair.chatId,
-                    cid,
-                    slot,
-                },
             },
             file: {
                 p: path,
                 k: encodeFileKey(key),
+                x: expiresAt,
+                ...(stayId ? { stay: stayId } : {}),
             },
         };
+    } catch (error) {
+        if (error && typeof error === 'object') {
+            error.path = error?.path || path;
+            error.cid = error?.cid || cid;
+        }
+        throw error;
     } finally {
         cleanBytes(key);
     }

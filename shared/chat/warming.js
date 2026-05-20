@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { readCachedMedia, writeCachedMedia } from '../localdatacache.js';
 import { saveMedia } from './attachments.js';
+import { hasStoredFileRef, isExpiredAttachmentMsg } from './messages.js';
 import { makeMessagePreviewMedia, MESSAGE_PREVIEW_MIME } from './previews.js';
 import { getMessageKey } from './state.js';
 import { filterChatMessages, getChatPeerPK, getChatRowLastMsgKey, getPeerChatPKFromChatId, MSG_BATCH_SIZE } from './utils.js';
@@ -114,7 +115,7 @@ function makeSnapshot(entry) {
 function isRemoteMediaMessage(message, mediaConfig) {
     const path = typeof message?.p === 'string' ? message.p.trim() : '';
     const fileKey = typeof message?.k === 'string' ? message.k.trim() : '';
-    if (!path || !fileKey || path.startsWith('local:') || fileKey === 'local' || message?.pending || message?.failed) {
+    if (!path || !fileKey || path.startsWith('local:') || fileKey === 'local' || message?.pending || message?.failed || isExpiredAttachmentMsg(message) || !hasStoredFileRef(message)) {
         return false;
     }
 

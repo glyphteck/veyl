@@ -1,12 +1,13 @@
 import { spawn } from 'node:child_process';
 import { execFileSync } from 'node:child_process';
-import { existsSync, rmSync } from 'node:fs';
+import { existsSync, lstatSync, readdirSync, rmSync } from 'node:fs';
 import net from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { webApps } from '../shared/links.js';
 
 const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const defaultWebCacheMaxBytes = 5 * 1024 * 1024 * 1024;
 const webDefaults = {
     veyl: {
         port: webApps.veyl.port,
@@ -62,6 +63,74 @@ function getPortOwner(port) {
     } catch {
         return null;
     }
+}
+
+function formatBytes(bytes) {
+    if (bytes < 1024) {
+        return `${bytes} B`;
+    }
+    const units = ['KiB', 'MiB', 'GiB', 'TiB'];
+    let size = bytes / 1024;
+    let unit = units[0];
+    for (let i = 1; i < units.length && size >= 1024; i += 1) {
+        size /= 1024;
+        unit = units[i];
+    }
+    return `${size.toFixed(size >= 10 ? 1 : 2)} ${unit}`;
+}
+
+function dirSizeBytes(path) {
+    let size = 0;
+    const stack = [path];
+    while (stack.length) {
+        const current = stack.pop();
+        let stat;
+        try {
+            stat = lstatSync(current);
+        } catch {
+            continue;
+        }
+        if (!stat.isDirectory()) {
+            size += stat.size;
+            continue;
+        }
+        let entries;
+        try {
+            entries = readdirSync(current, { withFileTypes: true });
+        } catch {
+            continue;
+        }
+        for (const entry of entries) {
+            stack.push(resolve(current, entry.name));
+        }
+    }
+    return size;
+}
+
+function webCacheMaxBytes(env) {
+    const gb = Number(env.VEYL_WEB_CACHE_MAX_GB);
+    if (!Number.isFinite(gb) || gb <= 0) {
+        return defaultWebCacheMaxBytes;
+    }
+    return gb * 1024 * 1024 * 1024;
+}
+
+function maybeClearNextCache(config, force, env) {
+    const nextDir = resolve(config.cwd, '.next');
+    if (force) {
+        rmSync(nextDir, { recursive: true, force: true });
+        return;
+    }
+    if (!existsSync(nextDir)) {
+        return;
+    }
+    const maxBytes = webCacheMaxBytes(env);
+    const currentBytes = dirSizeBytes(nextDir);
+    if (currentBytes <= maxBytes) {
+        return;
+    }
+    console.warn(`[web] .next cache is ${formatBytes(currentBytes)}; clearing before launch because it exceeds ${formatBytes(maxBytes)}.`);
+    rmSync(nextDir, { recursive: true, force: true });
 }
 
 async function assertPortOpen(config) {
@@ -173,9 +242,7 @@ try {
     process.exit(1);
 }
 
-if (clear) {
-    rmSync(resolve(config.cwd, '.next'), { recursive: true, force: true });
-}
+maybeClearNextCache(config, clear, env);
 
 const command = ['x', 'next', 'dev', '--turbopack'];
 if (config.hostname) {

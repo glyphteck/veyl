@@ -2,8 +2,10 @@ import { collection, query, where, orderBy, onSnapshot, doc, serverTimestamp, up
 import { closeChatPair, getChatId, hasMsgData, openChatPair, openMsg, resealMsgBody, sealMsg } from '../crypto/chat.js';
 import { orderChatKeys } from '../crypto/pair.js';
 import { putAttachment, putFile, putImg, putMp3, putMp4, readMsgFile } from './media.js';
-import { canShowMsg, canStoreMsg, makeReaction, makeReadReceipt } from './messages.js';
+import { canShowMsg, canStoreMsg, isControlMsg, isExpiredMsg, makeReaction, makeReadReceipt } from './messages.js';
+import { openChatSettingsForPair, sealChatSettingsForPair } from './settings.js';
 import { getMessageKey, makeCid } from './state.js';
+import { cleanChatRetention, newMessageTtlMs, seenMessageTtlMs, shouldShortenTtl } from './ttl.js';
 
 export const MSG_BATCH_SIZE = 40;
 
@@ -78,6 +80,37 @@ function toMillis(ts, fallback = 0) {
     return fallback;
 }
 
+function makeTtl(value) {
+    if (value == null) {
+        return null;
+    }
+    if (typeof value?.toMillis === 'function') {
+        return value;
+    }
+    const ms = Number(value);
+    return Number.isFinite(ms) && ms > 0 ? Timestamp.fromMillis(ms) : null;
+}
+
+function getMessageTtl(retention) {
+    return makeTtl(newMessageTtlMs(retention));
+}
+
+function makeChatLastMsg(msgData) {
+    return {
+        head: msgData.head,
+        body: msgData.body,
+        ttl: msgData.ttl,
+    };
+}
+
+function getSeenTtl(ttlMs = seenMessageTtlMs()) {
+    return makeTtl(ttlMs);
+}
+
+function messageDataExpired(msgData, now = Date.now()) {
+    return isExpiredMsg({ ttl: msgData?.ttl ?? null }, now);
+}
+
 function getCursorMillis(cursor) {
     if (typeof cursor?.data === 'function') {
         return null;
@@ -104,6 +137,7 @@ function normalizeDecryptedMsg(msgData, message) {
     const normalized = {
         ...message,
         ts: msgData?.ts ?? null,
+        ttl: msgData?.ttl ?? null,
     };
     return canStoreMsg(normalized) ? normalized : null;
 }
@@ -160,34 +194,195 @@ export async function sendMsg(db, senderPubkey, senderPrivkey, receiverChatPK, m
         head,
         body,
         ts: serverTimestamp(),
+        ttl: getMessageTtl(options?.retention ?? options?.ttlMode),
     };
 
     const batch = writeBatch(db);
     const msgRef = doc(collection(chatRef, 'messages'));
     batch.set(msgRef, msgData);
     if (updateLastMsg) {
-        batch.set(chatRef, { participants: sortedKeys, lastMsg: msgData }, { merge: true });
+        batch.set(chatRef, { participants: sortedKeys, lastMsg: makeChatLastMsg(msgData), ts: serverTimestamp() }, { merge: true });
     }
     await batch.commit();
     return { chatId, msgId: msgRef.id, cid: head.cid };
 }
 
-export async function sendReadReceipt(db, senderPubkey, senderPrivkey, receiverChatPK, target) {
+export async function sendReadReceipt(db, senderPubkey, senderPrivkey, receiverChatPK, target, options = {}) {
     const receipt = {
         ...makeReadReceipt(target),
         cid: makeCid(),
         s: senderPubkey,
     };
-    return sendMsg(db, senderPubkey, senderPrivkey, receiverChatPK, receipt, { updateLastMsg: false });
+    return sendMsg(db, senderPubkey, senderPrivkey, receiverChatPK, receipt, { updateLastMsg: false, ...options });
 }
 
-export async function sendReaction(db, senderPubkey, senderPrivkey, receiverChatPK, target, emoji) {
+export async function sendReaction(db, senderPubkey, senderPrivkey, receiverChatPK, target, emoji, options = {}) {
     const reaction = {
         ...makeReaction(target, emoji),
         cid: makeCid(),
         s: senderPubkey,
     };
-    return sendMsg(db, senderPubkey, senderPrivkey, receiverChatPK, reaction, { updateLastMsg: false });
+    return sendMsg(db, senderPubkey, senderPrivkey, receiverChatPK, reaction, { updateLastMsg: false, ...options });
+}
+
+function messageTtlUpdateItems(messages, ttl) {
+    const nextTtlMs = toMillis(ttl, null);
+    const seen = new Set();
+    const items = [];
+    for (const message of messages || []) {
+        const id = typeof message?.id === 'string' ? message.id.trim() : '';
+        if (!id || id.startsWith('local:') || seen.has(id) || message.pending || message.failed) {
+            continue;
+        }
+        if (!shouldShortenTtl(message.ttl, nextTtlMs)) {
+            continue;
+        }
+        seen.add(id);
+        items.push({
+            id,
+            cid: typeof message?.cid === 'string' ? message.cid : '',
+        });
+    }
+    return items;
+}
+
+function messagePermanentUpdateItems(messages) {
+    const seen = new Set();
+    const list = Array.isArray(messages) ? messages : [messages];
+    const items = [];
+    for (const message of list || []) {
+        const id = typeof message?.id === 'string' ? message.id.trim() : '';
+        if (!id || id.startsWith('local:') || seen.has(id) || message.pending || message.failed || message.ttl == null) {
+            continue;
+        }
+        seen.add(id);
+        items.push({
+            id,
+            cid: typeof message?.cid === 'string' ? message.cid : '',
+        });
+    }
+    return items;
+}
+
+function messageTemporaryUpdateItems(messages) {
+    const seen = new Set();
+    const list = Array.isArray(messages) ? messages : [messages];
+    const items = [];
+    for (const message of list || []) {
+        const id = typeof message?.id === 'string' ? message.id.trim() : '';
+        if (!id || id.startsWith('local:') || seen.has(id) || message.pending || message.failed || message.ttl != null) {
+            continue;
+        }
+        seen.add(id);
+        items.push({
+            id,
+            cid: typeof message?.cid === 'string' ? message.cid : '',
+        });
+    }
+    return items;
+}
+
+export async function updateSeenMsgTtls(db, chatId, messages, ttlMs = seenMessageTtlMs()) {
+    if (!db || !chatId || !Array.isArray(messages) || !messages.length) {
+        return 0;
+    }
+
+    const ttl = getSeenTtl(ttlMs);
+    const items = messageTtlUpdateItems(messages, ttl);
+    if (!items.length) {
+        return 0;
+    }
+
+    const chatRef = doc(db, 'chats', chatId);
+    const chatSnap = await getDoc(chatRef).catch(() => null);
+    const lastCid = chatSnap?.exists?.() ? (chatSnap.data()?.lastMsg?.head?.cid ?? null) : null;
+    const updateLastMsg = !!lastCid && items.some((item) => item.cid && item.cid === lastCid);
+
+    for (let index = 0; index < items.length; index += 400) {
+        const batch = writeBatch(db);
+        const chunk = items.slice(index, index + 400);
+        for (const item of chunk) {
+            batch.update(doc(db, 'chats', chatId, 'messages', item.id), { ttl });
+        }
+        if (updateLastMsg && index === 0) {
+            batch.update(chatRef, { 'lastMsg.ttl': ttl });
+        }
+        await batch.commit();
+    }
+
+    return items.length;
+}
+
+export async function makeMsgTemporary(db, chatId, messages, ttlMs = newMessageTtlMs()) {
+    if (!db || !chatId) {
+        return 0;
+    }
+
+    const ttl = getSeenTtl(ttlMs);
+    const items = messageTemporaryUpdateItems(messages);
+    if (!ttl || !items.length) {
+        return 0;
+    }
+
+    const chatRef = doc(db, 'chats', chatId);
+    const chatSnap = await getDoc(chatRef).catch(() => null);
+    const lastCid = chatSnap?.exists?.() ? (chatSnap.data()?.lastMsg?.head?.cid ?? null) : null;
+    const updateLastMsg = !!lastCid && items.some((item) => item.cid && item.cid === lastCid);
+
+    for (let index = 0; index < items.length; index += 400) {
+        const batch = writeBatch(db);
+        const chunk = items.slice(index, index + 400);
+        for (const item of chunk) {
+            batch.update(doc(db, 'chats', chatId, 'messages', item.id), { ttl });
+        }
+        if (updateLastMsg && index === 0) {
+            batch.update(chatRef, { 'lastMsg.ttl': ttl });
+        }
+        await batch.commit();
+    }
+
+    return items.length;
+}
+
+export async function makeMsgPermanent(db, chatId, messages) {
+    if (!db || !chatId) {
+        return 0;
+    }
+
+    const items = messagePermanentUpdateItems(messages);
+    if (!items.length) {
+        return 0;
+    }
+
+    const chatRef = doc(db, 'chats', chatId);
+    const chatSnap = await getDoc(chatRef).catch(() => null);
+    const lastCid = chatSnap?.exists?.() ? (chatSnap.data()?.lastMsg?.head?.cid ?? null) : null;
+    const updateLastMsg = !!lastCid && items.some((item) => item.cid && item.cid === lastCid);
+
+    for (let index = 0; index < items.length; index += 400) {
+        const batch = writeBatch(db);
+        const chunk = items.slice(index, index + 400);
+        for (const item of chunk) {
+            batch.update(doc(db, 'chats', chatId, 'messages', item.id), { ttl: null });
+        }
+        if (updateLastMsg && index === 0) {
+            batch.update(chatRef, { 'lastMsg.ttl': null });
+        }
+        await batch.commit();
+    }
+
+    return items.length;
+}
+
+export async function setChatRetention(db, chatId, senderPubkey, senderPrivkey, peerChatPK, retention) {
+    if (!senderPubkey || !senderPrivkey || !peerChatPK) {
+        throw new Error('vault locked');
+    }
+    const nextRetention = cleanChatRetention(retention);
+    const pair = await getCachedPair(senderPubkey, senderPrivkey, peerChatPK);
+    const settings = await sealChatSettingsForPair(pair, { retention: nextRetention });
+    await updateDoc(doc(db, 'chats', chatId), { settings });
+    return nextRetention;
 }
 
 export async function uploadImgMsg(db, storage, senderPubkey, senderPrivkey, receiverChatPK, cid, data, meta = {}) {
@@ -274,7 +469,7 @@ export async function updateMsg(db, chatId, msgId, senderPrivkey, receiverChatPK
     await updateDoc(msgRef, { body });
 
     // Keep the chat preview in sync when the edited message is still the latest.
-    // Do not touch lastMsg.ts or lastMsg.head so edits cannot create false unseen state.
+    // Do not touch lastMsg.head so edits cannot create false unseen state.
     const syncLastMsg = options?.updateLastMsg !== false;
     const nextCid = syncLastMsg && typeof newMessage?.cid === 'string' ? newMessage.cid : '';
     if (nextCid) {
@@ -307,25 +502,13 @@ export async function deleteMsg(db, chatId, msgId) {
     const currentCid = current?.head?.cid ?? null;
     const lastCid = chatSnap.exists() ? (chatSnap.data()?.lastMsg?.head?.cid ?? null) : null;
     const syncLastMsg = !!chatSnap.exists() && !!currentCid && currentCid === lastCid;
-    let nextLastMsg = null;
-
-    if (syncLastMsg) {
-        const latestSnap = await getDocs(query(collection(db, 'chats', chatId, 'messages'), orderBy('ts', 'desc'), limit(2)));
-        const previousDoc = latestSnap.docs.find((docSnap) => docSnap.id !== msgId) ?? null;
-        nextLastMsg = previousDoc?.data() ?? null;
-    }
-
     const batch = writeBatch(db);
     // Stored attachment blobs can be shared by reference, so deleting a message
     // must not delete the underlying Firebase Storage object.
     batch.delete(msgRef);
 
     if (syncLastMsg) {
-        if (nextLastMsg) {
-            batch.update(chatRef, { lastMsg: nextLastMsg });
-        } else {
-            batch.update(chatRef, { lastMsg: deleteField() });
-        }
+        batch.update(chatRef, { lastMsg: deleteField() });
     }
 
     await batch.commit();
@@ -334,6 +517,9 @@ export async function deleteMsg(db, chatId, msgId) {
 
 export async function decryptMsg(msgData, userChatPK, userPrivKey, peerChatPK) {
     if (!hasMsgData(msgData) || !userChatPK || !userPrivKey || !peerChatPK) {
+        return null;
+    }
+    if (messageDataExpired(msgData)) {
         return null;
     }
 
@@ -367,15 +553,6 @@ export function listenToChats(db, userChatPK, userPrivKey, onUpdate, onError) {
     return onSnapshot(q, (snap) => handleChats(db, snap.docs, userChatPK, userPrivKey, onUpdate), onError);
 }
 
-async function readLatestChatMessageData(db, chatId) {
-    if (!db || !chatId) {
-        return null;
-    }
-
-    const latestSnap = await getDocs(query(collection(db, 'chats', chatId, 'messages'), orderBy('ts', 'desc'), limit(1)));
-    return latestSnap.docs[0]?.data() ?? null;
-}
-
 async function handleChats(db, docs, userChatPK, userPrivKey, onUpdate) {
     const chats = await Promise.all(
         docs.map(async (docSnap) => {
@@ -385,17 +562,34 @@ async function handleChats(db, docs, userChatPK, userPrivKey, onUpdate) {
             }
             const participants = Array.isArray(data?.participants) ? data.participants.filter(Boolean) : [];
             const peerPK = participants.find((pk) => pk !== userChatPK) ?? getPeerChatPKFromChatId(docSnap.id, userChatPK);
-            const lastMsgData = data?.lastMsg || (await readLatestChatMessageData(db, docSnap.id));
-            if (!lastMsgData) {
+            if (!peerPK) {
                 return null;
             }
-            const lastMsg = lastMsgData && peerPK ? await decryptMsg(lastMsgData, userChatPK, userPrivKey, peerPK) : null;
-            const lastMsgTime = toMillis(lastMsgData?.ts);
-            const unseen = isChatUnseenForUser({ lastMsg }, userChatPK);
-            return { id: docSnap.id, participants, lastMsg, lastMsgTime, unseen };
+            const pair = await getCachedPair(userChatPK, userPrivKey, peerPK);
+            const settings = await openChatSettingsForPair(pair, data?.settings);
+            if (!settings) {
+                return null;
+            }
+            const lastMsgData = data?.lastMsg;
+            const lastMsg =
+                lastMsgData && peerPK
+                    ? await openMsg(pair, lastMsgData)
+                          .then((message) => normalizeDecryptedMsg({ ...lastMsgData, ts: data?.ts ?? null }, message))
+                          .catch(() => null)
+                    : null;
+            const visibleLastMsg = lastMsg && canShowMsg(lastMsg) && !isControlMsg(lastMsg) ? lastMsg : null;
+            const ts = toMillis(data?.ts, null);
+            if (!ts) {
+                return null;
+            }
+            if (lastMsgData && !visibleLastMsg) {
+                void updateDoc(doc(db, 'chats', docSnap.id), { lastMsg: deleteField() }).catch(() => {});
+            }
+            const unseen = visibleLastMsg ? isChatUnseenForUser({ lastMsg: visibleLastMsg }, userChatPK) : false;
+            return { id: docSnap.id, participants, settings, lastMsg: visibleLastMsg, ts, unseen };
         })
     );
-    const readyChats = chats.filter(Boolean).sort((a, b) => (b?.lastMsgTime || 0) - (a?.lastMsgTime || 0));
+    const readyChats = chats.filter(Boolean).sort((a, b) => (b?.ts || 0) - (a?.ts || 0));
     const peers = [...new Set(readyChats.map((chat) => chat?.participants?.find((pk) => pk && pk !== userChatPK)).filter(Boolean))];
     onUpdate(readyChats, peers);
 }
@@ -461,6 +655,9 @@ export function listenToLatestMsgs(db, chatId, userChatPK, userPrivKey, peerChat
 
             const changeTypeById = new Map(snap.docChanges().map((change) => [change.doc.id, change.type]));
             const docs = snap.docs.filter((docSnap) => {
+                if (messageDataExpired(docSnap.data())) {
+                    return false;
+                }
                 if (!docSnap.metadata.hasPendingWrites) {
                     return true;
                 }
@@ -529,7 +726,7 @@ export async function loadOlderMsgs(db, chatId, userChatPK, userPrivKey, peerCha
             ? query(collection(db, 'chats', chatId, 'messages'), orderBy('ts', 'asc'), endAt(cursor), limitToLast(pageSize * 2 + 2))
             : query(collection(db, 'chats', chatId, 'messages'), orderBy('ts', 'asc'), endBefore(Timestamp.fromMillis(cursorMs)), limitToLast(pageSize * 2 + 1));
         const snap = await getDocsFromServer(q);
-        const olderDocs = usingSnapshotCursor ? snap.docs.slice(0, -1) : snap.docs;
+        const olderDocs = (usingSnapshotCursor ? snap.docs.slice(0, -1) : snap.docs).filter((docSnap) => !messageDataExpired(docSnap.data()));
         const visibleStart = Math.max(olderDocs.length - pageSize * 2, 0);
         const visibleDocs = olderDocs.slice(visibleStart);
         const messages = await decryptDocs(visibleDocs, userChatPK, userPrivKey, peerChatPK);

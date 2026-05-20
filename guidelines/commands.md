@@ -36,6 +36,7 @@ bun make backend
 bun make db
 bun make rules
 bun make fns
+bun make lifecycle
 bun dirty
 bun lint
 bun lint:warn
@@ -116,16 +117,19 @@ bun make rules
 bun make fns
 bun make db
 bun make cors
+bun make lifecycle
 ```
 
 ## veyl Script Notes
 
 - `bun veyl` starts web, iOS, and bot together.
 - veyl web always uses Turbopack for local dev.
+- `bun veyl web` clears web `.next` before launch when the cache exceeds 5 GiB. Set `VEYL_WEB_CACHE_MAX_GB` to tune that threshold.
 - `bun veyl clear` clears web `.next`, iOS `.expo`, and Metro cache before starting the combined runtime.
 - `bun veyl web clear` clears only the veyl web `.next` cache before starting.
 - `bun veyl web mem` starts web with V8 heap snapshots near the heap limit; combine with `trace` for Turbopack trace output or `inspect` for Chrome DevTools memory profiling.
 - `bun veyl ios clear` clears only the veyl iOS `.expo` and Metro caches before starting.
+- `bun veyl ios` starts Expo in dev-client mode for the installed `dev.veyl` app.
 - `bun make ios` installs the `dev.veyl` Expo dev-client build on `REGTEST` with bundle id `com.glyphteck.veyl.dev`. It does not start Metro; run the dev server separately with `bun veyl ios` or the combined runtime.
 - `bun make ios reset` uninstalls the dev app before reinstalling it, which clears on-device app data and forces iOS to reprocess the current app identity.
 - `bun make ios test` installs the standalone test `test.veyl` build on `REGTEST` with bundle id `com.glyphteck.veyl.test`.

@@ -58,7 +58,7 @@ export function RecentChatsList() {
                                     <div className="hidden min-w-0 flex-1 md:block">
                                         <div className="flex items-center justify-between">
                                             <span className="truncate font-black">{displayName}</span>
-                                            <span className="ml-2 whitespace-nowrap text-sm text-muted">{chat.lastMsg ? formatFullDateTime(chat.lastMsg.ts?.toDate() || new Date()) : ''}</span>
+                                            <span className="ml-2 whitespace-nowrap text-sm text-muted">{chat.ts ? formatFullDateTime(chat.ts) : ''}</span>
                                         </div>
                                         <div className={`truncate text-sm ${chat.unseen ? 'text-foreground' : 'text-muted'} ${cloaked ? 'cloaked' : ''}`}>
                                             {displayLastMsg(chat.lastMsg, chatPK, settings, bitcoin.price)}

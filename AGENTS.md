@@ -11,7 +11,7 @@ Before starting feature work in this repo:
     - [guidelines/apple-review.md](guidelines/apple-review.md) for Apple App Review guideline mapping
     - [review.md](review.md) for Apple App Review posture
     - [legal.md](legal.md) for legal, privacy, and terms copy
-    - [roadmap.md](roadmap.md), [guidelines/todo.md](guidelines/todo.md), and [todo/](todo/) for planning context
+    - [roadmap.md](roadmap.md), [ideas.md](ideas.md), [guidelines/todo.md](guidelines/todo.md), and [todo/](todo/) for planning context
 
 ## Non-Negotiables
 

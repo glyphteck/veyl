@@ -18,7 +18,7 @@ function dataUriToBlob(dataUri) {
 
 export default function SendPhoto({ data, close }) {
     const { chatPK, chatBanned } = useUser();
-    const { sendImage, selectChat } = useChat();
+    const { sendImageMany, selectChat } = useChat();
     const [sending, setSending] = useState(false);
 
     const photo = data?.photo;
@@ -37,24 +37,39 @@ export default function SendPhoto({ data, close }) {
             img.src = photo;
         });
 
-        for (const peer of selected) {
-            try {
-                await sendImage(peer.chatPK, {
+        let results;
+        try {
+            results = await sendImageMany(
+                selected.map((peer) => peer.chatPK),
+                {
                     data: blob,
                     mimeType: 'image/jpeg',
                     size: blob.size,
                     previewUri: photo,
                     ...dims,
-                });
+                }
+            );
+        } catch (error) {
+            console.error('send photo failed:', error);
+            for (const peer of selected) {
+                toast.error(`failed to send to ${formatUserDisplay(peer, false)}`);
+            }
+            return;
+        }
+        const resultByChatPK = new Map(results.map((result) => [result.peerChatPK, result]));
+
+        for (const peer of selected) {
+            const result = resultByChatPK.get(peer.chatPK);
+            if (result?.ok) {
                 const chatId = getChatId(chatPK, peer.chatPK);
                 if (selected.length === 1) selectChat(chatId);
                 toast(`sent photo to ${formatUserDisplay(peer, false)}`, { icon: <CircleCheck /> });
-            } catch (error) {
-                console.error('send photo failed:', error);
+            } else {
+                console.error('send photo failed:', result?.error);
                 toast.error(`failed to send to ${formatUserDisplay(peer, false)}`);
             }
         }
-    }, [chatBanned, chatPK, close, photo, selectChat, sendImage, sending]);
+    }, [chatBanned, chatPK, close, photo, selectChat, sendImageMany, sending]);
 
     return <Share onShare={handleSend} busy={sending} disabled={chatBanned} />;
 }

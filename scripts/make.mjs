@@ -14,6 +14,7 @@ const firebaseTargets = {
     fns: 'functions',
 };
 const storageBucket = 'gs://glyphteck.firebasestorage.app';
+const storageLifecyclePath = resolve(rootDir, 'storage.lifecycle.json');
 const appleTeamId = 'HHTM355M49';
 const iosVariants = {
     dev: {
@@ -237,6 +238,7 @@ async function main() {
         if (target === 'backend' || target === 'rules') {
             await writeStorageCors();
             await run('gcloud', ['storage', 'buckets', 'update', storageBucket, '--cors-file', resolve(rootDir, 'storage.cors.json')]);
+            await run('gcloud', ['storage', 'buckets', 'update', storageBucket, '--lifecycle-file', storageLifecyclePath]);
         }
         return;
     }
@@ -247,7 +249,12 @@ async function main() {
         return;
     }
 
-    console.error('Usage: bun make <ios|backend|db|rules|fns|cors>');
+    if (target === 'lifecycle') {
+        await run('gcloud', ['storage', 'buckets', 'update', storageBucket, '--lifecycle-file', storageLifecyclePath, ...rest]);
+        return;
+    }
+
+    console.error('Usage: bun make <ios|backend|db|rules|fns|cors|lifecycle>');
     console.error('Examples: bun make ios, bun make ios reset, bun make ios test, bun make ios prod, bun make ios store');
     process.exitCode = 1;
 }
