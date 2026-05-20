@@ -49,3 +49,14 @@ build/
 
 # bot runtime
 *.pid
+apps/veyl/bot/.bot.lock/
+
+# Firebase/backend local build and emulator output
+.firebase/
+firebase-debug.log*
+firestore-debug.log*
+database-debug.log*
+pubsub-debug.log*
+ui-debug.log*
+functions/.runtimeconfig.json
+functions/.secret.local
