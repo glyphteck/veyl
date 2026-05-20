@@ -5,11 +5,17 @@ const PUBLIC_FILE = /\.(.*)$/;
 export function proxy(request) {
     const { pathname } = request.nextUrl;
 
-    if (pathname === '/download' || pathname.startsWith('/_next') || pathname.startsWith('/api') || PUBLIC_FILE.test(pathname)) {
+    if (pathname.startsWith('/_next') || pathname.startsWith('/api') || PUBLIC_FILE.test(pathname)) {
         return NextResponse.next();
     }
 
-    if (!['mobile', 'tablet'].includes(userAgent(request).device.type)) {
+    const isMobile = ['mobile', 'tablet'].includes(userAgent(request).device.type);
+
+    if (pathname === '/download') {
+        return isMobile ? NextResponse.next() : NextResponse.redirect(new URL('/', request.url));
+    }
+
+    if (!isMobile) {
         return NextResponse.next();
     }
 

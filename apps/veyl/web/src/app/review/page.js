@@ -61,7 +61,7 @@ const guidelineMap = [
 
 export default function ReviewPage() {
     return (
-        <div className="min-h-screen select-text px-5 py-8 sm:px-8">
+        <div className="h-screen overflow-y-auto select-text px-5 py-8 sm:px-8">
             <div className="mx-auto grid w-full max-w-4xl gap-10">
                 <div className="grid gap-3 border-b pb-6">
                     <div className="text-sm font-black uppercase text-muted">Apple App Review</div>

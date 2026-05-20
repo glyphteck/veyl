@@ -10,6 +10,27 @@ function remoteAttachmentNeedsRead(message) {
     return isAttachmentMsgType(message?.t) && !message?.pending && !message?.failed && !hasLocalFileRef(message);
 }
 
+function ttlKey(ttl) {
+    if (ttl == null) {
+        return 'null';
+    }
+    if (typeof ttl?.toMillis === 'function') {
+        return String(ttl.toMillis());
+    }
+    return String(ttl);
+}
+
+function attachmentResolutionKey(message) {
+    if (!remoteAttachmentNeedsRead(message)) {
+        return '';
+    }
+    const key = getMessageKey(message);
+    if (!key || !message?.p || !message?.k) {
+        return '';
+    }
+    return [key, message.t || '', message.p, message.k, message.x ?? '', ttlKey(message.ttl)].join('\n');
+}
+
 function shouldDropBeforeRead(message) {
     if (!remoteAttachmentNeedsRead(message)) {
         return false;
@@ -32,7 +53,7 @@ function dropMessageMedia(localCache, message) {
 }
 
 async function resolveOne(message, options) {
-    const { droppedKeys, localCache, peerChatPK, readMessageFile } = options;
+    const { droppedKeys, localCache, peerChatPK, readMessageFile, resolvedKeys } = options;
     const key = getMessageKey(message);
     if (key && droppedKeys?.has?.(key)) {
         return null;
@@ -52,6 +73,11 @@ async function resolveOne(message, options) {
         return message;
     }
 
+    const resolutionKey = attachmentResolutionKey(message);
+    if (resolutionKey && resolvedKeys?.has?.(resolutionKey)) {
+        return message;
+    }
+
     if (shouldDropBeforeRead(message) || !peerChatPK || typeof readMessageFile !== 'function') {
         rememberDrop(droppedKeys, message);
         dropMessageMedia(localCache, message);
@@ -61,10 +87,16 @@ async function resolveOne(message, options) {
     try {
         const bytes = await readMessageFile(peerChatPK, message);
         if (bytes?.byteLength) {
+            if (resolutionKey) {
+                resolvedKeys?.add?.(resolutionKey);
+            }
             return message;
         }
     } catch {}
 
+    if (resolutionKey) {
+        resolvedKeys?.delete?.(resolutionKey);
+    }
     rememberDrop(droppedKeys, message);
     dropMessageMedia(localCache, message);
     return null;

@@ -5,7 +5,10 @@ import { filterChatMessages, getPeerChatPKFromChatId, listenToMsgDeletes, loadOl
 import { getMessageKey, getMessageOrderMs, mergeMessages } from './state.js';
 import { dropCachedMedia } from '../localdatacache.js';
 import { deriveMessageReactions, getLatestOwnReadReceiptTarget, getLatestReadReceiptTarget } from './messages.js';
-import { hasRemoteAttachmentToResolve, resolveRenderableMessages } from './resolve.js';
+import { resolveRenderableMessages } from './resolve.js';
+
+const MAX_MESSAGE_VIEW_CACHE = 30;
+const VISITED_CHAT_PREFETCH_OLDER_BATCHES = 2;
 
 function isDenied(error) {
     return error?.code === 'permission-denied';
@@ -75,9 +78,6 @@ function messageSeedFromBatch(msgBatch, chatPK, peerChatPK) {
     }
 
     const live = filterChatMessages(msgBatch.messages, chatPK, peerChatPK);
-    if (hasRemoteAttachmentToResolve(live)) {
-        return null;
-    }
     return {
         older: [],
         live,
@@ -88,6 +88,50 @@ function messageSeedFromBatch(msgBatch, chatPK, peerChatPK) {
         oldest: msgBatch.cursor,
         olderLoaded: false,
     };
+}
+
+function messageSeedFromViewCache(cache, scopeKey) {
+    const seed = cache?.get?.(scopeKey);
+    if (!seed?.ready) {
+        return null;
+    }
+
+    return {
+        older: seed.older || [],
+        live: seed.live || [],
+        hasOlder: !!seed.hasOlder,
+        ready: true,
+        exists: !!seed.exists,
+        serverBatch: seed.serverBatch ?? null,
+        oldest: seed.oldest ?? null,
+        olderLoaded: !!seed.olderLoaded,
+    };
+}
+
+function rememberMessageView(cache, scopeKey, seed) {
+    if (!cache || !scopeKey || !seed?.ready) {
+        return;
+    }
+
+    cache.delete(scopeKey);
+    cache.set(scopeKey, {
+        older: seed.older || [],
+        live: seed.live || [],
+        hasOlder: !!seed.hasOlder,
+        ready: true,
+        exists: !!seed.exists,
+        serverBatch: seed.serverBatch ?? null,
+        oldest: seed.oldest ?? null,
+        olderLoaded: !!seed.olderLoaded,
+    });
+
+    while (cache.size > MAX_MESSAGE_VIEW_CACHE) {
+        const oldest = cache.keys().next().value;
+        if (!oldest) {
+            return;
+        }
+        cache.delete(oldest);
+    }
 }
 
 export function createUseChatMessages({ db, useChat, useUser, useVault, appState, pageSize = MSG_BATCH_SIZE }) {
@@ -115,6 +159,7 @@ export function createUseChatMessages({ db, useChat, useUser, useVault, appState
             subscribeMessageBatch,
             getMessageBatch: getSharedMessageBatch,
             getChatRowLastMsgKey,
+            queueMessagePreload,
             adoptConfirmedMessages,
             readMessageFile,
         } = useChat();
@@ -123,7 +168,8 @@ export function createUseChatMessages({ db, useChat, useUser, useVault, appState
 
         const peerChatPK = useMemo(() => getPeerChatPKFromChatId(chatId, chatPK), [chatId, chatPK]);
         const scopeKey = `${chatId || ''}:${chatPK || ''}:${chatPrivateKey ? 'unlocked' : 'locked'}:${peerChatPK || ''}`;
-        const initialSeed = messageSeedFromBatch(typeof getSharedMessageBatch === 'function' ? getSharedMessageBatch(chatId) : null, chatPK, peerChatPK);
+        const viewCacheRef = useRef(new Map());
+        const initialSeed = messageSeedFromBatch(typeof getSharedMessageBatch === 'function' ? getSharedMessageBatch(chatId) : null, chatPK, peerChatPK) ?? messageSeedFromViewCache(viewCacheRef.current, scopeKey);
 
         const [older, setOlder] = useState(() => initialSeed?.older ?? []);
         const [live, setLive] = useState(() => initialSeed?.live ?? []);
@@ -137,11 +183,16 @@ export function createUseChatMessages({ db, useChat, useUser, useVault, appState
 
         const oldestRef = useRef(initialSeed?.oldest ?? null);
         const olderLoadedRef = useRef(!!initialSeed?.olderLoaded);
+        const hasOlderRef = useRef(initialSeed?.hasOlder ?? false);
         const liveRef = useRef(initialSeed?.live ?? []);
         const loadingOlderRef = useRef(false);
         const runRef = useRef(0);
         const applyBatchRef = useRef(0);
         const droppedMessageKeysRef = useRef(new Set());
+        const resolvedMessageKeysRef = useRef(new Set());
+        const rowLastMsgKeyRef = useRef(null);
+        const localsRef = useRef([]);
+        const olderPrefetchRef = useRef({ scopeKey: '', count: 0, queued: 0, exhausted: false });
         const scopeRef = useRef('');
         const leaveTtlRef = useRef(null);
         const expireMessagesOnLeaveTtlRef = useRef(expireMessagesOnLeaveTtl);
@@ -153,6 +204,14 @@ export function createUseChatMessages({ db, useChat, useUser, useVault, appState
         const chatExists = !!(chatId && hasChatDoc(chatId));
         const rowLastMsgKey = chatId && typeof getChatRowLastMsgKey === 'function' ? getChatRowLastMsgKey(chatId) : null;
         const locals = useMemo(() => (chatId ? getMessages(chatId) : []), [chatId, getMessages]);
+
+        useEffect(() => {
+            rowLastMsgKeyRef.current = rowLastMsgKey;
+        }, [rowLastMsgKey]);
+
+        useEffect(() => {
+            localsRef.current = locals;
+        }, [locals]);
 
         useEffect(() => {
             if (!appState?.addEventListener) {
@@ -175,11 +234,12 @@ export function createUseChatMessages({ db, useChat, useUser, useVault, appState
 
         useEffect(() => {
             runRef.current += 1;
-            const nextInitial = messageSeedFromBatch(typeof getSharedMessageBatch === 'function' ? getSharedMessageBatch(chatId) : null, chatPK, peerChatPK);
+            const nextInitial = messageSeedFromBatch(typeof getSharedMessageBatch === 'function' ? getSharedMessageBatch(chatId) : null, chatPK, peerChatPK) ?? messageSeedFromViewCache(viewCacheRef.current, scopeKey);
 
             setOlder(nextInitial?.older ?? []);
             setLive(nextInitial?.live ?? []);
             setHasOlder(nextInitial?.hasOlder ?? false);
+            hasOlderRef.current = nextInitial?.hasOlder ?? false;
             setLoadingOlder(false);
             setReady(nextInitial?.ready ?? !chatId);
             setExists(nextInitial?.exists ?? false);
@@ -191,7 +251,26 @@ export function createUseChatMessages({ db, useChat, useUser, useVault, appState
             loadingOlderRef.current = false;
             applyBatchRef.current += 1;
             droppedMessageKeysRef.current = new Set();
+            resolvedMessageKeysRef.current = new Set();
+            olderPrefetchRef.current = { scopeKey, count: 0, queued: 0, exhausted: false };
         }, [chatId, chatPK, chatPrivateKey, getSharedMessageBatch, peerChatPK, scopeKey]);
+
+        useEffect(() => {
+            hasOlderRef.current = hasOlder;
+        }, [hasOlder]);
+
+        useEffect(() => {
+            rememberMessageView(viewCacheRef.current, stateScope, {
+                older,
+                live,
+                hasOlder,
+                ready,
+                exists,
+                serverBatch,
+                oldest: oldestRef.current,
+                olderLoaded: olderLoadedRef.current,
+            });
+        }, [exists, hasOlder, live, older, ready, serverBatch, stateScope]);
 
         useEffect(() => {
             if (!chatId || !chatPK || !chatPrivateKey || !peerChatPK) {
@@ -263,7 +342,7 @@ export function createUseChatMessages({ db, useChat, useUser, useVault, appState
                 }
 
                 if (!msgBatch.adoptable) {
-                    if (!liveRef.current.length) {
+                    if (!liveRef.current.length && !localsRef.current.length) {
                         setReady(false);
                     }
                     return;
@@ -271,8 +350,8 @@ export function createUseChatMessages({ db, useChat, useUser, useVault, appState
 
                 const seq = applyBatchRef.current + 1;
                 applyBatchRef.current = seq;
-                const hadLive = !!liveRef.current.length;
-                if (!hadLive) {
+                const hadRenderableMessages = !!(liveRef.current.length || localsRef.current.length);
+                if (!hadRenderableMessages) {
                     setReady(false);
                 }
 
@@ -285,6 +364,7 @@ export function createUseChatMessages({ db, useChat, useUser, useVault, appState
                             readMessageFile,
                             localCache,
                             droppedKeys: droppedMessageKeysRef.current,
+                            resolvedKeys: resolvedMessageKeysRef.current,
                         });
                         return { chatMessages, resolvedMessages };
                     })
@@ -356,7 +436,7 @@ export function createUseChatMessages({ db, useChat, useUser, useVault, appState
             ensureMessageBatch?.(chatId, {
                 source: 'route',
                 peerChatPK,
-                rowLastMsgKey,
+                rowLastMsgKey: rowLastMsgKeyRef.current,
                 pageSize,
             });
             applyBatch(getSharedMessageBatch?.(chatId));
@@ -446,7 +526,7 @@ export function createUseChatMessages({ db, useChat, useUser, useVault, appState
         }, [chatExists, chatId, db, isActive, localCache]);
 
         const loadOlder = useCallback(async () => {
-            if (stateScope !== scopeKey || !chatId || !chatExists || !chatPK || !chatPrivateKey || !peerChatPK || !hasOlder || loadingOlderRef.current || !oldestRef.current) {
+            if (stateScope !== scopeKey || !chatId || !chatExists || !chatPK || !chatPrivateKey || !peerChatPK || !hasOlderRef.current || loadingOlderRef.current || !oldestRef.current) {
                 return false;
             }
 
@@ -454,10 +534,12 @@ export function createUseChatMessages({ db, useChat, useUser, useVault, appState
             setLoadingOlder(true);
             const runId = runRef.current;
             try {
+                const previousCursor = oldestRef.current;
                 const page = await loadOlderMsgs(db, chatId, chatPK, chatPrivateKey, peerChatPK, oldestRef.current, pageSize);
                 if (runId !== runRef.current) {
                     return false;
                 }
+                const cursorChanged = !!page.cursor && page.cursor?.id !== previousCursor?.id;
                 if (page.cursor) {
                     oldestRef.current = page.cursor;
                 }
@@ -470,6 +552,7 @@ export function createUseChatMessages({ db, useChat, useUser, useVault, appState
                         readMessageFile,
                         localCache,
                         droppedKeys: droppedMessageKeysRef.current,
+                        resolvedKeys: resolvedMessageKeysRef.current,
                     });
                     if (runId !== runRef.current) {
                         return false;
@@ -486,8 +569,9 @@ export function createUseChatMessages({ db, useChat, useUser, useVault, appState
                         return mergeMessages(resolvedMessages, kept);
                     });
                 }
+                hasOlderRef.current = page.hasMore;
                 setHasOlder(page.hasMore);
-                return page.messages.length > 0;
+                return page.messages.length > 0 || cursorChanged;
             } catch (error) {
                 if (!isDenied(error)) {
                     console.warn('Older messages load failed', chatId, error);
@@ -499,7 +583,57 @@ export function createUseChatMessages({ db, useChat, useUser, useVault, appState
                     setLoadingOlder(false);
                 }
             }
-        }, [chatExists, chatId, chatPK, chatPrivateKey, db, hasOlder, localCache, pageSize, peerChatPK, readMessageFile, scopeKey, stateScope]);
+        }, [chatExists, chatId, chatPK, chatPrivateKey, db, localCache, pageSize, peerChatPK, readMessageFile, scopeKey, stateScope]);
+
+        useEffect(() => {
+            if (stateScope !== scopeKey || !chatId || !ready || !exists || !hasOlder || !oldestRef.current || typeof queueMessagePreload !== 'function') {
+                return undefined;
+            }
+
+            const state = olderPrefetchRef.current;
+            if (state.scopeKey !== scopeKey) {
+                olderPrefetchRef.current = { scopeKey, count: 0, queued: 0, exhausted: false };
+            }
+            const current = olderPrefetchRef.current;
+            const target = VISITED_CHAT_PREFETCH_OLDER_BATCHES;
+            if (current.exhausted || current.queued >= target || current.count >= target) {
+                return undefined;
+            }
+
+            const start = current.queued;
+            const tasks = [];
+            for (let index = start; index < target; index += 1) {
+                const batchNumber = index + 1;
+                tasks.push({
+                    kind: 'older',
+                    key: `older:${scopeKey}:${batchNumber}`,
+                    async run() {
+                        const active = olderPrefetchRef.current;
+                        if (active.scopeKey !== scopeKey || active.exhausted || !hasOlderRef.current || !oldestRef.current) {
+                            return false;
+                        }
+                        if (loadingOlderRef.current) {
+                            return false;
+                        }
+
+                        const loaded = await loadOlder();
+                        if (olderPrefetchRef.current.scopeKey !== scopeKey) {
+                            return false;
+                        }
+
+                        if (loaded) {
+                            olderPrefetchRef.current.count += 1;
+                        } else if (!hasOlderRef.current || !oldestRef.current) {
+                            olderPrefetchRef.current.exhausted = true;
+                        }
+                        return loaded;
+                    },
+                });
+            }
+            current.queued = target;
+            queueMessagePreload(tasks);
+            return undefined;
+        }, [chatId, exists, hasOlder, loadOlder, queueMessagePreload, ready, scopeKey, stateScope]);
 
         const patchMessage = useCallback((id, patch) => {
             if (!id) {
@@ -548,7 +682,16 @@ export function createUseChatMessages({ db, useChat, useUser, useVault, appState
             }
             return dropMissingFromBatch(activeOlder, activeServerBatch, liveKeys);
         }, [activeOlder, activeServerBatch, liveKeys]);
-        const rawMessages = useMemo(() => filterChatMessages(mergeMessages(cleanOlder, activeLive, locals), chatPK, peerChatPK), [activeLive, chatPK, cleanOlder, locals, peerChatPK]);
+        const renderLocals = useMemo(() => {
+            if (!liveKeys.size) {
+                return locals;
+            }
+            return locals.filter((message) => {
+                const key = getMessageKey(message);
+                return !key || !liveKeys.has(key);
+            });
+        }, [liveKeys, locals]);
+        const rawMessages = useMemo(() => filterChatMessages(mergeMessages(cleanOlder, activeLive, renderLocals), chatPK, peerChatPK), [activeLive, chatPK, cleanOlder, renderLocals, peerChatPK]);
         const messages = useMemo(() => deriveMessageReactions(rawMessages, chatPK, peerChatPK), [chatPK, peerChatPK, rawMessages]);
 
         useEffect(() => {

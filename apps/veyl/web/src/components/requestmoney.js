@@ -257,9 +257,7 @@ export default function RequestMoney({ peer, amount }) {
                                         autoFocus={peer && !hasAmount}
                                     />
                                     <ToggleGroup tabIndex={-1} className="ml-auto" type="single" value={form.watch('inputUnit')} onValueChange={setUnit} disabled={isSubmitting}>
-                                        <ToggleGroupItem value="btc" className="font-helvetica">
-                                            ₿
-                                        </ToggleGroupItem>
+                                        <ToggleGroupItem value="btc">₿</ToggleGroupItem>
                                         <ToggleGroupItem value="sats">sats</ToggleGroupItem>
                                         <ToggleGroupItem value="usd">$</ToggleGroupItem>
                                     </ToggleGroup>

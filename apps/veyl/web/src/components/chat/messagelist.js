@@ -13,16 +13,26 @@ import { formatUserDisplay, formatFullDateTime } from '@/lib/utils';
 import { getPeerChatPKFromChatId } from '@glyphteck/shared/chat/utils';
 import { getMessageOrderMs } from '@glyphteck/shared/chat/state';
 import { useChatMessages } from './usechatmessages';
-import { forwardRef, useState, useRef, useEffect, useCallback, useLayoutEffect, useMemo } from 'react';
+import { forwardRef, memo, useState, useRef, useEffect, useCallback, useLayoutEffect, useMemo } from 'react';
 import { ChatMessageType } from './messages';
 import { bubbleBg, canSaveMsgFile, saveMsgFile } from '@/lib/messages';
 
 const LIKE_TAP_MS = 320;
 const LIKE_TAP_DIST = 42;
 const MESSAGE_ROW_ANIMATION_MS = 160;
+const MESSAGE_ROW_EXIT_ANIMATION_MS = 160;
+const MESSAGE_ROW_LEAVE_MS = MESSAGE_ROW_EXIT_ANIMATION_MS + MESSAGE_ROW_ANIMATION_MS;
 const MESSAGE_ROW_EASE = 'cubic-bezier(0.2, 0, 0, 1)';
+const MESSAGE_ROW_EXIT_EASE = 'linear';
+const MESSAGE_ROW_EXIT_CLEARANCE_PX = 1;
+const MESSAGE_ROW_EXIT_SCALE = 0;
+const MESSAGE_ROW_GAP_PX = 16;
 const MAX_CHAT_SCROLL_MEMORY = 50;
 const MESSAGE_ACTION_ICON = 'size-4';
+const BOTTOM_STICK_PX = 32;
+const EMPTY_RECEIPT_PEER = Object.freeze({});
+const EMPTY_MESSAGE_ACTIONS = Object.freeze([]);
+const EMPTY_MESSAGE_KEY_SET = new Set();
 const chatScrollMemory = new Map();
 
 function rememberChatScroll(chatId, scrollTop) {
@@ -45,6 +55,20 @@ function getMsgKey(msg) {
     return msg?.cid || msg?.id;
 }
 
+function getMsgKeys(msg) {
+    return [...new Set([getMsgKey(msg), msg?.id, msg?.cid].filter(Boolean))];
+}
+
+function rowHasKey(row, keys) {
+    if (!keys?.size) {
+        return false;
+    }
+    if (row?.key && keys.has(row.key)) {
+        return true;
+    }
+    return getMsgKeys(row?.msg).some((key) => keys.has(key));
+}
+
 function isInteractiveTarget(target) {
     return !!target?.closest?.('button,a,input,textarea,select,video,audio,[role="button"]');
 }
@@ -52,6 +76,21 @@ function isInteractiveTarget(target) {
 function formatMsgFullDateTime(msg) {
     const ms = getMessageOrderMs(msg);
     return Number.isFinite(ms) && ms !== Infinity ? formatFullDateTime(ms) : '';
+}
+
+function sameRowList(left, right) {
+    if (left === right) {
+        return true;
+    }
+    if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) {
+        return false;
+    }
+    for (let index = 0; index < left.length; index += 1) {
+        if (left[index] !== right[index]) {
+            return false;
+        }
+    }
+    return true;
 }
 
 function afterNextPaint(callback) {
@@ -68,9 +107,23 @@ function afterNextPaint(callback) {
     };
 }
 
+function isAtReverseBottom(node) {
+    return !!node && Math.max(0, -node.scrollTop) <= BOTTOM_STICK_PX;
+}
+
+function scrollToReverseBottom(node) {
+    if (node) {
+        node.scrollTop = 0;
+    }
+}
+
 function SendDot({ show, failed }) {
     return (
-        <div aria-hidden="true" className={`pointer-events-none ml-2 flex h-2 w-2 shrink-0 items-center justify-center transition-opacity ease-out ${show ? 'opacity-100' : 'opacity-0'}`}>
+        <div
+            aria-hidden="true"
+            className={`pointer-events-none ml-2 flex h-2 w-2 shrink-0 items-center justify-center transition-opacity ease-out ${show ? 'opacity-100' : 'opacity-0'}`}
+            style={{ transitionDuration: `${MESSAGE_ROW_ANIMATION_MS}ms` }}
+        >
             <div className={`size-2 rounded-full shadow-sm ${failed ? 'bg-destructive' : 'bg-active'}`} />
         </div>
     );
@@ -112,25 +165,7 @@ function MessageActions({ actions, fromPeer }) {
     );
 }
 
-function makeMessageActions({
-    msg,
-    userSent,
-    canReply,
-    canEdit,
-    canRetry,
-    canSave,
-    canShare,
-    canDelete,
-    canReport,
-    saving,
-    onReply,
-    onEdit,
-    onRetry,
-    onSave,
-    onShare,
-    onDelete,
-    onReport,
-}) {
+function makeMessageActions({ msg, userSent, canReply, canEdit, canRetry, canSave, canShare, canDelete, canReport, saving, onReply, onEdit, onRetry, onSave, onShare, onDelete, onReport }) {
     return [
         canReply && typeof onReply === 'function'
             ? {
@@ -249,25 +284,25 @@ function ReportedMessage({ fromPeer }) {
     );
 }
 
-function makePresentRows(messages) {
+function makePresentRows(messages, hiddenKeys = EMPTY_MESSAGE_KEY_SET) {
     return messages
         .map((msg) => ({
             key: getMsgKey(msg),
             msg,
             state: 'present',
         }))
-        .filter((row) => row.key);
+        .filter((row) => row.key && !rowHasKey(row, hiddenKeys));
 }
 
-function useAnimatedMessageRows(messages, scopeKey) {
-    const presentRows = useMemo(() => makePresentRows(messages), [messages]);
-    const [state, setState] = useState(() => ({ scopeKey, rows: presentRows }));
+function useAnimatedMessageRows(messages, scopeKey, hiddenKeys = EMPTY_MESSAGE_KEY_SET, animate = true) {
+    const presentRows = useMemo(() => makePresentRows(messages, hiddenKeys), [hiddenKeys, messages]);
+    const [state, setState] = useState(() => ({ scopeKey, rows: presentRows, animated: animate }));
     const reset = state.scopeKey !== scopeKey;
 
     useLayoutEffect(() => {
         setState((prev) => {
-            if (prev.scopeKey !== scopeKey) {
-                return { scopeKey, rows: presentRows };
+            if (prev.scopeKey !== scopeKey || !animate || !prev.animated) {
+                return { scopeKey, rows: presentRows, animated: animate };
             }
 
             const nextKeys = new Set(presentRows.map((row) => row.key));
@@ -279,13 +314,28 @@ function useAnimatedMessageRows(messages, scopeKey) {
                 prevIndexByKey.set(row.key, index);
             });
 
-            const nextRows = presentRows.map((row) => {
+            const firstRetainedIndex = presentRows.findIndex((row) => {
                 const prevRow = prevByKey.get(row.key);
-                return {
-                    ...row,
-                    state: prevRow && prevRow.state !== 'leaving' ? 'present' : 'entering',
-                };
+                return prevRow && prevRow.state !== 'leaving';
             });
+            const newestInsertCount = prev.rows.length ? Math.max(0, firstRetainedIndex) : presentRows.length;
+
+            const nextRows = presentRows.map((row, index) => {
+                const prevRow = prevByKey.get(row.key);
+                const retained = prevRow && prevRow.state !== 'leaving';
+                const state = retained ? 'present' : index < newestInsertCount ? 'entering' : 'instant';
+                if (prevRow && prevRow.state === state && prevRow.msg === row.msg) {
+                    return prevRow;
+                }
+                return { ...row, state };
+            });
+            const olderInsertStart = nextRows.findIndex((row, index) => index >= newestInsertCount && row.state === 'instant');
+            if (olderInsertStart > 0) {
+                const boundary = nextRows[olderInsertStart - 1];
+                if (boundary?.state === 'present') {
+                    nextRows[olderInsertStart - 1] = { ...boundary, state: 'instant' };
+                }
+            }
             const result = [];
             let prevCursor = 0;
 
@@ -309,12 +359,15 @@ function useAnimatedMessageRows(messages, scopeKey) {
             }
 
             pushDroppedRowsBefore(prev.rows.length);
-            return { scopeKey, rows: result };
+            if (sameRowList(prev.rows, result)) {
+                return prev;
+            }
+            return { scopeKey, rows: result, animated: true };
         });
-    }, [presentRows, scopeKey]);
+    }, [animate, presentRows, scopeKey]);
 
     useEffect(() => {
-        if (state.scopeKey !== scopeKey || !state.rows.some((row) => row.state === 'entering')) {
+        if (!state.animated || state.scopeKey !== scopeKey || !state.rows.some((row) => row.state === 'entering' || row.state === 'instant')) {
             return undefined;
         }
 
@@ -325,14 +378,14 @@ function useAnimatedMessageRows(messages, scopeKey) {
                 }
                 return {
                     ...prev,
-                    rows: prev.rows.map((row) => (row.state === 'entering' ? { ...row, state: 'present' } : row)),
+                    rows: prev.rows.map((row) => (row.state === 'entering' || row.state === 'instant' ? { ...row, state: 'present' } : row)),
                 };
             });
         });
-    }, [scopeKey, state.rows, state.scopeKey]);
+    }, [scopeKey, state.animated, state.rows, state.scopeKey]);
 
     useEffect(() => {
-        if (state.scopeKey !== scopeKey || !state.rows.some((row) => row.state === 'leaving')) {
+        if (!state.animated || state.scopeKey !== scopeKey || !state.rows.some((row) => row.state === 'leaving')) {
             return undefined;
         }
 
@@ -346,23 +399,31 @@ function useAnimatedMessageRows(messages, scopeKey) {
                     rows: prev.rows.filter((row) => row.state !== 'leaving'),
                 };
             });
-        }, MESSAGE_ROW_ANIMATION_MS + 50);
+        }, MESSAGE_ROW_LEAVE_MS + 50);
 
         return () => clearTimeout(timeout);
-    }, [scopeKey, state.rows, state.scopeKey]);
+    }, [scopeKey, state.animated, state.rows, state.scopeKey]);
 
     return reset ? presentRows : state.rows;
 }
 
-const MessageRowShell = forwardRef(function MessageRowShell({ rowState = 'present', className, children }, ref) {
+const MessageRowShell = forwardRef(function MessageRowShell({ rowState = 'present', hasRowAbove = false, className, children }, ref) {
     const innerRef = useRef(null);
     const [height, setHeight] = useState(null);
+    const [collapsing, setCollapsing] = useState(false);
     const heightRef = useRef(null);
     const entering = rowState === 'entering';
     const leaving = rowState === 'leaving';
+    const instant = rowState === 'instant';
+    const rowGap = hasRowAbove ? MESSAGE_ROW_GAP_PX : 0;
+    const enterTransform = `scale(0.98)`;
+    const restingScaleTransform = 'scale(1)';
 
     const setMeasuredHeight = useCallback((nextHeight) => {
         const next = Math.max(0, Math.ceil(nextHeight));
+        if (heightRef.current === next) {
+            return;
+        }
         heightRef.current = next;
         setHeight(next);
     }, []);
@@ -376,9 +437,13 @@ const MessageRowShell = forwardRef(function MessageRowShell({ rowState = 'presen
         const measure = () => Math.ceil(node.getBoundingClientRect().height);
 
         if (leaving) {
-            setMeasuredHeight(heightRef.current ?? measure());
-            return afterNextPaint(() => setMeasuredHeight(0));
+            setCollapsing(false);
+            setMeasuredHeight(measure());
+            const collapseTimeout = setTimeout(() => setCollapsing(true), MESSAGE_ROW_EXIT_ANIMATION_MS);
+            return () => clearTimeout(collapseTimeout);
         }
+
+        setCollapsing(false);
 
         if (entering) {
             setMeasuredHeight(0);
@@ -403,28 +468,34 @@ const MessageRowShell = forwardRef(function MessageRowShell({ rowState = 'presen
         return () => {
             observer.disconnect();
         };
-    }, [entering, leaving, setMeasuredHeight]);
+    }, [entering, leaving, rowGap, setMeasuredHeight]);
 
     return (
         <div
             ref={ref}
             className={className}
             style={{
-                height: height == null ? undefined : height,
-                overflow: entering || leaving ? 'hidden' : 'visible',
-                transition: `height ${MESSAGE_ROW_ANIMATION_MS}ms ${MESSAGE_ROW_EASE}`,
+                height: height == null ? undefined : collapsing ? 0 : height,
+                overflow: entering ? 'hidden' : 'visible',
+                position: leaving ? 'relative' : undefined,
+                transition: instant ? 'none' : `height ${MESSAGE_ROW_ANIMATION_MS}ms ${MESSAGE_ROW_EASE}`,
                 willChange: entering || leaving ? 'height' : undefined,
+                pointerEvents: leaving ? 'none' : undefined,
             }}
         >
             <div
                 ref={innerRef}
                 style={{
                     width: '100%',
-                    opacity: entering || leaving ? 0 : 1,
-                    transform: entering || leaving ? 'scale(0.98)' : 'scale(1)',
-                    transformOrigin: 'center',
-                    transition: `opacity ${MESSAGE_ROW_ANIMATION_MS}ms ease-out, transform ${MESSAGE_ROW_ANIMATION_MS}ms ${MESSAGE_ROW_EASE}`,
-                    willChange: entering || leaving ? 'opacity, transform' : undefined,
+                    paddingTop: rowGap,
+                    position: leaving ? 'absolute' : undefined,
+                    top: leaving ? 0 : undefined,
+                    left: leaving ? 0 : undefined,
+                    right: leaving ? 0 : undefined,
+                    opacity: entering ? 0 : 1,
+                    transform: entering ? enterTransform : restingScaleTransform,
+                    transition: instant ? 'none' : `opacity ${MESSAGE_ROW_ANIMATION_MS}ms ease-out, transform ${MESSAGE_ROW_ANIMATION_MS}ms ${MESSAGE_ROW_EASE}`,
+                    willChange: entering ? 'opacity, transform' : undefined,
                 }}
             >
                 {children}
@@ -432,6 +503,170 @@ const MessageRowShell = forwardRef(function MessageRowShell({ rowState = 'presen
         </div>
     );
 });
+
+function MessageRow({
+    msg,
+    rowState,
+    hasRowAbove,
+    fromPeer,
+    userSent,
+    peerChatPK,
+    peerDisplayName,
+    peerProfile,
+    reactionUsers,
+    reply,
+    replyFromPeer,
+    receiptPeer,
+    receiptTime,
+    isReported,
+    isSaving,
+    isPaying,
+    rowRefs,
+    getOptimisticReactions,
+    onReply,
+    onEdit,
+    onRetry,
+    onSave,
+    onShare,
+    onDelete,
+    onReport,
+    onPay,
+    onPointerUp,
+    onJumpToReply,
+}) {
+    const showDot = userSent && (msg.pending || msg.failed);
+    const leaving = rowState === 'leaving';
+    const rowNodeRef = useRef(null);
+    const exitTargetRef = useRef(null);
+    const [exitTranslate, setExitTranslate] = useState(0);
+    const [visualExiting, setVisualExiting] = useState(false);
+    const canReport = fromPeer && !!peerProfile?.uid && msg?.t !== 'req';
+    const actions = useMemo(
+        () =>
+            makeMessageActions({
+                msg,
+                userSent,
+                canReply: canReplyToMsg(msg),
+                canEdit: userSent && msg?.t === 'txt',
+                canRetry: userSent && msg.failed && !!msg.cid,
+                canSave: canSaveMsgFile(msg, peerChatPK),
+                canShare: canShareAttachmentMsg(msg),
+                canDelete: !!msg?.id && !String(msg.id).startsWith('local:'),
+                canReport,
+                saving: isSaving,
+                onReply,
+                onEdit,
+                onRetry: () => onRetry(msg),
+                onSave: () => onSave(msg),
+                onShare: () => onShare(msg),
+                onDelete: () => onDelete(msg),
+                onReport: () => onReport(msg),
+            }),
+        [canReport, isSaving, msg, onDelete, onEdit, onReply, onReport, onRetry, onSave, onShare, peerChatPK, userSent]
+    );
+    const reactions = useMemo(() => (isReported ? [] : getOptimisticReactions(msg)), [getOptimisticReactions, isReported, msg]);
+    const messageTime = useMemo(() => formatFullDateTime(msg.ts?.toDate() || new Date()), [msg.ts]);
+    const setRowRef = useCallback(
+        (node) => {
+            rowNodeRef.current = node;
+            if (msg.id) {
+                if (node) rowRefs.current.set(msg.id, node);
+                else rowRefs.current.delete(msg.id);
+            }
+            if (msg.cid) {
+                if (node) rowRefs.current.set(msg.cid, node);
+                else rowRefs.current.delete(msg.cid);
+            }
+        },
+        [msg.cid, msg.id, rowRefs]
+    );
+    const handlePointerUp = useCallback((event) => onPointerUp(event, msg), [msg, onPointerUp]);
+    const handlePay = useCallback(() => onPay(msg), [msg, onPay]);
+    const handleReplyPress = useCallback(() => onJumpToReply(msg.r), [msg.r, onJumpToReply]);
+    const visibleActions = leaving ? EMPTY_MESSAGE_ACTIONS : actions;
+    const exitOuterTransform = visualExiting ? `translate3d(${exitTranslate}px, 0, 0)` : 'translate3d(0, 0, 0)';
+    const exitInnerTransform = visualExiting ? `scale(${MESSAGE_ROW_EXIT_SCALE})` : 'scale(1)';
+
+    useLayoutEffect(() => {
+        if (!leaving) {
+            setVisualExiting(false);
+            setExitTranslate(0);
+            return undefined;
+        }
+
+        const rowNode = rowNodeRef.current;
+        const targetNode = exitTargetRef.current;
+        if (!rowNode || !targetNode) {
+            return undefined;
+        }
+
+        const rowRect = rowNode.getBoundingClientRect();
+        const targetRect = targetNode.getBoundingClientRect();
+        const rowCenter = rowRect.left + rowRect.width / 2;
+        const targetCenter = targetRect.left + targetRect.width / 2;
+        const exitsRight = targetCenter >= rowCenter;
+        const distance = exitsRight ? rowRect.right - targetRect.left : targetRect.right - rowRect.left;
+        setExitTranslate(Math.ceil(Math.max(0, distance + MESSAGE_ROW_EXIT_CLEARANCE_PX)) * (exitsRight ? 1 : -1));
+        return afterNextPaint(() => setVisualExiting(true));
+    }, [leaving]);
+
+    return (
+        <MessageRowShell ref={setRowRef} rowState={rowState} hasRowAbove={hasRowAbove} className={`${leaving ? '' : 'group'} flex w-full shrink-0 flex-col ${userSent ? 'items-end' : 'items-start'}`}>
+            <div className={`flex w-full items-center gap-2 flex-row ${userSent ? 'justify-end' : 'justify-start'}`}>
+                <div
+                    data-message-exit-target
+                    ref={exitTargetRef}
+                    className="relative max-w-[60%] flex min-w-0 items-center ease-out"
+                    style={{
+                        transform: exitOuterTransform,
+                        transition: `margin-right ${MESSAGE_ROW_ANIMATION_MS}ms ${MESSAGE_ROW_EASE}, transform ${MESSAGE_ROW_EXIT_ANIMATION_MS}ms ${MESSAGE_ROW_EXIT_EASE}`,
+                        willChange: leaving ? 'transform' : undefined,
+                        marginRight: userSent ? (showDot ? 0 : -16) : 0,
+                    }}
+                >
+                    <div
+                        className="flex min-w-0 items-center"
+                        style={{
+                            opacity: visualExiting ? 0 : 1,
+                            transform: exitInnerTransform,
+                            transformOrigin: 'center',
+                            transition: `opacity ${MESSAGE_ROW_EXIT_ANIMATION_MS}ms ease-out, transform ${MESSAGE_ROW_EXIT_ANIMATION_MS}ms ${MESSAGE_ROW_EXIT_EASE}`,
+                            willChange: leaving ? 'opacity, transform' : undefined,
+                        }}
+                    >
+                        {isReported ? (
+                            <>
+                                <MessageActions actions={visibleActions} fromPeer={fromPeer} />
+                                <ReportedMessage fromPeer={fromPeer} />
+                            </>
+                        ) : (
+                            <div className="relative min-w-0 max-w-full touch-manipulation" onPointerUp={leaving ? undefined : handlePointerUp}>
+                                <ChatMessageType
+                                    msg={msg}
+                                    fromPeer={fromPeer}
+                                    peerChatPK={peerChatPK}
+                                    peerDisplayName={peerDisplayName}
+                                    onPay={handlePay}
+                                    isPaying={isPaying}
+                                    reply={reply}
+                                    replyFromPeer={replyFromPeer}
+                                    onReplyPress={handleReplyPress}
+                                    reactions={reactions}
+                                    reactionUsers={reactionUsers}
+                                    actionSlot={<MessageActions actions={visibleActions} fromPeer={fromPeer} />}
+                                />
+                            </div>
+                        )}
+                        {userSent ? <SendDot show={showDot} failed={msg.failed} /> : null}
+                    </div>
+                </div>
+            </div>
+            <MessageMeta time={messageTime} receiptTime={receiptTime} receiptPeer={receiptPeer} userSent={userSent} />
+        </MessageRowShell>
+    );
+}
+
+const MemoMessageRow = memo(MessageRow);
 
 export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
     const { selectedChatId, updateMessage, retryMessage, readMessageFile, sendReaction } = useChat();
@@ -442,19 +677,25 @@ export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
     const [payingMessages, setPayingMessages] = useState(new Set());
     const [savingMessages, setSavingMessages] = useState(new Set());
     const [reportedMessageKeys, setReportedMessageKeys] = useState(new Set());
+    const [deletingMessageKeys, setDeletingMessageKeys] = useState(EMPTY_MESSAGE_KEY_SET);
+    const [showOlderLoader, setShowOlderLoader] = useState(false);
     const scrollRef = useRef(null);
     const loadMoreRef = useRef(null);
     const loadingOlderRef = useRef(false);
     const selectedChatIdRef = useRef(selectedChatId);
     const restoredChatIdRef = useRef('');
     const restoreFrameRef = useRef(null);
+    const stickToBottomRef = useRef(true);
+    const bottomScrollFrameRef = useRef(null);
+    const deleteCleanupTimersRef = useRef(new Map());
     const rowRefs = useRef(new Map());
     const lastLikeTapRef = useRef(null);
 
     const { messages: msgs, ready, hasOlder, loadingOlder, loadOlder, patchMessage, removeMessage } = useChatMessages(selectedChatId);
     const visibleMsgs = useMemo(() => (msgs || []).filter(canShowMsg), [msgs]);
     const displayMsgs = useMemo(() => [...visibleMsgs].reverse(), [visibleMsgs]);
-    const displayRows = useAnimatedMessageRows(displayMsgs, selectedChatId || '');
+    const displayRows = useAnimatedMessageRows(displayMsgs, selectedChatId || '', deletingMessageKeys, ready);
+    const newestRowKey = displayRows.find((row) => row.state !== 'leaving')?.key || '';
     const replyMap = useMemo(() => {
         const map = new Map();
         for (const msg of visibleMsgs || []) {
@@ -467,6 +708,57 @@ export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
         }
         return map;
     }, [visibleMsgs]);
+
+    const clearBottomScroll = useCallback(() => {
+        if (bottomScrollFrameRef.current) {
+            bottomScrollFrameRef.current();
+            bottomScrollFrameRef.current = null;
+        }
+    }, []);
+
+    const scrollBottomIfSticky = useCallback(() => {
+        const node = scrollRef.current;
+        if (!stickToBottomRef.current) {
+            return;
+        }
+        scrollToReverseBottom(node);
+    }, []);
+
+    const scheduleBottomScroll = useCallback(() => {
+        if (!stickToBottomRef.current) {
+            return;
+        }
+
+        if (bottomScrollFrameRef.current) {
+            bottomScrollFrameRef.current();
+        }
+        scrollBottomIfSticky();
+        bottomScrollFrameRef.current = afterNextPaint(() => {
+            bottomScrollFrameRef.current = null;
+            scrollBottomIfSticky();
+        });
+    }, [scrollBottomIfSticky]);
+
+    const handleListScroll = useCallback(
+        (event) => {
+        const node = event.currentTarget;
+        rememberChatScroll(selectedChatId, node.scrollTop);
+        stickToBottomRef.current = isAtReverseBottom(node);
+        if (!stickToBottomRef.current) {
+            setShowOlderLoader(true);
+        }
+    },
+        [selectedChatId]
+    );
+
+    const handleListTransitionEnd = useCallback(
+        (event) => {
+            if (event.propertyName === 'height') {
+                scheduleBottomScroll();
+            }
+        },
+        [scheduleBottomScroll]
+    );
 
     const handleLoadOlder = useCallback(async () => {
         if (!hasOlder || loadingOlder || loadingOlderRef.current) {
@@ -484,10 +776,16 @@ export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
     useEffect(() => {
         selectedChatIdRef.current = selectedChatId;
         loadingOlderRef.current = false;
+        setShowOlderLoader(false);
     }, [selectedChatId]);
 
     useEffect(() => {
         setReportedMessageKeys(new Set());
+        setDeletingMessageKeys(EMPTY_MESSAGE_KEY_SET);
+        for (const timeout of deleteCleanupTimersRef.current.values()) {
+            clearTimeout(timeout);
+        }
+        deleteCleanupTimersRef.current.clear();
     }, [selectedChatId]);
 
     useLayoutEffect(() => {
@@ -498,6 +796,8 @@ export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
 
         const nextScrollTop = chatScrollMemory.get(selectedChatId) ?? 0;
         node.scrollTop = nextScrollTop;
+        stickToBottomRef.current = isAtReverseBottom(node);
+        setShowOlderLoader(!stickToBottomRef.current);
         restoredChatIdRef.current = selectedChatId;
 
         if (restoreFrameRef.current) {
@@ -507,6 +807,8 @@ export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
             restoreFrameRef.current = null;
             if (scrollRef.current === node) {
                 node.scrollTop = nextScrollTop;
+                stickToBottomRef.current = isAtReverseBottom(node);
+                setShowOlderLoader(!stickToBottomRef.current);
             }
         });
 
@@ -529,9 +831,21 @@ export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
                 cancelAnimationFrame(restoreFrameRef.current);
                 restoreFrameRef.current = null;
             }
+            clearBottomScroll();
+            for (const timeout of deleteCleanupTimersRef.current.values()) {
+                clearTimeout(timeout);
+            }
+            deleteCleanupTimersRef.current.clear();
         },
-        []
+        [clearBottomScroll]
     );
+
+    useLayoutEffect(() => {
+        if (!selectedChatId || !ready) {
+            return;
+        }
+        scheduleBottomScroll();
+    }, [bottomPad, newestRowKey, ready, scheduleBottomScroll, selectedChatId]);
 
     useEffect(() => {
         const root = scrollRef.current;
@@ -556,13 +870,16 @@ export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
         return () => observer.disconnect();
     }, [handleLoadOlder, hasOlder, selectedChatId]);
 
-    // Get peer info for display
-    const peerChatPK = getPeerChatPKFromChatId(selectedChatId, chatPK);
-    const peerProfile = peers?.find((peer) => peer.chatPK === peerChatPK) ?? null;
-    const peerDisplayName = formatUserDisplay({
-        username: peerProfile?.username,
-        walletPK: peerChatPK,
-    });
+    const peerChatPK = useMemo(() => getPeerChatPKFromChatId(selectedChatId, chatPK), [chatPK, selectedChatId]);
+    const peerProfile = useMemo(() => peers?.find((peer) => peer.chatPK === peerChatPK) ?? null, [peerChatPK, peers]);
+    const peerDisplayName = useMemo(
+        () =>
+            formatUserDisplay({
+                username: peerProfile?.username,
+                walletPK: peerChatPK,
+            }),
+        [peerChatPK, peerProfile?.username]
+    );
     const reactionUsers = useMemo(
         () => ({
             ...(chatPK ? { [chatPK]: { avatar } } : {}),
@@ -570,10 +887,7 @@ export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
         }),
         [avatar, chatPK, peerChatPK, peerProfile?.avatar, peerProfile?.bot]
     );
-    const {
-        getReactions: getOptimisticReactions,
-        toggleReaction: toggleOptimisticReaction,
-    } = useOptimisticMessageReactions({
+    const { getReactions: getOptimisticReactions, toggleReaction: toggleOptimisticReaction } = useOptimisticMessageReactions({
         chatId: selectedChatId,
         chatPK,
         peerChatPK,
@@ -666,28 +980,31 @@ export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
         [canLikeMessage, toggleLikeMessage]
     );
 
-    const handlePayment = async (msg) => {
-        if (!peerProfile?.walletPK) return;
-        setPayingMessages((p) => new Set(p).add(msg.id));
-        try {
-            const txId = await sendMoneyWithSpark(peerProfile.walletPK, String(msg.a));
-            const newMessage = { ...setReqTx(msg, txId), cid: msg.cid };
-            patchMessage(msg.id, newMessage);
+    const handlePayment = useCallback(
+        async (msg) => {
+            if (!peerProfile?.walletPK) return;
+            setPayingMessages((p) => new Set(p).add(msg.id));
             try {
-                await updateMessage(selectedChatId, msg.id, newMessage, peerChatPK);
+                const txId = await sendMoneyWithSpark(peerProfile.walletPK, String(msg.a));
+                const newMessage = { ...setReqTx(msg, txId), cid: msg.cid };
+                patchMessage(msg.id, newMessage);
+                try {
+                    await updateMessage(selectedChatId, msg.id, newMessage, peerChatPK);
+                } catch (error) {
+                    console.error('Payment sent but failed to sync request confirmation:', error);
+                }
             } catch (error) {
-                console.error('Payment sent but failed to sync request confirmation:', error);
+                console.error('Failed to send payment:', error);
+            } finally {
+                setPayingMessages((p) => {
+                    const s = new Set(p);
+                    s.delete(msg.id);
+                    return s;
+                });
             }
-        } catch (error) {
-            console.error('Failed to send payment:', error);
-        } finally {
-            setPayingMessages((p) => {
-                const s = new Set(p);
-                s.delete(msg.id);
-                return s;
-            });
-        }
-    };
+        },
+        [patchMessage, peerChatPK, peerProfile?.walletPK, selectedChatId, sendMoneyWithSpark, updateMessage]
+    );
 
     const markReported = useCallback((msg) => {
         const key = getMsgKey(msg);
@@ -701,6 +1018,70 @@ export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
         });
     }, []);
 
+    const clearDeletingMessage = useCallback((msg) => {
+        const keys = getMsgKeys(msg);
+        if (!keys.length) {
+            return;
+        }
+
+        for (const key of keys) {
+            const timeout = deleteCleanupTimersRef.current.get(key);
+            if (timeout) {
+                clearTimeout(timeout);
+                deleteCleanupTimersRef.current.delete(key);
+            }
+        }
+
+        setDeletingMessageKeys((prev) => {
+            if (!keys.some((key) => prev.has(key))) {
+                return prev;
+            }
+            const next = new Set(prev);
+            for (const key of keys) {
+                next.delete(key);
+            }
+            return next.size ? next : EMPTY_MESSAGE_KEY_SET;
+        });
+    }, []);
+
+    const startDeletingMessage = useCallback((msg) => {
+        const keys = getMsgKeys(msg);
+        if (!keys.length) {
+            return;
+        }
+
+        setDeletingMessageKeys((prev) => {
+            let changed = false;
+            const next = new Set(prev);
+            for (const key of keys) {
+                if (!next.has(key)) {
+                    changed = true;
+                    next.add(key);
+                }
+            }
+            return changed ? next : prev;
+        });
+    }, []);
+
+    const finishDeletingMessage = useCallback(
+        (id, msg) => {
+            const keys = getMsgKeys(msg);
+            const timeout = setTimeout(() => {
+                removeMessage(id);
+                clearDeletingMessage(msg);
+            }, MESSAGE_ROW_LEAVE_MS + 80);
+
+            for (const key of keys) {
+                const previous = deleteCleanupTimersRef.current.get(key);
+                if (previous) {
+                    clearTimeout(previous);
+                }
+                deleteCleanupTimersRef.current.set(key, timeout);
+            }
+        },
+        [clearDeletingMessage, removeMessage]
+    );
+
     const openDeleteDialog = useCallback(
         (msg) => {
             if (!selectedChatId || !msg?.id || String(msg.id).startsWith('local:')) {
@@ -710,10 +1091,12 @@ export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
             openDialog('deletemessage', {
                 chatId: selectedChatId,
                 msg,
-                onDeleted: removeMessage,
+                onDeleting: startDeletingMessage,
+                onDeleted: finishDeletingMessage,
+                onDeleteFailed: clearDeletingMessage,
             });
         },
-        [openDialog, removeMessage, selectedChatId]
+        [clearDeletingMessage, finishDeletingMessage, openDialog, selectedChatId, startDeletingMessage]
     );
 
     const openShareDialog = useCallback(
@@ -724,6 +1107,19 @@ export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
             openDialog('sharemedia', { msg });
         },
         [openDialog]
+    );
+
+    const retrySentMessage = useCallback((msg) => retryMessage(selectedChatId, msg.cid), [retryMessage, selectedChatId]);
+
+    const reportMessage = useCallback(
+        (msg) =>
+            openDialog('report', {
+                peer: peerProfile,
+                msg,
+                peerChatPK,
+                onReported: () => markReported(msg),
+            }),
+        [markReported, openDialog, peerChatPK, peerProfile]
     );
 
     const jumpToReply = useCallback((replyId) => {
@@ -737,7 +1133,7 @@ export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
         });
     }, []);
 
-    if (!ready && msgs.length === 0) {
+    if (!ready) {
         return (
             <div className="flex items-center justify-center h-full">
                 <Loader className="animate-spin size-7" />
@@ -748,113 +1144,55 @@ export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
     return (
         <div
             ref={scrollRef}
-            className="flex h-full min-h-0 flex-col-reverse gap-4 overflow-y-auto px-4 pt-17"
+            className="flex h-full min-h-0 flex-col-reverse overflow-y-auto px-4 pt-17"
             style={{ paddingBottom: Math.max(68, bottomPad + 32) }}
-            onScroll={(event) => rememberChatScroll(selectedChatId, event.currentTarget.scrollTop)}
+            onScroll={handleListScroll}
+            onTransitionEnd={handleListTransitionEnd}
         >
-            {displayRows.map(({ key, msg, state: rowState }) => {
+            {displayRows.map(({ key, msg, state: rowState }, index) => {
                 const fromPeer = isPeerMsg(msg, chatPK);
                 const userSent = !fromPeer;
-                const showDot = userSent && (msg.pending || msg.failed);
                 const msgKey = getMsgKey(msg);
                 const isReported = !!msgKey && reportedMessageKeys.has(msgKey);
-                const canReport = fromPeer && !!peerProfile?.uid && msg?.t !== 'req';
-                const canRetry = userSent && msg.failed && !!msg.cid;
-                const canDelete = !!msg?.id && !String(msg.id).startsWith('local:');
-                const canEdit = userSent && msg?.t === 'txt';
-                const canReply = canReplyToMsg(msg);
-                const canSave = canSaveMessage(msg);
-                const canShare = canShareAttachmentMsg(msg);
                 const saving = !!msgKey && savingMessages.has(msgKey);
                 const reply = msg?.r ? replyMap.get(msg.r) || null : null;
                 const replyFromPeer = reply ? isPeerMsg(reply, chatPK) : false;
-                const reactions = isReported ? [] : getOptimisticReactions(msg);
-                const receiptPeer = userSent && msgKey && msgKey === latestReadReceiptKey ? peerProfile || {} : null;
-                const actions = makeMessageActions({
-                    msg,
-                    userSent,
-                    canReply,
-                    canEdit,
-                    canRetry,
-                    canSave,
-                    canShare,
-                    canDelete,
-                    canReport,
-                    saving,
-                    onReply,
-                    onEdit,
-                    onRetry: () => retryMessage(selectedChatId, msg.cid),
-                    onSave: () => saveMessage(msg),
-                    onShare: () => openShareDialog(msg),
-                    onDelete: () => openDeleteDialog(msg),
-                    onReport: () =>
-                        openDialog('report', {
-                            peer: peerProfile,
-                            msg,
-                            peerChatPK,
-                            onReported: () => markReported(msg),
-                        }),
-                });
+                const hasReceipt = userSent && msgKey && msgKey === latestReadReceiptKey;
                 return (
-                    <MessageRowShell
+                    <MemoMessageRow
                         key={key}
+                        msg={msg}
                         rowState={rowState}
-                        ref={(node) => {
-                            if (msg.id) {
-                                if (node) rowRefs.current.set(msg.id, node);
-                                else rowRefs.current.delete(msg.id);
-                            }
-                            if (msg.cid) {
-                                if (node) rowRefs.current.set(msg.cid, node);
-                                else rowRefs.current.delete(msg.cid);
-                            }
-                        }}
-                        className={`group flex w-full flex-col ${userSent ? 'items-end' : 'items-start'}`}
-                    >
-                        <div className={`flex w-full items-center gap-2 flex-row ${userSent ? 'justify-end' : 'justify-start'}`}>
-                            <div
-                                className="relative max-w-[60%] flex min-w-0 items-center ease-out"
-                                style={{
-                                    transitionProperty: 'margin-right',
-                                    marginRight: userSent ? (showDot ? 0 : -16) : 0,
-                                }}
-                            >
-                                {isReported ? (
-                                    <>
-                                        <MessageActions actions={actions} fromPeer={fromPeer} />
-                                        <ReportedMessage fromPeer={fromPeer} />
-                                    </>
-                                ) : (
-                                    <div className="relative min-w-0 max-w-full touch-manipulation" onPointerUp={(event) => handleMessagePointerUp(event, msg)}>
-                                        <ChatMessageType
-                                            msg={msg}
-                                            fromPeer={fromPeer}
-                                            peerChatPK={peerChatPK}
-                                            peerDisplayName={peerDisplayName}
-                                            onPay={() => handlePayment(msg)}
-                                            isPaying={payingMessages.has(msg.id)}
-                                            reply={reply}
-                                            replyFromPeer={replyFromPeer}
-                                            onReplyPress={() => jumpToReply(msg.r)}
-                                            reactions={reactions}
-                                            reactionUsers={reactionUsers}
-                                            actionSlot={<MessageActions actions={actions} fromPeer={fromPeer} />}
-                                        />
-                                    </div>
-                                )}
-                                {userSent ? <SendDot show={showDot} failed={msg.failed} /> : null}
-                            </div>
-                        </div>
-                        <MessageMeta
-                            time={formatFullDateTime(msg.ts?.toDate() || new Date())}
-                            receiptTime={msgKey === latestReadReceiptKey ? latestReadReceiptTime : ''}
-                            receiptPeer={receiptPeer}
-                            userSent={userSent}
-                        />
-                    </MessageRowShell>
+                        hasRowAbove={index < displayRows.length - 1}
+                        fromPeer={fromPeer}
+                        userSent={userSent}
+                        peerChatPK={peerChatPK}
+                        peerDisplayName={peerDisplayName}
+                        peerProfile={peerProfile}
+                        reactionUsers={reactionUsers}
+                        reply={reply}
+                        replyFromPeer={replyFromPeer}
+                        receiptPeer={hasReceipt ? peerProfile || EMPTY_RECEIPT_PEER : null}
+                        receiptTime={hasReceipt ? latestReadReceiptTime : ''}
+                        isReported={isReported}
+                        isSaving={saving}
+                        isPaying={payingMessages.has(msg.id)}
+                        rowRefs={rowRefs}
+                        getOptimisticReactions={getOptimisticReactions}
+                        onReply={onReply}
+                        onEdit={onEdit}
+                        onRetry={retrySentMessage}
+                        onSave={saveMessage}
+                        onShare={openShareDialog}
+                        onDelete={openDeleteDialog}
+                        onReport={reportMessage}
+                        onPay={handlePayment}
+                        onPointerUp={handleMessagePointerUp}
+                        onJumpToReply={jumpToReply}
+                    />
                 );
             })}
-            {loadingOlder ? (
+            {loadingOlder && showOlderLoader ? (
                 <div className="flex items-center justify-center py-2">
                     <Loader className="animate-spin size-5" />
                 </div>

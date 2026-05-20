@@ -107,6 +107,19 @@ async function registerWalletNotifications(wallet, user, walletPK, { httpsCallab
     }
 }
 
+function scheduleWalletNotifications(wallet, user, walletPK, options) {
+    const run = () => {
+        void registerWalletNotifications(wallet, user, walletPK, options);
+    };
+
+    if (typeof setTimeout === 'function') {
+        setTimeout(run, 0);
+        return;
+    }
+
+    run();
+}
+
 function bytesToHex(bytes) {
     return Array.from(bytes || [])
         .map((b) => b.toString(16).padStart(2, '0'))
@@ -142,7 +155,7 @@ export async function bootWallet(walletMnemonic, user, { SparkWallet, httpsCalla
     } else if (!hasWalletPKForNetwork(user, network)) {
         await httpsCallable(functions, 'setWalletPK')({ walletPK: idPk, network });
     }
-    await registerWalletNotifications(wallet, user, walletPK, { httpsCallable, functions, network });
+    scheduleWalletNotifications(wallet, user, walletPK, { httpsCallable, functions, network });
     return wallet;
 }
 

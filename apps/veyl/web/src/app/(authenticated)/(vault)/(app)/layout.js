@@ -20,15 +20,34 @@ function AppShell({ children }) {
     const isDataReady = isChatDataReady && isPeerDataReady;
 
     useEffect(() => {
+        const previousHtmlOverflow = document.documentElement.style.overflow;
+        const previousHtmlOverscroll = document.documentElement.style.overscrollBehavior;
+        const previousBodyOverflow = document.body.style.overflow;
+        const previousBodyOverscroll = document.body.style.overscrollBehavior;
+
+        document.documentElement.style.overflow = 'hidden';
+        document.documentElement.style.overscrollBehavior = 'none';
+        document.body.style.overflow = 'hidden';
+        document.body.style.overscrollBehavior = 'none';
+
+        return () => {
+            document.documentElement.style.overflow = previousHtmlOverflow;
+            document.documentElement.style.overscrollBehavior = previousHtmlOverscroll;
+            document.body.style.overflow = previousBodyOverflow;
+            document.body.style.overscrollBehavior = previousBodyOverscroll;
+        };
+    }, []);
+
+    useEffect(() => {
         if (isDataReady && !hasInitiallyLoaded) setHasInitiallyLoaded(true);
     }, [isDataReady, hasInitiallyLoaded]);
 
     return !hasInitiallyLoaded ? (
         <Loading />
     ) : (
-        <div className="relative flex h-screen flex-col px-2 pb-2">
+        <div className="relative flex h-screen flex-col overflow-hidden overscroll-none px-2 pb-2">
             <Navbar />
-            <main className="min-h-0 flex-1">{children}</main>
+            <main className="min-h-0 flex-1 overflow-hidden">{children}</main>
         </div>
     );
 }

@@ -347,19 +347,6 @@ export const confirmWalletNotifications = onCall(async ({ auth, data }) => {
         },
         { merge: true }
     );
-    await db.collection('users').doc(uid).set(
-        {
-            walletNotifications: {
-                [network]: {
-                    registered: true,
-                    routeId,
-                    webhookId,
-                    updatedAt: FieldValue.serverTimestamp(),
-                },
-            },
-        },
-        { merge: true }
-    );
 
     return OK;
 });

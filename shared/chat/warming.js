@@ -20,7 +20,7 @@ const DEFAULT_MEDIA_WARMING = Object.freeze({
 
 export const DEFAULT_CHAT_WARMING = Object.freeze({
     enabled: false,
-    eagerCount: 5,
+    eagerCount: 10,
     count: 10,
     delayMs: 900,
     pageSize: MSG_BATCH_SIZE,
@@ -149,6 +149,13 @@ function warmCandidates(rows, chatPK, pendingDeleteIds, limit) {
         .slice(0, Math.max(0, limit));
 }
 
+function warmTaskKey(task) {
+    if (task?.key) {
+        return String(task.key);
+    }
+    return `${task?.chatId || ''}:${task?.pageSize || 0}`;
+}
+
 export function useChatWarming({ chat, chatPK, chatPrivateKey, chatBanned, isActive, localCache, rowsRef, pendingDeleteIdsRef, config, preloadMessageMedia, onRead }) {
     const batchesRef = useRef(new Map());
     const generationRef = useRef(0);
@@ -157,6 +164,8 @@ export function useChatWarming({ chat, chatPK, chatPrivateKey, chatBanned, isAct
     const mediaRunRef = useRef(0);
     const mediaAttemptsRef = useRef(new Set());
     const warmIdsRef = useRef([]);
+    const warmQueueRef = useRef([]);
+    const warmJobRef = useRef(null);
     const warming = useMemo(() => normalizeChatWarming(config), [config]);
 
     useEffect(() => {
@@ -206,6 +215,8 @@ export function useChatWarming({ chat, chatPK, chatPrivateKey, chatBanned, isAct
             clearTimeout(mediaTimerRef.current);
             mediaTimerRef.current = null;
         }
+        warmQueueRef.current = [];
+        warmJobRef.current = null;
         for (const entry of batchesRef.current.values()) {
             try {
                 entry.unsub?.();
@@ -490,6 +501,110 @@ export function useChatWarming({ chat, chatPK, chatPrivateKey, chatBanned, isAct
 
     const getMessageBatch = useCallback((chatId) => makeSnapshot(batchesRef.current.get(chatId)), []);
 
+    const waitForWarmTask = useCallback(
+        (task) =>
+            new Promise((resolve) => {
+                if (typeof task?.run === 'function') {
+                    void Promise.resolve()
+                        .then(() => task.run())
+                        .then((result) => resolve(!!result))
+                        .catch(() => resolve(false));
+                    return;
+                }
+                if (!task?.chatId) {
+                    resolve(false);
+                    return;
+                }
+
+                const snapshot = ensureMessageBatch(task.chatId, {
+                    source: 'warm',
+                    peerChatPK: task.peerChatPK,
+                    rowLastMsgKey: task.rowLastMsgKey,
+                    pageSize: task.pageSize,
+                });
+                if (!snapshot || snapshot.ready || snapshot.exists === false) {
+                    resolve(!!snapshot);
+                    return;
+                }
+
+                let done = false;
+                let shouldUnsubscribe = false;
+                let unsubscribe = () => {};
+                const finish = (result) => {
+                    if (done) {
+                        return;
+                    }
+                    done = true;
+                    shouldUnsubscribe = true;
+                    unsubscribe();
+                    resolve(result);
+                };
+
+                unsubscribe = subscribeMessageBatch(task.chatId, (next) => {
+                    if (!next || next.ready || next.exists === false) {
+                        finish(!!next);
+                    }
+                });
+                if (shouldUnsubscribe) {
+                    unsubscribe();
+                }
+            }),
+        [ensureMessageBatch, subscribeMessageBatch]
+    );
+
+    const pumpWarmQueue = useCallback(
+        function pumpWarmQueue() {
+            if (warmJobRef.current || !warmQueueRef.current.length) {
+                return;
+            }
+
+            const task = warmQueueRef.current.shift();
+            if (!task) {
+                return;
+            }
+
+            warmJobRef.current = { key: warmTaskKey(task) };
+            void waitForWarmTask(task).finally(() => {
+                if (warmJobRef.current?.key === warmTaskKey(task)) {
+                    warmJobRef.current = null;
+                }
+                setTimeout(pumpWarmQueue, 0);
+            });
+        },
+        [waitForWarmTask]
+    );
+
+    const queueMessagePreload = useCallback(
+        (nextTasks, options = {}) => {
+            const list = (Array.isArray(nextTasks) ? nextTasks : [nextTasks])
+                .filter(Boolean)
+                .map((task) => ({ ...task, kind: task.kind || 'custom' }))
+                .filter((task) => warmTaskKey(task));
+            if (!list.length) {
+                return;
+            }
+
+            const currentKey = warmJobRef.current?.key || '';
+            const seen = new Set([currentKey, ...warmQueueRef.current.map(warmTaskKey)].filter(Boolean));
+            const unique = [];
+            for (const task of list) {
+                const key = warmTaskKey(task);
+                if (seen.has(key)) {
+                    continue;
+                }
+                seen.add(key);
+                unique.push(task);
+            }
+            if (!unique.length) {
+                return;
+            }
+
+            warmQueueRef.current = options.front === false ? [...warmQueueRef.current, ...unique] : [...unique, ...warmQueueRef.current];
+            pumpWarmQueue();
+        },
+        [pumpWarmQueue]
+    );
+
     const warmRows = useCallback(
         (rows, limit) => {
             if (!warming.enabled || !isActive || !chatPK || !chatPrivateKey || chatBanned) {
@@ -499,19 +614,31 @@ export function useChatWarming({ chat, chatPK, chatPrivateKey, chatBanned, isAct
             const candidates = warmCandidates(rows, chatPK, pendingDeleteIdsRef.current, limit);
             const desired = new Set(candidates.map((chatItem) => chatItem.id));
             warmIdsRef.current = candidates.map((chatItem) => chatItem.id);
+            const currentKey = warmJobRef.current?.key || '';
+            const tasks = [];
 
             for (const chatItem of candidates) {
                 const peerChatPK = getChatPeerPK(chatItem, chatPK);
                 if (!peerChatPK) {
                     continue;
                 }
-                ensureMessageBatch(chatItem.id, {
-                    source: 'warm',
+                const task = {
+                    kind: 'latest',
+                    chatId: chatItem.id,
                     peerChatPK,
                     rowLastMsgKey: getChatRowLastMsgKey(chatItem),
                     pageSize: warming.pageSize,
-                });
+                };
+                const key = warmTaskKey(task);
+                const entry = batchesRef.current.get(chatItem.id);
+                const ready = entry?.ready && Number(entry.pageSize || 0) >= task.pageSize && isBatchFresh(entry);
+                if (!ready && key !== currentKey) {
+                    tasks.push(task);
+                }
             }
+            const preserved = warmQueueRef.current.filter((task) => task?.kind !== 'latest');
+            warmQueueRef.current = [...preserved, ...tasks];
+            pumpWarmQueue();
 
             for (const [chatId, entry] of batchesRef.current.entries()) {
                 if (entry.warm && !desired.has(chatId)) {
@@ -519,7 +646,7 @@ export function useChatWarming({ chat, chatPK, chatPrivateKey, chatBanned, isAct
                 }
             }
         },
-        [chatBanned, chatPK, chatPrivateKey, ensureMessageBatch, isActive, pendingDeleteIdsRef, releaseMessageBatch, warming.enabled, warming.pageSize]
+        [chatBanned, chatPK, chatPrivateKey, isActive, pendingDeleteIdsRef, pumpWarmQueue, releaseMessageBatch, warming.enabled, warming.pageSize]
     );
 
     const warm = useCallback(
@@ -553,6 +680,7 @@ export function useChatWarming({ chat, chatPK, chatPrivateKey, chatBanned, isAct
         getMessageBatch,
         releaseMessageBatch,
         subscribeMessageBatch,
+        queueMessagePreload,
         warm,
     };
 }

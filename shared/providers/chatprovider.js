@@ -73,6 +73,10 @@ import { randomBytes, toHex } from '../crypto/core.js';
 export const DEFAULT_READ_RECEIPT_WRITE_DELAY_MS = 1200;
 export const DEFAULT_MSG_BATCH_SIZE = MSG_BATCH_SIZE;
 
+function isPermissionDenied(error) {
+    return error?.code === 'permission-denied';
+}
+
 function localMediaAdoptionKey(chatId, cid, message) {
     if (!chatId || !cid || !message?.p || !message?.k || String(message.p).startsWith('local:') || message.k === 'local') {
         return '';
@@ -293,6 +297,7 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
         const adoptedLocalMediaRef = useRef(new Set());
         const cachedLocalMediaRef = useRef(new Set());
         const seenTtlRef = useRef(new Set());
+        const seenTtlDeniedRef = useRef(new Set());
 
         useEffect(() => {
             localByChatRef.current = localByChat;
@@ -347,7 +352,16 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
             [chatPK, localCache]
         );
 
-        const { clear: clearMessageBatches, closeBatch: closeMessageBatch, ensureMessageBatch, getMessageBatch, releaseMessageBatch, subscribeMessageBatch, warm: warmChats } = useChatWarming({
+        const {
+            clear: clearMessageBatches,
+            closeBatch: closeMessageBatch,
+            ensureMessageBatch,
+            getMessageBatch,
+            releaseMessageBatch,
+            subscribeMessageBatch,
+            queueMessagePreload,
+            warm: warmChats,
+        } = useChatWarming({
             chat,
             chatPK,
             chatPrivateKey,
@@ -420,6 +434,7 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
             adoptedLocalMediaRef.current.clear();
             cachedLocalMediaRef.current.clear();
             seenTtlRef.current.clear();
+            seenTtlDeniedRef.current.clear();
 
             clearReadWrites(pendingReadRef.current);
             pendingReadRef.current = new Map();
@@ -466,6 +481,9 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
                 if (!message?.cid || !acked.has(message.cid)) {
                     return message;
                 }
+                if (!message.pending && !message.failed) {
+                    return message;
+                }
                 return {
                     ...message,
                     pending: false,
@@ -473,25 +491,36 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
                 };
             };
 
-            setChats((prev) =>
-                prev.map((chatItem) => {
+            setChats((prev) => {
+                let changed = false;
+                const next = prev.map((chatItem) => {
                     if (chatItem.id !== chatId) {
                         return chatItem;
                     }
+                    const lastMsg = clearPending(chatItem.lastMsg);
+                    if (lastMsg === chatItem.lastMsg) {
+                        return chatItem;
+                    }
+                    changed = true;
 
                     return {
                         ...chatItem,
-                        lastMsg: clearPending(chatItem.lastMsg),
+                        lastMsg,
                     };
-                })
-            );
+                });
+                return changed ? next : prev;
+            });
             setLastChat((current) => {
                 if (!current?.lastMsg?.cid || !acked.has(current.lastMsg.cid)) {
                     return current;
                 }
+                const lastMsg = clearPending(current.lastMsg);
+                if (lastMsg === current.lastMsg) {
+                    return current;
+                }
                 return {
                     ...current,
-                    lastMsg: clearPending(current.lastMsg),
+                    lastMsg,
                 };
             });
         }, []);
@@ -505,7 +534,7 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
 
                 const localByCid = new Map();
                 for (const local of locals) {
-                    if (local?.cid && local?.t === 'img' && (local.localUri || local.localData != null)) {
+                    if (local?.cid && isAttachmentMsgType(local.t) && (local.localUri || local.localData != null)) {
                         localByCid.set(local.cid, local);
                     }
                 }
@@ -516,7 +545,7 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
                 let changed = false;
                 const nextMessages = messages.map((message) => {
                     const local = localByCid.get(message?.cid);
-                    const stored = message?.t === 'img' && message?.p && message?.k && !String(message.p).startsWith('local:') && message.k !== 'local';
+                    const stored = isAttachmentMsgType(message?.t) && hasStoredFileRef(message);
                     if (!local || !stored) {
                         return message;
                     }
@@ -526,7 +555,7 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
                         cachedLocalMediaRef.current.add(mediaKey);
                         saveMedia(localCache, message, local.localData, message);
                     }
-                    if (mediaKey && !adoptedLocalMediaRef.current.has(mediaKey)) {
+                    if (message?.t === 'img' && mediaKey && !adoptedLocalMediaRef.current.has(mediaKey)) {
                         adoptedLocalMediaRef.current.add(mediaKey);
                         adoptLocalMessageMedia?.(message, local);
                     }
@@ -918,8 +947,17 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
                 }
 
                 void chat.updateSeenTtl(chatId, candidates, nextTtlMs).catch((error) => {
-                    for (const key of keys) {
-                        seenTtlRef.current.delete(key);
+                    if (!isPermissionDenied(error)) {
+                        for (const key of keys) {
+                            seenTtlRef.current.delete(key);
+                        }
+                    }
+                    const deniedKey = `${chatId}:seen`;
+                    if (isPermissionDenied(error) && seenTtlDeniedRef.current.has(deniedKey)) {
+                        return;
+                    }
+                    if (isPermissionDenied(error)) {
+                        seenTtlDeniedRef.current.add(deniedKey);
                     }
                     console.warn('message ttl update failed', error);
                 });
@@ -955,8 +993,17 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
                 }
 
                 void chat.updateSeenTtl(chatId, candidates, nextTtlMs).catch((error) => {
-                    for (const key of keys) {
-                        seenTtlRef.current.delete(key);
+                    if (!isPermissionDenied(error)) {
+                        for (const key of keys) {
+                            seenTtlRef.current.delete(key);
+                        }
+                    }
+                    const deniedKey = `${chatId}:leave`;
+                    if (isPermissionDenied(error) && seenTtlDeniedRef.current.has(deniedKey)) {
+                        return;
+                    }
+                    if (isPermissionDenied(error)) {
+                        seenTtlDeniedRef.current.add(deniedKey);
                     }
                     console.warn('message ttl update failed', error);
                 });
@@ -991,8 +1038,8 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
                     sendQueueRef.current.push({
                         resolve,
                         reject,
-                        onError: () => markLocalStatus(local.chatId, local.cid, LOCAL_FAILED),
                         onSuccess: () => markLocalStatus(local.chatId, local.cid, LOCAL_SENT),
+                        onError: () => markLocalStatus(local.chatId, local.cid, LOCAL_FAILED),
                         run,
                     });
                     flushSendQueue();
@@ -1065,8 +1112,8 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
                         sendQueueRef.current.push({
                             resolve,
                             reject,
-                            onError: () => markLocalStatus(chatId, cid, LOCAL_FAILED),
                             onSuccess: () => markLocalStatus(chatId, cid, LOCAL_SENT),
+                            onError: () => markLocalStatus(chatId, cid, LOCAL_FAILED),
                             run: async () => {
                                 const uploaded = await chat.uploadAttachment(chatPK, chatPrivateKey, peerChatPK, {
                                     cid,
@@ -1087,6 +1134,7 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
                     sendQueueRef.current.push({
                         resolve,
                         reject,
+                        onSuccess: () => markLocalStatus(chatId, cid, LOCAL_SENT),
                         onError: () => markLocalStatus(chatId, cid, LOCAL_FAILED),
                         run: () => chat.sendMessage(chatPK, chatPrivateKey, peerChatPK, payload, sendOptionsForPeer(peerChatPK)),
                     });
@@ -1457,6 +1505,7 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
                 ensureMessageBatch,
                 releaseMessageBatch,
                 subscribeMessageBatch,
+                queueMessagePreload,
                 getMessageBatch,
                 getChatRowLastMsgKey,
             }),
@@ -1501,6 +1550,7 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
                 ensureMessageBatch,
                 releaseMessageBatch,
                 subscribeMessageBatch,
+                queueMessagePreload,
                 getMessageBatch,
                 getChatRowLastMsgKey,
             ]

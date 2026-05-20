@@ -170,6 +170,12 @@ links.veylDevWeb
 
 `bun veyl web` is expected to bind to that host with local HTTPS so the shared `glyphteck.com` RP works without a localhost passkey silo.
 
+Use the chat route directly for web chat checks:
+
+```txt
+https://dev.veyl.glyphteck.com:3000/chat
+```
+
 The web runner warns when the Next/Turbopack process tree grows past `VEYL_WEB_MEMORY_WARN_MB` MB RSS, defaulting to `3200`. Use `VEYL_WEB_MEMORY_CHECK_MS` to change the polling interval when diagnosing dev-server leaks.
 
 Local root-site work belongs in the separate Website repo.

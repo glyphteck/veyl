@@ -7,9 +7,9 @@ import { DEFAULT_REACTION_EMOJI, MAX_REACTIONS, getMsgReactions } from '@glyphte
 
 const REACTION_MARK_H = 24;
 const REACTION_MARK_INSET = 12;
-const REACTION_MARK_BOTTOM = -22;
+const REACTION_MARK_BOTTOM = -19;
 const REACTION_BORDER = 3;
-const REACTION_SPACE = 16;
+const REACTION_SPACE = 21;
 const REACTION_ANIMATION_MS = 160;
 const REACTION_AVATAR = 16;
 const REACTION_EMOJI_SIZE = 12;
@@ -140,6 +140,7 @@ export default function ReactionTray({ children, reactions, users, fromPeer = fa
     const groupsKey = groups.map(groupStateKey).join('|');
     const active = groups.length > 0;
     const [items, setItems] = useState(() => makeItems(groups));
+    const [spaceReserved, setSpaceReserved] = useState(active);
     const [trayShown, setTrayShown] = useState(active);
     const previousActive = useRef(active);
 
@@ -204,6 +205,7 @@ export default function ReactionTray({ children, reactions, users, fromPeer = fa
 
     useEffect(() => {
         if (active) {
+            setSpaceReserved(true);
             if (!previousActive.current) {
                 previousActive.current = true;
                 setTrayShown(false);
@@ -217,7 +219,10 @@ export default function ReactionTray({ children, reactions, users, fromPeer = fa
         if (!previousActive.current) return undefined;
         previousActive.current = false;
         setTrayShown(false);
-        const timeout = setTimeout(() => setItems([]), REACTION_ANIMATION_MS);
+        const timeout = setTimeout(() => {
+            setSpaceReserved(false);
+            setItems([]);
+        }, REACTION_ANIMATION_MS);
         return () => clearTimeout(timeout);
     }, [active]);
 
@@ -241,8 +246,8 @@ export default function ReactionTray({ children, reactions, users, fromPeer = fa
 
     const renderItems = useMemo(() => (items.length ? items : active ? makeItems(groups) : []), [active, groups, items]);
     const present = renderItems.length > 0;
-    const rowSpace = active ? REACTION_SPACE : 0;
-    const trayScale = active ? (trayShown ? 1 : TRAY_CLOSED_SCALE) : TRAY_CLOSED_SCALE;
+    const rowSpace = spaceReserved ? REACTION_SPACE : 0;
+    const trayScale = trayShown ? 1 : TRAY_CLOSED_SCALE;
 
     return (
         <div

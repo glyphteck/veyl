@@ -119,7 +119,7 @@ function SectionList({ items }) {
 
 export default function LegalPage() {
     return (
-        <main className="min-h-screen select-text px-5 py-8 sm:px-8">
+        <main className="h-screen overflow-y-auto select-text px-5 py-8 sm:px-8">
             <article className="mx-auto grid w-full max-w-4xl gap-12">
                 <header className="grid gap-3 border-b pb-6">
                     <p className="text-sm font-black uppercase text-muted">Glyphteck Corp</p>

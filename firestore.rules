@@ -392,7 +392,9 @@ service cloud.firestore {
     }
 
     function userDocUpdateValid() {
-      return userDocCreateValid(request.resource.data)
+      return request.resource.data.keys().hasOnly(['settings', 'communityRulesVersion', 'communityRulesDate', 'communityRulesAcceptedAt'])
+        && (!('settings' in request.resource.data) || settingsValid(request.resource.data))
+        && communityRulesShapeValid(request.resource.data)
         && (
           (
             mapGet(request.resource.data, 'communityRulesVersion') == mapGet(resource.data, 'communityRulesVersion')

@@ -24,7 +24,7 @@ const chat = createChat({
 
 const chatWarming = {
     enabled: true,
-    eagerCount: 5,
+    eagerCount: 10,
     count: 10,
     delayMs: 900,
     media: {

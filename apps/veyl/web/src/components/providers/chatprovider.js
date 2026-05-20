@@ -21,7 +21,7 @@ const chat = createChat({
 
 const chatWarming = {
     enabled: true,
-    eagerCount: 5,
+    eagerCount: 10,
     count: 10,
     pageSize: MSG_BATCH_SIZE,
     media: {

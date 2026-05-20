@@ -120,6 +120,7 @@ Use shadows instead of visible borders for separation. Avoid `border`, `border-*
 
 Typography is direct and heavy:
 
+- Do not set branded, downloaded, or named commercial text fonts. Web base text uses `system-ui, sans-serif`; command/code/seed surfaces may use Tailwind `font-mono`, which resolves to a local system monospace stack and does not bundle font files. Do not add loaded fonts or custom `font-family` stacks. iOS uses React Native's default text family with only size, weight, and variant overrides.
 - Main labels and command/menu labels often use `font-black`.
 - Toggle items use `font-black`.
 - Keyboard shortcuts use `text-sm font-black tracking-widest text-muted`.
