@@ -103,6 +103,14 @@ function makeChatLastMsg(msgData) {
     };
 }
 
+function makeUpdatedChatLastMsg(lastMsg, fields = {}) {
+    return {
+        head: lastMsg?.head,
+        body: fields.body ?? lastMsg?.body,
+        ttl: 'ttl' in fields ? fields.ttl : (lastMsg?.ttl ?? null),
+    };
+}
+
 function getSeenTtl(ttlMs = seenMessageTtlMs()) {
     return makeTtl(ttlMs);
 }
@@ -201,7 +209,7 @@ export async function sendMsg(db, senderPubkey, senderPrivkey, receiverChatPK, m
     const msgRef = doc(collection(chatRef, 'messages'));
     batch.set(msgRef, msgData);
     if (updateLastMsg) {
-        batch.set(chatRef, { participants: sortedKeys, lastMsg: makeChatLastMsg(msgData), ts: serverTimestamp() }, { merge: true });
+        batch.set(chatRef, { participants: sortedKeys, lastMsg: makeChatLastMsg(msgData), ts: serverTimestamp() }, { mergeFields: ['participants', 'lastMsg', 'ts'] });
     }
     await batch.commit();
     return { chatId, msgId: msgRef.id, cid: head.cid };
@@ -305,7 +313,7 @@ export async function updateSeenMsgTtls(db, chatId, messages, ttlMs = seenMessag
             batch.update(doc(db, 'chats', chatId, 'messages', item.id), { ttl });
         }
         if (updateLastMsg && index === 0) {
-            batch.update(chatRef, { 'lastMsg.ttl': ttl });
+            batch.update(chatRef, { lastMsg: makeUpdatedChatLastMsg(chatSnap.data()?.lastMsg, { ttl }) });
         }
         await batch.commit();
     }
@@ -336,7 +344,7 @@ export async function makeMsgTemporary(db, chatId, messages, ttlMs = newMessageT
             batch.update(doc(db, 'chats', chatId, 'messages', item.id), { ttl });
         }
         if (updateLastMsg && index === 0) {
-            batch.update(chatRef, { 'lastMsg.ttl': ttl });
+            batch.update(chatRef, { lastMsg: makeUpdatedChatLastMsg(chatSnap.data()?.lastMsg, { ttl }) });
         }
         await batch.commit();
     }
@@ -366,7 +374,7 @@ export async function makeMsgPermanent(db, chatId, messages) {
             batch.update(doc(db, 'chats', chatId, 'messages', item.id), { ttl: null });
         }
         if (updateLastMsg && index === 0) {
-            batch.update(chatRef, { 'lastMsg.ttl': null });
+            batch.update(chatRef, { lastMsg: makeUpdatedChatLastMsg(chatSnap.data()?.lastMsg, { ttl: null }) });
         }
         await batch.commit();
     }
@@ -476,8 +484,9 @@ export async function updateMsg(db, chatId, msgId, senderPrivkey, receiverChatPK
         try {
             const chatRef = doc(db, 'chats', chatId);
             const chatSnap = await getDoc(chatRef);
-            if (chatSnap.exists() && chatSnap.data()?.lastMsg?.head?.cid === nextCid) {
-                await updateDoc(chatRef, { 'lastMsg.body': body });
+            const lastMsg = chatSnap.exists() ? chatSnap.data()?.lastMsg : null;
+            if (lastMsg?.head?.cid === nextCid) {
+                await updateDoc(chatRef, { lastMsg: makeUpdatedChatLastMsg(lastMsg, { body }) });
             }
         } catch (error) {
             console.warn('could not sync chat preview after message update', error);

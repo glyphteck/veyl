@@ -73,6 +73,14 @@ function makeChatLastMsg(msgData) {
     };
 }
 
+function makeUpdatedChatLastMsg(lastMsg, fields = {}) {
+    return {
+        head: lastMsg?.head,
+        body: fields.body ?? lastMsg?.body,
+        ttl: 'ttl' in fields ? fields.ttl : (lastMsg?.ttl ?? null),
+    };
+}
+
 export async function decryptBotMsg(msgData, userChatPK, userChatPrivKey, peerChatPK) {
     if (!hasMsgData(msgData) || !userChatPK || !userChatPrivKey || !peerChatPK) {
         return null;
@@ -122,7 +130,7 @@ export async function sendBotMsg(db, FieldValue, senderChatPK, senderChatPrivKey
     const batch = db.batch();
     batch.set(msgRef, msgData);
     if (updateLastMsg) {
-        batch.set(chatRef, { participants: sortedKeys, lastMsg: makeChatLastMsg(msgData), ts: FieldValue.serverTimestamp() }, { merge: true });
+        batch.set(chatRef, { participants: sortedKeys, lastMsg: makeChatLastMsg(msgData), ts: FieldValue.serverTimestamp() }, { mergeFields: ['participants', 'lastMsg', 'ts'] });
     }
     await batch.commit();
 
@@ -162,11 +170,12 @@ export async function updateBotMsg(db, chatId, msgId, senderChatPrivKey, receive
 
     const chatRef = db.collection('chats').doc(chatId);
     const chatSnap = await chatRef.get();
-    if (!chatSnap.exists || chatSnap.data()?.lastMsg?.head?.cid !== nextCid) {
+    const lastMsg = chatSnap.exists ? chatSnap.data()?.lastMsg : null;
+    if (lastMsg?.head?.cid !== nextCid) {
         return;
     }
 
-    await chatRef.set({ lastMsg: { body: rawBody } }, { merge: true });
+    await chatRef.update({ lastMsg: makeUpdatedChatLastMsg(lastMsg, { body: rawBody }) });
 }
 
 export async function readBotMsgAttachment(bucket, userChatPK, userChatPrivKey, peerChatPK, msg) {

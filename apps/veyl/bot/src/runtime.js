@@ -816,7 +816,7 @@ export class BotRuntime {
                         const ttl = Timestamp.fromMillis(seenTtlMs);
                         await msgSnap.ref.update({ ttl }).catch(() => {});
                         if (chat?.lastMsg?.head?.cid && chat.lastMsg.head.cid === msgData?.head?.cid) {
-                            await chat.ref.update({ 'lastMsg.ttl': ttl }).catch(() => {});
+                            await chat.ref.update({ lastMsg: { head: chat.lastMsg.head, body: chat.lastMsg.body, ttl } }).catch(() => {});
                         }
                     }
                 }
