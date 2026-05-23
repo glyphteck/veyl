@@ -3,7 +3,7 @@
 import { renderMoney } from '../utils.js';
 import { getMessageOrderMs } from './state.js';
 import { CHAT_MEDIA_TTL_MS, getMediaFileId } from './filepayload.js';
-import { isTtlExpired } from './ttl.js';
+import { CHAT_RETENTION_24H, CHAT_RETENTION_SEEN, cleanChatRetention, hasChatRetention, isTtlExpired, withMessageRetention } from './ttl.js';
 
 export const ATTACHMENT_MSG_TYPES = ['img', 'mp3', 'mp4', 'file'];
 export const UNAVAILABLE_REPLY_MSG_TYPE = 'uav';
@@ -11,8 +11,11 @@ export const UNAVAILABLE_REPLY_TEXT = 'this message is no longer available';
 export const MAX_TXT_CHARS = 2048;
 export const READ_RECEIPT_MSG_TYPE = 'rr';
 export const REACTION_MSG_TYPE = 'rxn';
+export const SYSTEM_MSG_TYPE = 'sys';
+export const SYSTEM_RETENTION_KIND = 'retention';
 export const DEFAULT_REACTION_EMOJI = '❤️';
 export const MAX_REACTIONS = 2;
+const HOLD_VISIBLE_KEY = '__holdVisible';
 
 function hasText(value) {
     return typeof value === 'string' && value.trim().length > 0;
@@ -127,6 +130,10 @@ function cleanReactionTarget(value) {
     return typeof target === 'string' ? target.trim() : '';
 }
 
+function retentionPatch(message) {
+    return hasChatRetention(message?.retention) ? { retention: cleanChatRetention(message.retention) } : {};
+}
+
 export function getMsgReactions(msg) {
     const raw = Array.isArray(msg?.reactions) ? msg.reactions : [];
     const seen = new Set();
@@ -206,6 +213,32 @@ export function isReactionMsg(msg) {
     return msg?.t === REACTION_MSG_TYPE && hasText(msg.target) && (msg.emoji == null || hasText(msg.emoji));
 }
 
+export function makeRetentionSystemMsg(retention) {
+    return {
+        t: SYSTEM_MSG_TYPE,
+        sys: SYSTEM_RETENTION_KIND,
+        retention: cleanChatRetention(retention),
+    };
+}
+
+export function isSystemMsg(msg) {
+    return msg?.t === SYSTEM_MSG_TYPE && msg?.sys === SYSTEM_RETENTION_KIND && !!getSystemMsgText(msg);
+}
+
+export function getSystemMsgText(msg) {
+    if (msg?.t !== SYSTEM_MSG_TYPE || msg?.sys !== SYSTEM_RETENTION_KIND) {
+        return '';
+    }
+
+    switch (cleanChatRetention(msg?.retention)) {
+        case CHAT_RETENTION_SEEN:
+            return 'messages will now expire after being seen';
+        case CHAT_RETENTION_24H:
+        default:
+            return 'messages will now expire 24 hours after being seen';
+    }
+}
+
 export function isControlMsg(msg) {
     return isReadReceiptMsg(msg) || isReactionMsg(msg);
 }
@@ -219,6 +252,20 @@ export function canStoreMsg(msg) {
 
 export function isExpiredMsg(msg, now = Date.now()) {
     return isTtlExpired(msg?.ttl, now);
+}
+
+function isHeldVisibleMsg(msg) {
+    return msg?.[HOLD_VISIBLE_KEY] === true;
+}
+
+export function holdVisibleMsg(msg) {
+    if (!msg || typeof msg !== 'object' || Array.isArray(msg) || isHeldVisibleMsg(msg)) {
+        return msg;
+    }
+    return Object.defineProperty({ ...msg }, HOLD_VISIBLE_KEY, {
+        value: true,
+        enumerable: false,
+    });
 }
 
 function sameReactions(a, b) {
@@ -264,7 +311,7 @@ export function deriveMessageReactions(messages, chatPK, peerChatPK) {
     }
 
     return messages.map((msg) => {
-        if (!canShowMsg(msg)) {
+        if (!canShowMsg(msg) || isSystemMsg(msg)) {
             return msg;
         }
 
@@ -293,7 +340,7 @@ export function getLatestReadReceiptTarget(messages, chatPK) {
             continue;
         }
 
-        if (isPeerMsg(msg, chatPK) && canShowMsg(msg)) {
+        if (isPeerMsg(msg, chatPK) && canShowMsg(msg) && !isSystemMsg(msg)) {
             return latestSentReceipt?.upto === msgKey(msg) ? null : msg;
         }
     }
@@ -316,7 +363,7 @@ export function getLatestOwnReadReceiptTarget(messages, chatPK) {
 
     for (let i = (messages?.length || 0) - 1; i >= 0; i -= 1) {
         const msg = messages[i];
-        if (isServerConfirmedMsg(msg) && isPeerMsg(msg, chatPK) && canShowMsg(msg) && msgKey(msg) === target) {
+        if (isServerConfirmedMsg(msg) && isPeerMsg(msg, chatPK) && canShowMsg(msg) && !isSystemMsg(msg) && msgKey(msg) === target) {
             return msg;
         }
     }
@@ -346,7 +393,7 @@ export function getLatestReadOutgoingReceipt(messages, chatPK, peerChatPK) {
     const fallbackMaxOrderMs = Number.isFinite(targetOrderMs) ? targetOrderMs : receiptOrderMs;
     for (let i = (messages?.length || 0) - 1; i >= 0; i -= 1) {
         const msg = messages[i];
-        if (!isServerConfirmedMsg(msg) || isPeerMsg(msg, chatPK) || !canShowMsg(msg)) {
+        if (!isServerConfirmedMsg(msg) || isPeerMsg(msg, chatPK) || !canShowMsg(msg) || isSystemMsg(msg)) {
             continue;
         }
         if (msgKey(msg) === target) {
@@ -438,6 +485,7 @@ export function setTxt(msg, text) {
         ...(typeof msg?.s === 'string' && msg.s ? { s: msg.s } : {}),
         ...(typeof msg?.cid === 'string' && msg.cid ? { cid: msg.cid } : {}),
         ...(typeof msg?.r === 'string' && msg.r ? { r: msg.r } : {}),
+        ...retentionPatch(msg),
         t: 'txt',
         c,
     };
@@ -461,7 +509,7 @@ export function canReplyToMsg(msg) {
     if (msg.pending || msg.failed) {
         return false;
     }
-    if (!canShowMsg(msg)) {
+    if (!canShowMsg(msg) || isSystemMsg(msg)) {
         return false;
     }
     return !!(msg.id || msg.cid);
@@ -485,6 +533,7 @@ export function setReqTx(msg, tx) {
         ...(typeof msg?.s === 'string' && msg.s ? { s: msg.s } : {}),
         ...(typeof msg?.cid === 'string' && msg.cid ? { cid: msg.cid } : {}),
         ...(typeof msg?.r === 'string' && msg.r ? { r: msg.r } : {}),
+        ...retentionPatch(msg),
         t: 'req',
         a,
         tx: nextTx,
@@ -579,7 +628,7 @@ export function canShowMsg(msg) {
     if (!msg || typeof msg !== 'object' || Array.isArray(msg)) {
         return false;
     }
-    if (isExpiredMsg(msg)) {
+    if (isExpiredMsg(msg) && !isHeldVisibleMsg(msg)) {
         return false;
     }
 
@@ -588,9 +637,56 @@ export function canShowMsg(msg) {
             return hasText(msg.c);
         case 'req':
             return hasText(msg.a);
+        case SYSTEM_MSG_TYPE:
+            return !!getSystemMsgText(msg);
         default:
             return isAttachmentMsg(msg);
     }
+}
+
+function replaceSystemRow(previous, next) {
+    return {
+        ...next,
+        ...(previous?.id ? { id: previous.id } : {}),
+        ...(previous?.cid ? { cid: previous.cid } : {}),
+    };
+}
+
+export function collapseSystemMessages(messages) {
+    const collapsed = [];
+    for (const msg of messages || []) {
+        if (isSystemMsg(msg) && isSystemMsg(collapsed[collapsed.length - 1])) {
+            collapsed[collapsed.length - 1] = replaceSystemRow(collapsed[collapsed.length - 1], msg);
+            continue;
+        }
+        collapsed.push(msg);
+    }
+    return collapsed;
+}
+
+export function applyMessageRetentionTimeline(messages, fallback = CHAT_RETENTION_24H) {
+    if (!Array.isArray(messages) || !messages.length) {
+        return messages || [];
+    }
+
+    let retention = cleanChatRetention(fallback);
+    let changed = false;
+    const next = messages.map((msg) => {
+        if (!msg || typeof msg !== 'object' || Array.isArray(msg)) {
+            return msg;
+        }
+        if (isSystemMsg(msg)) {
+            retention = cleanChatRetention(msg.retention);
+            return msg;
+        }
+        if (isControlMsg(msg) || hasChatRetention(msg.retention) || !canShowMsg(msg)) {
+            return msg;
+        }
+        changed = true;
+        return withMessageRetention(msg, retention);
+    });
+
+    return changed ? next : messages;
 }
 
 export function getReplyPreview(msg) {
@@ -612,15 +708,15 @@ export function getReplyPreview(msg) {
 export function getMsgPreview(lastMsg, chatPK, settings, btcPrice) {
     if (!lastMsg) return '';
     if (typeof lastMsg === 'string') return lastMsg;
+    if (!canShowMsg(lastMsg)) return '';
+    if (isSystemMsg(lastMsg)) return getSystemMsgText(lastMsg);
     if (lastMsg.t === 'txt' && typeof lastMsg.c === 'string') return lastMsg.c;
     if (isAttachmentMsgType(lastMsg?.t)) {
-        if (!canShowMsg(lastMsg)) return '';
         if (lastMsg.t === 'img') return 'sent an image';
         if (lastMsg.t === 'mp3') return 'sent audio';
         if (lastMsg.t === 'mp4') return 'sent a video';
         return 'sent a file';
     }
-    if (!canShowMsg(lastMsg)) return '';
     if (lastMsg.t === 'req') {
         const amount = Number(lastMsg.a || 0);
         const formattedAmount = renderMoney(amount, settings?.moneyFormat || 'btc', btcPrice);

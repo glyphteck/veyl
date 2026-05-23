@@ -168,9 +168,7 @@ export function ChatInput({ onSendMessage, onEditMessage, onSendAttachment, onSe
             setMsgInput('');
             if (textareaRef.current) textareaRef.current.style.height = 'auto';
             onClearDraft?.();
-            Promise.resolve(onCommand?.(parsedCommand)).catch((error) => {
-                console.error('chat command failed', error);
-            });
+            Promise.resolve(onCommand?.(parsedCommand)).catch(() => {});
             return;
         }
         const messageToSend = msgInput.trim();
@@ -178,9 +176,7 @@ export function ChatInput({ onSendMessage, onEditMessage, onSendAttachment, onSe
             setMsgInput('');
             if (textareaRef.current) textareaRef.current.style.height = 'auto';
             onClearDraft?.();
-            Promise.resolve(onEditMessage?.(draft.msg, messageToSend)).catch((error) => {
-                console.error('chat edit failed', error);
-            });
+            Promise.resolve(onEditMessage?.(draft.msg, messageToSend)).catch(() => {});
             return;
         }
         setMsgInput('');

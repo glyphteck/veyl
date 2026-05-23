@@ -78,6 +78,13 @@ export default function MainMenu({ close, data, open = true }) {
     const browseUsers = query?.kind === 'username' && !query.value;
     const showCommands = searchValue.startsWith('/');
     const showUserSearch = !!query && !showCommands;
+
+    const openUser = useCallback(
+        (peer) => {
+            openDialog(peer?.uid && peer.uid === uid ? 'settings' : 'userdetails', peer?.uid && peer.uid === uid ? null : { user: peer });
+        },
+        [openDialog, uid]
+    );
     const matchedCommands = showCommands ? matchCommands(searchValue, { mode: 'mainmenu' }) : [];
     const parsedCommand = showCommands ? parseCommand(searchValue, { mode: 'mainmenu' }) : null;
     const typingUsername = showCommands ? getTypingUsername(searchValue, { mode: 'mainmenu' }) : null;
@@ -404,7 +411,7 @@ export default function MainMenu({ close, data, open = true }) {
                     <>
                         <CommandGroup heading="users">
                             {topPeers.map((peer) => (
-                                <CommandItem key={peer.uid} value={`@${peer.username}`} onSelect={() => openDialog('userdetails', { user: peer })} keywords={['']}>
+                                <CommandItem key={peer.uid} value={`@${peer.username}`} onSelect={() => openUser(peer)} keywords={['']}>
                                     <Avatar active={peer?.active} bot={!!peer?.bot}>
                                         <AvatarImage src={peer.avatar} alt={peer.username || 'user'} />
                                         <AvatarFallback />
@@ -571,7 +578,7 @@ export default function MainMenu({ close, data, open = true }) {
                                 <CommandItem
                                     key={peer.uid}
                                     value={`@${peer.username}`}
-                                    onSelect={() => openDialog('userdetails', { user: peer })}
+                                    onSelect={() => openUser(peer)}
                                     keywords={query?.kind === 'role' ? [query.role] : ['']}
                                 >
                                     <Avatar active={peer?.active} bot={!!peer?.bot}>

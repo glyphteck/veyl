@@ -13,14 +13,34 @@ export const DAY_MS = 24 * 60 * 60 * 1000;
 export const DEFAULT_MESSAGE_TTL_MS = 21 * DAY_MS;
 export const SEEN_MESSAGE_TTL_MS = DAY_MS;
 
+export function hasChatRetention(value) {
+    const retention = typeof value === 'string' ? value.trim() : '';
+    return CHAT_RETENTION_VALUES.includes(retention);
+}
+
 export function cleanChatRetention(value) {
     const retention = typeof value === 'string' ? value.trim() : '';
-    return CHAT_RETENTION_VALUES.includes(retention) ? retention : DEFAULT_CHAT_RETENTION;
+    return hasChatRetention(retention) ? retention : DEFAULT_CHAT_RETENTION;
 }
 
 export function normalizeChatSettings(settings) {
     const retention = cleanChatRetention(settings?.retention);
     return { retention };
+}
+
+export function getMessageRetention(message, fallback = DEFAULT_CHAT_RETENTION) {
+    if (hasChatRetention(message?.retention)) {
+        return cleanChatRetention(message.retention);
+    }
+    return cleanChatRetention(fallback);
+}
+
+export function withMessageRetention(message, retention = DEFAULT_CHAT_RETENTION) {
+    if (!message || typeof message !== 'object' || Array.isArray(message)) {
+        return message;
+    }
+    const nextRetention = getMessageRetention(message, retention);
+    return message.retention === nextRetention ? message : { ...message, retention: nextRetention };
 }
 
 export function ttlMillis(value) {

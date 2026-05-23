@@ -5,7 +5,9 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { writeFunctionsLinks, writeIosLinks, writeStorageCors } from './links.mjs';
 
-const [target, ...rest] = process.argv.slice(2);
+const rawArgs = process.argv.slice(2);
+const verbose = rawArgs.includes('-v') || rawArgs.includes('--verbose');
+const [target, ...rest] = rawArgs.filter((arg) => arg !== '-v' && arg !== '--verbose');
 const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const firebaseTargets = {
     backend: 'firestore:rules,firestore:indexes,storage,functions',
@@ -67,6 +69,119 @@ function run(cmd, args, options = {}) {
     });
 }
 
+function cleanLine(value) {
+    return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function outputLines(output) {
+    return String(output || '')
+        .split(/\r?\n/)
+        .map(cleanLine)
+        .filter(Boolean);
+}
+
+function clipLine(value) {
+    const line = cleanLine(value);
+    return line.length > 220 ? `${line.slice(0, 217)}...` : line;
+}
+
+function warningLines(output) {
+    return outputLines(output).filter((line) => /\bwarn(?:ing)?\b/i.test(line));
+}
+
+function failureLine(output) {
+    const lines = outputLines(output);
+    return (
+        lines.find((line) => /\b(error|failed|unable|denied)\b/i.test(line))
+        || lines.at(-1)
+        || ''
+    );
+}
+
+function emitWarningSummary(label, output) {
+    const lines = [...new Set(warningLines(output).map(clipLine))];
+    if (!lines.length) {
+        return;
+    }
+
+    console.warn(`warning: ${label}: ${lines.length} warning${lines.length === 1 ? '' : 's'}${lines[0] ? `; ${lines[0]}` : ''}`);
+}
+
+function makeCommandError(cmd, args, code, signal, output) {
+    const summary = clipLine(failureLine(output));
+    const error = new Error(`${cmd} ${args.join(' ')} failed with ${signal ? `signal ${signal}` : `code ${code}`}${summary ? `: ${summary}` : ''}`);
+    error.output = output;
+    return error;
+}
+
+function runQuiet(cmd, args, options = {}) {
+    const { label = cmd, reject = true, ...spawnOptions } = options;
+
+    if (verbose) {
+        return new Promise((resolve, rejectRun) => {
+            const child = spawn(cmd, args, {
+                stdio: ['inherit', 'pipe', 'pipe'],
+                ...spawnOptions,
+            });
+            let stdout = '';
+            let stderr = '';
+
+            child.stdout?.on('data', (chunk) => {
+                stdout += chunk;
+                process.stdout.write(chunk);
+            });
+            child.stderr?.on('data', (chunk) => {
+                stderr += chunk;
+                process.stderr.write(chunk);
+            });
+
+            child.on('exit', (code, signal) => {
+                const output = [stderr, stdout].filter(Boolean).join('\n');
+                const result = { code, signal, stdout, stderr, output };
+                if (code === 0 || !reject) {
+                    resolve(result);
+                    return;
+                }
+
+                rejectRun(makeCommandError(cmd, args, code, signal, output));
+            });
+
+            child.on('error', rejectRun);
+        });
+    }
+
+    return new Promise((resolve, rejectRun) => {
+        const child = spawn(cmd, args, {
+            stdio: ['ignore', 'pipe', 'pipe'],
+            ...spawnOptions,
+        });
+        let stdout = '';
+        let stderr = '';
+
+        child.stdout?.on('data', (chunk) => {
+            stdout += chunk;
+        });
+        child.stderr?.on('data', (chunk) => {
+            stderr += chunk;
+        });
+
+        child.on('exit', (code, signal) => {
+            const output = [stderr, stdout].filter(Boolean).join('\n');
+            emitWarningSummary(label, output);
+            const result = { code, signal, stdout, stderr, output };
+
+            if (code === 0 || !reject) {
+                resolve(result);
+                return;
+            }
+
+            rejectRun(makeCommandError(cmd, args, code, signal, output));
+        });
+
+        child.on('error', rejectRun);
+    });
+}
+
 function runCapture(cmd, args, options = {}) {
     const result = spawnSync(cmd, args, {
         encoding: 'utf8',
@@ -109,6 +224,14 @@ function resolveIosDevice(selector) {
     }
 }
 
+function status(line) {
+    console.log(line);
+}
+
+function lockedLaunch(output) {
+    return /BSErrorCodeDescription = Locked|reason: Locked|because the device was not, or could not be, unlocked/i.test(output);
+}
+
 async function buildAndInstallIos({ iosDir, iosArgs, reset, settings, env }) {
     const device = resolveIosDevice(process.env.VEYL_IOS_DEVICE || 'zak 15');
     const iosNativeDir = resolve(iosDir, 'ios');
@@ -121,11 +244,12 @@ async function buildAndInstallIos({ iosDir, iosArgs, reset, settings, env }) {
         ? ['-workspace', workspace]
         : ['-project', project];
 
-    await run(
+    status(`ios ${settings.scheme}: build`);
+    await runQuiet(
         'xcodebuild',
         [
             ...projectArgs,
-            '-quiet',
+            ...(verbose ? [] : ['-quiet']),
             '-scheme',
             settings.scheme,
             '-configuration',
@@ -147,6 +271,7 @@ async function buildAndInstallIos({ iosDir, iosArgs, reset, settings, env }) {
                 RCT_METRO_PORT: process.env.RCT_METRO_PORT || '8081',
                 RCT_NO_LAUNCH_PACKAGER: 'true',
             },
+            label: 'ios build',
         }
     );
 
@@ -155,13 +280,29 @@ async function buildAndInstallIos({ iosDir, iosArgs, reset, settings, env }) {
     }
 
     if (reset) {
-        await run('xcrun', ['devicectl', 'device', 'uninstall', 'app', '--device', device.installId, settings.bundleIdentifier, '--timeout', '60']).catch((error) => {
-            console.warn(`iOS reset uninstall skipped: ${error.message}`);
+        status(`ios ${settings.scheme}: reset`);
+        await runQuiet('xcrun', ['devicectl', 'device', 'uninstall', 'app', '--device', device.installId, settings.bundleIdentifier, '--timeout', '60'], { label: 'ios reset' }).catch((error) => {
+            console.warn(`warning: ios reset skipped; ${error.message}`);
         });
     }
 
-    await run('xcrun', ['devicectl', 'device', 'install', 'app', '--device', device.installId, appPath, '--timeout', '120']);
-    await run('xcrun', ['devicectl', 'device', 'process', 'launch', '--device', device.installId, '--terminate-existing', '--quiet', settings.bundleIdentifier]);
+    status(`ios ${settings.scheme}: install`);
+    await runQuiet('xcrun', ['devicectl', 'device', 'install', 'app', '--device', device.installId, appPath, '--timeout', '120'], { label: 'ios install' });
+
+    status(`ios ${settings.scheme}: launch`);
+    const launchArgs = ['devicectl', 'device', 'process', 'launch', '--device', device.installId, '--terminate-existing', ...(verbose ? [] : ['--quiet']), settings.bundleIdentifier];
+    const launch = await runQuiet('xcrun', launchArgs, { label: 'ios launch', reject: false });
+    if (launch.code === 0) {
+        status(`ios ${settings.scheme}: launched ${settings.bundleIdentifier}`);
+        return;
+    }
+
+    if (lockedLaunch(launch.output)) {
+        console.warn(`warning: ios launch skipped; device is locked, open ${settings.bundleIdentifier} after unlocking`);
+        return;
+    }
+
+    throw makeCommandError('xcrun', launchArgs, launch.code, launch.signal, launch.output);
 }
 
 async function main() {
@@ -225,7 +366,8 @@ async function main() {
             EXPO_PUBLIC_NETWORK: settings.network,
         };
 
-        await run('bun', ['x', 'expo', 'prebuild', '-p', 'ios'], { cwd: iosDir, env });
+        status(`ios ${settings.scheme}: prebuild`);
+        await runQuiet('bun', ['x', 'expo', 'prebuild', '-p', 'ios'], { cwd: iosDir, env, label: 'ios prebuild' });
         await buildAndInstallIos({ iosDir, iosArgs, reset, settings, env });
         return;
     }
@@ -254,9 +396,15 @@ async function main() {
         return;
     }
 
-    console.error('Usage: bun make <ios|backend|db|rules|fns|cors|lifecycle>');
+    console.error('Usage: bun make [-v|--verbose] <ios|backend|db|rules|fns|cors|lifecycle>');
     console.error('Examples: bun make ios, bun make ios reset, bun make ios test, bun make ios prod, bun make ios store');
     process.exitCode = 1;
 }
 
-await main();
+try {
+    await main();
+} catch (error) {
+    const detail = clipLine(error?.message || error);
+    console.error(`error: ${detail}${verbose ? '' : ' (rerun with -v for full output)'}`);
+    process.exitCode = 1;
+}

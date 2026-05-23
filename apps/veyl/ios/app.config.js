@@ -70,14 +70,21 @@ module.exports = {
             associatedDomains,
             infoPlist: {
                 NSPhotoLibraryUsageDescription: 'Allow veyl to access your photos to set your avatar.',
-                NSPhotoLibraryAddUsageDescription: 'Allow veyl to save photos you take and images from chats.',
-                NSCameraUsageDescription: 'Allow veyl to access your camera to scan QR codes, take photos, and set your avatar.',
+                NSPhotoLibraryAddUsageDescription: 'Allow veyl to save photos and videos you take and media from chats.',
+                NSCameraUsageDescription: 'Allow veyl to access your camera to scan QR codes, take photos and videos, and set your avatar.',
                 NSFaceIDUsageDescription: 'Allow veyl to use Face ID to unlock your vault.',
+                UIWhitePointAdaptivityStyle: 'UIWhitePointAdaptivityStylePhoto',
             },
         },
         plugins: [
             'expo-router',
             'expo-notifications',
+            'expo-asset',
+            'expo-audio',
+            'expo-font',
+            'expo-image',
+            'expo-secure-store',
+            'expo-video',
             [
                 'expo-splash-screen',
                 {
@@ -103,7 +110,7 @@ module.exports = {
                 'expo-media-library',
                 {
                     photosPermission: 'Allow veyl to access your photos when you choose media in veyl.',
-                    savePhotosPermission: 'Allow veyl to save photos you take and images from chats.',
+                    savePhotosPermission: 'Allow veyl to save photos and videos you take and media from chats.',
                     granularPermissions: ['photo'],
                 },
             ],
@@ -111,10 +118,17 @@ module.exports = {
                 'expo-build-properties',
                 {
                     ios: {
-                        deploymentTarget: '26.4.1',
+                        deploymentTarget: '26.5',
                     },
                 },
             ],
+            [
+                './plugins/with-ios-pod-deployment-target',
+                {
+                    deploymentTarget: '26.5',
+                },
+            ],
+            './plugins/with-ios-linker-unwind-flags',
         ],
     },
 };

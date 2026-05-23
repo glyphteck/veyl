@@ -15,6 +15,69 @@ import { qr, readQr } from '@glyphteck/shared/qrutils';
 import { isAddressOnNetwork } from '@glyphteck/shared/network';
 
 const SCAN_INTERVAL = 200;
+const VIDEO_HOLD_MS = 220;
+const VIDEO_FRAME_RATE = 30;
+
+function getVideoMimeType() {
+    if (typeof MediaRecorder === 'undefined') return '';
+    const types = ['video/mp4;codecs=h264,aac', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
+    return types.find((type) => MediaRecorder.isTypeSupported?.(type)) || '';
+}
+
+function videoFileType(mimeType) {
+    return String(mimeType || '').includes('mp4') ? 'video/mp4' : 'video/webm';
+}
+
+function videoFileName(mimeType) {
+    const ext = videoFileType(mimeType) === 'video/mp4' ? 'mp4' : 'webm';
+    return `veyl-${Date.now()}.${ext}`;
+}
+
+function makeRecordingStream(video) {
+    const source = video?.srcObject;
+    if (!source || typeof source.getVideoTracks !== 'function') {
+        throw new Error('camera stream unavailable');
+    }
+
+    if (!video || typeof document === 'undefined') {
+        return { stream: source, stop: () => {} };
+    }
+
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    if (!ctx || typeof canvas.captureStream !== 'function') {
+        return { stream: source, stop: () => {} };
+    }
+
+    let frame = null;
+    let active = true;
+    const draw = () => {
+        if (!active) return;
+        const width = video.videoWidth || video.clientWidth || 1280;
+        const height = video.videoHeight || video.clientHeight || 720;
+        if (canvas.width !== width || canvas.height !== height) {
+            canvas.width = width;
+            canvas.height = height;
+        }
+        ctx.save();
+        ctx.translate(width, 0);
+        ctx.scale(-1, 1);
+        ctx.drawImage(video, 0, 0, width, height);
+        ctx.restore();
+        frame = requestAnimationFrame(draw);
+    };
+
+    draw();
+    const stream = canvas.captureStream(VIDEO_FRAME_RATE);
+    return {
+        stream,
+        stop: () => {
+            active = false;
+            if (frame) cancelAnimationFrame(frame);
+            stream.getTracks().forEach((track) => track.stop());
+        },
+    };
+}
 
 function mirrorPhotoDataUri(src) {
     return new Promise((resolve, reject) => {
@@ -51,13 +114,31 @@ export default function CameraPage() {
     const detectorRef = useRef(null);
     const scanTimer = useRef(null);
     const busyRef = useRef(false);
+    const recorderRef = useRef(null);
+    const recordChunksRef = useRef([]);
+    const recordSessionRef = useRef(null);
+    const pointerRef = useRef({ id: null, timer: null, long: false });
+    const captureRef = useRef(null);
+    const recordingRef = useRef(false);
     const { openDialog } = useDialog();
     const { addPeer } = usePeer();
     const { settings, username, walletPK } = useUser();
     const bitcoin = useBitcoin();
     const { sendMoneyWithSpark, network } = useWallet();
     const { cloaked } = useCloak();
-    const [photo, setPhoto] = useState(null);
+    const [capture, setCapture] = useState(null);
+    const [recording, setRecording] = useState(false);
+
+    useEffect(() => {
+        captureRef.current = capture;
+        return () => {
+            if (capture?.revokeUrl) URL.revokeObjectURL(capture.uri);
+        };
+    }, [capture]);
+
+    useEffect(() => {
+        recordingRef.current = recording;
+    }, [recording]);
 
     const handleQr = useCallback(
         async (rawValue) => {
@@ -132,7 +213,7 @@ export default function CameraPage() {
     );
 
     useEffect(() => {
-        if (photo) return;
+        if (capture || recording) return;
         if (typeof globalThis.BarcodeDetector === 'undefined') {
             console.warn('BarcodeDetector not supported');
             return;
@@ -170,35 +251,173 @@ export default function CameraPage() {
             cancelled = true;
             clearTimeout(scanTimer.current);
         };
-    }, [handleQr, photo]);
+    }, [capture, handleQr, recording]);
 
     const takePhoto = useCallback(async () => {
         const src = webcamRef.current?.getScreenshot();
         if (!src) return;
         try {
-            setPhoto(await mirrorPhotoDataUri(src));
+            setCapture({ kind: 'photo', uri: await mirrorPhotoDataUri(src) });
         } catch (error) {
             console.error('photo mirror failed:', error);
-            setPhoto(src);
+            setCapture({ kind: 'photo', uri: src });
         }
     }, []);
 
-    const discardPhoto = useCallback(() => {
-        setPhoto(null);
+    const stopVideo = useCallback(() => {
+        const recorder = recorderRef.current;
+        if (recorder?.state === 'recording') {
+            recorder.stop();
+            return;
+        }
+        recordSessionRef.current?.stop?.();
+        recordSessionRef.current = null;
+        recorderRef.current = null;
+        recordingRef.current = false;
+        setRecording(false);
+    }, []);
+
+    const startVideo = useCallback(() => {
+        if (captureRef.current || recordingRef.current) return;
+        if (typeof MediaRecorder === 'undefined') {
+            toast.error('video recording is unavailable');
+            return;
+        }
+
+        const video = webcamRef.current?.video;
+        if (!video || video.readyState < 2) {
+            toast.error('camera is not ready');
+            return;
+        }
+
+        const mimeType = getVideoMimeType();
+        let session;
+        let recorder;
+        try {
+            session = makeRecordingStream(video);
+            recorder = new MediaRecorder(session.stream, mimeType ? { mimeType } : undefined);
+        } catch (error) {
+            session?.stop?.();
+            console.error('video recording failed:', error);
+            toast.error('video recording is unavailable');
+            return;
+        }
+        recordChunksRef.current = [];
+        recordSessionRef.current = session;
+        recorderRef.current = recorder;
+        recordingRef.current = true;
+        setRecording(true);
+
+        recorder.ondataavailable = (event) => {
+            if (event.data?.size) recordChunksRef.current.push(event.data);
+        };
+        recorder.onerror = () => {
+            console.error('video recording failed:', recorder.error);
+            session.stop();
+            recorderRef.current = null;
+            recordSessionRef.current = null;
+            recordChunksRef.current = [];
+            recordingRef.current = false;
+            setRecording(false);
+        };
+        recorder.onstop = () => {
+            const chunks = recordChunksRef.current;
+            const recordedType = videoFileType(recorder.mimeType || mimeType);
+            session.stop();
+            recorderRef.current = null;
+            recordSessionRef.current = null;
+            recordChunksRef.current = [];
+            recordingRef.current = false;
+            setRecording(false);
+            if (!chunks.length) return;
+
+            const blob = new Blob(chunks, { type: recordedType });
+            if (!blob.size) return;
+            const file = new File([blob], videoFileName(recordedType), { type: recordedType, lastModified: Date.now() });
+            setCapture({
+                kind: 'video',
+                uri: URL.createObjectURL(blob),
+                file,
+                revokeUrl: true,
+            });
+        };
+        recorder.start();
+    }, []);
+
+    useEffect(() => () => stopVideo(), [stopVideo]);
+
+    const discardCapture = useCallback(() => {
+        setCapture(null);
     }, []);
 
     const handleSend = useCallback(() => {
-        if (!photo) return;
-        openDialog('sendphoto', { photo, onSent: () => setPhoto(null) });
-    }, [openDialog, photo]);
+        if (!capture) return;
+        openDialog('sendphoto', {
+            media: capture,
+            ...(capture.kind === 'photo' ? { photo: capture.uri } : {}),
+            onSent: () => setCapture(null),
+        });
+    }, [capture, openDialog]);
 
     const handleSave = useCallback(() => {
-        if (!photo) return;
+        if (!capture) return;
         const a = document.createElement('a');
-        a.href = photo;
-        a.download = `veyl-${Date.now()}.jpg`;
+        a.href = capture.uri;
+        a.download = capture.kind === 'video' ? capture.file?.name || videoFileName(capture.file?.type) : `veyl-${Date.now()}.jpg`;
         a.click();
-    }, [photo]);
+    }, [capture]);
+
+    const clearPointerTimer = useCallback(() => {
+        if (pointerRef.current.timer) {
+            clearTimeout(pointerRef.current.timer);
+            pointerRef.current.timer = null;
+        }
+    }, []);
+
+    const handleShutterDown = useCallback(
+        (event) => {
+            if (captureRef.current || recordingRef.current) return;
+            pointerRef.current.id = event.pointerId;
+            pointerRef.current.long = false;
+            event.currentTarget.setPointerCapture?.(event.pointerId);
+            clearPointerTimer();
+            pointerRef.current.timer = setTimeout(() => {
+                pointerRef.current.timer = null;
+                pointerRef.current.long = true;
+                startVideo();
+            }, VIDEO_HOLD_MS);
+        },
+        [clearPointerTimer, startVideo]
+    );
+
+    const handleShutterUp = useCallback(
+        (event) => {
+            const active = pointerRef.current.id === event.pointerId;
+            if (!active) return;
+            const wasLong = pointerRef.current.long;
+            pointerRef.current.id = null;
+            pointerRef.current.long = false;
+            clearPointerTimer();
+            event.currentTarget.releasePointerCapture?.(event.pointerId);
+            if (wasLong) {
+                stopVideo();
+                return;
+            }
+            takePhoto();
+        },
+        [clearPointerTimer, stopVideo, takePhoto]
+    );
+
+    const handleShutterCancel = useCallback(
+        (event) => {
+            const active = pointerRef.current.id === event.pointerId;
+            pointerRef.current.id = null;
+            pointerRef.current.long = false;
+            clearPointerTimer();
+            if (active) stopVideo();
+        },
+        [clearPointerTimer, stopVideo]
+    );
 
     return (
         <div className="h-full relative overflow-hidden rounded-round">
@@ -212,12 +431,13 @@ export default function CameraPage() {
                         className={`absolute inset-0 w-full h-full object-cover transition-all duration-300 ${cloaked ? 'blur-3xl scale-110' : ''}`}
                     />
                 </div>
-                {photo && <img src={photo} alt="preview" className="absolute inset-0 w-full h-full object-cover" />}
+                {capture?.kind === 'photo' && <img src={capture.uri} alt="preview" className="absolute inset-0 w-full h-full object-cover" />}
+                {capture?.kind === 'video' && <video src={capture.uri} className="absolute inset-0 w-full h-full object-cover" autoPlay loop muted playsInline />}
             </div>
             <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-8">
-                {photo ? (
+                {capture ? (
                     <>
-                        <button onClick={discardPhoto} className="backdrop-blur-sm size-12 rounded-full bg-background/70 grower cursor-pointer flex items-center justify-center">
+                        <button onClick={discardCapture} className="backdrop-blur-sm size-12 rounded-full bg-background/70 grower cursor-pointer flex items-center justify-center">
                             <X className="size-5 text-foreground" />
                         </button>
                         <button onClick={handleSend} className="backdrop-blur-sm size-18 rounded-full bg-foreground/70 grower cursor-pointer flex items-center justify-center">
@@ -228,7 +448,21 @@ export default function CameraPage() {
                         </button>
                     </>
                 ) : (
-                    <div onClick={takePhoto} className="backdrop-blur-md size-18 rounded-full shadow bg-background/70 grower cursor-pointer" />
+                    <button
+                        type="button"
+                        aria-label={recording ? 'recording video' : 'take photo'}
+                        onPointerDown={handleShutterDown}
+                        onPointerUp={handleShutterUp}
+                        onPointerCancel={handleShutterCancel}
+                        onLostPointerCapture={recording ? stopVideo : undefined}
+                        onKeyDown={(event) => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                                event.preventDefault();
+                                takePhoto();
+                            }
+                        }}
+                        className={`backdrop-blur-md size-18 rounded-full shadow grower cursor-pointer ${recording ? 'bg-destructive/75' : 'bg-background/70'}`}
+                    />
                 )}
             </div>
         </div>

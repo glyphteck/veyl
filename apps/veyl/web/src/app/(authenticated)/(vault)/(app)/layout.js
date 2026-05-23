@@ -45,9 +45,9 @@ function AppShell({ children }) {
     return !hasInitiallyLoaded ? (
         <Loading />
     ) : (
-        <div className="relative flex h-screen flex-col overflow-hidden overscroll-none px-2 pb-2">
+        <div className="relative flex h-screen flex-col overscroll-none px-2 pb-2">
             <Navbar />
-            <main className="min-h-0 flex-1 overflow-hidden">{children}</main>
+            <main className="min-h-0 flex-1">{children}</main>
         </div>
     );
 }

@@ -5,7 +5,7 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { useMenu } from '@/providers/menuprovider';
 
 const START_SCALE = 0.01;
-const LONG_MS = 220;
+export const MENU_LONG_PRESS_MS = 220;
 const KEYBOARD_DISMISS_FALLBACK_MS = 320;
 
 let nextId = 0;
@@ -194,7 +194,7 @@ export default function Menu({
 
         return Gesture.LongPress()
             .enabled(canHold)
-            .minDuration(LONG_MS)
+            .minDuration(MENU_LONG_PRESS_MS)
             .maxDistance(18)
             .runOnJS(true)
             .onStart(handleLongPress);

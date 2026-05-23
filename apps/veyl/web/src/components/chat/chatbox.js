@@ -17,7 +17,6 @@ import { canReplyToMsg, makeReq, makeTxt, setReply, setTxt } from '@glyphteck/sh
 import { parseCommandAmountSats } from '@glyphteck/shared/commands';
 import { CHAT_FILE_SIZE_LIMIT_ENABLED, MAX_CHAT_FILE_BYTES } from '@glyphteck/shared/chat/filepayload';
 import { toast } from 'sonner';
-import { Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 function formatMaxSize(bytes) {
@@ -74,9 +73,7 @@ export function Chatbox() {
             ).trim();
             const msg = replyId ? setReply(base, replyId) : base;
             await sendMessage(peerChatPK, msg);
-        } catch (error) {
-            console.error('Failed to send message:', error);
-        }
+        } catch {}
     };
 
     const handleEditMessage = useCallback(
@@ -108,7 +105,6 @@ export function Chatbox() {
                     toast.error(`attachment too large (max ${formatMaxSize(MAX_CHAT_FILE_BYTES)})`);
                     return;
                 }
-                console.error('Failed to send attachment:', error);
                 toast.error(error?.message || 'failed to send attachment');
             }
         },
@@ -196,17 +192,6 @@ export function Chatbox() {
         setDraft(null);
     }, []);
 
-    const handleOpenDeleteChat = useCallback(
-        (event) => {
-            event.stopPropagation();
-            if (!selectedChatId) {
-                return;
-            }
-            openDialog('deletechat', { chatId: selectedChatId });
-        },
-        [openDialog, selectedChatId]
-    );
-
     const hasDraggedFiles = (event) => {
         const types = event?.dataTransfer?.types;
         return Array.isArray(types) ? types.includes('Files') : types?.contains?.('Files');
@@ -290,11 +275,6 @@ export function Chatbox() {
             {/* peer ref */}
             <div className="absolute left-0 right-0 z-25 pt-3 pb-8 mx-2">
                 <div className="flex items-center gap-2 px-3">
-                    {currentChat ? (
-                        <button type="button" className="grower-lg rounded-full p-2 text-destructive" title="delete chat" onClick={handleOpenDeleteChat}>
-                            <Trash2 className="size-5" />
-                        </button>
-                    ) : null}
                     <div className="flex min-w-0 flex-1 justify-center">
                         <Button
                             className="group min-w-0"
@@ -311,7 +291,6 @@ export function Chatbox() {
                             <div className="min-w-0 text-xl font-black pointer-events-auto truncate">{peerDisplayName}</div>
                         </Button>
                     </div>
-                    {currentChat ? <div className="size-9 shrink-0" aria-hidden="true" /> : null}
                 </div>
             </div>
             {/* Messages */}

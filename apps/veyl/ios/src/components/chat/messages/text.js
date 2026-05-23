@@ -30,13 +30,15 @@ export function TextBubble({ msg, fromPeer = false, compact = false, singleLine 
         <GlassView
             glassEffectStyle="clear"
             tintColor={bubbleTint(theme, fromPeer)}
-            style={{
-                maxWidth: '100%',
-                borderRadius: compact ? 20 : 22,
-                paddingHorizontal: compact ? 10 : 14,
-                paddingVertical: compact ? 7 : 10,
-                opacity: muted ? 0.65 : 1,
-            }}
+            style={[
+                {
+                    maxWidth: '100%',
+                    borderRadius: compact ? 20 : 22,
+                    paddingHorizontal: compact ? 10 : 14,
+                    paddingVertical: compact ? 7 : 10,
+                },
+                muted ? { opacity: 0.65 } : null,
+            ]}
         >
             <Text numberOfLines={singleLine ? 1 : undefined} style={{ fontSize: compact ? 15 : 16, fontWeight: '500', color: theme.foreground }}>
                 {parts.map((part, index) =>

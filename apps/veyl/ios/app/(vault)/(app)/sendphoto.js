@@ -30,6 +30,16 @@ function truncateLabel(label, max = 8) {
     return `${label.slice(0, max)}…`;
 }
 
+function waitForIdle() {
+    return new Promise((resolve) => {
+        if (typeof globalThis.requestIdleCallback === 'function') {
+            globalThis.requestIdleCallback(() => resolve(), { timeout: 250 });
+            return;
+        }
+        setTimeout(resolve, 0);
+    });
+}
+
 function PeerCell({ item, onToggle, theme, selected, disabled }) {
     const scale = useSharedValue(1);
     const pressFeedback = tap({
@@ -59,7 +69,7 @@ export default function SendPhotoScreen() {
     const { theme } = useTheme();
     const { peers, recentPeers } = usePeer() || {};
     const { uid, chatPK, chatBanned } = useUser();
-    const { sendImageMany, selectChat } = useChat();
+    const { sendAttachmentMany, sendImageMany, selectChat } = useChat();
     const { searching, results, query, search: runSearch, clearSearch } = useSearch('profiles');
     const router = useRouter();
     const insets = useSafeAreaInsets();
@@ -68,6 +78,8 @@ export default function SendPhotoScreen() {
     const photoUri = params?.uri;
     const photoWidth = Number(params?.w) || 0;
     const photoHeight = Number(params?.h) || 0;
+    const mediaType = params?.t === 'mp4' ? 'video' : 'photo';
+    const mediaName = typeof params?.n === 'string' ? params.n.trim() : '';
 
     const searchInputRef = useRef(null);
     const openRef = useRef(true);
@@ -127,17 +139,20 @@ export default function SendPhotoScreen() {
         if (openRef.current) router.dismiss();
         DeviceEventEmitter.emit('photosent');
 
-        prepareAssetForChatUpload({
-            uri: photoUri,
-            width: photoWidth,
-            height: photoHeight,
-            mimeType: 'image/jpeg',
-        })
+        waitForIdle()
+            .then(() =>
+                prepareAssetForChatUpload({
+                    uri: photoUri,
+                    width: photoWidth,
+                    height: photoHeight,
+                    mimeType: mediaType === 'video' ? 'video/mp4' : 'image/jpeg',
+                    preserveImage: mediaType === 'photo',
+                    ...(mediaName ? { fileName: mediaName, name: mediaName } : {}),
+                })
+            )
             .then(async (prepared) => {
-                const results = await sendImageMany(
-                    selected.map((peer) => peer.chatPK),
-                    prepared
-                );
+                const targets = selected.map((peer) => peer.chatPK);
+                const results = mediaType === 'video' ? await sendAttachmentMany(targets, prepared) : await sendImageMany(targets, prepared);
                 const resultByChatPK = new Map(results.map((result) => [result.peerChatPK, result]));
 
                 for (const peer of selected) {
@@ -147,17 +162,17 @@ export default function SendPhotoScreen() {
                             selectChat(getChatId(chatPK, peer.chatPK));
                         }
                     } else {
-                        console.warn('send photo failed:', result?.error);
+                        console.warn(`send ${mediaType} failed:`, result?.error);
                     }
                 }
             })
             .catch((error) => {
-                console.warn('prepare photo failed:', error);
+                console.warn(`prepare ${mediaType} failed:`, error);
             })
             .finally(() => {
                 busyRef.current = false;
             });
-    }, [chatBanned, chatPK, photoHeight, photoUri, photoWidth, router, selectChat, selected, sendImageMany, sending]);
+    }, [chatBanned, chatPK, mediaName, mediaType, photoHeight, photoUri, photoWidth, router, selectChat, selected, sendAttachmentMany, sendImageMany, sending]);
 
     const selectedUids = useMemo(() => new Set(selected.map((p) => p.uid)), [selected]);
 

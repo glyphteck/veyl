@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Animated, AppState, Linking, Pressable, ScrollView, Switch, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CircleDollarSign, FileText, Ghost, KeyRound, Lock, LogOut, QrCode, ScanQrCode, Settings, Shield, Timer, Trash2, UserX } from 'lucide-react-native';
-import { useIsFocused } from '@react-navigation/native';
+import { useIsFocused } from 'expo-router/react-navigation';
 import { useNavigation, useRouter } from 'expo-router';
 
 import AvatarPicker from '@/components/avatarpicker';

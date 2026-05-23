@@ -3,7 +3,7 @@ import { orderChatKeys } from '../crypto/pair.js';
 import { putBotAttachment, readBotAttachment } from './storage.js';
 import { canStoreMsg } from '../chat/messages.js';
 import { openChatSettingsForPair } from '../chat/settings.js';
-import { newMessageTtlMs } from '../chat/ttl.js';
+import { cleanChatRetention, newMessageTtlMs, withMessageRetention } from '../chat/ttl.js';
 
 const pairCache = new Map();
 const MAX_PAIR_CACHE = 256;
@@ -113,7 +113,8 @@ export async function sendBotMsg(db, FieldValue, senderChatPK, senderChatPrivKey
     const sortedKeys = orderChatKeys(senderChatPK, receiverChatPK);
     const chatId = getChatId(senderChatPK, receiverChatPK);
     const pair = await getCachedPair(senderChatPK, senderChatPrivKey, receiverChatPK);
-    const { head, body } = await sealMsg(pair, message);
+    const retention = cleanChatRetention(options?.retention ?? options?.ttlMode);
+    const { head, body } = await sealMsg(pair, withMessageRetention(message, retention));
     const rawBody = typeof body?.toUint8Array === 'function' ? Buffer.from(body.toUint8Array()) : body;
     const chatRef = db.collection('chats').doc(chatId);
     const msgRef = msgId ? chatRef.collection('messages').doc(msgId) : chatRef.collection('messages').doc();
@@ -124,7 +125,7 @@ export async function sendBotMsg(db, FieldValue, senderChatPK, senderChatPrivKey
         head,
         body: rawBody,
         ts: FieldValue.serverTimestamp(),
-        ttl: makeTtl(options?.retention ?? options?.ttlMode),
+        ttl: makeTtl(retention),
     };
 
     const batch = db.batch();

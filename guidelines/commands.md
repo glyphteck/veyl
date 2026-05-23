@@ -134,6 +134,7 @@ bun make lifecycle
 - `bun make ios reset` uninstalls the dev app before reinstalling it, which clears on-device app data and forces iOS to reprocess the current app identity.
 - `bun make ios test` installs the standalone test `test.veyl` build on `REGTEST` with bundle id `com.glyphteck.veyl.test`.
 - `bun make ios prod` installs the standalone production `veyl` build on `MAINNET` with bundle id `com.glyphteck.veyl`.
+- `bun make ios` is quiet by default: it prints phase lines and one-line warning summaries. Add `-v` or `--verbose` to show full child command output.
 - `bun veyl mainnet` and `bun veyl regtest` apply the selected network to web, iOS, and bot.
 
 ## iOS Production Builds
@@ -182,17 +183,15 @@ Local root-site work belongs in the separate Website repo.
 
 ## Native iOS Dependencies
 
-If native iOS dependencies change:
+Use [packages.md](packages.md) for package, Expo SDK, and native dependency rules.
 
-```bash
-cd apps/veyl/ios/ios && pod install
-```
+If native iOS dependencies change, the generated native project must be refreshed before judging runtime behavior. The normal local phone path is `bun make ios`, which runs Expo prebuild/config sync, builds, installs, and launches the dev client. A manual `pod install` inside `apps/veyl/ios/ios` can refresh pods for an already-generated native project, but it is not a replacement for the repo's prebuild/build path after Expo config or package changes.
 
 Do not run a manual app build by default after native package changes. Tell the user what changed and that they need to rebuild.
 
 ## Framework Dependency Sync
 
-Web React versions use the root Bun catalog and must still satisfy the installed Next.js peer dependency range. iOS React and React Native versions follow Expo's compatibility table.
+Detailed package and upgrade rules live in [packages.md](packages.md). In short: web React versions use the root Bun catalog and must still satisfy the installed Next.js peer dependency range. iOS React and React Native versions follow Expo's compatibility table.
 
 After bumping `next` or `expo`, run:
 

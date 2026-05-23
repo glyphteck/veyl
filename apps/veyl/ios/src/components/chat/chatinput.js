@@ -260,9 +260,7 @@ function ChatInput({ nativeID, onLayout, onSend, onEditMessage, onSendImage, onS
             onCommandChange?.('');
             onClearDraft?.();
             inputRef.current?.focus?.();
-            Promise.resolve(onCommand?.(parsedCommand)).catch((e) => {
-                console.warn('chat command failed', e);
-            });
+            Promise.resolve(onCommand?.(parsedCommand)).catch(() => {});
             return;
         }
         if (draft?.mode === 'edit') {
@@ -271,10 +269,7 @@ function ChatInput({ nativeID, onLayout, onSend, onEditMessage, onSendImage, onS
             onCommandChange?.('');
             onClearDraft?.();
             inputRef.current?.focus?.();
-            Promise.resolve(onEditMessage?.(draft.msg, toSend))
-                .catch((e) => {
-                    console.warn('chat edit failed', e);
-                });
+            Promise.resolve(onEditMessage?.(draft.msg, toSend)).catch(() => {});
             return;
         }
         messageRef.current = '';
@@ -283,9 +278,7 @@ function ChatInput({ nativeID, onLayout, onSend, onEditMessage, onSendImage, onS
         const nextDraft = draft;
         onClearDraft?.();
         inputRef.current?.focus?.();
-        Promise.resolve(onSend?.(toSend, nextDraft)).catch((e) => {
-            console.warn('chat send failed', e);
-        });
+        Promise.resolve(onSend?.(toSend, nextDraft)).catch(() => {});
     }, [draft, onClearDraft, onCommand, onCommandChange, onEditMessage, onSend, parsedCommand]);
 
     const handlePickImage = useCallback(async () => {
@@ -305,9 +298,7 @@ function ChatInput({ nativeID, onLayout, onSend, onEditMessage, onSendImage, onS
             });
 
             if (result.canceled || !result.assets?.length) return;
-            Promise.resolve(onSendImage?.(result.assets[0])).catch((e) => {
-                console.warn('chat image send failed', e);
-            });
+            Promise.resolve(onSendImage?.(result.assets[0])).catch(() => {});
         } catch (e) {
             console.warn('chat image picker failed', e);
         }
@@ -322,9 +313,7 @@ function ChatInput({ nativeID, onLayout, onSend, onEditMessage, onSendImage, onS
             });
 
             if (result.canceled || !result.assets?.length) return;
-            Promise.resolve(onSendAttachment?.(result.assets[0])).catch((e) => {
-                console.warn('chat attachment send failed', e);
-            });
+            Promise.resolve(onSendAttachment?.(result.assets[0])).catch(() => {});
         } catch (e) {
             console.warn('chat attachment picker failed', e);
         }

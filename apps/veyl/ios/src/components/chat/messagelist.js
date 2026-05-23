@@ -1,11 +1,11 @@
 import { ActivityIndicator, Alert, Text, View, useWindowDimensions } from 'react-native';
-import { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useNavigation, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { httpsCallable } from 'firebase/functions';
-import { Copy, Download, Flag, History, Reply, RotateCcw, Share2, SquarePen, Trash2 } from 'lucide-react-native';
-import Animated, { Easing, FadeIn, FadeOut, LinearTransition, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
+import { Bookmark, Copy, Download, Flag, History, Reply, RotateCcw, Share2, SquarePen, Trash2 } from 'lucide-react-native';
+import Animated, { Easing, LinearTransition, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { scheduleOnRN } from 'react-native-worklets';
 import { useChat } from '@/providers/chatprovider';
@@ -27,12 +27,13 @@ import { getMediaViewerKey, isMediaViewerMsg } from '@/lib/chatmediaitems';
 import { copyMessageImage, copyMessageText, saveMessageFile, saveMessageImage } from '@/lib/chatdownloads';
 import { stageShareMedia } from '@/lib/sharemedia';
 import { functions, storage } from '@/lib/firebase';
-import { canReplyToMsg, canShareAttachmentMsg, canShowMsg, getLatestReadOutgoingReceipt, isPeerMsg, setReqTx } from '@glyphteck/shared/chat/messages';
+import { canReplyToMsg, canShareAttachmentMsg, canShowMsg, collapseSystemMessages, getLatestReadOutgoingReceipt, getSystemMsgText, isPeerMsg, isReadReceiptMsg, isSystemMsg, setReqTx } from '@glyphteck/shared/chat/messages';
 import { useOptimisticMessageReactions } from '@glyphteck/shared/chat/usereactions';
 import { makeFileId, reportEvidencePath } from '@glyphteck/shared/files';
 import { buildReportFields, getReportAttachmentMeta } from '@glyphteck/shared/report';
 import { formatTimeHHMM } from '@glyphteck/shared/utils';
 import { getMessageOrderMs } from '@glyphteck/shared/chat/state';
+import { CHAT_RETENTION_SEEN, getMessageRetention, onSeenMessageTtlMs, seenMessageTtlMs } from '@glyphteck/shared/chat/ttl';
 
 const STAMP_W = 108;
 const STAMP_WAIT = 12;
@@ -42,15 +43,22 @@ const REPLY_HINT_W = 44;
 const REPLY_TRIGGER = 64;
 const REPLY_ICON_DELAY = 24;
 const NEWEST_MESSAGE_GAP = 8;
-const MESSAGE_ROW_ANIMATION_MS = 160;
+const MESSAGE_ROW_ANIMATION_MS = 3000;
+const MESSAGE_ROW_EXIT_ANIMATION_MS = 3000;
+const MESSAGE_ROW_LEAVE_MS = MESSAGE_ROW_EXIT_ANIMATION_MS;
 const MESSAGE_ROW_EASING = Easing.out(Easing.cubic);
+const MESSAGE_ROW_EXIT_EASING = Easing.linear;
+const MESSAGE_ROW_EXIT_CLEARANCE_PX = 1;
 const MESSAGE_ROW_LAYOUT = LinearTransition.duration(MESSAGE_ROW_ANIMATION_MS).easing(MESSAGE_ROW_EASING);
-const MESSAGE_ROW_ENTERING = FadeIn.duration(MESSAGE_ROW_ANIMATION_MS).easing(MESSAGE_ROW_EASING);
-const MESSAGE_ROW_EXITING = FadeOut.duration(MESSAGE_ROW_ANIMATION_MS).easing(MESSAGE_ROW_EASING);
+const MESSAGE_ROW_EXIT_SCALE = 0.01;
 const LIKE_PREVIEW_INSET = 22;
 const LIKE_BLOCK_MS = 320;
+const MESSAGE_ROW_PADDING_TOP = 4;
+const MESSAGE_ROW_PADDING_BOTTOM = 8;
+const RECEIPT_STAMP_BOTTOM = 7;
 const RECEIPT_MARK_SIZE = 16;
-const RECEIPT_ANIMATION_MS = 160;
+const RECEIPT_MARK_RESERVE = RECEIPT_MARK_SIZE + 5;
+const RECEIPT_ANIMATION_MS = 3000;
 const RECEIPT_START_SCALE = 0.01;
 const REPLY_SPRING = {
     mass: 0.16,
@@ -91,6 +99,240 @@ function getMsgKey(msg) {
     return msg?.cid || msg?.id;
 }
 
+function getMsgKeys(msg) {
+    return [...new Set([getMsgKey(msg), msg?.id, msg?.cid].filter(Boolean))];
+}
+
+function sameRowList(a, b) {
+    if (a === b) {
+        return true;
+    }
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) {
+        return false;
+    }
+    for (let index = 0; index < a.length; index += 1) {
+        if (a[index]?.key !== b[index]?.key || a[index]?.msg !== b[index]?.msg || a[index]?.state !== b[index]?.state || a[index]?.dotExitToken !== b[index]?.dotExitToken) {
+            return false;
+        }
+    }
+    return true;
+}
+
+function makePresentRows(messages) {
+    return (messages || [])
+        .map((msg) => ({
+            key: getMsgKey(msg),
+            msg,
+            state: 'present',
+            dotExitToken: 0,
+        }))
+        .filter((row) => row.key);
+}
+
+function shouldExitPendingDot(previous, next) {
+    return !!((previous?.pending || previous?.failed) && next && !next.pending && !next.failed);
+}
+
+function useAnimatedMessageRows(messages, scopeKey, animate = true) {
+    const presentRows = useMemo(() => makePresentRows(messages), [messages]);
+    const [state, setState] = useState(() => ({ scopeKey, rows: presentRows, animated: animate }));
+    const reset = state.scopeKey !== scopeKey;
+
+    useLayoutEffect(() => {
+        setState((prev) => {
+            if (prev.scopeKey !== scopeKey || !animate || !prev.animated) {
+                return { scopeKey, rows: presentRows, animated: animate };
+            }
+
+            const nextKeys = new Set(presentRows.map((row) => row.key));
+            const prevByKey = new Map();
+            const prevIndexByKey = new Map();
+            prev.rows.forEach((row, index) => {
+                prevByKey.set(row.key, row);
+                prevIndexByKey.set(row.key, index);
+            });
+
+            const firstRetainedIndex = presentRows.findIndex((row) => {
+                const prevRow = prevByKey.get(row.key);
+                return prevRow && prevRow.state !== 'leaving';
+            });
+            const newestInsertCount = prev.rows.length ? Math.max(0, firstRetainedIndex) : presentRows.length;
+            const nextRows = presentRows.map((row, index) => {
+                const prevRow = prevByKey.get(row.key);
+                const retained = prevRow && prevRow.state !== 'leaving';
+                const nextState = retained ? 'present' : index < newestInsertCount ? 'entering' : 'instant';
+                const dotExitToken = retained && shouldExitPendingDot(prevRow.msg, row.msg) ? (prevRow.dotExitToken || 0) + 1 : prevRow?.dotExitToken || 0;
+                if (prevRow && prevRow.state === nextState && prevRow.msg === row.msg && prevRow.dotExitToken === dotExitToken) {
+                    return prevRow;
+                }
+                return { ...row, state: nextState, dotExitToken };
+            });
+            const olderInsertStart = nextRows.findIndex((row, index) => index >= newestInsertCount && row.state === 'instant');
+            if (olderInsertStart > 0) {
+                const boundary = nextRows[olderInsertStart - 1];
+                if (boundary?.state === 'present') {
+                    nextRows[olderInsertStart - 1] = { ...boundary, state: 'instant' };
+                }
+            }
+
+            const result = [];
+            let prevCursor = 0;
+            const pushDroppedRowsBefore = (index) => {
+                while (prevCursor < index) {
+                    const row = prev.rows[prevCursor];
+                    if (!nextKeys.has(row.key)) {
+                        result.push(row.state === 'leaving' ? row : { ...row, state: 'leaving' });
+                    }
+                    prevCursor += 1;
+                }
+            };
+
+            for (const row of nextRows) {
+                const prevIndex = prevIndexByKey.get(row.key);
+                if (prevIndex != null) {
+                    pushDroppedRowsBefore(prevIndex);
+                    prevCursor = Math.max(prevCursor, prevIndex + 1);
+                }
+                result.push(row);
+            }
+            pushDroppedRowsBefore(prev.rows.length);
+
+            if (sameRowList(prev.rows, result)) {
+                return prev;
+            }
+            return { scopeKey, rows: result, animated: true };
+        });
+    }, [animate, presentRows, scopeKey]);
+
+    useEffect(() => {
+        if (!state.animated || state.scopeKey !== scopeKey || !state.rows.some((row) => row.state === 'entering' || row.state === 'instant')) {
+            return undefined;
+        }
+
+        const frame = requestAnimationFrame(() => {
+            setState((prev) => {
+                if (prev.scopeKey !== scopeKey) {
+                    return prev;
+                }
+                return {
+                    ...prev,
+                    rows: prev.rows.map((row) => (row.state === 'entering' || row.state === 'instant' ? { ...row, state: 'present' } : row)),
+                };
+            });
+        });
+        return () => cancelAnimationFrame(frame);
+    }, [scopeKey, state.animated, state.rows, state.scopeKey]);
+
+    useEffect(() => {
+        if (!state.animated || state.scopeKey !== scopeKey || !state.rows.some((row) => row.state === 'leaving')) {
+            return undefined;
+        }
+
+        const timeout = setTimeout(() => {
+            setState((prev) => {
+                if (prev.scopeKey !== scopeKey) {
+                    return prev;
+                }
+                return {
+                    ...prev,
+                    rows: prev.rows.filter((row) => row.state !== 'leaving'),
+                };
+            });
+        }, MESSAGE_ROW_LEAVE_MS + 50);
+
+        return () => clearTimeout(timeout);
+    }, [scopeKey, state.animated, state.rows, state.scopeKey]);
+
+    return reset ? presentRows : state.rows;
+}
+
+function hasOwnMessageTtl(msg) {
+    return Object.prototype.hasOwnProperty.call(msg || {}, 'ttl');
+}
+
+function isSavedForeverMsg(msg) {
+    return !!(msg?.id && !String(msg.id).startsWith('local:') && !msg.pending && !msg.failed && hasOwnMessageTtl(msg) && msg.ttl == null);
+}
+
+function canToggleSaveForeverMsg(msg) {
+    return !!(msg?.id && !String(msg.id).startsWith('local:') && !msg.pending && !msg.failed && !isSystemMsg(msg));
+}
+
+function positiveMs(value) {
+    const ms = Number(value);
+    return Number.isFinite(ms) && ms > 0 ? ms : null;
+}
+
+function getSavedTtlMs(msg) {
+    return positiveMs(msg?.savedTtl);
+}
+
+function messageOrderMs(message) {
+    const ms = getMessageOrderMs(message);
+    return Number.isFinite(ms) ? ms : null;
+}
+
+function readReceiptFromRecipient(receipt, msg, chatPK, peerChatPK) {
+    const messageFromPeer = isPeerMsg(msg, chatPK);
+    const receiptFromPeer = isPeerMsg(receipt, chatPK);
+    return messageFromPeer ? !receiptFromPeer : receiptFromPeer && (!peerChatPK || receipt?.s === peerChatPK);
+}
+
+function readReceiptCoversMessage(receipt, msg, byKey, chatPK) {
+    const targetKey = typeof receipt?.upto === 'string' ? receipt.upto.trim() : '';
+    if (!targetKey) {
+        return false;
+    }
+    if (targetKey === getMsgKey(msg)) {
+        return true;
+    }
+
+    const target = byKey.get(targetKey);
+    if (target && isPeerMsg(target, chatPK) !== isPeerMsg(msg, chatPK)) {
+        return false;
+    }
+
+    const messageMs = messageOrderMs(msg);
+    const targetMs = messageOrderMs(target) ?? messageOrderMs({ cid: targetKey }) ?? messageOrderMs(receipt);
+    return messageMs != null && targetMs != null && messageMs <= targetMs;
+}
+
+function getMessageSeenAtMs(messages, msg, chatPK, peerChatPK, now = Date.now()) {
+    const byKey = new Map();
+    for (const item of messages || []) {
+        for (const key of getMsgKeys(item)) {
+            byKey.set(key, item);
+        }
+    }
+
+    let seenAt = null;
+    for (const receipt of messages || []) {
+        if (!receipt?.id || String(receipt.id).startsWith('local:') || receipt.pending || receipt.failed || !isReadReceiptMsg(receipt) || !readReceiptFromRecipient(receipt, msg, chatPK, peerChatPK)) {
+            continue;
+        }
+        if (!readReceiptCoversMessage(receipt, msg, byKey, chatPK)) {
+            continue;
+        }
+        const receiptMs = messageOrderMs(receipt);
+        if (receiptMs != null && (seenAt == null || receiptMs < seenAt)) {
+            seenAt = receiptMs;
+        }
+    }
+
+    if (seenAt == null && isPeerMsg(msg, chatPK) && canShowMsg(msg)) {
+        return now;
+    }
+    return seenAt;
+}
+
+function getUnsaveTtlMs(msg, messages, chatPK, peerChatPK, now = Date.now()) {
+    const seenAt = getMessageSeenAtMs(messages, msg, chatPK, peerChatPK, now);
+    if (seenAt != null) {
+        return getMessageRetention(msg) === CHAT_RETENTION_SEEN ? onSeenMessageTtlMs(seenAt) : seenMessageTtlMs(seenAt);
+    }
+    return getSavedTtlMs(msg);
+}
+
 function getMsgStamp(msg) {
     const ms = getMessageOrderMs(msg);
     return Number.isFinite(ms) && ms !== Infinity ? formatTimeHHMM(ms, true) : '';
@@ -104,15 +346,67 @@ function hasMsgFile(msg) {
     return (typeof msg?.localUri === 'string' && msg.localUri.trim().length > 0) || (typeof msg?.p === 'string' && !!msg.p && typeof msg?.k === 'string' && !!msg.k);
 }
 
-function SendDot({ show, failed, theme }) {
-    if (!show) {
-        return null;
-    }
+function MsgDot({ show, failed, saved = false, side = 'right', bottomInset = 0, exitToken = 0, theme }) {
+    const progress = useSharedValue(exitToken ? 1 : 0);
+    const [visualSaved, setVisualSaved] = useState(saved);
+
+    useEffect(() => {
+        progress.value = withTiming(show ? 1 : 0, { duration: MESSAGE_ROW_ANIMATION_MS, easing: MESSAGE_ROW_EASING });
+    }, [progress, show]);
+
+    useEffect(() => {
+        if (show || saved) {
+            setVisualSaved(saved);
+            return undefined;
+        }
+
+        const timeout = setTimeout(() => setVisualSaved(false), MESSAGE_ROW_ANIMATION_MS);
+        return () => clearTimeout(timeout);
+    }, [saved, show]);
+
+    const dotSpaceStyle = useAnimatedStyle(() => ({
+        marginLeft: side === 'right' ? 8 * progress.value : 0,
+        marginRight: side === 'left' ? 8 * progress.value : 0,
+        width: 8 * progress.value,
+    }));
+    const dotVisualStyle = useAnimatedStyle(() => ({
+        transform: [{ scale: 0.01 + 0.99 * progress.value }],
+    }));
+
+    const tintColor = failed ? theme.destructive : saved || visualSaved ? theme.foreground : theme.active;
 
     return (
-        <View pointerEvents="none" style={{ width: 8, height: 8, marginLeft: 8, alignSelf: 'center' }}>
-            <GlassView glassEffectStyle="regular" tintColor={failed ? theme.destructive : theme.active} style={{ width: 8, height: 8, borderRadius: 999 }} />
-        </View>
+        <Animated.View
+            pointerEvents="none"
+            style={[
+                {
+                    width: 0,
+                    height: 8,
+                    marginBottom: bottomInset,
+                    alignSelf: 'center',
+                    overflow: 'visible',
+                },
+                dotSpaceStyle,
+            ]}
+        >
+            <Animated.View
+                style={[
+                    {
+                        position: 'absolute',
+                        top: 0,
+                        left: side === 'right' ? 0 : undefined,
+                        right: side === 'left' ? 0 : undefined,
+                        width: 8,
+                        height: 8,
+                        borderRadius: 4,
+                        overflow: 'hidden',
+                    },
+                    dotVisualStyle,
+                ]}
+            >
+                <GlassView glassEffectStyle="regular" tintColor={tintColor} style={{ width: 8, height: 8, minWidth: 8, minHeight: 8, borderRadius: 4, overflow: 'hidden' }} />
+            </Animated.View>
+        </Animated.View>
     );
 }
 
@@ -170,14 +464,22 @@ const ChatScroll = forwardRef(function ChatScroll({ dismissMode, pad, ...props }
     return <KeyboardListScrollView ref={ref} {...props} inverted bounces alwaysBounceVertical keyboardDismissMode={dismissMode} keyboardLiftBehavior="always" extraContentPadding={pad} />;
 });
 
-function MessageRow({ chatPad, msg, fromPeer = false, theme, nativeListGesture, timeGesture, screenW, receiptStamp, onReply, onLike, children }) {
+function MessageRow({ chatPad, msg, rowState = 'present', fromPeer = false, theme, nativeListGesture, timeGesture, screenW, receiptStamp, stampBottomInset = 0, onReply, onLike, children }) {
     const reply = useSharedValue(0);
+    const appear = useSharedValue(rowState === 'entering' ? 0 : 1);
+    const exit = useSharedValue(0);
+    const exitDistance = useSharedValue(0);
     const [swipeBlocked, setSwipeBlocked] = useState(false);
+    const exitContentLayoutRef = useRef(null);
+    const exitTargetLayoutRef = useRef(null);
     const likeBlockedRef = useRef(false);
     const likeBlockTimerRef = useRef(null);
     const stamp = useMemo(() => getMsgStamp(msg), [msg?.cid, msg?.id, msg?.ts]);
-    const canReply = typeof onReply === 'function';
-    const canLike = typeof onLike === 'function';
+    const leaving = rowState === 'leaving';
+    const entering = rowState === 'entering';
+    const instant = rowState === 'instant';
+    const canReply = !leaving && typeof onReply === 'function';
+    const canLike = !leaving && typeof onLike === 'function';
     const hasPan = canReply;
     const replyIconLeft = fromPeer;
     const triggerReply = useCallback(() => {
@@ -211,10 +513,6 @@ function MessageRow({ chatPad, msg, fromPeer = false, theme, nativeListGesture, 
         []
     );
 
-    const replyMoveStyle = useAnimatedStyle(() => ({
-        transform: [{ translateX: reply.value }],
-    }));
-
     const replyStyle = useAnimatedStyle(() => {
         const reveal = clamp((Math.abs(reply.value) - REPLY_ICON_DELAY) / 42, 0, 1);
         return {
@@ -222,6 +520,65 @@ function MessageRow({ chatPad, msg, fromPeer = false, theme, nativeListGesture, 
             transform: [{ scale: 0.84 + reveal * 0.24 }],
         };
     });
+
+    const contentStyle = useAnimatedStyle(() => {
+        const exitTranslate = exitDistance.value * exit.value;
+        const exitScale = 1 - exit.value * (1 - MESSAGE_ROW_EXIT_SCALE);
+        const enterScale = 0.98 + appear.value * 0.02;
+        return {
+            opacity: 1 - exit.value,
+            transform: [{ translateX: reply.value + exitTranslate }, { scale: exit.value > 0 ? exitScale : enterScale }],
+        };
+    });
+
+    const handleExitContentLayout = useCallback((event) => {
+        exitContentLayoutRef.current = event.nativeEvent.layout;
+    }, []);
+
+    const handleExitTargetLayout = useCallback((event) => {
+        exitTargetLayoutRef.current = event.nativeEvent.layout;
+    }, []);
+
+    const measureExitTranslate = useCallback(() => {
+        const contentLayout = exitContentLayoutRef.current;
+        const targetLayout = exitTargetLayoutRef.current || contentLayout;
+        if (!contentLayout || !targetLayout || !Number.isFinite(contentLayout.x) || !Number.isFinite(targetLayout.x) || !Number.isFinite(targetLayout.width) || targetLayout.width <= 0) {
+            return (screenW + MESSAGE_ROW_EXIT_CLEARANCE_PX) * (fromPeer ? -1 : 1);
+        }
+
+        const targetLeft = contentLayout.x + targetLayout.x;
+        const targetRight = targetLeft + targetLayout.width;
+        const targetCenter = targetLeft + targetLayout.width / 2;
+        const exitsRight = targetCenter >= screenW / 2;
+        const distance = exitsRight ? screenW - targetLeft : targetRight;
+        return Math.ceil(Math.max(0, distance + MESSAGE_ROW_EXIT_CLEARANCE_PX)) * (exitsRight ? 1 : -1);
+    }, [fromPeer, screenW]);
+
+    useEffect(() => {
+        if (leaving) {
+            appear.value = 1;
+            exitDistance.value = measureExitTranslate();
+            exit.value = withTiming(1, { duration: MESSAGE_ROW_EXIT_ANIMATION_MS, easing: MESSAGE_ROW_EXIT_EASING });
+            return undefined;
+        }
+
+        exit.value = 0;
+        exitDistance.value = 0;
+        if (instant) {
+            appear.value = 1;
+            return undefined;
+        }
+        if (!entering) {
+            appear.value = withTiming(1, { duration: MESSAGE_ROW_ANIMATION_MS, easing: MESSAGE_ROW_EASING });
+            return undefined;
+        }
+
+        appear.value = 0;
+        const frame = requestAnimationFrame(() => {
+            appear.value = withTiming(1, { duration: MESSAGE_ROW_ANIMATION_MS, easing: MESSAGE_ROW_EASING });
+        });
+        return () => cancelAnimationFrame(frame);
+    }, [appear, entering, exit, exitDistance, instant, leaving, measureExitTranslate]);
 
     const replyGesture = useMemo(
         () =>
@@ -276,15 +633,20 @@ function MessageRow({ chatPad, msg, fromPeer = false, theme, nativeListGesture, 
     }, [hasPan, replyGesture, tapGesture]);
 
     const gestureValue = useMemo(() => ({ blockLike, setSwipeBlocked }), [blockLike, setSwipeBlocked]);
-    const content = <MessageGestureProvider value={gestureValue}>{children}</MessageGestureProvider>;
+    const renderedChildren = typeof children === 'function' ? children({ onExitTargetLayout: handleExitTargetLayout }) : children;
+    const content = <MessageGestureProvider value={gestureValue}>{renderedChildren}</MessageGestureProvider>;
+    const contentNode = (
+        <Animated.View collapsable={false} onLayout={handleExitContentLayout} style={contentStyle}>
+            {content}
+        </Animated.View>
+    );
 
     return (
         <Animated.View
             collapsable={false}
             layout={MESSAGE_ROW_LAYOUT}
-            entering={MESSAGE_ROW_ENTERING}
-            exiting={MESSAGE_ROW_EXITING}
-            style={{ width: screenW + STAMP_TRAY, paddingTop: 4, paddingBottom: 18, overflow: 'hidden' }}
+            pointerEvents={leaving ? 'none' : 'auto'}
+            style={{ width: screenW + STAMP_TRAY, paddingTop: MESSAGE_ROW_PADDING_TOP, paddingBottom: MESSAGE_ROW_PADDING_BOTTOM, overflow: 'hidden' }}
         >
             {stamp ? (
                 <View
@@ -292,8 +654,8 @@ function MessageRow({ chatPad, msg, fromPeer = false, theme, nativeListGesture, 
                     style={{
                         position: 'absolute',
                         left: screenW + STAMP_WAIT,
-                        top: 0,
-                        bottom: 0,
+                        top: MESSAGE_ROW_PADDING_TOP,
+                        bottom: MESSAGE_ROW_PADDING_BOTTOM + stampBottomInset,
                         width: STAMP_W,
                         justifyContent: 'center',
                         alignItems: 'flex-start',
@@ -308,7 +670,7 @@ function MessageRow({ chatPad, msg, fromPeer = false, theme, nativeListGesture, 
                     style={{
                         position: 'absolute',
                         left: screenW + STAMP_WAIT,
-                        bottom: 15,
+                        bottom: RECEIPT_STAMP_BOTTOM,
                         width: STAMP_W,
                         justifyContent: 'center',
                         alignItems: 'flex-start',
@@ -339,15 +701,55 @@ function MessageRow({ chatPad, msg, fromPeer = false, theme, nativeListGesture, 
             ) : null}
             <View style={{ width: screenW, paddingHorizontal: chatPad, flexDirection: 'row', justifyContent: fromPeer ? 'flex-start' : 'flex-end' }}>
                 {rowGesture ? (
-                    <GestureDetector gesture={rowGesture}>
-                        <Animated.View collapsable={false} style={hasPan ? replyMoveStyle : undefined}>
-                            {content}
-                        </Animated.View>
-                    </GestureDetector>
+                    <GestureDetector gesture={rowGesture}>{contentNode}</GestureDetector>
                 ) : (
-                    content
+                    contentNode
                 )}
             </View>
+        </Animated.View>
+    );
+}
+
+function SystemMessageRow({ chatPad, msg, rowState = 'present', screenW, theme }) {
+    const appear = useSharedValue(rowState === 'entering' ? 0 : 1);
+    const exit = useSharedValue(0);
+    const leaving = rowState === 'leaving';
+    const entering = rowState === 'entering';
+    const instant = rowState === 'instant';
+    const visualStyle = useAnimatedStyle(() => ({
+        opacity: 1 - exit.value,
+        transform: [{ scale: exit.value > 0 ? 1 - exit.value * (1 - MESSAGE_ROW_EXIT_SCALE) : 0.98 + appear.value * 0.02 }],
+    }));
+
+    useEffect(() => {
+        if (leaving) {
+            appear.value = 1;
+            exit.value = withTiming(1, { duration: MESSAGE_ROW_EXIT_ANIMATION_MS, easing: MESSAGE_ROW_EXIT_EASING });
+            return undefined;
+        }
+
+        exit.value = 0;
+        if (instant) {
+            appear.value = 1;
+            return undefined;
+        }
+        if (!entering) {
+            appear.value = withTiming(1, { duration: MESSAGE_ROW_ANIMATION_MS, easing: MESSAGE_ROW_EASING });
+            return undefined;
+        }
+
+        appear.value = 0;
+        const frame = requestAnimationFrame(() => {
+            appear.value = withTiming(1, { duration: MESSAGE_ROW_ANIMATION_MS, easing: MESSAGE_ROW_EASING });
+        });
+        return () => cancelAnimationFrame(frame);
+    }, [appear, entering, exit, instant, leaving]);
+
+    return (
+        <Animated.View layout={MESSAGE_ROW_LAYOUT} pointerEvents={leaving ? 'none' : 'auto'} style={{ width: screenW + STAMP_TRAY, paddingTop: 2, paddingBottom: 4, overflow: 'hidden' }}>
+            <Animated.View style={[{ width: screenW, paddingHorizontal: chatPad, alignItems: 'center' }, visualStyle]}>
+                <Text style={{ maxWidth: '76%', color: theme.muted, fontSize: 11, fontWeight: '800', lineHeight: 14, textAlign: 'center' }}>{getSystemMsgText(msg)}</Text>
+            </Animated.View>
         </Animated.View>
     );
 }
@@ -375,14 +777,16 @@ export default function MessageList({
     const { theme } = useTheme();
     const { active: menuActive } = useMenu();
     const { setMediaItems } = useMediaViewer();
-    const { updateMessage, deleteMessage, retryMessage, readMessageFile, sendReaction } = useChat();
+    const { updateMessage, deleteMessage, retryMessage, makeMessagePermanent, makeMessageTemporary, readMessageFile, sendReaction } = useChat();
     const { sendMoneyWithSpark } = useWallet();
     const insets = useSafeAreaInsets();
     const { width: screenW } = useWindowDimensions();
     const { messages: messagesAsc, ready, hasOlder, loadingOlder, loadOlder, patchMessage, removeMessage } = useChatMessages(chatId);
     const submitReport = useMemo(() => httpsCallable(functions, 'submitReport'), []);
     const [payingMessages, setPayingMessages] = useState(new Set());
+    const [savingForeverMessages, setSavingForeverMessages] = useState(new Map());
     const [reportedMessageKeys, setReportedMessageKeys] = useState(new Set());
+    const [deletingMessageIds, setDeletingMessageIds] = useState(new Set());
     const time = useSharedValue(0);
     const userAvatarSource = useMemo(() => (avatar ? { uri: avatar } : null), [avatar]);
     const reactionUsers = useMemo(
@@ -403,11 +807,41 @@ export default function MessageList({
         sendReaction,
         onError: (error) => console.warn('message like failed', error),
     });
-    const visibleMessagesAsc = useMemo(() => (messagesAsc || []).filter(canShowMsg), [messagesAsc]);
+    const visibleMessagesAsc = useMemo(
+        () => collapseSystemMessages((messagesAsc || []).filter((msg) => canShowMsg(msg) && (!msg?.id || !deletingMessageIds.has(msg.id)))),
+        [deletingMessageIds, messagesAsc]
+    );
     const messages = useMemo(() => [...visibleMessagesAsc].reverse(), [visibleMessagesAsc]);
+    const displayRows = useAnimatedMessageRows(messages, chatId || '', ready);
     const latestReadReceipt = useMemo(() => getLatestReadOutgoingReceipt(messagesAsc, chatPK, peerChatPK), [chatPK, messagesAsc, peerChatPK]);
     const latestReadReceiptKey = getMsgKey(latestReadReceipt?.message);
     const latestReadReceiptStamp = useMemo(() => getMsgStamp(latestReadReceipt?.receipt), [latestReadReceipt?.receipt?.cid, latestReadReceipt?.receipt?.id, latestReadReceipt?.receipt?.ts]);
+
+    useEffect(() => {
+        setSavingForeverMessages((prev) => {
+            if (!prev.size) {
+                return prev;
+            }
+
+            const byKey = new Map();
+            for (const message of messagesAsc || []) {
+                for (const key of getMsgKeys(message)) {
+                    byKey.set(key, message);
+                }
+            }
+
+            let changed = false;
+            const next = new Map(prev);
+            for (const [key, targetSaved] of prev) {
+                const message = byKey.get(key);
+                if (!message || isSavedForeverMsg(message) === targetSaved) {
+                    next.delete(key);
+                    changed = true;
+                }
+            }
+            return changed ? next : prev;
+        });
+    }, [messagesAsc]);
     const mediaItems = useMemo(
         () =>
             visibleMessagesAsc
@@ -603,13 +1037,40 @@ export default function MessageList({
                     text: 'delete',
                     style: 'destructive',
                     onPress: async () => {
+                        setDeletingMessageIds((prev) => {
+                            if (prev.has(msg.id)) {
+                                return prev;
+                            }
+                            const next = new Set(prev);
+                            next.add(msg.id);
+                            return next;
+                        });
+
                         try {
                             await deleteMessage(chatId, msg.id);
                             removeMessage(msg.id);
                         } catch (error) {
                             console.warn('delete message failed', error);
+                            setDeletingMessageIds((prev) => {
+                                if (!prev.has(msg.id)) {
+                                    return prev;
+                                }
+                                const next = new Set(prev);
+                                next.delete(msg.id);
+                                return next;
+                            });
                             Alert.alert('Delete failed', error?.message || 'Could not delete this message.');
+                            return;
                         }
+
+                        setDeletingMessageIds((prev) => {
+                            if (!prev.has(msg.id)) {
+                                return prev;
+                            }
+                            const next = new Set(prev);
+                            next.delete(msg.id);
+                            return next;
+                        });
                     },
                 },
             ]);
@@ -634,7 +1095,7 @@ export default function MessageList({
             if (!key) {
                 return;
             }
-            const index = messages.findIndex((msg) => msg?.id === key || msg?.cid === key);
+            const index = displayRows.findIndex((row) => row?.state !== 'leaving' && (row?.msg?.id === key || row?.msg?.cid === key));
             if (index === -1) {
                 return;
             }
@@ -644,22 +1105,66 @@ export default function MessageList({
                 viewPosition: 0.5,
             });
         },
-        [messages, listRef]
+        [displayRows, listRef]
+    );
+
+    const toggleSaveForeverMessage = useCallback(
+        async (msg) => {
+            if (!chatId || !peerChatPK || !canToggleSaveForeverMsg(msg)) {
+                return;
+            }
+
+            const key = getMsgKey(msg);
+            const saved = isSavedForeverMsg(msg);
+            const targetSaved = !saved;
+            const unsaveTtlMs = saved ? getUnsaveTtlMs(msg, messagesAsc, chatPK, peerChatPK) : null;
+
+            if (key) {
+                setSavingForeverMessages((prev) => new Map(prev).set(key, targetSaved));
+            }
+
+            try {
+                if (saved) {
+                    await makeMessageTemporary?.(chatId, msg, peerChatPK, { ttlMs: unsaveTtlMs });
+                } else {
+                    await makeMessagePermanent?.(chatId, msg, peerChatPK);
+                }
+            } catch (error) {
+                console.warn('message save forever update failed', error);
+                Alert.alert(saved ? 'Unsave failed' : 'Save failed', error?.message || 'Could not update this message.');
+                if (key) {
+                    setSavingForeverMessages((prev) => {
+                        const next = new Map(prev);
+                        next.delete(key);
+                        return next;
+                    });
+                }
+            }
+        },
+        [chatId, chatPK, makeMessagePermanent, makeMessageTemporary, messagesAsc, peerChatPK]
     );
 
     const getMenuItems = useCallback(
         (msg) => {
             const fromPeer = isPeerMsg(msg, chatPK);
+            const msgKey = getMsgKey(msg);
+            const savingForever = !!msgKey && savingForeverMessages.has(msgKey);
+            const savedForever = savingForever ? savingForeverMessages.get(msgKey) === true : isSavedForeverMsg(msg);
             const canReport = fromPeer && !!peerUid && msg?.t !== 'req';
             const isFailedSelf = !fromPeer && msg.failed;
             const canDelete = !!msg?.id && !String(msg.id).startsWith('local:');
             const canEdit = !fromPeer && msg?.t === 'txt' && hasMsgText(msg);
             const canReply = canReplyToMsg(msg);
             const canShare = canShareAttachmentMsg(msg);
+            const canSaveForever = canToggleSaveForeverMsg(msg);
             const items = [];
 
             if (canReply && typeof onReply === 'function') {
                 items.push({ id: 'reply', title: 'Reply', icon: Reply, run: () => onReply(msg) });
+            }
+
+            if (canSaveForever) {
+                items.push({ id: 'save-forever', title: savedForever ? 'Unsave' : 'Save', icon: Bookmark, disabled: savingForever, run: () => toggleSaveForeverMessage(msg) });
             }
 
             switch (msg?.t) {
@@ -743,7 +1248,7 @@ export default function MessageList({
 
             return items.length ? items : null;
         },
-        [chatId, chatPK, handleDeleteMessage, handleReportMessage, onEdit, onReply, onRequestHold, openShareRoute, peerChatPK, peerUid, promptReportNote, readMessageFile, retryMessage]
+        [chatId, chatPK, handleDeleteMessage, handleReportMessage, onEdit, onReply, onRequestHold, openShareRoute, peerChatPK, peerUid, promptReportNote, readMessageFile, retryMessage, savingForeverMessages, toggleSaveForeverMessage]
     );
 
     const handlePay = useCallback(
@@ -792,62 +1297,80 @@ export default function MessageList({
     );
 
     const renderItem = useCallback(
-        ({ item: msg }) => {
+        ({ item: row }) => {
+            const msg = row?.msg;
+            const rowState = row?.state || 'present';
+            if (isSystemMsg(msg)) {
+                return <SystemMessageRow chatPad={chatPad} msg={msg} rowState={rowState} screenW={screenW} theme={theme} />;
+            }
+
             const fromPeer = isPeerMsg(msg, chatPK);
             const userSent = !fromPeer;
             const msgKey = getMsgKey(msg);
             const isReported = !!msgKey && reportedMessageKeys.has(msgKey);
-            const menuItems = isReported ? null : getMenuItems(msg);
+            const savingForever = !!msgKey && savingForeverMessages.has(msgKey);
+            const saveForeverTargetSaved = savingForever ? savingForeverMessages.get(msgKey) === true : null;
+            const savedForever = isSavedForeverMsg(msg);
+            const dotSavedForever = savedForever || saveForeverTargetSaved === true;
+            const showMsgDot = (userSent && (msg.pending || msg.failed)) || dotSavedForever;
+            const msgDotExitToken = userSent && !showMsgDot ? row?.dotExitToken : 0;
+            const menuItems = isReported || rowState === 'leaving' ? null : getMenuItems(msg);
             const reply = msg?.r ? replyMap.get(msg.r) || null : null;
             const replyFromPeer = reply ? isPeerMsg(reply, chatPK) : false;
             const viewerMedia = isMediaViewerMsg(msg);
             const canLike = !isReported && canLikeMessage(msg);
             const reactions = isReported ? [] : getOptimisticReactions(msg);
+            const reactionBottomInset = reactions.length ? REACTION_SPACE : 0;
             const showReceipt = userSent && msgKey && msgKey === latestReadReceiptKey;
 
             return (
                 <MessageRow
                     chatPad={chatPad}
                     msg={msg}
+                    rowState={rowState}
                     fromPeer={fromPeer}
                     theme={theme}
                     screenW={screenW}
                     nativeListGesture={nativeListGesture}
                     timeGesture={timeGesture}
                     receiptStamp={showReceipt ? latestReadReceiptStamp : ''}
+                    stampBottomInset={reactionBottomInset + (showReceipt ? RECEIPT_MARK_RESERVE : 0)}
                     onReply={canReplyToMsg(msg) ? onReply : undefined}
                     onLike={canLike && !viewerMedia ? handleLike : undefined}
                 >
-                    <View style={{ maxWidth: (screenW - chatPad * 2) * 0.85, alignItems: userSent ? 'flex-end' : 'flex-start' }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                            {isReported ? (
-                                <ReportedBubble fromPeer={fromPeer} />
-                            ) : (
-                                <View>
-                                    <ChatMessageType
-                                        msg={msg}
-                                        fromPeer={fromPeer}
-                                        menuId={msgKey}
-                                        menuItems={menuItems}
-                                        onRequestHold={onRequestHold}
-                                        peerDisplayName={chatTitle}
-                                        onPay={() => handlePay(msg)}
-                                        isPaying={payingMessages.has(msg.id)}
-                                        peerChatPK={peerChatPK}
-                                        reply={reply}
-                                        replyFromPeer={replyFromPeer}
-                                        onReplyPress={() => jumpToReply(msg.r)}
-                                        onLike={canLike ? handleLike : undefined}
-                                        reactions={reactions}
-                                        reactionUsers={reactionUsers}
-                                        reactionPreviewInset={reactions.length ? LIKE_PREVIEW_INSET : 0}
-                                    />
-                                </View>
-                            )}
-                            <SendDot show={userSent && (msg.pending || msg.failed)} failed={msg.failed} theme={theme} />
+                    {({ onExitTargetLayout }) => (
+                        <View style={{ maxWidth: (screenW - chatPad * 2) * 0.85, alignItems: userSent ? 'flex-end' : 'flex-start' }}>
+                            <View collapsable={false} onLayout={onExitTargetLayout} style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                {fromPeer ? <MsgDot show={showMsgDot} failed={msg.failed} saved={dotSavedForever} side="left" bottomInset={reactionBottomInset} theme={theme} /> : null}
+                                {isReported ? (
+                                    <ReportedBubble fromPeer={fromPeer} />
+                                ) : (
+                                    <View>
+                                        <ChatMessageType
+                                            msg={msg}
+                                            fromPeer={fromPeer}
+                                            menuId={msgKey}
+                                            menuItems={menuItems}
+                                            onRequestHold={onRequestHold}
+                                            peerDisplayName={chatTitle}
+                                            onPay={() => handlePay(msg)}
+                                            isPaying={payingMessages.has(msg.id)}
+                                            peerChatPK={peerChatPK}
+                                            reply={reply}
+                                            replyFromPeer={replyFromPeer}
+                                            onReplyPress={() => jumpToReply(msg.r)}
+                                            onLike={canLike ? handleLike : undefined}
+                                            reactions={reactions}
+                                            reactionUsers={reactionUsers}
+                                            reactionPreviewInset={reactions.length ? LIKE_PREVIEW_INSET : 0}
+                                        />
+                                    </View>
+                                )}
+                                {!fromPeer ? <MsgDot show={showMsgDot} failed={msg.failed} saved={dotSavedForever} side="right" bottomInset={reactionBottomInset} exitToken={msgDotExitToken} theme={theme} /> : null}
+                            </View>
+                            <ReceiptMark show={showReceipt} source={peerAvatarSource} bot={peerBot} />
                         </View>
-                        <ReceiptMark show={showReceipt} source={peerAvatarSource} bot={peerBot} />
-                    </View>
+                    )}
                 </MessageRow>
             );
         },
@@ -872,6 +1395,7 @@ export default function MessageList({
             reactionUsers,
             replyMap,
             reportedMessageKeys,
+            savingForeverMessages,
             screenW,
             theme,
             timeGesture,
@@ -895,8 +1419,8 @@ export default function MessageList({
                                     ref={(node) => {
                                         listRef.current = node;
                                     }}
-                                    data={messages}
-                                    keyExtractor={getMsgKey}
+                                    data={displayRows}
+                                    keyExtractor={(row) => row.key}
                                     renderItem={renderItem}
                                     renderScrollComponent={scrollComp}
                                     itemLayoutAnimation={MESSAGE_ROW_LAYOUT}

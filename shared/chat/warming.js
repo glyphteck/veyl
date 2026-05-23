@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { readCachedMedia, writeCachedMedia } from '../localdatacache.js';
 import { saveMedia } from './attachments.js';
-import { hasStoredFileRef, isExpiredAttachmentMsg } from './messages.js';
+import { hasStoredFileRef, isExpiredAttachmentMsg, isExpiredMsg } from './messages.js';
 import { makeMessagePreviewMedia, MESSAGE_PREVIEW_MIME } from './previews.js';
 import { getMessageKey } from './state.js';
+import { ttlMillis } from './ttl.js';
 import { filterChatMessages, getChatPeerPK, getChatRowLastMsgKey, getPeerChatPKFromChatId, MSG_BATCH_SIZE } from './utils.js';
 
 const DEFAULT_MEDIA_WARMING = Object.freeze({
@@ -87,7 +88,7 @@ function getBatchLastMsgKey(messages) {
 }
 
 function isBatchFresh(entry) {
-    return !entry?.rowLastMsgKey || entry.batchKeys?.has?.(entry.rowLastMsgKey);
+    return !entry?.rowLastMsgKey || entry.batchKeys?.has?.(entry.rowLastMsgKey) || entry.expiredKeys?.has?.(entry.rowLastMsgKey) || (entry.ready && !entry.hasOlder && !entry.hasMore);
 }
 
 function makeSnapshot(entry) {
@@ -107,6 +108,7 @@ function makeSnapshot(entry) {
         fromCache: false,
         rowLastMsgKey: entry.rowLastMsgKey ?? null,
         batchLastMsgKey: entry.batchLastMsgKey ?? null,
+        expiredKeys: new Set(entry.expiredKeys || []),
         generation: entry.generation,
         adoptable: !!entry.ready && isBatchFresh(entry),
     };
@@ -156,13 +158,124 @@ function warmTaskKey(task) {
     return `${task?.chatId || ''}:${task?.pageSize || 0}`;
 }
 
-export function useChatWarming({ chat, chatPK, chatPrivateKey, chatBanned, isActive, localCache, rowsRef, pendingDeleteIdsRef, config, preloadMessageMedia, onRead }) {
+function addMessageKeys(keys, message) {
+    if (!keys || !message) {
+        return;
+    }
+    const key = getMessageKey(message);
+    const id = typeof message.id === 'string' ? message.id.trim() : '';
+    const cid = typeof message.cid === 'string' ? message.cid.trim() : '';
+    if (key) {
+        keys.add(key);
+    }
+    if (id) {
+        keys.add(id);
+    }
+    if (cid) {
+        keys.add(cid);
+    }
+}
+
+function messageHasKey(message, keys) {
+    if (!message || !keys?.size) {
+        return false;
+    }
+    const key = getMessageKey(message);
+    const id = typeof message.id === 'string' ? message.id.trim() : '';
+    const cid = typeof message.cid === 'string' ? message.cid.trim() : '';
+    return !!((key && keys.has(key)) || (id && keys.has(id)) || (cid && keys.has(cid)));
+}
+
+function trimExpiredEntry(entry, now = Date.now()) {
+    if (!entry?.messages?.length) {
+        return [];
+    }
+
+    const messages = [];
+    const expiredKeys = new Set(entry.expiredKeys || []);
+    const expiredMessages = [];
+    let changed = false;
+    for (const message of entry.messages) {
+        if (isExpiredMsg(message, now)) {
+            addMessageKeys(expiredKeys, message);
+            expiredMessages.push(message);
+            changed = true;
+        } else {
+            messages.push(message);
+        }
+    }
+    if (!changed) {
+        return [];
+    }
+
+    entry.messages = messages;
+    entry.expiredKeys = expiredKeys;
+    entry.batchKeys = new Set(messages.map(getMessageKey).filter(Boolean));
+    entry.batchLastMsgKey = getBatchLastMsgKey(messages);
+    return expiredMessages;
+}
+
+function removeEntryMessages(entry, messages) {
+    if (!entry?.messages?.length) {
+        return [];
+    }
+    const keys = new Set();
+    for (const message of messages || []) {
+        addMessageKeys(keys, message);
+    }
+    if (!keys.size) {
+        return [];
+    }
+
+    const nextMessages = [];
+    const expiredKeys = new Set(entry.expiredKeys || []);
+    const removedMessages = [];
+    let changed = false;
+    for (const message of entry.messages) {
+        if (messageHasKey(message, keys)) {
+            addMessageKeys(expiredKeys, message);
+            removedMessages.push(message);
+            changed = true;
+        } else {
+            nextMessages.push(message);
+        }
+    }
+    if (!changed) {
+        return [];
+    }
+
+    entry.messages = nextMessages;
+    entry.expiredKeys = expiredKeys;
+    entry.batchKeys = new Set(nextMessages.map(getMessageKey).filter(Boolean));
+    entry.batchLastMsgKey = getBatchLastMsgKey(nextMessages);
+    return removedMessages;
+}
+
+function nextTrimMs(entries, now = Date.now()) {
+    let next = Infinity;
+    for (const entry of entries || []) {
+        if (entry?.route || !entry?.messages?.length) {
+            continue;
+        }
+        for (const message of entry.messages) {
+            const ms = ttlMillis(message?.ttl);
+            if (ms != null && ms > now && ms < next) {
+                next = ms;
+            }
+        }
+    }
+    return Number.isFinite(next) ? next : null;
+}
+
+export function useChatWarming({ chat, chatPK, chatPrivateKey, chatBanned, isActive, localCache, rowsRef, pendingDeleteIdsRef, config, preloadMessageMedia, onRead, onExpire }) {
     const batchesRef = useRef(new Map());
     const generationRef = useRef(0);
     const warmTimerRef = useRef(null);
     const mediaTimerRef = useRef(null);
     const mediaRunRef = useRef(0);
     const mediaAttemptsRef = useRef(new Set());
+    const trimTimerRef = useRef(null);
+    const pruneExpiredBatchesRef = useRef(null);
     const warmIdsRef = useRef([]);
     const warmQueueRef = useRef([]);
     const warmJobRef = useRef(null);
@@ -178,6 +291,44 @@ export function useChatWarming({ chat, chatPK, chatPrivateKey, chatBanned, isAct
             subscriber(snapshot);
         }
     }, []);
+
+    const scheduleTrim = useCallback(() => {
+        if (trimTimerRef.current) {
+            clearTimeout(trimTimerRef.current);
+            trimTimerRef.current = null;
+        }
+
+        const ms = nextTrimMs(batchesRef.current.values());
+        if (ms == null) {
+            return;
+        }
+
+        const delay = Math.max(0, Math.min(ms - Date.now() + 25, 2_147_483_647));
+        trimTimerRef.current = setTimeout(() => {
+            trimTimerRef.current = null;
+            pruneExpiredBatchesRef.current?.();
+            scheduleTrim();
+        }, delay);
+    }, []);
+
+    const pruneExpiredBatches = useCallback(() => {
+        const now = Date.now();
+        for (const entry of batchesRef.current.values()) {
+            if (entry.route) {
+                continue;
+            }
+            const expiredMessages = trimExpiredEntry(entry, now);
+            if (!expiredMessages.length) {
+                continue;
+            }
+            onExpire?.(entry.chatId, expiredMessages);
+            notify(entry);
+        }
+    }, [notify, onExpire]);
+
+    useEffect(() => {
+        pruneExpiredBatchesRef.current = pruneExpiredBatches;
+    }, [pruneExpiredBatches]);
 
     const closeBatch = useCallback((chatId) => {
         const entry = batchesRef.current.get(chatId);
@@ -214,6 +365,10 @@ export function useChatWarming({ chat, chatPK, chatPrivateKey, chatBanned, isAct
         if (mediaTimerRef.current) {
             clearTimeout(mediaTimerRef.current);
             mediaTimerRef.current = null;
+        }
+        if (trimTimerRef.current) {
+            clearTimeout(trimTimerRef.current);
+            trimTimerRef.current = null;
         }
         warmQueueRef.current = [];
         warmJobRef.current = null;
@@ -360,10 +515,17 @@ export function useChatWarming({ chat, chatPK, chatPrivateKey, chatBanned, isAct
                     if (hasRowLastMsgKey) {
                         existing.rowLastMsgKey = rowLastMsgKey ?? null;
                     }
+                    if (!existing.route) {
+                        const expiredMessages = trimExpiredEntry(existing);
+                        if (expiredMessages.length) {
+                            onExpire?.(chatId, expiredMessages);
+                        }
+                    }
                     if (existing.ready && isBatchFresh(existing)) {
                         onRead?.(chatId, existing.messages);
                     }
                     notify(existing);
+                    scheduleTrim();
                     return makeSnapshot(existing);
                 }
 
@@ -399,6 +561,7 @@ export function useChatWarming({ chat, chatPK, chatPrivateKey, chatBanned, isAct
                 rowLastMsgKey: nextRowLastMsgKey,
                 batchLastMsgKey: null,
                 batchKeys: new Set(),
+                expiredKeys: new Set(),
                 generation,
                 route,
                 warm,
@@ -412,7 +575,7 @@ export function useChatWarming({ chat, chatPK, chatPrivateKey, chatBanned, isAct
                 chatPrivateKey,
                 peerChatPK,
                 pageSize,
-                ({ messages, cursor, carry, hasOlder, hasMore, fromCache }) => {
+                ({ messages, cursor, carry, hasOlder, hasMore, fromCache, expiredKeys }) => {
                     if (fromCache || batchesRef.current.get(chatId) !== entry || entry.generation !== generationRef.current) {
                         return;
                     }
@@ -429,11 +592,27 @@ export function useChatWarming({ chat, chatPK, chatPrivateKey, chatBanned, isAct
                     entry.updatedAt = Date.now();
                     entry.batchKeys = new Set(chatMessages.map(getMessageKey).filter(Boolean));
                     entry.batchLastMsgKey = getBatchLastMsgKey(chatMessages);
+                    entry.expiredKeys = new Set(entry.expiredKeys || []);
+                    for (const key of expiredKeys || []) {
+                        if (key) {
+                            entry.expiredKeys.add(key);
+                        }
+                    }
+                    if (!entry.route && expiredKeys?.length) {
+                        onExpire?.(chatId, expiredKeys);
+                    }
+                    if (!entry.route) {
+                        const expiredMessages = trimExpiredEntry(entry);
+                        if (expiredMessages.length) {
+                            onExpire?.(chatId, expiredMessages);
+                        }
+                    }
                     if (isBatchFresh(entry)) {
-                        onRead?.(chatId, chatMessages);
+                        onRead?.(chatId, entry.messages);
                     }
                     notify(entry);
                     scheduleMedia();
+                    scheduleTrim();
                 },
                 (error) => {
                     if (batchesRef.current.get(chatId) !== entry || entry.generation !== generationRef.current) {
@@ -450,6 +629,7 @@ export function useChatWarming({ chat, chatPK, chatPrivateKey, chatBanned, isAct
                     entry.updatedAt = Date.now();
                     entry.batchKeys = new Set();
                     entry.batchLastMsgKey = null;
+                    entry.expiredKeys = new Set();
                     if (error?.code !== 'permission-denied') {
                         console.warn('Latest messages listener error', chatId, error);
                     }
@@ -460,7 +640,7 @@ export function useChatWarming({ chat, chatPK, chatPrivateKey, chatBanned, isAct
             notify(entry);
             return makeSnapshot(entry);
         },
-        [chat, chatBanned, chatPK, chatPrivateKey, closeBatch, isActive, notify, onRead, pendingDeleteIdsRef, scheduleMedia, warming.pageSize]
+        [chat, chatBanned, chatPK, chatPrivateKey, closeBatch, isActive, notify, onExpire, onRead, pendingDeleteIdsRef, scheduleMedia, scheduleTrim, warming.pageSize]
     );
 
     const releaseMessageBatch = useCallback(
@@ -478,9 +658,38 @@ export function useChatWarming({ chat, chatPK, chatPrivateKey, chatBanned, isAct
             } else {
                 entry.route = false;
             }
+            if (!entry.route && entry.expiredKeys?.size) {
+                onExpire?.(chatId, entry.expiredKeys);
+            }
+            if (!entry.route) {
+                const expiredMessages = trimExpiredEntry(entry);
+                if (expiredMessages.length) {
+                    onExpire?.(chatId, expiredMessages);
+                    notify(entry);
+                }
+            }
+            scheduleTrim();
             maybeCloseBatch(entry);
         },
-        [isActive, maybeCloseBatch, notify]
+        [isActive, maybeCloseBatch, notify, onExpire, scheduleTrim]
+    );
+
+    const expireMessageBatch = useCallback(
+        (chatId, messages) => {
+            const entry = batchesRef.current.get(chatId);
+            if (!entry) {
+                return;
+            }
+            const removedMessages = removeEntryMessages(entry, messages);
+            if (!removedMessages.length) {
+                return;
+            }
+            onExpire?.(chatId, removedMessages);
+            notify(entry);
+            scheduleTrim();
+            maybeCloseBatch(entry);
+        },
+        [maybeCloseBatch, notify, onExpire, scheduleTrim]
     );
 
     const subscribeMessageBatch = useCallback((chatId, callback) => {
@@ -678,6 +887,7 @@ export function useChatWarming({ chat, chatPK, chatPrivateKey, chatBanned, isAct
         closeBatch,
         ensureMessageBatch,
         getMessageBatch,
+        expireMessageBatch,
         releaseMessageBatch,
         subscribeMessageBatch,
         queueMessagePreload,

@@ -2,10 +2,10 @@ import { collection, query, where, orderBy, onSnapshot, doc, serverTimestamp, up
 import { closeChatPair, getChatId, hasMsgData, openChatPair, openMsg, resealMsgBody, sealMsg } from '../crypto/chat.js';
 import { orderChatKeys } from '../crypto/pair.js';
 import { putAttachment, putFile, putImg, putMp3, putMp4, readMsgFile } from './media.js';
-import { canShowMsg, canStoreMsg, isControlMsg, isExpiredMsg, makeReaction, makeReadReceipt } from './messages.js';
+import { canShowMsg, canStoreMsg, isControlMsg, isExpiredMsg, makeReaction, makeReadReceipt, makeRetentionSystemMsg } from './messages.js';
 import { openChatSettingsForPair, sealChatSettingsForPair } from './settings.js';
 import { getMessageKey, makeCid } from './state.js';
-import { cleanChatRetention, newMessageTtlMs, seenMessageTtlMs, shouldShortenTtl } from './ttl.js';
+import { cleanChatRetention, newMessageTtlMs, seenMessageTtlMs, shouldShortenTtl, withMessageRetention } from './ttl.js';
 
 export const MSG_BATCH_SIZE = 40;
 const MSG_QUERY_MULTIPLIER = 3;
@@ -13,7 +13,6 @@ const MSG_QUERY_EXTRA = 8;
 // Rules must prove chat membership for each TTL write; batching many messages
 // can exceed Firestore's rule access-call limit while costing the same writes.
 const TTL_WRITE_BATCH_SIZE = 1;
-
 // Cache pair roots so mobile doesn't redo static DH + HKDF for every decrypt.
 const pairCache = new Map();
 const MAX_PAIR_CACHE = 256;
@@ -140,14 +139,26 @@ async function syncChatLastMsgBestEffort(chatRef, lastMsg, fields) {
     try {
         await updateDoc(chatRef, { lastMsg: makeUpdatedChatLastMsg(lastMsg, fields) });
         return true;
-    } catch (error) {
-        console.debug?.('could not sync chat preview', error?.message ?? error);
+    } catch {
         return false;
     }
 }
 
 function messageDataExpired(msgData, now = Date.now()) {
     return isExpiredMsg({ ttl: msgData?.ttl ?? null }, now);
+}
+
+function addMessageDocKeys(keys, docSnap) {
+    if (!keys || !docSnap) {
+        return;
+    }
+    if (docSnap.id) {
+        keys.add(docSnap.id);
+    }
+    const cid = docSnap.data?.()?.head?.cid;
+    if (typeof cid === 'string' && cid.trim()) {
+        keys.add(cid.trim());
+    }
 }
 
 function getCursorMillis(cursor) {
@@ -444,20 +455,26 @@ export async function sendMsg(db, senderPubkey, senderPrivkey, receiverChatPK, m
     const sortedKeys = orderChatKeys(senderPubkey, receiverChatPK);
     const chatId = getChatId(senderPubkey, receiverChatPK);
     const pair = await getCachedPair(senderPubkey, senderPrivkey, receiverChatPK);
-    const { head, body } = await sealMsg(pair, message);
+    const retention = cleanChatRetention(options?.retention ?? options?.ttlMode);
+    const { head, body } = await sealMsg(pair, withMessageRetention(message, retention));
     const chatRef = doc(db, 'chats', chatId);
     const msgData = {
         head,
         body,
         ts: serverTimestamp(),
-        ttl: getMessageTtl(options?.retention ?? options?.ttlMode),
+        ttl: getMessageTtl(retention),
     };
 
     const batch = writeBatch(db);
     const msgRef = doc(collection(chatRef, 'messages'));
     batch.set(msgRef, msgData);
     if (updateLastMsg) {
-        batch.set(chatRef, { participants: sortedKeys, lastMsg: makeChatLastMsg(msgData), ts: serverTimestamp() }, { mergeFields: ['participants', 'lastMsg', 'ts'] });
+        const chatUpdate = { lastMsg: makeChatLastMsg(msgData), ts: serverTimestamp() };
+        if (options?.chatExists === true) {
+            batch.update(chatRef, chatUpdate);
+        } else {
+            batch.set(chatRef, { participants: sortedKeys, ...chatUpdate }, { mergeFields: ['participants', 'lastMsg', 'ts'] });
+        }
     }
     await batch.commit();
     return { chatId, msgId: msgRef.id, cid: head.cid };
@@ -591,10 +608,10 @@ export async function makeMsgTemporary(db, chatId, messages, ttlMs = newMessageT
         for (const item of chunk) {
             batch.update(doc(db, 'chats', chatId, 'messages', item.id), { ttl });
         }
-        if (updateLastMsg && index === 0) {
-            batch.update(chatRef, { lastMsg: makeUpdatedChatLastMsg(lastMsg, { ttl }) });
-        }
         await batch.commit();
+    }
+    if (updateLastMsg) {
+        await syncChatLastMsgBestEffort(chatRef, lastMsg, { ttl });
     }
 
     return items.length;
@@ -621,10 +638,10 @@ export async function makeMsgPermanent(db, chatId, messages) {
         for (const item of chunk) {
             batch.update(doc(db, 'chats', chatId, 'messages', item.id), { ttl: null });
         }
-        if (updateLastMsg && index === 0) {
-            batch.update(chatRef, { lastMsg: makeUpdatedChatLastMsg(lastMsg, { ttl: null }) });
-        }
         await batch.commit();
+    }
+    if (updateLastMsg) {
+        await syncChatLastMsgBestEffort(chatRef, lastMsg, { ttl: null });
     }
 
     return items.length;
@@ -637,7 +654,18 @@ export async function setChatRetention(db, chatId, senderPubkey, senderPrivkey, 
     const nextRetention = cleanChatRetention(retention);
     const pair = await getCachedPair(senderPubkey, senderPrivkey, peerChatPK);
     const settings = await sealChatSettingsForPair(pair, { retention: nextRetention });
-    await updateDoc(doc(db, 'chats', chatId), { settings });
+    const systemMessage = {
+        ...makeRetentionSystemMsg(nextRetention),
+        cid: makeCid(),
+        s: senderPubkey,
+    };
+    const chatRef = doc(db, 'chats', chatId);
+    await updateDoc(chatRef, { settings });
+    await sendMsg(db, senderPubkey, senderPrivkey, peerChatPK, systemMessage, {
+        updateLastMsg: false,
+        retention: nextRetention,
+        chatExists: true,
+    });
     return nextRetention;
 }
 
@@ -735,9 +763,7 @@ export async function updateMsg(db, chatId, msgId, senderPrivkey, receiverChatPK
             if (lastMsg?.head?.cid === nextCid) {
                 await updateDoc(chatRef, { lastMsg: makeUpdatedChatLastMsg(lastMsg, { body }) });
             }
-        } catch (error) {
-            console.warn('could not sync chat preview after message update', error);
-        }
+        } catch {}
     }
 }
 
@@ -816,9 +842,9 @@ export function listenToChats(db, userChatPK, userPrivKey, onUpdate, onError) {
             }
             const runId = ++run;
             void handleChats(db, snap.docs, userChatPK, userPrivKey, cache)
-                .then(({ chats, peers }) => {
+                .then(({ chats, peers, deletingChatIds }) => {
                     if (runId === run) {
-                        onUpdate(chats, peers);
+                        onUpdate(chats, peers, { deletingChatIds });
                     }
                 })
                 .catch((error) => {
@@ -858,9 +884,6 @@ async function decryptChatDoc(db, docSnap, userChatPK, userPrivKey) {
     if (!ts) {
         return null;
     }
-    if (lastMsgData && !visibleLastMsg) {
-        void updateDoc(doc(db, 'chats', docSnap.id), { lastMsg: deleteField() }).catch(() => {});
-    }
     const unseen = visibleLastMsg ? isChatUnseenForUser({ lastMsg: visibleLastMsg }, userChatPK) : false;
     return { id: docSnap.id, participants, settings, lastMsg: visibleLastMsg, ts, unseen };
 }
@@ -887,12 +910,23 @@ async function handleChats(db, docs, userChatPK, userPrivKey, cache) {
         }
     }
 
+    const rowDocs = [];
+    const deletingChatIds = [];
+    for (const docSnap of docs || []) {
+        if (docSnap.data()?.deleting === true) {
+            deletingChatIds.push(docSnap.id);
+            cache?.set?.(docSnap.id, { data: docSnap.data(), chat: null });
+            continue;
+        }
+        rowDocs.push(docSnap);
+    }
+
     const chats = await Promise.all(
-        docs.map((docSnap) => chatRowFromDoc(db, docSnap, userChatPK, userPrivKey, cache))
+        rowDocs.map((docSnap) => chatRowFromDoc(db, docSnap, userChatPK, userPrivKey, cache))
     );
     const readyChats = chats.filter(Boolean).sort((a, b) => (b?.ts || 0) - (a?.ts || 0));
     const peers = [...new Set(readyChats.map((chat) => chat?.participants?.find((pk) => pk && pk !== userChatPK)).filter(Boolean))];
-    return { chats: readyChats, peers };
+    return { chats: readyChats, peers, deletingChatIds };
 }
 
 export function listenToMsgs(db, chatId, userChatPK, userPrivKey, peerChatPK, onUpdate, onError) {
@@ -939,6 +973,7 @@ export function listenToLatestMsgs(db, chatId, userChatPK, userPrivKey, peerChat
     const q = query(collection(db, 'chats', chatId, 'messages'), orderBy('ts', 'asc'), limitToLast(queryLimit));
     const decryptedCache = new Map();
     let lastVisibleDocs = [];
+    let lastExpiredKeys = '';
     let run = 0;
 
     return onSnapshot(
@@ -960,8 +995,16 @@ export function listenToLatestMsgs(db, chatId, userChatPK, userPrivKey, peerChat
 
             const runId = ++run;
             const changeTypeById = new Map(snap.docChanges().map((change) => [change.doc.id, change.type]));
+            const expiredKeys = new Set();
+            for (const change of snap.docChanges()) {
+                if (change.type === 'removed' && messageDataExpired(change.doc.data())) {
+                    addMessageDocKeys(expiredKeys, change.doc);
+                }
+            }
             const docs = snap.docs.filter((docSnap) => {
                 if (messageDataExpired(docSnap.data())) {
+                    addMessageDocKeys(expiredKeys, docSnap);
+                    decryptedCache.delete(docSnap.id);
                     return false;
                 }
                 if (!docSnap.metadata.hasPendingWrites) {
@@ -980,12 +1023,14 @@ export function listenToLatestMsgs(db, chatId, userChatPK, userPrivKey, peerChat
             const visibleDocs = entries.map((entry) => entry.doc);
             const visibleStart = docIndexById(docs, visibleDocs[0]?.id);
             const carry = visibleStart > 0 ? docs[visibleStart - 1] : null;
-            if (messageDocsEqual(lastVisibleDocs, visibleDocs)) {
+            const expiredKeysKey = [...expiredKeys].sort().join('|');
+            if (messageDocsEqual(lastVisibleDocs, visibleDocs) && expiredKeysKey === lastExpiredKeys) {
                 return;
             }
             pruneMessageCache(decryptedCache, visibleDocs);
             const messages = entries.map((entry) => entry.message);
             lastVisibleDocs = visibleDocs.map((docSnap) => ({ id: docSnap.id, data: docSnap.data() }));
+            lastExpiredKeys = expiredKeysKey;
             onUpdate({
                 messages,
                 cursor: visibleDocs[0] ?? docs[0] ?? null,
@@ -994,6 +1039,7 @@ export function listenToLatestMsgs(db, chatId, userChatPK, userPrivKey, peerChat
                 hasMore: visibleStart > 1 || snap.docs.length >= queryLimit,
                 exists: true,
                 fromCache: !!snap.metadata?.fromCache,
+                expiredKeys: [...expiredKeys],
             });
         },
         onError
@@ -1013,7 +1059,7 @@ export function listenToMsgDeletes(db, chatId, onUpdate, onError) {
 
             const removed = snap
                 .docChanges()
-                .filter((change) => change.type === 'removed' && !change.doc.metadata.hasPendingWrites)
+                .filter((change) => change.type === 'removed' && !change.doc.metadata.hasPendingWrites && !messageDataExpired(change.doc.data()))
                 .map((change) => change.doc.id)
                 .filter(Boolean);
 

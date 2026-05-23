@@ -2,9 +2,9 @@ import { BOT_MODE, BOT_UNDERFUNDED_TEXT } from '@glyphteck/shared/bot/events';
 import { bootBotAccount, closeBotAccount } from '@glyphteck/shared/bot/account';
 import { clearBotChatPairCache, decryptBotChatSettings, decryptBotMsg, readBotMsgAttachment, sendBotMsg, updateBotMsg, uploadBotAttachmentMsg } from '@glyphteck/shared/bot/chat';
 import { getBotBalance, mirrorBotTransfer } from '@glyphteck/shared/bot/wallet';
-import { isControlMsg, makeReadReceipt, makeReq, makeTxt, setReqTx } from '@glyphteck/shared/chat/messages';
+import { isControlMsg, isSystemMsg, makeReadReceipt, makeReq, makeTxt, setReqTx } from '@glyphteck/shared/chat/messages';
 import { makeCid } from '@glyphteck/shared/chat/state';
-import { CHAT_RETENTION_24H, CHAT_RETENTION_SEEN, onSeenMessageTtlMs, seenMessageTtlMs, shouldShortenTtl } from '@glyphteck/shared/chat/ttl';
+import { CHAT_RETENTION_24H, CHAT_RETENTION_SEEN, getMessageRetention, onSeenMessageTtlMs, seenMessageTtlMs, shouldShortenTtl } from '@glyphteck/shared/chat/ttl';
 import { resolveNetwork } from '@glyphteck/shared/network';
 import { resolveWalletPK } from '@glyphteck/shared/walletkeys';
 import { SparkWallet, SparkWalletEvent } from '@buildonspark/spark-sdk';
@@ -101,6 +101,7 @@ function cleanPayload(message) {
     delete payload.from;
     delete payload.s;
     delete payload.cid;
+    delete payload.retention;
     return payload;
 }
 
@@ -808,10 +809,11 @@ export class BotRuntime {
                 },
                 msgData
             );
-            if (viewed) {
+            if (viewed?.seen) {
+                const seenRetention = viewed.retention;
                 receiptTarget = msgData?.head?.cid || msgSnap.id;
-                if (retention === CHAT_RETENTION_24H || retention === CHAT_RETENTION_SEEN) {
-                    const seenTtlMs = retention === CHAT_RETENTION_SEEN ? onSeenMessageTtlMs() : seenMessageTtlMs();
+                if (seenRetention === CHAT_RETENTION_24H || seenRetention === CHAT_RETENTION_SEEN) {
+                    const seenTtlMs = seenRetention === CHAT_RETENTION_SEEN ? onSeenMessageTtlMs() : seenMessageTtlMs();
                     if (shouldShortenTtl(msgData?.ttl, seenTtlMs)) {
                         const ttl = Timestamp.fromMillis(seenTtlMs);
                         await msgSnap.ref.update({ ttl }).catch(() => {});
@@ -838,16 +840,18 @@ export class BotRuntime {
     async handleChatMessage(session, context, msgData) {
         const msg = await decryptBotMsg(msgData, session.chatPK, session.chatPrivKey, context.peerChatPK);
         if (!msg) {
-            return false;
+            return null;
         }
 
-        if (isControlMsg(msg)) {
-            return false;
+        if (isControlMsg(msg) || isSystemMsg(msg)) {
+            return null;
         }
+
+        const seen = { seen: true, retention: getMessageRetention(msg) };
 
         if (msg.t === 'req') {
             await this.handleRequest(session, context, msg);
-            return true;
+            return seen;
         }
 
         if (hasAttachment(msg)) {
@@ -858,7 +862,7 @@ export class BotRuntime {
                 data: body,
                 meta: attachmentMeta(msg),
             }, { msgId: botReplyId(context, 'file'), retention: context.retention });
-            return true;
+            return seen;
         }
 
         await this.sendPayload(session, context.peerChatPK, cleanPayload(msg), {
@@ -866,7 +870,7 @@ export class BotRuntime {
             msgId: botReplyId(context, 'reply'),
             retention: context.retention,
         });
-        return true;
+        return seen;
     }
 
     async handleRequest(session, context, msg) {

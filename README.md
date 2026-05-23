@@ -85,6 +85,7 @@ Chat retention and media lifecycle:
 - Message docs carry `{ head, body, ts, ttl }`. `ttl` is the Firestore TTL field, `ttl: null` means saved/permanent, and new messages start with a 21-day TTL.
 - Chat docs carry participants, independent recency `ts`, encrypted latest visible preview `lastMsg`, and encrypted `settings`. `lastMsg` contains only `{ head, body, ttl }`; chat-list ordering uses `chat.ts`, so deleting or failing to decrypt the preview does not reorder chats.
 - Chat retention settings are encrypted `cfg` payloads in `chat.settings`. Missing settings mean `24h after seen`; the other supported setting is `on seen`. The backend only validates encrypted envelope shape.
+- New message payloads carry the encrypted retention mode active at send time, so read-time TTL shortening follows each message instead of the chat's current setting.
 - The recipient client shortens visible peer message TTL after read handling: `24h after seen` sets `ttl` to now plus 24 hours, while `on seen` sets `ttl` to now when the viewer leaves the chat. Automatic shortening skips saved messages.
 - Read receipts and reactions are encrypted control messages in the same stream. They do not update chat previews and are filtered out of visible chat UI.
 - Message lists resolve decryptability and attachment availability before rendering. Messages that cannot be decrypted, parsed, fetched, or opened are dropped from the visible list and their cached media is removed. Replies to missing messages render the local unavailable preview: `this message is no longer available`.
@@ -233,6 +234,8 @@ The repo root is a Bun workspace for app packages under `apps/*` and `apps/*/*`,
 
 `functions/` is separate and uses npm, not the root workspace.
 
+Package install, upgrade, lockfile, Expo SDK, and native rebuild rules live in [guidelines/packages.md](guidelines/packages.md).
+
 ### Install
 
 ```bash
@@ -316,11 +319,7 @@ Use `bun make ios reset` after signing, associated-domain, or app-identity chang
 
 `bun make ios store` starts a cloud EAS App Store production build. After it finishes, `bun veyl ios submit` submits the latest EAS iOS build to App Store Connect using the prod submit profile.
 
-If native iOS dependencies change, refresh pods:
-
-```bash
-cd apps/veyl/ios/ios && pod install
-```
+If native iOS dependencies change, rebuild with the normal `bun make ios` path when device validation is needed. A manual `pod install` inside `apps/veyl/ios/ios` can refresh pods for an already-generated native project, but it is not a replacement for the repo's Expo prebuild/build path after package or config changes.
 
 ## Configuration
 

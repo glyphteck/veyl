@@ -114,7 +114,6 @@ export default function NewChat({ close }) {
             await sendAttachment(selectedPeer.chatPK, await prepareChatFile(file));
             toast(`sent attachment to ${formatUserDisplay(selectedPeer, false)}`, { icon: <CircleCheck /> });
         } catch (error) {
-            console.error('Failed to send attachment:', error);
             toast.error(error?.message || 'failed to send attachment');
         }
     };
@@ -137,7 +136,6 @@ export default function NewChat({ close }) {
                 icon: <CircleCheck />,
             });
         } catch (error) {
-            console.error('Failed to send message:', error);
             toast('Failed to send message.');
         }
     };

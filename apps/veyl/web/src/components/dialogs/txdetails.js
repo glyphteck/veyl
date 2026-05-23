@@ -33,14 +33,14 @@ export default function TxDetails({ data, close }) {
         if (tx.incoming) {
             return { ...peerProfile, walletPK: tx.peerPK };
         }
-        return { username: user?.username, avatar: user?.avatar, walletPK: null, active: user?.active };
+        return { uid: user?.uid, username: user?.username, avatar: user?.avatar, walletPK: null, active: user?.active };
     };
     const getReceiverInfo = () => {
         if (tx.funding) {
-            return { username: user?.username, avatar: user?.avatar, walletPK: null, active: user?.active };
+            return { uid: user?.uid, username: user?.username, avatar: user?.avatar, walletPK: null, active: user?.active };
         }
         if (tx.incoming) {
-            return { username: user?.username, avatar: user?.avatar, walletPK: null, active: user?.active };
+            return { uid: user?.uid, username: user?.username, avatar: user?.avatar, walletPK: null, active: user?.active };
         }
         return { ...peerProfile, walletPK: tx.peerPK };
     };
@@ -49,7 +49,7 @@ export default function TxDetails({ data, close }) {
     const receiverInfo = getReceiverInfo();
     const handleUserClick = (userInfo) => {
         if (userInfo.username !== 'External') {
-            openDialog('userdetails', { user: userInfo });
+            openDialog(userInfo?.uid && userInfo.uid === user?.uid ? 'settings' : 'userdetails', userInfo?.uid && userInfo.uid === user?.uid ? null : { user: userInfo });
         }
     };
 

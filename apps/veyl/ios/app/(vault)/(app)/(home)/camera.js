@@ -1,22 +1,23 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Animated as RNAnimated, DeviceEventEmitter, Linking, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import * as MediaLibrary from 'expo-media-library';
-import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import { Image } from 'expo-image';
-import { useIsFocused } from '@react-navigation/native';
+import { useIsFocused } from 'expo-router/react-navigation';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Camera as VCamera, useCameraDevice, useCameraPermission, usePhotoOutput } from 'react-native-vision-camera';
+import { VideoView, useVideoPlayer } from 'expo-video';
+import { Camera as VCamera, CommonResolutions, useCameraDevice, useCameraPermission, useOrientation, usePhotoOutput, useVideoOutput } from 'react-native-vision-camera';
 import { useBarcodeScannerOutput } from 'react-native-vision-camera-barcode-scanner';
 import { scheduleOnRN } from 'react-native-worklets';
 import Avatar from '@/components/avatar';
 import GlassHeader from '@/components/glass/glassheader';
 import GlassView from '@/components/glass/glassview';
 import GlassIcon from '@/components/glass/glassicon';
+import { MENU_LONG_PRESS_MS } from '@/components/menu';
 import Reanimated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
-import { ArrowDownToLine, ArrowUpRight, MessageCircle, X } from 'lucide-react-native';
+import { ArrowDownToLine, ArrowUpRight, Lock, MessageCircle, X } from 'lucide-react-native';
 import { qr, readQr } from '@glyphteck/shared/qrutils';
 import { isAddressOnNetwork } from '@glyphteck/shared/network';
 import { getChatId } from '@glyphteck/shared/crypto/chat';
@@ -28,42 +29,257 @@ import { useWallet } from '@/providers/walletprovider';
 import { usePop } from '@/lib/pop';
 import { useTap } from '@/lib/tap';
 import { CAMERA_WARM_EVENT, CAMERA_WARM_MS } from '@/lib/camerawarm';
+import { alpha } from '@/lib/colors';
 
-const BACK_LENS = { physicalDevices: ['ultra-wide-angle', 'wide-angle', 'telephoto'] };
-const FRONT_LENS = { physicalDevices: ['true-depth', 'wide-angle'] };
+const BACK_REGULAR_LENS = { physicalDevices: ['wide-angle'] };
+const BACK_ZOOM_LENS = { physicalDevices: ['ultra-wide-angle', 'wide-angle', 'telephoto'] };
 const QR_BARCODE_FORMATS = ['qr-code'];
 const NORMAL_ZOOM = 1;
 const FOCUS_HOLD = 350;
 const FOCUS_DRIFT = 18;
+const DOUBLE_TAP_MAX_DELAY = 260;
+const DOUBLE_TAP_MAX_DISTANCE = 24;
+const DOUBLE_TAP_MAX_DURATION = 180;
 const SHUTTER_SIZE = 82;
-const SHUTTER_SCALE = 0.9;
-const SHUTTER_IN = 'selection';
-const SHUTTER_OUT = ['soft', { kind: 'selection', delay: 22 }];
+const SHUTTER_PRESS_SCALE = 0.9;
+const SHUTTER_RECORDING_SCALE = 0.76;
+const LOCK_CLAIM_DISTANCE = 10;
+const LOCK_SLIDE_DISTANCE = 58;
+const LOCK_AXIS_RATIO = 1.2;
+const LOCK_VERTICAL_FAIL = 44;
+const SHUTTER_LOCK_RETENTION = { top: 28, bottom: 28, left: LOCK_SLIDE_DISTANCE + 28, right: LOCK_SLIDE_DISTANCE + 28 };
 const PREVIEW_FADE = 250;
 const PREVIEW_HOLD = 2000;
 const PREVIEW_CHECK = 250;
 const SCAN_COOLDOWN = 700;
 const ACTION_GAP = 48;
 const EXIT_HOLD = 500;
-const PHOTO_SAVE_COMPRESS = 0.92;
+const VIDEO_MIME = 'video/mp4';
+const CAMERA_PHOTO_RESOLUTION = CommonResolutions.FHD_4_3;
+const CAMERA_VIDEO_RESOLUTION = CommonResolutions.HD_16_9;
+const CAMERA_WARMER_OUTPUTS = [];
+const CAMERA_WARMER_STYLE = { position: 'absolute', left: -4, top: -4, width: 1, height: 1 };
+const INITIAL_ROUTE_STATE = {
+    taking: false,
+    holding: false,
+    warming: false,
+    recording: false,
+    recordingLocked: false,
+    stagedMedia: null,
+};
 
-function getNormalZoom(device) {
-    const minZoom = Number.isFinite(device?.minZoom) ? device.minZoom : NORMAL_ZOOM;
-    const maxZoom = Number.isFinite(device?.maxZoom) ? device.maxZoom : NORMAL_ZOOM;
-    return Math.min(maxZoom, Math.max(minZoom, NORMAL_ZOOM));
+function getPhotoDisplaySize(photo) {
+    const width = Math.max(1, Math.round(Number(photo?.width) || 0));
+    const height = Math.max(1, Math.round(Number(photo?.height) || 0));
+    return photo?.orientation === 'left' || photo?.orientation === 'right'
+        ? { width: height, height: width }
+        : { width, height };
 }
 
-async function stageCapturedPhoto(uri) {
-    const normalized = await ImageManipulator.manipulate(uri).renderAsync();
-    const saved = await normalized.saveAsync({
-        compress: PHOTO_SAVE_COMPRESS,
-        format: SaveFormat.JPEG,
-    });
+function clampZoom(value, min, max) {
+    'worklet';
+    return Math.min(max, Math.max(min, value));
+}
+
+function getRegularZoom(device) {
+    const min = Number.isFinite(device?.minZoom) ? device.minZoom : NORMAL_ZOOM;
+    const max = Number.isFinite(device?.maxZoom) ? device.maxZoom : NORMAL_ZOOM;
+    const switchZoom = device?.zoomLensSwitchFactors?.find?.((value) => Number.isFinite(value) && value > min && value <= max);
+    return clampZoom(switchZoom || NORMAL_ZOOM, min, max);
+}
+
+function getCaptureRotate(orientation) {
+    if (orientation === 'left') return '90deg';
+    if (orientation === 'right') return '-90deg';
+    if (orientation === 'down') return '180deg';
+    return '0deg';
+}
+
+function getGestureTouch(event) {
+    'worklet';
+    const touch = event?.allTouches?.[0] || event?.changedTouches?.[0];
     return {
-        uri: saved.uri,
-        width: saved.width,
-        height: saved.height,
+        x: touch?.x ?? 0,
+        y: touch?.y ?? 0,
     };
+}
+
+function getNativeTouch(event) {
+    const touch = event?.nativeEvent?.changedTouches?.[0] || event?.nativeEvent?.touches?.[0] || event?.nativeEvent;
+    return {
+        valid: !!touch,
+        x: Number(touch?.pageX ?? touch?.locationX ?? 0),
+        y: Number(touch?.pageY ?? touch?.locationY ?? 0),
+    };
+}
+
+function isNativeLockSlide(event, start) {
+    const point = getNativeTouch(event);
+    if (!point.valid) return false;
+    const dx = point.x - start.x;
+    const dy = point.y - start.y;
+    const ax = Math.abs(dx);
+    const ay = Math.abs(dy);
+    return ax >= LOCK_SLIDE_DISTANCE && ax > ay * LOCK_AXIS_RATIO;
+}
+
+function stageCapturedPhoto(photo, uri, orientation) {
+    const size = getPhotoDisplaySize(photo);
+    return {
+        uri,
+        width: size.width,
+        height: size.height,
+        rotate: getCaptureRotate(orientation || photo?.orientation),
+    };
+}
+
+function normalizeFileUri(path) {
+    const value = String(path || '').trim();
+    if (!value) return '';
+    return /^[a-z][a-z0-9+.-]*:\/\//i.test(value) ? value : `file://${value}`;
+}
+
+function stageCapturedVideo(path, orientation) {
+    const uri = normalizeFileUri(path);
+    if (!uri) {
+        throw new Error('video unavailable');
+    }
+    return {
+        kind: 'video',
+        uri,
+        mimeType: VIDEO_MIME,
+        name: `veyl-${Date.now()}.mp4`,
+        rotate: getCaptureRotate(orientation),
+    };
+}
+
+function StagedMediaFrame({ rotate, children }) {
+    const { width: screenW, height: screenH } = useWindowDimensions();
+    const sideways = rotate === '90deg' || rotate === '-90deg';
+
+    return (
+        <View
+            pointerEvents="none"
+            style={{
+                position: 'absolute',
+                left: sideways ? (screenW - screenH) / 2 : 0,
+                top: sideways ? (screenH - screenW) / 2 : 0,
+                width: sideways ? screenH : screenW,
+                height: sideways ? screenW : screenH,
+                transform: [{ rotate }],
+            }}
+        >
+            {children}
+        </View>
+    );
+}
+
+function StagedVideoPreview({ uri }) {
+    const player = useVideoPlayer(uri ? { uri } : null, (nextPlayer) => {
+        nextPlayer.loop = true;
+        nextPlayer.muted = true;
+        nextPlayer.audioMixingMode = 'mixWithOthers';
+    });
+
+    useEffect(() => {
+        if (!uri) return undefined;
+        try {
+            player.play();
+        } catch (error) {
+            console.warn('video preview failed', error);
+        }
+        return undefined;
+    }, [player, uri]);
+
+    return <VideoView player={player} pointerEvents="none" nativeControls={false} contentFit="contain" fullscreenOptions={{ enable: false }} allowsVideoFrameAnalysis={false} style={{ width: '100%', height: '100%' }} />;
+}
+
+function StagedPreview({ media }) {
+    return (
+        <StagedMediaFrame rotate={media?.rotate || '0deg'}>
+            {media?.kind === 'video' ? <StagedVideoPreview uri={media.uri} /> : <Image source={{ uri: media?.uri }} style={{ width: '100%', height: '100%' }} contentFit="contain" />}
+        </StagedMediaFrame>
+    );
+}
+
+function ignoreCameraWarmError() {}
+
+function CameraWarmer({ device }) {
+    if (!device) return null;
+    return (
+        <View pointerEvents="none" style={CAMERA_WARMER_STYLE}>
+            <VCamera style={CAMERA_WARMER_STYLE} device={device} isActive={false} outputs={CAMERA_WARMER_OUTPUTS} onError={ignoreCameraWarmError} resizeMode="cover" />
+        </View>
+    );
+}
+
+function CameraSurface({ active, cameraRef, canUseZoomDevice, device, facing, onCameraStarted, onFlip, onFocus, onUseZoomDevice, outputs }) {
+    const minZoom = Number.isFinite(device?.minZoom) ? device.minZoom : NORMAL_ZOOM;
+    const maxZoom = Number.isFinite(device?.maxZoom) ? device.maxZoom : NORMAL_ZOOM;
+    const regularZoom = getRegularZoom(device);
+    const cameraZoom = useSharedValue(regularZoom);
+    const pinchStartZoom = useSharedValue(regularZoom);
+    const zoomDeviceRequested = useSharedValue(false);
+
+    useEffect(() => {
+        cameraZoom.value = regularZoom;
+        pinchStartZoom.value = regularZoom;
+        zoomDeviceRequested.value = false;
+    }, [cameraZoom, device?.id, pinchStartZoom, regularZoom, zoomDeviceRequested]);
+
+    const doubleTapGesture = Gesture.Tap()
+        .numberOfTaps(2)
+        .maxDelay(DOUBLE_TAP_MAX_DELAY)
+        .maxDistance(DOUBLE_TAP_MAX_DISTANCE)
+        .maxDuration(DOUBLE_TAP_MAX_DURATION)
+        .onEnd(() => {
+            scheduleOnRN(onFlip);
+        });
+
+    const pinchGesture = useMemo(
+        () =>
+            Gesture.Pinch()
+                .onBegin(() => {
+                    pinchStartZoom.value = cameraZoom.value;
+                })
+                .onUpdate((event) => {
+                    if (canUseZoomDevice && !zoomDeviceRequested.value && (event.scale < 0.98 || event.scale > 1.08)) {
+                        zoomDeviceRequested.value = true;
+                        scheduleOnRN(onUseZoomDevice);
+                    }
+                    const nextZoom = clampZoom(pinchStartZoom.value * event.scale, minZoom, maxZoom);
+                    cameraZoom.value = nextZoom;
+                }),
+        [cameraZoom, canUseZoomDevice, maxZoom, minZoom, onUseZoomDevice, pinchStartZoom, zoomDeviceRequested]
+    );
+
+    const focusGesture = Gesture.LongPress()
+        .minDuration(FOCUS_HOLD)
+        .maxDistance(FOCUS_DRIFT)
+        .numberOfPointers(1)
+        .onStart((e) => {
+            scheduleOnRN(onFocus, e.x, e.y);
+        });
+
+    const touchGesture = Gesture.Race(pinchGesture, Gesture.Exclusive(doubleTapGesture, focusGesture));
+
+    return (
+        <GestureDetector gesture={touchGesture}>
+            <View style={StyleSheet.absoluteFill}>
+                <VCamera
+                    ref={cameraRef}
+                    style={StyleSheet.absoluteFill}
+                    device={device}
+                    isActive={active}
+                    outputs={outputs}
+                    mirrorMode={facing === 'front' ? 'on' : 'off'}
+                    onStarted={onCameraStarted}
+                    resizeMode="cover"
+                    zoom={cameraZoom}
+                />
+            </View>
+        </GestureDetector>
+    );
 }
 
 export default function CameraTab() {
@@ -73,18 +289,35 @@ export default function CameraTab() {
     const { network } = useWallet();
     const { selectChat } = useChat();
     const insets = useSafeAreaInsets();
-    const { width: screenW } = useWindowDimensions();
     const isFocused = useIsFocused();
     const { hasPermission, requestPermission } = useCameraPermission();
+    const captureOrientation = useOrientation('device');
     const [facing, setFacing] = useState('back');
-    const backDevice = useCameraDevice('back', BACK_LENS);
-    const frontDevice = useCameraDevice('front', FRONT_LENS);
+    const [backLensMode, setBackLensMode] = useState('regular');
+    const backRegularDevice = useCameraDevice('back', BACK_REGULAR_LENS);
+    const backZoomDevice = useCameraDevice('back', BACK_ZOOM_LENS);
+    const frontDevice = useCameraDevice('front');
+    const backDevice = backLensMode === 'zoom' ? backZoomDevice || backRegularDevice : backRegularDevice || backZoomDevice;
     const device = facing === 'back' ? backDevice : frontDevice;
-    const photoOutput = usePhotoOutput({ qualityPrioritization: 'speed' });
+    const canUseBackZoomDevice = facing === 'back' && backLensMode !== 'zoom' && !!backZoomDevice && backZoomDevice.id !== backDevice?.id;
+    const photoOutput = usePhotoOutput({ targetResolution: CAMERA_PHOTO_RESOLUTION, qualityPrioritization: 'speed' });
+    const videoOutput = useVideoOutput({ targetResolution: CAMERA_VIDEO_RESOLUTION, fileType: 'mp4', enablePersistentRecorder: true });
     const cameraRef = useRef(null);
     const exitTimerRef = useRef(null);
     const warmTimerRef = useRef(null);
     const routeLockRef = useRef(false);
+    const recorderRef = useRef(null);
+    const recordingRef = useRef(false);
+    const recordingLockedRef = useRef(false);
+    const lockPendingRef = useRef(false);
+    const lockReleasePendingRef = useRef(false);
+    const shutterHeldRef = useRef(false);
+    const shutterStartRef = useRef({ x: 0, y: 0 });
+    const orientationRef = useRef('up');
+    const recordingOrientationRef = useRef('up');
+    const recordingTokenRef = useRef(0);
+    const stopAfterStartRef = useRef(false);
+    const mountedRef = useRef(true);
     const previewRef = useRef({
         key: '',
         timer: null,
@@ -98,23 +331,63 @@ export default function CameraTab() {
     });
     const [previewPeer, setPreviewPeer] = useState(null);
     const [previewVisible, setPreviewVisible] = useState(false);
-    const [taking, setTaking] = useState(false);
-    const [holding, setHolding] = useState(false);
-    const [warming, setWarming] = useState(false);
-    const [stagedPhoto, setStagedPhoto] = useState(null);
+    const [cameraReady, setCameraReady] = useState(false);
+    const [routeState, setRouteState] = useState(INITIAL_ROUTE_STATE);
+    const { taking, holding, recording, recordingLocked, warming, stagedMedia } = routeState;
     const wasOpenRef = useRef(false);
     const previewOpacity = useSharedValue(0);
+    const lockGestureEnabled = useSharedValue(false);
+    const lockGestureActive = useSharedValue(false);
+    const lockStartX = useSharedValue(0);
+    const lockStartY = useSharedValue(0);
+    const shutterScale = useRef(new RNAnimated.Value(1)).current;
     const settingsFeedback = useTap();
-    const shutterFeedback = useTap({ disabled: taking, scale: SHUTTER_SCALE, hapticIn: SHUTTER_IN, hapticOut: SHUTTER_OUT });
     const pageOpen = isFocused;
+
+    const updateRouteState = useCallback((patch) => {
+        if (!mountedRef.current) return;
+        setRouteState((current) => {
+            const nextPatch = typeof patch === 'function' ? patch(current) : patch;
+            if (!nextPatch || typeof nextPatch !== 'object') return current;
+            let changed = false;
+            for (const key of Object.keys(nextPatch)) {
+                if (current[key] !== nextPatch[key]) {
+                    changed = true;
+                    break;
+                }
+            }
+            if (!changed) return current;
+            return { ...current, ...nextPatch };
+        });
+    }, []);
+
+    const animateShutter = useCallback(
+        (toValue) => {
+            RNAnimated.spring(shutterScale, {
+                toValue,
+                useNativeDriver: true,
+                speed: 22,
+                bounciness: 8,
+            }).start();
+        },
+        [shutterScale]
+    );
+
+    const setShutterHeldValue = useCallback((nextHeld) => {
+        shutterHeldRef.current = nextHeld;
+    }, []);
+
+    useEffect(() => {
+        if (captureOrientation) orientationRef.current = captureOrientation;
+    }, [captureOrientation]);
 
     const clearWarm = useCallback(() => {
         if (warmTimerRef.current) {
             clearTimeout(warmTimerRef.current);
             warmTimerRef.current = null;
         }
-        setWarming(false);
-    }, []);
+        updateRouteState({ warming: false });
+    }, [updateRouteState]);
 
     const startWarm = useCallback(
         (ms = CAMERA_WARM_MS) => {
@@ -123,13 +396,13 @@ export default function CameraTab() {
             const hold = Number.isFinite(duration) && duration > 0 ? duration : CAMERA_WARM_MS;
 
             if (warmTimerRef.current) clearTimeout(warmTimerRef.current);
-            setWarming(true);
+            updateRouteState({ warming: true });
             warmTimerRef.current = setTimeout(() => {
                 warmTimerRef.current = null;
-                setWarming(false);
+                updateRouteState({ warming: false });
             }, hold);
         },
-        [pageOpen]
+        [pageOpen, updateRouteState]
     );
 
     useEffect(() => {
@@ -145,9 +418,11 @@ export default function CameraTab() {
 
     useEffect(
         () => () => {
+            mountedRef.current = false;
             if (previewRef.current.timer) clearTimeout(previewRef.current.timer);
             if (exitTimerRef.current) clearTimeout(exitTimerRef.current);
             if (warmTimerRef.current) clearTimeout(warmTimerRef.current);
+            recorderRef.current?.stopRecording?.().catch?.(() => {});
         },
         []
     );
@@ -172,6 +447,7 @@ export default function CameraTab() {
         scanRef.current.time = 0;
         scanRef.current.busy = false;
         setPreviewVisible(false);
+        setCameraReady(false);
     }, [clearWarm, pageOpen]);
 
     useEffect(() => {
@@ -181,42 +457,35 @@ export default function CameraTab() {
                 clearTimeout(exitTimerRef.current);
                 exitTimerRef.current = null;
             }
-            setHolding(false);
+            updateRouteState({ holding: false });
             return;
         }
         if (!wasOpenRef.current) return;
 
         wasOpenRef.current = false;
-        setHolding(true);
+        setBackLensMode('regular');
+        updateRouteState({ holding: true });
         if (exitTimerRef.current) clearTimeout(exitTimerRef.current);
         exitTimerRef.current = setTimeout(() => {
             exitTimerRef.current = null;
-            setHolding(false);
+            updateRouteState({ holding: false });
         }, EXIT_HOLD);
-    }, [pageOpen]);
+    }, [pageOpen, updateRouteState]);
 
     const previewStyle = useAnimatedStyle(() => ({ opacity: previewOpacity.value }));
 
     const flipCamera = useCallback(() => {
-        setFacing((f) => (f === 'back' ? 'front' : 'back'));
+        if (taking || stagedMedia) return;
+        if (recordingRef.current && (!recorderRef.current || stopAfterStartRef.current)) return;
+        setBackLensMode('regular');
+        setFacing((current) => (current === 'back' ? 'front' : 'back'));
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    }, []);
+    }, [stagedMedia, taking]);
 
-    const resetZoom = useCallback(() => {
-        if (facing !== 'back') return;
-        const nextZoom = getNormalZoom(device);
-        requestAnimationFrame(() => {
-            cameraRef.current?.startZoomAnimation?.(nextZoom, 16)?.catch?.((error) => {
-                console.warn('zoom reset failed', error);
-            });
-        });
-    }, [device, facing]);
-
-    const doubleTapGesture = Gesture.Tap()
-        .numberOfTaps(2)
-        .onEnd(() => {
-            scheduleOnRN(flipCamera);
-        });
+    const useBackZoomDevice = useCallback(() => {
+        if (facing !== 'back' || !backZoomDevice) return;
+        setBackLensMode('zoom');
+    }, [backZoomDevice, facing]);
 
     const handleFocus = useCallback(
         async (x, y) => {
@@ -232,69 +501,6 @@ export default function CameraTab() {
         [device?.supportsFocusMetering]
     );
 
-    const focusGesture = Gesture.LongPress()
-        .minDuration(FOCUS_HOLD)
-        .maxDistance(FOCUS_DRIFT)
-        .onStart((e) => {
-            scheduleOnRN(handleFocus, e.x, e.y);
-        });
-
-    const touchGesture = Gesture.Exclusive(doubleTapGesture, focusGesture);
-
-    const takePicture = useCallback(async () => {
-        if (taking) return;
-
-        let photo;
-        try {
-            setTaking(true);
-            photo = await photoOutput.capturePhoto({ enableShutterSound: true }, {});
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-            const path = await photo.saveToTemporaryFileAsync();
-            const uri = path.startsWith('file://') ? path : `file://${path}`;
-            setStagedPhoto(await stageCapturedPhoto(uri));
-        } catch (err) {
-            console.warn('take picture failed', err);
-            Alert.alert('Capture failed', 'Could not take the photo.');
-        } finally {
-            photo?.dispose();
-            setTaking(false);
-        }
-    }, [photoOutput, taking]);
-
-    useEffect(() => {
-        const sub = DeviceEventEmitter.addListener('photosent', () => setStagedPhoto(null));
-        return () => sub.remove();
-    }, []);
-
-    const discardStaged = useCallback(() => {
-        setStagedPhoto(null);
-    }, []);
-
-    const handleSendStaged = useCallback(() => {
-        if (!stagedPhoto) return;
-        router.navigate({
-            pathname: '/sendphoto',
-            params: { uri: stagedPhoto.uri, w: stagedPhoto.width || '', h: stagedPhoto.height || '' },
-        });
-    }, [stagedPhoto]);
-
-    const handleSaveStaged = useCallback(async () => {
-        if (!stagedPhoto) return;
-        try {
-            const existing = await MediaLibrary.getPermissionsAsync(true);
-            const perm = existing.granted ? existing : await MediaLibrary.requestPermissionsAsync(true);
-            if (!perm.granted) {
-                Alert.alert('Permission needed', 'Please allow photo access to save pictures.');
-                return;
-            }
-            await MediaLibrary.saveToLibraryAsync(stagedPhoto.uri);
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-        } catch (err) {
-            console.warn('save failed', err);
-            Alert.alert('Save failed', 'Could not save the photo.');
-        }
-    }, [stagedPhoto]);
-
     const clearPreviewTimer = useCallback(() => {
         if (!previewRef.current.timer) return;
         clearTimeout(previewRef.current.timer);
@@ -307,6 +513,188 @@ export default function CameraTab() {
         previewRef.current.seenAt = 0;
         setPreviewVisible(false);
     }, [clearPreviewTimer]);
+
+    const takePicture = useCallback(async () => {
+        if (taking || recordingRef.current) return;
+
+        let photo;
+        try {
+            updateRouteState({ taking: true });
+            photo = await photoOutput.capturePhoto({ enableShutterSound: true }, {});
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+            const path = await photo.saveToTemporaryFileAsync();
+            const uri = path.startsWith('file://') ? path : `file://${path}`;
+            updateRouteState({ stagedMedia: { kind: 'photo', ...stageCapturedPhoto(photo, uri, orientationRef.current) } });
+        } catch (err) {
+            console.warn('take picture failed', err);
+            Alert.alert('Capture failed', 'Could not take the photo.');
+        } finally {
+            photo?.dispose();
+            updateRouteState({ taking: false });
+        }
+    }, [photoOutput, taking, updateRouteState]);
+
+    const clearRecording = useCallback((token = recordingTokenRef.current) => {
+        if (token !== recordingTokenRef.current) return;
+        recorderRef.current = null;
+        recordingRef.current = false;
+        recordingLockedRef.current = false;
+        lockPendingRef.current = false;
+        lockReleasePendingRef.current = false;
+        setShutterHeldValue(false);
+        lockGestureEnabled.value = false;
+        stopAfterStartRef.current = false;
+        updateRouteState({ recording: false, recordingLocked: false });
+        animateShutter(1);
+    }, [animateShutter, lockGestureEnabled, setShutterHeldValue, updateRouteState]);
+
+    const stopVideoRecording = useCallback(() => {
+        setShutterHeldValue(false);
+        recordingLockedRef.current = false;
+        lockPendingRef.current = false;
+        lockReleasePendingRef.current = false;
+        lockGestureEnabled.value = false;
+        updateRouteState({ recordingLocked: false });
+        if (!recordingRef.current && !recorderRef.current) {
+            stopAfterStartRef.current = false;
+            animateShutter(1);
+            return;
+        }
+        stopAfterStartRef.current = true;
+        updateRouteState({ recording: false });
+        animateShutter(1);
+        const recorder = recorderRef.current;
+        if (!recorder?.stopRecording) return;
+        recorder.stopRecording().catch((error) => {
+            console.warn('stop video recording failed', error);
+            clearRecording();
+        });
+    }, [animateShutter, clearRecording, lockGestureEnabled, setShutterHeldValue, updateRouteState]);
+
+    const lockVideoRecording = useCallback((ignoreNextRelease = true) => {
+        if (!recordingRef.current || recordingLockedRef.current) {
+            lockPendingRef.current = false;
+            return;
+        }
+        recordingLockedRef.current = true;
+        lockPendingRef.current = false;
+        lockReleasePendingRef.current = ignoreNextRelease;
+        setShutterHeldValue(false);
+        lockGestureEnabled.value = false;
+        updateRouteState({ recordingLocked: true });
+        animateShutter(SHUTTER_PRESS_SCALE);
+        Haptics.selectionAsync().catch(() => {});
+    }, [animateShutter, lockGestureEnabled, setShutterHeldValue, updateRouteState]);
+
+    const beginLockVideoRecording = useCallback((ignoreNextRelease = true) => {
+        lockPendingRef.current = true;
+        setShutterHeldValue(false);
+        lockVideoRecording(ignoreNextRelease);
+    }, [lockVideoRecording, setShutterHeldValue]);
+
+    const startVideoRecording = useCallback(async () => {
+        if (taking || recordingRef.current || stagedMedia) return;
+        if (previewVisible) {
+            hidePreview();
+            return;
+        }
+        if (!shutterHeldRef.current) return;
+
+        const token = recordingTokenRef.current + 1;
+        recordingTokenRef.current = token;
+        recordingRef.current = true;
+        recordingOrientationRef.current = orientationRef.current;
+        stopAfterStartRef.current = false;
+        updateRouteState({ recording: true });
+        lockGestureEnabled.value = true;
+        animateShutter(SHUTTER_RECORDING_SCALE);
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+
+        try {
+            const recorder = await videoOutput.createRecorder({});
+            if (!mountedRef.current || token !== recordingTokenRef.current) {
+                recorder.stopRecording?.().catch?.(() => {});
+                return;
+            }
+
+            recorderRef.current = recorder;
+            if (!shutterHeldRef.current) {
+                stopAfterStartRef.current = true;
+            }
+            await recorder.startRecording(
+                (path) => {
+                    if (token !== recordingTokenRef.current) return;
+                    clearRecording(token);
+                    try {
+                        const video = stageCapturedVideo(path, recordingOrientationRef.current);
+                        updateRouteState({ stagedMedia: video });
+                    } catch (error) {
+                        console.warn('stage video failed', error);
+                        if (mountedRef.current) Alert.alert('Capture failed', 'Could not record the video.');
+                    }
+                },
+                (error) => {
+                    if (token !== recordingTokenRef.current) return;
+                    clearRecording(token);
+                    console.warn('record video failed', error);
+                    if (mountedRef.current) Alert.alert('Capture failed', 'Could not record the video.');
+                }
+            );
+
+            if (stopAfterStartRef.current || (!shutterHeldRef.current && !recordingLockedRef.current)) {
+                stopVideoRecording();
+            }
+        } catch (error) {
+            if (token !== recordingTokenRef.current) return;
+            clearRecording(token);
+            console.warn('start video recording failed', error);
+            if (mountedRef.current) Alert.alert('Capture failed', 'Could not record the video.');
+        }
+    }, [animateShutter, clearRecording, hidePreview, lockGestureEnabled, previewVisible, stagedMedia, stopVideoRecording, taking, updateRouteState, videoOutput]);
+
+    const handleCameraStarted = useCallback(() => {
+        setCameraReady(true);
+    }, []);
+
+    useEffect(() => {
+        const sub = DeviceEventEmitter.addListener('photosent', () => updateRouteState({ stagedMedia: null }));
+        return () => sub.remove();
+    }, [updateRouteState]);
+
+    const discardStaged = useCallback(() => {
+        updateRouteState({ stagedMedia: null });
+    }, [updateRouteState]);
+
+    const handleSendStaged = useCallback(() => {
+        if (!stagedMedia) return;
+        router.navigate({
+            pathname: '/sendphoto',
+            params: {
+                uri: stagedMedia.uri,
+                w: stagedMedia.width || '',
+                h: stagedMedia.height || '',
+                t: stagedMedia.kind === 'video' ? 'mp4' : 'img',
+                n: stagedMedia.name || '',
+            },
+        });
+    }, [stagedMedia]);
+
+    const handleSaveStaged = useCallback(async () => {
+        if (!stagedMedia) return;
+        try {
+            const existing = await MediaLibrary.getPermissionsAsync(true);
+            const perm = existing.granted ? existing : await MediaLibrary.requestPermissionsAsync(true);
+            if (!perm.granted) {
+                Alert.alert('Permission needed', 'Please allow photo access to save media.');
+                return;
+            }
+            await MediaLibrary.saveToLibraryAsync(stagedMedia.uri);
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+        } catch (err) {
+            console.warn('save failed', err);
+            Alert.alert('Save failed', 'Could not save this media.');
+        }
+    }, [stagedMedia]);
 
     const holdPreview = useCallback(
         (key) => {
@@ -376,12 +764,100 @@ export default function CameraTab() {
     );
 
     const handleShutterPress = useCallback(() => {
+        if (recordingLockedRef.current) {
+            Haptics.selectionAsync().catch(() => {});
+            stopVideoRecording();
+            return;
+        }
+        if (recordingRef.current || recording) {
+            return;
+        }
         if (previewVisible) {
             hidePreview();
             return;
         }
         takePicture();
-    }, [hidePreview, previewVisible, takePicture]);
+    }, [hidePreview, previewVisible, recording, stopVideoRecording, takePicture]);
+
+    const handleShutterPressIn = useCallback((event) => {
+        if (taking) return;
+        shutterStartRef.current = getNativeTouch(event);
+        setShutterHeldValue(true);
+        animateShutter(recordingLockedRef.current ? SHUTTER_RECORDING_SCALE : SHUTTER_PRESS_SCALE);
+    }, [animateShutter, setShutterHeldValue, taking]);
+
+    const handleShutterMove = useCallback(
+        (event) => {
+            if (!recordingRef.current || recordingLockedRef.current || lockPendingRef.current) return;
+            if (isNativeLockSlide(event, shutterStartRef.current)) {
+                beginLockVideoRecording();
+            }
+        },
+        [beginLockVideoRecording]
+    );
+
+    const handleShutterRelease = useCallback((event) => {
+        if (recordingLockedRef.current) {
+            if (lockReleasePendingRef.current) {
+                lockReleasePendingRef.current = false;
+                animateShutter(SHUTTER_PRESS_SCALE);
+                return;
+            }
+            Haptics.selectionAsync().catch(() => {});
+            stopVideoRecording();
+            return;
+        }
+        if (lockPendingRef.current) {
+            animateShutter(SHUTTER_PRESS_SCALE);
+            return;
+        }
+        if (recordingRef.current && isNativeLockSlide(event, shutterStartRef.current)) {
+            beginLockVideoRecording(false);
+            return;
+        }
+        if (recordingRef.current && !lockGestureEnabled.value) {
+            return;
+        }
+        if (recordingRef.current && lockGestureActive.value) {
+            return;
+        }
+        if (recordingRef.current || recorderRef.current || recording) {
+            stopVideoRecording();
+            return;
+        }
+        setShutterHeldValue(false);
+        animateShutter(1);
+    }, [animateShutter, beginLockVideoRecording, lockGestureActive, lockGestureEnabled, recording, setShutterHeldValue, stopVideoRecording]);
+
+    const handleShutterCancel = useCallback((event) => {
+        if (recordingLockedRef.current) {
+            if (lockReleasePendingRef.current) {
+                lockReleasePendingRef.current = false;
+            }
+            animateShutter(SHUTTER_PRESS_SCALE);
+            return;
+        }
+        if (lockPendingRef.current) {
+            animateShutter(SHUTTER_PRESS_SCALE);
+            return;
+        }
+        if (recordingRef.current && isNativeLockSlide(event, shutterStartRef.current)) {
+            beginLockVideoRecording(false);
+            return;
+        }
+        if (recordingRef.current && !lockGestureEnabled.value) {
+            return;
+        }
+        if (recordingRef.current && lockGestureActive.value) {
+            return;
+        }
+        if (recordingRef.current || recorderRef.current || recording) {
+            stopVideoRecording();
+            return;
+        }
+        setShutterHeldValue(false);
+        animateShutter(1);
+    }, [animateShutter, beginLockVideoRecording, lockGestureActive, lockGestureEnabled, recording, setShutterHeldValue, stopVideoRecording]);
 
     const handlePreviewChat = useCallback(() => {
         if (chatBanned) {
@@ -418,7 +894,7 @@ export default function CameraTab() {
 
     const handleScanResult = useCallback(
         async (data) => {
-            if (!pageOpen || !data) return;
+            if (!pageOpen || recordingRef.current || !data) return;
             const raw = data.trim();
             if (!raw) return;
 
@@ -521,6 +997,7 @@ export default function CameraTab() {
         barcodeFormats: QR_BARCODE_FORMATS,
         outputResolution: 'preview',
         onBarcodeScanned: (barcodes) => {
+            if (recordingRef.current) return;
             const barcode = barcodes[0];
             if (barcode) handleScanResult(barcode.rawValue ?? barcode.displayValue ?? '');
         },
@@ -530,18 +1007,125 @@ export default function CameraTab() {
     });
 
     const active = pageOpen || warming || holding;
-    const cameraOutputs = useMemo(() => [photoOutput, barcodeOutput], [barcodeOutput, photoOutput]);
+    const cameraOutputs = useMemo(() => [photoOutput, videoOutput, barcodeOutput], [barcodeOutput, photoOutput, videoOutput]);
+    const warmDevices = useMemo(() => {
+        const seen = new Set();
+        if (device?.id) seen.add(device.id);
+        return [frontDevice, backRegularDevice, backZoomDevice].filter((warmDevice) => {
+            const id = warmDevice?.id;
+            if (!id || seen.has(id)) return false;
+            seen.add(id);
+            return true;
+        });
+    }, [backRegularDevice, backZoomDevice, device?.id, frontDevice]);
+    const warmOtherCameras = pageOpen && cameraReady && !stagedMedia;
     const canPreviewChat = previewVisible && !!previewPeer?.chatPK && !!chatPK && !chatBanned;
     const canPreviewSend = previewVisible && !!previewPeer?.walletPK;
     const chatPop = usePop({ show: canPreviewChat, width: 56, gapAfter: ACTION_GAP, enterBounce: 12, exitDuration: 130 });
     const sendPop = usePop({ show: canPreviewSend, width: 56, gapBefore: ACTION_GAP, enterBounce: 12, exitDuration: 130 });
-    const shutterTint = previewPeer ? 'transparent' : isDark ? 'rgba(0,0,0,0.20)' : 'rgba(255,255,255,0.20)';
+    const controlsBottom = insets.bottom + 102;
+    const shutterTint = recording ? alpha(theme.destructive, 72) : previewPeer ? 'transparent' : isDark ? 'rgba(0,0,0,0.20)' : 'rgba(255,255,255,0.20)';
     const shutterFrame = {
         width: SHUTTER_SIZE,
         height: SHUTTER_SIZE,
         borderRadius: SHUTTER_SIZE / 2,
         overflow: 'hidden',
     };
+    const lockGesture = useMemo(
+        () =>
+            Gesture.Pan()
+                .manualActivation(true)
+                .shouldCancelWhenOutside(false)
+                .onTouchesDown((event) => {
+                    const point = getGestureTouch(event);
+                    lockStartX.value = point.x;
+                    lockStartY.value = point.y;
+                    lockGestureActive.value = false;
+                })
+                .onTouchesMove((event, state) => {
+                    if (lockGestureActive.value) return;
+
+                    const point = getGestureTouch(event);
+                    const dx = point.x - lockStartX.value;
+                    const dy = point.y - lockStartY.value;
+                    const ax = Math.abs(dx);
+                    const ay = Math.abs(dy);
+
+                    if (!lockGestureEnabled.value) return;
+
+                    if (ay > LOCK_VERTICAL_FAIL && ay > ax * LOCK_AXIS_RATIO) {
+                        state.fail();
+                        return;
+                    }
+
+                    if (ax >= LOCK_SLIDE_DISTANCE && ax > ay * LOCK_AXIS_RATIO) {
+                        lockGestureActive.value = true;
+                        lockGestureEnabled.value = false;
+                        scheduleOnRN(beginLockVideoRecording);
+                        state.activate();
+                        return;
+                    }
+
+                    if (ax >= LOCK_CLAIM_DISTANCE && ax > ay * LOCK_AXIS_RATIO) {
+                        lockGestureActive.value = true;
+                        state.activate();
+                    }
+                })
+                .onUpdate((event) => {
+                    if (!lockGestureEnabled.value) return;
+
+                    const ax = Math.abs(event.translationX);
+                    const ay = Math.abs(event.translationY);
+                    if (ax >= LOCK_SLIDE_DISTANCE && ax > ay * LOCK_AXIS_RATIO) {
+                        lockGestureEnabled.value = false;
+                        scheduleOnRN(beginLockVideoRecording);
+                    }
+                })
+                .onFinalize(() => {
+                    const shouldStopRecording = lockGestureActive.value && lockGestureEnabled.value;
+                    lockGestureActive.value = false;
+                    if (shouldStopRecording) {
+                        scheduleOnRN(stopVideoRecording);
+                    }
+                }),
+        [beginLockVideoRecording, lockGestureActive, lockGestureEnabled, lockStartX, lockStartY, stopVideoRecording]
+    );
+    const shutterPressable = (
+        <Pressable
+            disabled={taking}
+            delayLongPress={MENU_LONG_PRESS_MS}
+            pressRetentionOffset={SHUTTER_LOCK_RETENTION}
+            onPress={handleShutterPress}
+            onLongPress={startVideoRecording}
+            onPressIn={handleShutterPressIn}
+            onPressOut={handleShutterRelease}
+            onTouchCancel={handleShutterCancel}
+            onTouchMove={handleShutterMove}
+        >
+            <RNAnimated.View
+                style={{
+                    ...shutterFrame,
+                    transform: [{ scale: shutterScale }],
+                }}
+            >
+                <View style={[StyleSheet.absoluteFill, shutterFrame]} pointerEvents="none">
+                    {previewPeer ? (
+                        <Reanimated.View style={[StyleSheet.absoluteFill, previewStyle]}>
+                            <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>
+                                <Avatar source={previewPeer.avatar ? { uri: previewPeer.avatar } : null} size={SHUTTER_SIZE} pointerEvents="none" />
+                            </View>
+                        </Reanimated.View>
+                    ) : null}
+                    <GlassView style={[StyleSheet.absoluteFill, shutterFrame]} glassEffectStyle="clear" tintColor={shutterTint} />
+                    {recordingLocked ? (
+                        <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>
+                            <Lock pointerEvents="none" color={theme.foreground} size={24} strokeWidth={3} />
+                        </View>
+                    ) : null}
+                </View>
+            </RNAnimated.View>
+        </Pressable>
+    );
 
     if (!hasPermission) {
         return (
@@ -569,57 +1153,40 @@ export default function CameraTab() {
 
     return (
         <View style={{ flex: 1, overflow: 'hidden' }}>
-            <GestureDetector gesture={touchGesture}>
-                <View style={StyleSheet.absoluteFill}>
-                    <VCamera
-                        ref={cameraRef}
-                        style={StyleSheet.absoluteFill}
-                        device={device}
-                        isActive={active}
-                        outputs={cameraOutputs}
-                        resizeMode="cover"
-                        onPreviewStarted={resetZoom}
-                        enableNativeZoomGesture
-                    />
-                </View>
-            </GestureDetector>
+            <CameraSurface
+                active={active}
+                cameraRef={cameraRef}
+                canUseZoomDevice={canUseBackZoomDevice}
+                device={device}
+                facing={facing}
+                onCameraStarted={handleCameraStarted}
+                onFlip={flipCamera}
+                onFocus={handleFocus}
+                onUseZoomDevice={useBackZoomDevice}
+                outputs={cameraOutputs}
+            />
+            {warmOtherCameras ? warmDevices.map((warmDevice) => <CameraWarmer key={warmDevice.id} device={warmDevice} />) : null}
             <GlassHeader style={{ height: insets.top }} pointerEvents="none" />
-            {stagedPhoto ? (
+            {stagedMedia ? (
                 <View style={[StyleSheet.absoluteFill, { backgroundColor: theme.background, overflow: 'hidden', justifyContent: 'center', alignItems: 'center' }]} pointerEvents="box-none">
-                    <Image source={{ uri: stagedPhoto.uri }} style={StyleSheet.absoluteFill} contentFit="cover" />
-                    <View style={{ position: 'absolute', bottom: insets.bottom + 102, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: ACTION_GAP }}>
+                    <StagedPreview media={stagedMedia} />
+                    <View style={{ position: 'absolute', bottom: controlsBottom, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: ACTION_GAP }}>
                         <GlassIcon glassEffectStyle="clear" icon={X} visible duration={PREVIEW_FADE} onPress={discardStaged} />
                         <GlassIcon glassEffectStyle="clear" icon={ArrowUpRight} iconSize={32} size={SHUTTER_SIZE} visible duration={PREVIEW_FADE} accent onPress={handleSendStaged} />
                         <GlassIcon glassEffectStyle="clear" icon={ArrowDownToLine} visible duration={PREVIEW_FADE} onPress={handleSaveStaged} />
                     </View>
                 </View>
             ) : null}
-            {!stagedPhoto ? (
-                <View style={{ position: 'absolute', bottom: insets.bottom + 102, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+            {!stagedMedia ? (
+                <View style={{ position: 'absolute', bottom: controlsBottom, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
                     <RNAnimated.View pointerEvents={chatPop.pointerEvents} style={[chatPop.style, { alignItems: 'center', justifyContent: 'center', overflow: 'visible' }]}>
                         <RNAnimated.View style={chatPop.childStyle}>
                             <GlassIcon glassEffectStyle="clear" icon={MessageCircle} onPress={() => canPreviewChat && handlePreviewChat()} />
                         </RNAnimated.View>
                     </RNAnimated.View>
-                    <Pressable {...shutterFeedback.props} disabled={taking} onPress={handleShutterPress}>
-                        <RNAnimated.View
-                            style={{
-                                ...shutterFrame,
-                                transform: [{ scale: shutterFeedback.scale }],
-                            }}
-                        >
-                            <View style={[StyleSheet.absoluteFill, shutterFrame]} pointerEvents="none">
-                                {previewPeer ? (
-                                    <Reanimated.View style={[StyleSheet.absoluteFill, previewStyle]}>
-                                        <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>
-                                            <Avatar source={previewPeer.avatar ? { uri: previewPeer.avatar } : null} size={SHUTTER_SIZE} pointerEvents="none" />
-                                        </View>
-                                    </Reanimated.View>
-                                ) : null}
-                                <GlassView style={[StyleSheet.absoluteFill, shutterFrame]} glassEffectStyle="clear" tintColor={shutterTint} />
-                            </View>
-                        </RNAnimated.View>
-                    </Pressable>
+                    <View style={{ width: SHUTTER_SIZE, height: SHUTTER_SIZE, alignItems: 'center', justifyContent: 'center', overflow: 'visible' }}>
+                        {recordingLocked ? shutterPressable : <GestureDetector gesture={lockGesture}>{shutterPressable}</GestureDetector>}
+                    </View>
                     <RNAnimated.View pointerEvents={sendPop.pointerEvents} style={[sendPop.style, { alignItems: 'center', justifyContent: 'center', overflow: 'visible' }]}>
                         <RNAnimated.View style={sendPop.childStyle}>
                             <GlassIcon glassEffectStyle="clear" icon={ArrowUpRight} iconSize={32} onPress={() => canPreviewSend && handlePreviewSend()} />

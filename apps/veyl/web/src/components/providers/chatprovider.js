@@ -17,6 +17,10 @@ const chat = createChat({
         await httpsCallable(getFunctions(), 'setMediaSaved')({ path, stayId, saved });
         return true;
     },
+    async finishDeletingChat(chatId) {
+        await httpsCallable(getFunctions(), 'deleteChat')({ chatId });
+        return true;
+    },
 });
 
 const chatWarming = {

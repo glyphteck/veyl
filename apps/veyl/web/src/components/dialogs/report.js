@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { httpsCallable } from 'firebase/functions';
 import { Flag, Loader, File, Image } from 'lucide-react';
 import { toast } from 'sonner';
@@ -55,9 +55,16 @@ export default function Report({ data, close }) {
     const [submitting, setSubmitting] = useState(false);
     const hasPreview = !!msg && msg.t !== undefined;
     const attachment = useMemo(() => getReportAttachmentMeta(msg), [msg]);
+    const isSelfReport = !!uid && !!peer?.uid && peer.uid === uid;
+
+    useEffect(() => {
+        if (isSelfReport) {
+            close?.();
+        }
+    }, [close, isSelfReport]);
 
     const handleSubmit = () => {
-        if (!peer?.uid || submitting) return;
+        if (!peer?.uid || submitting || isSelfReport) return;
         setSubmitting(true);
         close?.();
 
@@ -87,6 +94,8 @@ export default function Report({ data, close }) {
             }
         })();
     };
+
+    if (isSelfReport) return null;
 
     return (
         <div className="flex flex-col gap-3 w-xs">

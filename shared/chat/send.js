@@ -4,6 +4,7 @@ import { getChatId } from '../crypto/chat.js';
 import { checkAttachmentSize, getAttachmentType, isAttachmentType, makeAttachmentUnavailableError } from './attachments.js';
 import { makeTs, setLocalChats } from './chats.js';
 import { makeCid, sortMessages } from './state.js';
+import { cleanChatRetention, hasChatRetention } from './ttl.js';
 
 export const LOCAL_FAILED = Object.freeze({ pending: false, failed: true });
 export const LOCAL_PENDING = Object.freeze({ pending: true, failed: false });
@@ -11,6 +12,10 @@ export const LOCAL_SENT = Object.freeze({ pending: false, failed: false });
 
 function replyPatch(message) {
     return typeof message?.r === 'string' && message.r ? { r: message.r } : {};
+}
+
+function retentionPatch(message) {
+    return hasChatRetention(message?.retention) ? { retention: cleanChatRetention(message.retention) } : {};
 }
 
 function patchCid(message, cid, patch) {
@@ -124,6 +129,7 @@ export function makeLongTxtLocalMessage(chatPK, cid, attachment, message) {
         cid,
         s: chatPK,
         ...replyPatch(message),
+        ...retentionPatch(message),
     };
 }
 
@@ -133,6 +139,7 @@ export function makeSentLongTxtMessage(chatPK, cid, uploaded, message) {
         cid,
         s: chatPK,
         ...replyPatch(message),
+        ...retentionPatch(message),
     };
 }
 

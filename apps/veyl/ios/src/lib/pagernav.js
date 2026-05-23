@@ -1,4 +1,4 @@
-import { createNavigatorFactory, TabRouter, useNavigationBuilder } from '@react-navigation/core';
+import { createNavigatorFactory, TabRouter, useNavigationBuilder } from 'expo-router/react-navigation';
 import { withLayoutContext } from 'expo-router';
 import PagerView from 'react-native-pager-view';
 import { useCallback, useEffect, useRef, useState } from 'react';

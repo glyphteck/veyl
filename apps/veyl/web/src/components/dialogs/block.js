@@ -1,18 +1,27 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Loader } from 'lucide-react';
 import { formatUserDisplay } from '@/lib/utils';
+import { useUser } from '@/components/providers/userprovider';
 import Alert from './alert';
 
 export default function Block({ data, close }) {
     const peer = data?.peer ?? null;
     const onConfirm = data?.onConfirm;
     const onCancel = data?.onCancel ?? close;
+    const { uid } = useUser();
     const [busy, setBusy] = useState(false);
+    const isSelfBlock = !!uid && !!peer?.uid && peer.uid === uid;
+
+    useEffect(() => {
+        if (isSelfBlock) {
+            close?.();
+        }
+    }, [close, isSelfBlock]);
 
     const handleBlock = async () => {
-        if (busy) return;
+        if (busy || isSelfBlock) return;
         setBusy(true);
         try {
             await onConfirm?.();
@@ -23,6 +32,8 @@ export default function Block({ data, close }) {
             close?.();
         }
     };
+
+    if (isSelfBlock) return null;
 
     return (
         <Alert title={`block ${formatUserDisplay(peer, true)}?`} onCancel={onCancel} onConfirm={handleBlock} busy={busy} confirmLabel={busy ? '' : 'block'} confirmIcon={busy ? <Loader className="size-4 animate-spin" /> : null}>

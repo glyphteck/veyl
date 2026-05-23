@@ -799,6 +799,9 @@ export function FullscreenRail({ activeIndex, items, onCloseComplete, onMove }) 
     const startScrub = useCallback((progress) => activeVideoRef.current?.startScrub?.(progress), []);
     const moveScrub = useCallback((progress) => activeVideoRef.current?.moveScrub?.(progress), []);
     const endScrub = useCallback(() => activeVideoRef.current?.endScrub?.(), []);
+    const pauseActiveVideoForGesture = useCallback(() => {
+        activeVideoRef.current?.pauseForDrag?.();
+    }, []);
     const navigate = useCallback(
         (step, railTarget) => {
             if (Number.isFinite(railTarget)) {
@@ -835,8 +838,8 @@ export function FullscreenRail({ activeIndex, items, onCloseComplete, onMove }) 
         if (!params) {
             return;
         }
-        close(() => router.push({ pathname: '/sharemedia', params }));
-    }, [activeItem, close, router]);
+        router.push({ pathname: '/sharemedia', params });
+    }, [activeItem, router]);
     const toggleMuted = useCallback(() => {
         setMuted((current) => !current);
     }, []);
@@ -855,6 +858,9 @@ export function FullscreenRail({ activeIndex, items, onCloseComplete, onMove }) 
                     panStartX.value = railX.value;
                     panDidEnd.value = false;
                     panMode.value = PAN_NONE;
+                    if (activeIsVideo) {
+                        scheduleOnRN(pauseActiveVideoForGesture);
+                    }
                 })
                 .onUpdate((event) => {
                     if (panMode.value === PAN_SCRUB) {
@@ -995,6 +1001,7 @@ export function FullscreenRail({ activeIndex, items, onCloseComplete, onMove }) 
             openScale,
             panDidEnd,
             panMode,
+            pauseActiveVideoForGesture,
             panStartX,
             panStartedOnSlider,
             railX,

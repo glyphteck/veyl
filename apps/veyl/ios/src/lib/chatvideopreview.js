@@ -1,5 +1,5 @@
-import { Buffer } from 'buffer';
 import * as FileSystem from 'expo-file-system/legacy';
+import { File } from 'expo-file-system';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import { createVideoPlayer } from 'expo-video';
 import { getCachedMsgImage, loadCachedMsgImage } from '@/lib/msgimagecache';
@@ -34,10 +34,15 @@ function getPreviewSourceName(msg) {
 }
 
 async function readUriBytes(uri) {
-    const base64 = await FileSystem.readAsStringAsync(uri, {
-        encoding: FileSystem.EncodingType.Base64,
-    });
-    return new Uint8Array(Buffer.from(base64, 'base64'));
+    try {
+        return await new File(uri).bytes();
+    } catch (error) {
+        const response = await fetch(uri);
+        if (!response.ok && response.status !== 0) {
+            throw error;
+        }
+        return new Uint8Array(await response.arrayBuffer());
+    }
 }
 
 function getVideoPreviewTime(duration) {

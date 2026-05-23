@@ -1,3 +1,4 @@
+export { default as Alert } from './alert';
 export { default as UserDetails } from './userdetails';
 export { default as Block } from './block';
 export { default as TxDetails } from './txdetails';
@@ -8,7 +9,6 @@ export { default as MainMenu } from './mainmenu';
 export { default as QRCode } from './qrcode';
 export { default as DeleteAccount } from './deleteaccount';
 export { default as Report } from './report';
-export { default as DeleteChat } from './deletechat';
 export { default as DeleteMessage } from './deletemessage';
 export { default as Blocked } from './blocked';
 export { default as NewChat } from './newchat';

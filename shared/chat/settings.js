@@ -24,13 +24,13 @@ export async function openChatSettingsForPair(pair, settings) {
         return normalizeChatSettings(null);
     }
     if (!isEncryptedChatSettings(settings)) {
-        return null;
+        return normalizeChatSettings(null);
     }
 
     try {
         const payload = await openMsg(pair, settings);
         return normalizeChatSettings(payload);
     } catch {
-        return null;
+        return normalizeChatSettings(null);
     }
 }

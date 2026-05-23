@@ -23,7 +23,7 @@ function renderBalanceDescription(amount, moneyFormat, price) {
 export function WalletDashboard() {
     const bitcoin = useBitcoin();
     const { balance } = useWallet();
-    const { settings } = useUser();
+    const { settings, uid } = useUser();
     const { getSeries, getHourlySeries, getTxsInRange, first, transactions } = useTxData();
     const { peers } = usePeer();
     const { openDialog } = useDialog();
@@ -31,6 +31,9 @@ export function WalletDashboard() {
     const moneyFormat = settings.moneyFormat;
     const [timeRange, setTimeRange] = useState('all-time');
     const balanceDescription = renderBalanceDescription(balance, moneyFormat, bitcoin.price);
+    const openUser = (peer) => {
+        openDialog(peer?.uid && peer.uid === uid ? 'settings' : 'userdetails', peer?.uid && peer.uid === uid ? null : { user: peer });
+    };
 
     const { chartData, filteredTxs, percentChange } = useMemo(() => {
         if (!getSeries || !getHourlySeries || !getTxsInRange) return { chartData: [], filteredTxs: [], percentChange: 0 };
@@ -252,7 +255,7 @@ export function WalletDashboard() {
                                             key={peerId}
                                             type="button"
                                             className="group grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-4 py-2 text-left"
-                                            onClick={() => openDialog('userdetails', { user: peer })}
+                                            onClick={() => openUser(peer)}
                                         >
                                             <div className="flex min-w-0 items-center gap-2.5 pr-4">
                                                 <Avatar active={peer?.active} bot={!!peer?.bot} className="grower">

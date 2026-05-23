@@ -47,6 +47,7 @@ Detailed workflow rules live in [guidelines/workflow.md](guidelines/workflow.md)
 - [guidelines/workflow.md](guidelines/workflow.md): task sizing, todo files, branch/worktree policy, handoff, cleanup
 - [guidelines/todo.md](guidelines/todo.md): todo folder policy, task-file shape, and cleanup rules
 - [guidelines/repo.md](guidelines/repo.md): repo shape, Bun workspace, product model, account model, data model
+- [guidelines/packages.md](guidelines/packages.md): package installs, upgrades, lockfiles, Expo SDK bumps, and native rebuild rules
 - [guidelines/commands.md](guidelines/commands.md): install, run, build, bot, and local host commands
 - [guidelines/code.md](guidelines/code.md): naming, code structure, refactors, shared-vs-client rules
 - [guidelines/navigation.md](guidelines/navigation.md): fast paths into auth, vault, wallet, chat, search, bots, and backend
@@ -59,6 +60,7 @@ Detailed workflow rules live in [guidelines/workflow.md](guidelines/workflow.md)
 Use the smallest relevant guideline set after reading the product context:
 
 - Repo workflow, planning, branch, todo, or worktree work: read `guidelines/workflow.md`, `guidelines/todo.md`, `guidelines/repo.md`, `guidelines/code.md`, `guidelines/commands.md`, and `guidelines/validation.md`.
+- Package, dependency, framework, Expo SDK, or lockfile work: read `guidelines/packages.md`, `guidelines/commands.md`, and `guidelines/validation.md`.
 - Chat work: read `repo.md`, `code.md`, `navigation.md`, and `security.md`.
 - UI or styling work: read `code.md` and `uistyling.md`.
 - Bot work: read `guidelines/bots.md` and the root [bots.md](bots.md).

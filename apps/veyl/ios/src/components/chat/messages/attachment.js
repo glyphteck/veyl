@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { Text, View } from 'react-native';
-import { useIsFocused } from '@react-navigation/native';
+import { useIsFocused } from 'expo-router/react-navigation';
 import { File } from 'lucide-react-native';
 import { useChat } from '@/providers/chatprovider';
 import { useTheme } from '@/providers/themeprovider';

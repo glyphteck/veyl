@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import { ActivityIndicator, Text, View } from 'react-native';
-import { useIsFocused } from '@react-navigation/native';
+import { useIsFocused } from 'expo-router/react-navigation';
 import { Image } from 'expo-image';
 import { GestureDetector } from 'react-native-gesture-handler';
 import { useMediaViewer } from '@/providers/mediaviewerprovider';

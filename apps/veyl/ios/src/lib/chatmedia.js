@@ -1,5 +1,4 @@
-import { Buffer } from 'buffer';
-import * as LegacyFileSystem from 'expo-file-system/legacy';
+import { File, Paths } from 'expo-file-system';
 import { ref, uploadBytes } from 'firebase/storage';
 import { AESEncryptionKey, AESSealedData, aesDecryptAsync, aesEncryptAsync } from 'expo-crypto';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
@@ -14,6 +13,7 @@ import { pickAttachmentMeta } from '@glyphteck/shared/chat/media';
 
 export const MAX_CHAT_IMAGE_EDGE = 1600;
 export const CHAT_IMAGE_COMPRESS = 0.82;
+const VIDEO_META_THUMB_MAX = 32;
 
 function isImageAsset(asset) {
     const mimeType = String(asset?.mimeType || '').toLowerCase();
@@ -35,19 +35,19 @@ function isVideoAsset(asset) {
     return /\.(m4v|mov|mp4|webm)$/.test(name);
 }
 
-function toBase64(bytes) {
-    return Buffer.from(bytes).toString('base64');
-}
-
 async function readUriBytes(uri) {
     if (!uri) {
         throw new Error('asset uri required');
     }
-
-    const base64 = await LegacyFileSystem.readAsStringAsync(uri, {
-        encoding: LegacyFileSystem.EncodingType.Base64,
-    });
-    return new Uint8Array(Buffer.from(base64, 'base64'));
+    try {
+        return await new File(uri).bytes();
+    } catch (error) {
+        const response = await fetch(uri);
+        if (!response.ok && response.status !== 0) {
+            throw error;
+        }
+        return new Uint8Array(await response.arrayBuffer());
+    }
 }
 
 function assertChatFileSize(bytes) {
@@ -106,11 +106,20 @@ function readVideoMeta(uri) {
                 finish(new Error('video unavailable'));
                 return;
             }
-            finish(null, {
-                duration,
-                width: event?.videoTrack?.size?.width,
-                height: event?.videoTrack?.size?.height,
-            });
+            readVideoDisplaySize(player, duration, event?.videoTrack?.size)
+                .then((size) => {
+                    finish(null, {
+                        duration,
+                        ...size,
+                    });
+                })
+                .catch(() => {
+                    finish(null, {
+                        duration,
+                        width: event?.videoTrack?.size?.width,
+                        height: event?.videoTrack?.size?.height,
+                    });
+                });
         });
         statusSub = player.addListener('statusChange', (event) => {
             if (event?.status === 'error') {
@@ -119,6 +128,45 @@ function readVideoMeta(uri) {
         });
         Promise.resolve(player.replaceAsync({ uri })).catch((error) => finish(error || new Error('video unavailable')));
     });
+}
+
+function normalizeVideoSize(trackSize, displaySize) {
+    const trackWidth = Number(trackSize?.width);
+    const trackHeight = Number(trackSize?.height);
+    const displayWidth = Number(displaySize?.width);
+    const displayHeight = Number(displaySize?.height);
+
+    if (trackWidth > 0 && trackHeight > 0 && displayWidth > 0 && displayHeight > 0) {
+        const wide = displayWidth >= displayHeight;
+        const long = Math.round(Math.max(trackWidth, trackHeight));
+        const short = Math.round(Math.min(trackWidth, trackHeight));
+        return wide ? { width: long, height: short } : { width: short, height: long };
+    }
+
+    if (trackWidth > 0 && trackHeight > 0) {
+        return { width: Math.round(trackWidth), height: Math.round(trackHeight) };
+    }
+
+    if (displayWidth > 0 && displayHeight > 0) {
+        return { width: Math.round(displayWidth), height: Math.round(displayHeight) };
+    }
+
+    return {};
+}
+
+async function readVideoDisplaySize(player, duration, trackSize) {
+    let thumbnail = null;
+    try {
+        const time = Number.isFinite(duration) && duration > 0.2 ? Math.min(duration * 0.1, 0.35) : 0;
+        const thumbnails = await player.generateThumbnailsAsync(time, { maxWidth: VIDEO_META_THUMB_MAX });
+        thumbnail = thumbnails?.[0] || null;
+        return normalizeVideoSize(trackSize, {
+            width: thumbnail?.width,
+            height: thumbnail?.height,
+        });
+    } finally {
+        thumbnail?.release?.();
+    }
 }
 
 export async function uploadStorageBytesNative(storage, path, data, metadata = {}) {
@@ -130,23 +178,19 @@ export async function uploadStorageBytesNative(storage, path, data, metadata = {
     }
 
     const body = toBytes(data, 'upload bytes');
-    const cacheDir = LegacyFileSystem.cacheDirectory;
-    if (!cacheDir) {
-        throw new Error('cache directory unavailable');
-    }
-
-    const tempUri = `${cacheDir}chatupload-${Date.now()}-${Math.random().toString(36).slice(2)}.bin`;
+    const temp = new File(Paths.cache, `chatupload-${Date.now()}-${Math.random().toString(36).slice(2)}.bin`);
 
     try {
-        await LegacyFileSystem.writeAsStringAsync(tempUri, toBase64(body), {
-            encoding: LegacyFileSystem.EncodingType.Base64,
-        });
-        const response = await fetch(tempUri);
+        temp.create({ overwrite: true });
+        temp.write(body);
+        const response = await fetch(temp.uri);
         const blob = await response.blob();
         await uploadBytes(ref(storage, path), blob, metadata);
         return path;
     } finally {
-        await LegacyFileSystem.deleteAsync(tempUri, { idempotent: true }).catch(() => {});
+        try {
+            temp.delete();
+        } catch {}
     }
 }
 
@@ -246,6 +290,22 @@ export async function prepareAssetForChatUpload(asset) {
 
     const mimeType = String(asset?.mimeType || '').toLowerCase();
     if (isImageAsset(asset)) {
+        if (asset?.preserveImage === true) {
+            const data = await readUriBytes(asset.uri);
+            const png = isPngAsset(asset);
+            const width = Number(asset?.width);
+            const height = Number(asset?.height);
+            return {
+                data,
+                mimeType: asset?.mimeType || (png ? 'image/png' : 'image/jpeg'),
+                size: Number.isFinite(data?.byteLength) ? data.byteLength : (asset?.fileSize ?? asset?.size),
+                ...(Number.isFinite(width) && width > 0 ? { width } : {}),
+                ...(Number.isFinite(height) && height > 0 ? { height } : {}),
+                name: getAssetName(asset, png ? 'png' : 'jpg'),
+                previewUri: asset.uri,
+            };
+        }
+
         const normalized = await ImageManipulator.manipulate(asset.uri).renderAsync();
         const resize = getResizedImageSize(normalized.width, normalized.height);
         const result = resize ? await ImageManipulator.manipulate(normalized).resize(resize).renderAsync() : normalized;

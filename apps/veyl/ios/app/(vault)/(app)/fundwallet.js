@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Animated, Pressable, Text, View } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { useRouter } from 'expo-router';
-import { useIsFocused } from '@react-navigation/native';
+import { useIsFocused } from 'expo-router/react-navigation';
 import { Check, CircleQuestionMark } from 'lucide-react-native';
 import QRCode from 'react-native-qrcode-svg';
 import { makeQr, qr } from '@glyphteck/shared/qrutils';

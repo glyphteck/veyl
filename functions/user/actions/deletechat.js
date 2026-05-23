@@ -56,7 +56,7 @@ export const deleteChat = onCall(async (context) => {
     // Keep media blobs in Storage. Shared attachment messages can reference
     // these immutable objects from other chats after this chat is deleted.
 
-    await chatRef.delete().catch(() => {});
+    await chatRef.delete();
 
     return OK;
 });

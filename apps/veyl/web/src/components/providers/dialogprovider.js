@@ -7,6 +7,7 @@ const emptyDialog = { open: false, type: null, data: null };
 const DialogContext = createContext();
 const DialogStateContext = createContext(emptyDialog);
 const dialogLoaders = {
+    alert: () => import('@/components/dialogs/alert'),
     userdetails: () => import('@/components/dialogs/userdetails'),
     block: () => import('@/components/dialogs/block'),
     txdetails: () => import('@/components/dialogs/txdetails'),
@@ -18,7 +19,6 @@ const dialogLoaders = {
     qrcode: () => import('@/components/dialogs/qrcode'),
     deleteaccount: () => import('@/components/dialogs/deleteaccount'),
     report: () => import('@/components/dialogs/report'),
-    deletechat: () => import('@/components/dialogs/deletechat'),
     deletemessage: () => import('@/components/dialogs/deletemessage'),
     blocked: () => import('@/components/dialogs/blocked'),
     newchat: () => import('@/components/dialogs/newchat'),
@@ -33,6 +33,7 @@ const dialogPromises = new Map();
 const authDialogs = ['passwordrules', 'rememberaccount'];
 const unlockDialogs = ['qrcode', 'fundinginfo'];
 const appDialogs = [
+    'alert',
     'userdetails',
     'block',
     'txdetails',
@@ -44,7 +45,6 @@ const appDialogs = [
     'qrcode',
     'deleteaccount',
     'report',
-    'deletechat',
     'deletemessage',
     'blocked',
     'newchat',

@@ -188,8 +188,7 @@ export default function RequestMoney({ peer, amount }) {
                     inputUnit: settings.moneyFormat,
                 });
                 setSender(null);
-            } catch (error) {
-                console.error('Failed to send request money message:', error);
+            } catch {
                 toast.error('failed to send request');
             } finally {
                 setIsSubmitting(false);

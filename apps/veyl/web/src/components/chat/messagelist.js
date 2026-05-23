@@ -1,5 +1,5 @@
 'use client';
-import { Download, Flag, Loader, Reply, RotateCcw, Share2, SquarePen, Trash2 } from 'lucide-react';
+import { Bookmark, Download, Flag, Loader, Reply, RotateCcw, Share2, SquarePen, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useChat } from '@/components/providers/chatprovider';
 import { useUser } from '@/components/providers/userprovider';
@@ -7,11 +7,12 @@ import { usePeer } from '@/components/providers/peerprovider';
 import { useWallet } from '@/components/providers/walletprovider';
 import { useDialog } from '@/components/providers/dialogprovider';
 import { Avatar, AvatarFallback, StaticAvatar } from '@/components/avatar';
-import { canReplyToMsg, canShareAttachmentMsg, canShowMsg, getLatestReadOutgoingReceipt, isPeerMsg, setReqTx } from '@glyphteck/shared/chat/messages';
+import { canReplyToMsg, canShareAttachmentMsg, canShowMsg, collapseSystemMessages, getLatestReadOutgoingReceipt, getSystemMsgText, isPeerMsg, isReadReceiptMsg, isSystemMsg, setReqTx } from '@glyphteck/shared/chat/messages';
 import { useOptimisticMessageReactions } from '@glyphteck/shared/chat/usereactions';
 import { formatUserDisplay, formatFullDateTime } from '@/lib/utils';
 import { getPeerChatPKFromChatId } from '@glyphteck/shared/chat/utils';
 import { getMessageOrderMs } from '@glyphteck/shared/chat/state';
+import { CHAT_RETENTION_SEEN, getMessageRetention, onSeenMessageTtlMs, seenMessageTtlMs } from '@glyphteck/shared/chat/ttl';
 import { useChatMessages } from './usechatmessages';
 import { forwardRef, memo, useState, useRef, useEffect, useCallback, useLayoutEffect, useMemo } from 'react';
 import { ChatMessageType } from './messages';
@@ -26,7 +27,7 @@ const MESSAGE_ROW_EASE = 'cubic-bezier(0.2, 0, 0, 1)';
 const MESSAGE_ROW_EXIT_EASE = 'linear';
 const MESSAGE_ROW_EXIT_CLEARANCE_PX = 1;
 const MESSAGE_ROW_EXIT_SCALE = 0;
-const MESSAGE_ROW_GAP_PX = 16;
+const MESSAGE_ROW_GAP_PX = 8;
 const MAX_CHAT_SCROLL_MEMORY = 50;
 const MESSAGE_ACTION_ICON = 'size-4';
 const BOTTOM_STICK_PX = 32;
@@ -73,6 +74,94 @@ function isInteractiveTarget(target) {
     return !!target?.closest?.('button,a,input,textarea,select,video,audio,[role="button"]');
 }
 
+function hasOwnMessageTtl(msg) {
+    return Object.prototype.hasOwnProperty.call(msg || {}, 'ttl');
+}
+
+function isSavedForeverMsg(msg) {
+    return !!(msg?.id && !String(msg.id).startsWith('local:') && !msg.pending && !msg.failed && hasOwnMessageTtl(msg) && msg.ttl == null);
+}
+
+function canToggleSaveForeverMsg(msg) {
+    return !!(msg?.id && !String(msg.id).startsWith('local:') && !msg.pending && !msg.failed && !isSystemMsg(msg));
+}
+
+function positiveMs(value) {
+    const ms = Number(value);
+    return Number.isFinite(ms) && ms > 0 ? ms : null;
+}
+
+function getSavedTtlMs(msg) {
+    return positiveMs(msg?.savedTtl);
+}
+
+function messageOrderMs(message) {
+    const ms = getMessageOrderMs(message);
+    return Number.isFinite(ms) ? ms : null;
+}
+
+function readReceiptFromRecipient(receipt, msg, chatPK, peerChatPK) {
+    const messageFromPeer = isPeerMsg(msg, chatPK);
+    const receiptFromPeer = isPeerMsg(receipt, chatPK);
+    return messageFromPeer ? !receiptFromPeer : receiptFromPeer && (!peerChatPK || receipt?.s === peerChatPK);
+}
+
+function readReceiptCoversMessage(receipt, msg, byKey, chatPK) {
+    const targetKey = typeof receipt?.upto === 'string' ? receipt.upto.trim() : '';
+    if (!targetKey) {
+        return false;
+    }
+    if (targetKey === getMsgKey(msg)) {
+        return true;
+    }
+
+    const target = byKey.get(targetKey);
+    if (target && isPeerMsg(target, chatPK) !== isPeerMsg(msg, chatPK)) {
+        return false;
+    }
+
+    const messageMs = messageOrderMs(msg);
+    const targetMs = messageOrderMs(target) ?? messageOrderMs({ cid: targetKey }) ?? messageOrderMs(receipt);
+    return messageMs != null && targetMs != null && messageMs <= targetMs;
+}
+
+function getMessageSeenAtMs(messages, msg, chatPK, peerChatPK, now = Date.now()) {
+    const byKey = new Map();
+    for (const item of messages || []) {
+        const key = getMsgKey(item);
+        if (key) {
+            byKey.set(key, item);
+        }
+    }
+
+    let seenAt = null;
+    for (const receipt of messages || []) {
+        if (!receipt?.id || String(receipt.id).startsWith('local:') || receipt.pending || receipt.failed || !isReadReceiptMsg(receipt) || !readReceiptFromRecipient(receipt, msg, chatPK, peerChatPK)) {
+            continue;
+        }
+        if (!readReceiptCoversMessage(receipt, msg, byKey, chatPK)) {
+            continue;
+        }
+        const receiptMs = messageOrderMs(receipt);
+        if (receiptMs != null && (seenAt == null || receiptMs < seenAt)) {
+            seenAt = receiptMs;
+        }
+    }
+
+    if (seenAt == null && isPeerMsg(msg, chatPK) && canShowMsg(msg)) {
+        return now;
+    }
+    return seenAt;
+}
+
+function getUnsaveTtlMs(msg, messages, chatPK, peerChatPK, now = Date.now()) {
+    const seenAt = getMessageSeenAtMs(messages, msg, chatPK, peerChatPK, now);
+    if (seenAt != null) {
+        return getMessageRetention(msg) === CHAT_RETENTION_SEEN ? onSeenMessageTtlMs(seenAt) : seenMessageTtlMs(seenAt);
+    }
+    return getSavedTtlMs(msg);
+}
+
 function formatMsgFullDateTime(msg) {
     const ms = getMessageOrderMs(msg);
     return Number.isFinite(ms) && ms !== Infinity ? formatFullDateTime(ms) : '';
@@ -117,14 +206,35 @@ function scrollToReverseBottom(node) {
     }
 }
 
-function SendDot({ show, failed }) {
+function MsgDot({ show, failed, saved = false, side = 'right' }) {
+    const [visualSaved, setVisualSaved] = useState(saved);
+
+    useEffect(() => {
+        if (show || saved) {
+            setVisualSaved(saved);
+            return undefined;
+        }
+
+        const timeout = setTimeout(() => setVisualSaved(false), MESSAGE_ROW_ANIMATION_MS);
+        return () => clearTimeout(timeout);
+    }, [saved, show]);
+
+    const colorClassName = failed ? 'bg-destructive' : visualSaved ? 'bg-foreground' : 'bg-active';
     return (
         <div
             aria-hidden="true"
-            className={`pointer-events-none ml-2 flex h-2 w-2 shrink-0 items-center justify-center transition-opacity ease-out ${show ? 'opacity-100' : 'opacity-0'}`}
-            style={{ transitionDuration: `${MESSAGE_ROW_ANIMATION_MS}ms` }}
+            className="pointer-events-none flex h-2 shrink-0 items-center justify-center overflow-hidden ease-out"
+            style={{
+                marginLeft: side === 'right' && show ? 8 : 0,
+                marginRight: side === 'left' && show ? 8 : 0,
+                opacity: show ? 1 : 0,
+                transform: `scale(${show ? 1 : 0.65})`,
+                transitionDuration: `${MESSAGE_ROW_ANIMATION_MS}ms`,
+                transitionProperty: 'opacity, width, margin, transform',
+                width: show ? 8 : 0,
+            }}
         >
-            <div className={`size-2 rounded-full shadow-sm ${failed ? 'bg-destructive' : 'bg-active'}`} />
+            <div className={`size-2 rounded-full shadow-sm ${colorClassName}`} />
         </div>
     );
 }
@@ -165,7 +275,29 @@ function MessageActions({ actions, fromPeer }) {
     );
 }
 
-function makeMessageActions({ msg, userSent, canReply, canEdit, canRetry, canSave, canShare, canDelete, canReport, saving, onReply, onEdit, onRetry, onSave, onShare, onDelete, onReport }) {
+function makeMessageActions({
+    msg,
+    userSent,
+    canReply,
+    canEdit,
+    canRetry,
+    canSaveForever,
+    savedForever,
+    savingForever,
+    canDownload,
+    canShare,
+    canDelete,
+    canReport,
+    downloading,
+    onReply,
+    onEdit,
+    onRetry,
+    onSaveForever,
+    onDownload,
+    onShare,
+    onDelete,
+    onReport,
+}) {
     return [
         canReply && typeof onReply === 'function'
             ? {
@@ -191,14 +323,24 @@ function makeMessageActions({ msg, userSent, canReply, canEdit, canRetry, canSav
                   onClick: onRetry,
               }
             : null,
-        canSave
+        canSaveForever && typeof onSaveForever === 'function'
             ? {
-                  key: 'save',
-                  title: 'save',
-                  icon: saving ? Loader : Download,
-                  iconClassName: saving ? 'animate-spin' : '',
-                  onClick: onSave,
-                  disabled: saving,
+                  key: 'save-forever',
+                  title: savedForever ? 'unsave' : 'save forever',
+                  icon: savingForever ? Loader : Bookmark,
+                  iconClassName: savingForever ? 'animate-spin' : '',
+                  onClick: onSaveForever,
+                  disabled: savingForever,
+              }
+            : null,
+        canDownload
+            ? {
+                  key: 'download',
+                  title: 'download',
+                  icon: downloading ? Loader : Download,
+                  iconClassName: downloading ? 'animate-spin' : '',
+                  onClick: onDownload,
+                  disabled: downloading,
               }
             : null,
         canShare
@@ -407,7 +549,7 @@ function useAnimatedMessageRows(messages, scopeKey, hiddenKeys = EMPTY_MESSAGE_K
     return reset ? presentRows : state.rows;
 }
 
-const MessageRowShell = forwardRef(function MessageRowShell({ rowState = 'present', hasRowAbove = false, className, children }, ref) {
+const MessageRowShell = forwardRef(function MessageRowShell({ rowState = 'present', hasRowAbove = false, gapPx = MESSAGE_ROW_GAP_PX, className, children }, ref) {
     const innerRef = useRef(null);
     const [height, setHeight] = useState(null);
     const [collapsing, setCollapsing] = useState(false);
@@ -415,7 +557,7 @@ const MessageRowShell = forwardRef(function MessageRowShell({ rowState = 'presen
     const entering = rowState === 'entering';
     const leaving = rowState === 'leaving';
     const instant = rowState === 'instant';
-    const rowGap = hasRowAbove ? MESSAGE_ROW_GAP_PX : 0;
+    const rowGap = hasRowAbove ? gapPx : 0;
     const enterTransform = `scale(0.98)`;
     const restingScaleTransform = 'scale(1)';
 
@@ -504,7 +646,19 @@ const MessageRowShell = forwardRef(function MessageRowShell({ rowState = 'presen
     );
 });
 
-function MessageRow({
+function SystemMessageRow({ msg, rowState, hasRowAbove }) {
+    return (
+        <MessageRowShell rowState={rowState} hasRowAbove={hasRowAbove} gapPx={4} className="flex w-full shrink-0 items-center">
+            <div className="mx-auto max-w-[76%] px-2 py-0.5 text-center text-xs font-black leading-4 text-muted">{getSystemMsgText(msg)}</div>
+        </MessageRowShell>
+    );
+}
+
+function MessageRow(props) {
+    return isSystemMsg(props.msg) ? <SystemMessageRow msg={props.msg} rowState={props.rowState} hasRowAbove={props.hasRowAbove} /> : <InteractiveMessageRow {...props} />;
+}
+
+function InteractiveMessageRow({
     msg,
     rowState,
     hasRowAbove,
@@ -520,13 +674,17 @@ function MessageRow({
     receiptTime,
     isReported,
     isSaving,
+    isSavedForever,
+    saveForeverTargetSaved,
+    isSavingForever,
     isPaying,
     rowRefs,
     getOptimisticReactions,
     onReply,
     onEdit,
     onRetry,
-    onSave,
+    onDownload,
+    onSaveForever,
     onShare,
     onDelete,
     onReport,
@@ -534,7 +692,9 @@ function MessageRow({
     onPointerUp,
     onJumpToReply,
 }) {
-    const showDot = userSent && (msg.pending || msg.failed);
+    const actionSavedForever = isSavingForever && typeof saveForeverTargetSaved === 'boolean' ? saveForeverTargetSaved : isSavedForever;
+    const dotSavedForever = isSavedForever || saveForeverTargetSaved === true;
+    const showMsgDot = (userSent && (msg.pending || msg.failed)) || dotSavedForever;
     const leaving = rowState === 'leaving';
     const rowNodeRef = useRef(null);
     const exitTargetRef = useRef(null);
@@ -549,20 +709,24 @@ function MessageRow({
                 canReply: canReplyToMsg(msg),
                 canEdit: userSent && msg?.t === 'txt',
                 canRetry: userSent && msg.failed && !!msg.cid,
-                canSave: canSaveMsgFile(msg, peerChatPK),
+                canSaveForever: canToggleSaveForeverMsg(msg) && !isReported,
+                savedForever: actionSavedForever,
+                savingForever: isSavingForever,
+                canDownload: canSaveMsgFile(msg, peerChatPK),
                 canShare: canShareAttachmentMsg(msg),
                 canDelete: !!msg?.id && !String(msg.id).startsWith('local:'),
                 canReport,
-                saving: isSaving,
+                downloading: isSaving,
                 onReply,
                 onEdit,
                 onRetry: () => onRetry(msg),
-                onSave: () => onSave(msg),
+                onSaveForever: () => onSaveForever(msg),
+                onDownload: () => onDownload(msg),
                 onShare: () => onShare(msg),
                 onDelete: () => onDelete(msg),
                 onReport: () => onReport(msg),
             }),
-        [canReport, isSaving, msg, onDelete, onEdit, onReply, onReport, onRetry, onSave, onShare, peerChatPK, userSent]
+        [actionSavedForever, canReport, isReported, isSaving, isSavingForever, msg, onDelete, onDownload, onEdit, onReply, onReport, onRetry, onSaveForever, onShare, peerChatPK, userSent]
     );
     const reactions = useMemo(() => (isReported ? [] : getOptimisticReactions(msg)), [getOptimisticReactions, isReported, msg]);
     const messageTime = useMemo(() => formatFullDateTime(msg.ts?.toDate() || new Date()), [msg.ts]);
@@ -621,7 +785,7 @@ function MessageRow({
                         transform: exitOuterTransform,
                         transition: `margin-right ${MESSAGE_ROW_ANIMATION_MS}ms ${MESSAGE_ROW_EASE}, transform ${MESSAGE_ROW_EXIT_ANIMATION_MS}ms ${MESSAGE_ROW_EXIT_EASE}`,
                         willChange: leaving ? 'transform' : undefined,
-                        marginRight: userSent ? (showDot ? 0 : -16) : 0,
+                        marginRight: 0,
                     }}
                 >
                     <div
@@ -634,6 +798,7 @@ function MessageRow({
                             willChange: leaving ? 'opacity, transform' : undefined,
                         }}
                     >
+                        {fromPeer ? <MsgDot show={showMsgDot} failed={msg.failed} saved={dotSavedForever} side="left" /> : null}
                         {isReported ? (
                             <>
                                 <MessageActions actions={visibleActions} fromPeer={fromPeer} />
@@ -657,7 +822,7 @@ function MessageRow({
                                 />
                             </div>
                         )}
-                        {userSent ? <SendDot show={showDot} failed={msg.failed} /> : null}
+                        {!fromPeer ? <MsgDot show={showMsgDot} failed={msg.failed} saved={dotSavedForever} side="right" /> : null}
                     </div>
                 </div>
             </div>
@@ -669,13 +834,14 @@ function MessageRow({
 const MemoMessageRow = memo(MessageRow);
 
 export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
-    const { selectedChatId, updateMessage, retryMessage, readMessageFile, sendReaction } = useChat();
+    const { selectedChatId, updateMessage, retryMessage, makeMessagePermanent, makeMessageTemporary, readMessageFile, sendReaction } = useChat();
     const { avatar, chatPK } = useUser();
     const { peers } = usePeer();
     const { sendMoneyWithSpark } = useWallet();
     const { openDialog } = useDialog();
     const [payingMessages, setPayingMessages] = useState(new Set());
     const [savingMessages, setSavingMessages] = useState(new Set());
+    const [savingForeverMessages, setSavingForeverMessages] = useState(new Map());
     const [reportedMessageKeys, setReportedMessageKeys] = useState(new Set());
     const [deletingMessageKeys, setDeletingMessageKeys] = useState(EMPTY_MESSAGE_KEY_SET);
     const [showOlderLoader, setShowOlderLoader] = useState(false);
@@ -692,7 +858,7 @@ export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
     const lastLikeTapRef = useRef(null);
 
     const { messages: msgs, ready, hasOlder, loadingOlder, loadOlder, patchMessage, removeMessage } = useChatMessages(selectedChatId);
-    const visibleMsgs = useMemo(() => (msgs || []).filter(canShowMsg), [msgs]);
+    const visibleMsgs = useMemo(() => collapseSystemMessages((msgs || []).filter(canShowMsg)), [msgs]);
     const displayMsgs = useMemo(() => [...visibleMsgs].reverse(), [visibleMsgs]);
     const displayRows = useAnimatedMessageRows(displayMsgs, selectedChatId || '', deletingMessageKeys, ready);
     const newestRowKey = displayRows.find((row) => row.state !== 'leaving')?.key || '';
@@ -899,6 +1065,32 @@ export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
     const latestReadReceiptKey = latestReadReceipt?.message?.cid || latestReadReceipt?.message?.id || null;
     const latestReadReceiptTime = useMemo(() => formatMsgFullDateTime(latestReadReceipt?.receipt), [latestReadReceipt?.receipt]);
 
+    useEffect(() => {
+        setSavingForeverMessages((prev) => {
+            if (!prev.size) {
+                return prev;
+            }
+
+            const byKey = new Map();
+            for (const message of msgs || []) {
+                for (const key of getMsgKeys(message)) {
+                    byKey.set(key, message);
+                }
+            }
+
+            let changed = false;
+            const next = new Map(prev);
+            for (const [key, targetSaved] of prev) {
+                const message = byKey.get(key);
+                if (!message || isSavedForeverMsg(message) === targetSaved) {
+                    next.delete(key);
+                    changed = true;
+                }
+            }
+            return changed ? next : prev;
+        });
+    }, [msgs]);
+
     const canLikeMessage = useCallback(
         (msg) => {
             return !!(selectedChatId && chatPK && peerChatPK && msg?.id && !String(msg.id).startsWith('local:') && !msg.pending && !msg.failed);
@@ -907,6 +1099,13 @@ export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
     );
 
     const canSaveMessage = useCallback((msg) => canSaveMsgFile(msg, peerChatPK), [peerChatPK]);
+
+    const canToggleSaveForeverMessage = useCallback(
+        (msg) => {
+            return !!selectedChatId && canToggleSaveForeverMsg(msg);
+        },
+        [selectedChatId]
+    );
 
     const saveMessage = useCallback(
         async (msg) => {
@@ -937,6 +1136,44 @@ export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
             }
         },
         [canSaveMessage, peerChatPK, readMessageFile]
+    );
+
+    const toggleSaveForeverMessage = useCallback(
+        async (msg) => {
+            if (!canToggleSaveForeverMessage(msg)) {
+                return;
+            }
+
+            const key = getMsgKey(msg);
+            const saved = isSavedForeverMsg(msg);
+            const targetSaved = !saved;
+            const unsaveTtlMs = saved ? getUnsaveTtlMs(msg, msgs, chatPK, peerChatPK) : null;
+
+            if (key) {
+                setSavingForeverMessages((prev) => new Map(prev).set(key, targetSaved));
+            }
+
+            try {
+                if (saved) {
+                    await makeMessageTemporary(selectedChatId, msg, peerChatPK, { ttlMs: unsaveTtlMs });
+                } else {
+                    await makeMessagePermanent(selectedChatId, msg, peerChatPK);
+                }
+            } catch (error) {
+                console.warn('message save forever update failed', error);
+                toast(saved ? 'unsave failed' : 'save failed', {
+                    description: error?.message || 'Could not update this message.',
+                });
+                if (key) {
+                    setSavingForeverMessages((prev) => {
+                        const next = new Map(prev);
+                        next.delete(key);
+                        return next;
+                    });
+                }
+            }
+        },
+        [canToggleSaveForeverMessage, chatPK, makeMessagePermanent, makeMessageTemporary, msgs, peerChatPK, selectedChatId]
     );
 
     const toggleLikeMessage = useCallback(
@@ -1155,6 +1392,9 @@ export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
                 const msgKey = getMsgKey(msg);
                 const isReported = !!msgKey && reportedMessageKeys.has(msgKey);
                 const saving = !!msgKey && savingMessages.has(msgKey);
+                const savingForever = !!msgKey && savingForeverMessages.has(msgKey);
+                const saveForeverTargetSaved = savingForever ? savingForeverMessages.get(msgKey) === true : null;
+                const savedForever = isSavedForeverMsg(msg);
                 const reply = msg?.r ? replyMap.get(msg.r) || null : null;
                 const replyFromPeer = reply ? isPeerMsg(reply, chatPK) : false;
                 const hasReceipt = userSent && msgKey && msgKey === latestReadReceiptKey;
@@ -1176,13 +1416,17 @@ export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
                         receiptTime={hasReceipt ? latestReadReceiptTime : ''}
                         isReported={isReported}
                         isSaving={saving}
+                        isSavedForever={savedForever}
+                        saveForeverTargetSaved={saveForeverTargetSaved}
+                        isSavingForever={savingForever}
                         isPaying={payingMessages.has(msg.id)}
                         rowRefs={rowRefs}
                         getOptimisticReactions={getOptimisticReactions}
                         onReply={onReply}
                         onEdit={onEdit}
                         onRetry={retrySentMessage}
-                        onSave={saveMessage}
+                        onDownload={saveMessage}
+                        onSaveForever={toggleSaveForeverMessage}
                         onShare={openShareDialog}
                         onDelete={openDeleteDialog}
                         onReport={reportMessage}

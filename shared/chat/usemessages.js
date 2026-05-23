@@ -4,17 +4,69 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { filterChatMessages, getPeerChatPKFromChatId, listenToMsgDeletes, loadOlderMsgs, MSG_BATCH_SIZE } from './utils.js';
 import { getMessageKey, getMessageOrderMs, mergeMessages } from './state.js';
 import { dropCachedMedia } from '../localdatacache.js';
-import { deriveMessageReactions, getLatestOwnReadReceiptTarget, getLatestReadReceiptTarget } from './messages.js';
+import { applyMessageRetentionTimeline, deriveMessageReactions, getLatestOwnReadReceiptTarget, getLatestReadReceiptTarget, holdVisibleMsg, isExpiredMsg } from './messages.js';
 import { resolveRenderableMessages } from './resolve.js';
 
 const MAX_MESSAGE_VIEW_CACHE = 30;
 const VISITED_CHAT_PREFETCH_OLDER_BATCHES = 2;
+const activeMessageViews = new Map();
 
 function isDenied(error) {
     return error?.code === 'permission-denied';
 }
 
-function getMessagesBatch(messages) {
+function keySet(value) {
+    if (value instanceof Set) {
+        return value;
+    }
+    return new Set(Array.isArray(value) ? value.filter(Boolean) : []);
+}
+
+function messageHasKey(message, keys) {
+    if (!message || !keys?.size) {
+        return false;
+    }
+
+    const key = getMessageKey(message);
+    const id = typeof message.id === 'string' ? message.id.trim() : '';
+    const cid = typeof message.cid === 'string' ? message.cid.trim() : '';
+    return !!((key && keys.has(key)) || (id && keys.has(id)) || (cid && keys.has(cid)));
+}
+
+function addMessageKeys(keys, message) {
+    if (!keys || !message) {
+        return;
+    }
+
+    const key = getMessageKey(message);
+    const id = typeof message.id === 'string' ? message.id.trim() : '';
+    const cid = typeof message.cid === 'string' ? message.cid.trim() : '';
+    if (key) {
+        keys.add(key);
+    }
+    if (id) {
+        keys.add(id);
+    }
+    if (cid) {
+        keys.add(cid);
+    }
+}
+
+function trimExpiredMessages(messages, options = {}) {
+    const keepKeys = options.keepKeys;
+    const expiredKeys = options.expiredKeys;
+    return (messages || []).filter((message) => {
+        if (!isExpiredMsg(message)) {
+            return true;
+        }
+        if (messageHasKey(message, keepKeys)) {
+            addMessageKeys(expiredKeys, message);
+        }
+        return false;
+    });
+}
+
+function getMessagesBatch(messages, expiredKeys) {
     if (!messages?.length) {
         return null;
     }
@@ -24,11 +76,14 @@ function getMessagesBatch(messages) {
     if (!Number.isFinite(firstMs) || !Number.isFinite(lastMs)) {
         return null;
     }
-    return { firstMs, lastMs };
+    return { firstMs, lastMs, expiredKeys: keySet(expiredKeys) };
 }
 
 function isMissingFromBatch(message, msgBatch, keys) {
     if (!msgBatch || !message) {
+        return false;
+    }
+    if (messageHasKey(message, msgBatch.expiredKeys)) {
         return false;
     }
 
@@ -46,6 +101,86 @@ function dropMissingFromBatch(messages, msgBatch, keys) {
         return messages || [];
     }
     return (messages || []).filter((message) => !isMissingFromBatch(message, msgBatch, keys));
+}
+
+function removeMessagesByKeys(messages, keys) {
+    if (!keys?.size) {
+        return messages || [];
+    }
+    return (messages || []).filter((message) => !messageHasKey(message, keys));
+}
+
+function expireMessageViewCache(cache, scopeKey, messages) {
+    const seed = cache?.get?.(scopeKey);
+    if (!seed?.ready || !messages?.length) {
+        return;
+    }
+
+    const keys = new Set();
+    const expiredKeys = keySet(seed.serverBatch?.expiredKeys);
+    for (const message of messages) {
+        addMessageKeys(keys, message);
+        addMessageKeys(expiredKeys, message);
+    }
+    if (!keys.size) {
+        return;
+    }
+
+    const older = removeMessagesByKeys(seed.older, keys);
+    const live = removeMessagesByKeys(seed.live, keys);
+    cache.set(scopeKey, {
+        ...seed,
+        older,
+        live,
+        serverBatch: live.length ? getMessagesBatch(live, expiredKeys) : seed.serverBatch?.empty ? { empty: true, expiredKeys } : { ...(seed.serverBatch || {}), expiredKeys },
+    });
+}
+
+function holdCurrentLiveMessages(previous, next, firstMs, nextKeys, expiredKeys) {
+    const current = next || [];
+    if (!previous?.length) {
+        return current;
+    }
+
+    const held = [];
+    for (const message of previous) {
+        const key = getMessageKey(message);
+        const ms = getMessageOrderMs(message);
+        if (!key || nextKeys.has(key)) {
+            continue;
+        }
+        if (messageHasKey(message, expiredKeys)) {
+            held.push(holdVisibleMsg(message));
+            continue;
+        }
+        if (current.length && Number.isFinite(ms) && ms >= firstMs) {
+            held.push(message);
+        }
+    }
+    return held.length ? mergeMessages(current, held) : current;
+}
+
+function retainMessageView(scopeKey) {
+    if (!scopeKey) {
+        return;
+    }
+
+    activeMessageViews.set(scopeKey, (activeMessageViews.get(scopeKey) || 0) + 1);
+}
+
+function releaseMessageView(scopeKey, onLeave) {
+    if (!scopeKey) {
+        return;
+    }
+
+    const count = (activeMessageViews.get(scopeKey) || 1) - 1;
+    if (count > 0) {
+        activeMessageViews.set(scopeKey, count);
+        return;
+    }
+
+    activeMessageViews.delete(scopeKey);
+    onLeave?.();
 }
 
 function dropMessageMedia(cache, message) {
@@ -77,14 +212,15 @@ function messageSeedFromBatch(msgBatch, chatPK, peerChatPK) {
         return null;
     }
 
-    const live = filterChatMessages(msgBatch.messages, chatPK, peerChatPK);
+    const live = trimExpiredMessages(filterChatMessages(msgBatch.messages, chatPK, peerChatPK));
+    const expiredKeys = keySet(msgBatch.expiredKeys);
     return {
         older: [],
         live,
         hasOlder: msgBatch.hasOlder,
         ready: true,
         exists: true,
-        serverBatch: live.length ? getMessagesBatch(live) : { empty: true },
+        serverBatch: live.length ? getMessagesBatch(live, expiredKeys) : { empty: true, expiredKeys },
         oldest: msgBatch.cursor,
         olderLoaded: false,
     };
@@ -96,13 +232,17 @@ function messageSeedFromViewCache(cache, scopeKey) {
         return null;
     }
 
+    const older = trimExpiredMessages(seed.older || []);
+    const live = trimExpiredMessages(seed.live || []);
+    const expiredKeys = keySet(seed.serverBatch?.expiredKeys);
+
     return {
-        older: seed.older || [],
-        live: seed.live || [],
+        older,
+        live,
         hasOlder: !!seed.hasOlder,
         ready: true,
         exists: !!seed.exists,
-        serverBatch: seed.serverBatch ?? null,
+        serverBatch: live.length ? getMessagesBatch(live, expiredKeys) : seed.serverBatch?.empty ? { empty: true, expiredKeys } : null,
         oldest: seed.oldest ?? null,
         olderLoaded: !!seed.olderLoaded,
     };
@@ -156,6 +296,7 @@ export function createUseChatMessages({ db, useChat, useUser, useVault, appState
             isChatDataReady,
             ensureMessageBatch,
             releaseMessageBatch,
+            expireMessageBatch,
             subscribeMessageBatch,
             getMessageBatch: getSharedMessageBatch,
             getChatRowLastMsgKey,
@@ -357,7 +498,12 @@ export function createUseChatMessages({ db, useChat, useUser, useVault, appState
 
                 void Promise.resolve()
                     .then(async () => {
-                        const filteredMessages = filterChatMessages(msgBatch.messages, chatPK, peerChatPK);
+                        const expiredKeys = keySet(msgBatch.expiredKeys);
+                        const keepKeys = new Set();
+                        for (const message of liveRef.current || []) {
+                            addMessageKeys(keepKeys, message);
+                        }
+                        const filteredMessages = trimExpiredMessages(filterChatMessages(msgBatch.messages, chatPK, peerChatPK), { keepKeys, expiredKeys });
                         const chatMessages = adoptConfirmedMessages?.(chatId, filteredMessages) || filteredMessages;
                         const resolvedMessages = await resolveRenderableMessages(chatMessages, {
                             peerChatPK,
@@ -366,9 +512,9 @@ export function createUseChatMessages({ db, useChat, useUser, useVault, appState
                             droppedKeys: droppedMessageKeysRef.current,
                             resolvedKeys: resolvedMessageKeysRef.current,
                         });
-                        return { chatMessages, resolvedMessages };
+                        return { chatMessages, expiredKeys, resolvedMessages };
                     })
-                    .then(({ chatMessages, resolvedMessages }) => {
+                    .then(({ chatMessages, expiredKeys, resolvedMessages }) => {
                         if (runId !== runRef.current || seq !== applyBatchRef.current) {
                             return;
                         }
@@ -380,10 +526,11 @@ export function createUseChatMessages({ db, useChat, useUser, useVault, appState
                         const prevLive = liveRef.current;
                         const firstMs = chatMessages.length ? getMessageOrderMs(chatMessages[0]) : Infinity;
                         const nextKeys = new Set(chatMessages.map(getMessageKey).filter(Boolean));
-                        const overflow = prevLive.filter((message) => getMessageOrderMs(message) < firstMs && !nextKeys.has(getMessageKey(message)));
-                        const liveBatch = getMessagesBatch(chatMessages);
+                        const overflow = chatMessages.length ? prevLive.filter((message) => getMessageOrderMs(message) < firstMs && !nextKeys.has(getMessageKey(message))) : [];
+                        const liveBatch = getMessagesBatch(chatMessages, expiredKeys);
+                        const nextLive = holdCurrentLiveMessages(prevLive, resolvedMessages, firstMs, nextKeys, expiredKeys);
 
-                        if (!chatMessages.length) {
+                        if (!chatMessages.length && !nextLive.length) {
                             setOlder([]);
                             setServerBatch({ empty: true });
                         } else if (liveBatch) {
@@ -415,9 +562,9 @@ export function createUseChatMessages({ db, useChat, useUser, useVault, appState
                             setHasOlder(msgBatch.hasOlder);
                         }
 
-                        liveRef.current = resolvedMessages;
+                        liveRef.current = nextLive;
                         setStateScope(scopeKey);
-                        setLive(resolvedMessages);
+                        setLive(nextLive);
                         ackMessages(chatId, chatMessages);
                         setExists(true);
                         setReady(true);
@@ -692,7 +839,8 @@ export function createUseChatMessages({ db, useChat, useUser, useVault, appState
             });
         }, [liveKeys, locals]);
         const rawMessages = useMemo(() => filterChatMessages(mergeMessages(cleanOlder, activeLive, renderLocals), chatPK, peerChatPK), [activeLive, chatPK, cleanOlder, renderLocals, peerChatPK]);
-        const messages = useMemo(() => deriveMessageReactions(rawMessages, chatPK, peerChatPK), [chatPK, peerChatPK, rawMessages]);
+        const messagesWithRetention = useMemo(() => applyMessageRetentionTimeline(rawMessages), [rawMessages]);
+        const messages = useMemo(() => deriveMessageReactions(messagesWithRetention, chatPK, peerChatPK).map(holdVisibleMsg), [chatPK, peerChatPK, messagesWithRetention]);
 
         useEffect(() => {
             leaveTtlRef.current = {
@@ -704,14 +852,25 @@ export function createUseChatMessages({ db, useChat, useUser, useVault, appState
         }, [activeExists, activeReady, chatId, messages]);
 
         useEffect(() => {
+            if (!chatId) {
+                return undefined;
+            }
+
             const leavingChatId = chatId;
+            retainMessageView(scopeKey);
             return () => {
                 const current = leaveTtlRef.current;
-                if (current?.chatId === leavingChatId && current.ready && current.exists && current.messages?.length) {
-                    expireMessagesOnLeaveTtlRef.current?.(leavingChatId, current.messages);
-                }
+                releaseMessageView(scopeKey, () => {
+                    if (current?.chatId === leavingChatId && current.ready && current.exists && current.messages?.length) {
+                        const expiredMessages = expireMessagesOnLeaveTtlRef.current?.(leavingChatId, current.messages) || [];
+                        if (expiredMessages.length) {
+                            expireMessageViewCache(viewCacheRef.current, scopeKey, expiredMessages);
+                            expireMessageBatch?.(leavingChatId, expiredMessages);
+                        }
+                    }
+                });
             };
-        }, [chatId]);
+        }, [chatId, expireMessageBatch, scopeKey]);
 
         useEffect(() => {
             if (!chatId || !activeReady || !activeExists || !chatPK || !messages.length) {

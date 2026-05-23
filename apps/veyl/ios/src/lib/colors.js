@@ -4,7 +4,7 @@ export function alpha(color, percent) {
 
 export const colors = {
     light: {
-        background: 'rgba(255, 255, 255, 1)',
+        background: 'rgba(254, 254, 254, 1)',
         glassTint: 'rgba(252, 252, 252, 1)',
         foreground: 'rgba(0, 0, 0, 1)',
         muted: 'rgba(128, 128, 128, 1)',

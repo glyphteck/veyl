@@ -17,7 +17,7 @@ Use the existing glass primitives first:
 
 Do not build new buttons from raw `Pressable` unless the shape is genuinely custom. If a raw press target is needed, use `useTap` or `tap` from `src/lib/tap.js`; default spring and haptics are preferred. For repeated press interactions, keep changes narrow: usually only `scale`, `hapticIn`, or `hapticOut`.
 
-Tap feedback is scale-first. Press targets shrink on press down with the shared spring, then return on release. The default release haptic is soft and should stay on release for normal taps; use `hapticIn` only when immediate press-down confirmation is intentional, and use `hapticPress` for custom release cases such as menu rows that should not use the default. Prefer `tap` for reanimated values and `useTap` for React Native `Animated.Value` surfaces.
+Tap feedback is scale-first. Press targets shrink on press down with the shared spring, then return on release. Do not add haptics just to acknowledge that a finger is down; the scale change already communicates that state. Use haptics only when something has actually happened, such as a completed tap action, a mode change, recording start, lock-in, successful scan, or destructive confirmation. Keep normal tap haptics on release when the release commits an action, use `hapticIn` only for exceptional immediate confirmations, and use `hapticPress` for custom release cases such as menu rows that should not use the default. Prefer `tap` for reanimated values and `useTap` for React Native `Animated.Value` surfaces.
 
 For controls that appear or disappear in place, use `usePop` from `src/lib/pop.js` so the item scales in and can animate width, height, or adjacent gaps. Keep normal press feedback on the child press target when a popped item is also tappable.
 
