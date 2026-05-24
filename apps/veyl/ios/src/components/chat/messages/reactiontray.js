@@ -1,5 +1,5 @@
 import { Text, View } from 'react-native';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { StaticAvatar } from '@/components/avatar';
 import GlassView from '@/components/glass/glassview';
@@ -13,7 +13,8 @@ export const REACTION_MARK_BOTTOM = -20;
 
 const REACTION_BORDER = 3;
 export const REACTION_SPACE = 20;
-const REACTION_ANIMATION_MS = 3000;
+const REACTION_ANIMATION_MS = 160;
+const REACTION_ROW_ANIMATION_MS = REACTION_ANIMATION_MS;
 const REACTION_AVATAR = 16;
 const REACTION_CONTENT_H = REACTION_AVATAR;
 const REACTION_EMOJI_SIZE = 12;
@@ -171,8 +172,29 @@ export default function ReactionTray({ children, reactions, users, fromPeer = fa
     const groupsKey = groups.map(groupStateKey).join('|');
     const active = groups.length > 0;
     const [items, setItems] = useState(() => makeItems(groups));
+    const [trayVisible, setTrayVisible] = useState(active);
+    const trayVisibleRef = useRef(active);
     const previousActive = useRef(active);
+    const entryTimerRef = useRef(null);
+    const exitTimerRef = useRef(null);
+    const rowSpace = useSharedValue(active ? REACTION_SPACE : 0);
     const trayScale = useSharedValue(active ? 1 : TRAY_CLOSED_SCALE);
+
+    const setTrayVisibleState = useCallback((visible) => {
+        trayVisibleRef.current = visible;
+        setTrayVisible(visible);
+    }, []);
+
+    const clearTimers = useCallback(() => {
+        if (entryTimerRef.current) {
+            clearTimeout(entryTimerRef.current);
+            entryTimerRef.current = null;
+        }
+        if (exitTimerRef.current) {
+            clearTimeout(exitTimerRef.current);
+            exitTimerRef.current = null;
+        }
+    }, []);
 
     useEffect(() => {
         setItems((previous) => {
@@ -234,18 +256,54 @@ export default function ReactionTray({ children, reactions, users, fromPeer = fa
     }, [groupsKey]);
 
     useEffect(() => {
+        clearTimers();
         const timing = { duration: REACTION_ANIMATION_MS, easing: Easing.out(Easing.cubic) };
+        const rowTiming = { duration: REACTION_ROW_ANIMATION_MS, easing: Easing.out(Easing.cubic) };
         if (active) {
+            const wasActive = previousActive.current;
             previousActive.current = true;
-            trayScale.value = withTiming(1, timing);
+            rowSpace.value = withTiming(REACTION_SPACE, rowTiming);
+            if (wasActive) {
+                setTrayVisibleState(true);
+                trayScale.value = withTiming(1, timing);
+                return undefined;
+            }
+            setTrayVisibleState(false);
+            trayScale.value = TRAY_CLOSED_SCALE;
+            entryTimerRef.current = setTimeout(() => {
+                entryTimerRef.current = null;
+                setTrayVisibleState(true);
+                trayScale.value = TRAY_CLOSED_SCALE;
+                requestAnimationFrame(() => {
+                    trayScale.value = withTiming(1, timing);
+                });
+            }, REACTION_ROW_ANIMATION_MS);
             return undefined;
         }
-        if (!previousActive.current) return undefined;
+        if (!previousActive.current) {
+            rowSpace.value = withTiming(0, rowTiming);
+            setTrayVisibleState(false);
+            setItems([]);
+            return undefined;
+        }
         previousActive.current = false;
+        if (!trayVisibleRef.current) {
+            setTrayVisibleState(false);
+            setItems([]);
+            rowSpace.value = withTiming(0, rowTiming);
+            return undefined;
+        }
         trayScale.value = withTiming(TRAY_CLOSED_SCALE, timing);
-        const timeout = setTimeout(() => setItems([]), REACTION_ANIMATION_MS);
-        return () => clearTimeout(timeout);
-    }, [active, trayScale]);
+        exitTimerRef.current = setTimeout(() => {
+            exitTimerRef.current = null;
+            setTrayVisibleState(false);
+            setItems([]);
+            rowSpace.value = withTiming(0, rowTiming);
+        }, REACTION_ANIMATION_MS);
+        return undefined;
+    }, [active, clearTimers, rowSpace, setTrayVisibleState, trayScale]);
+
+    useEffect(() => clearTimers, [clearTimers]);
 
     useEffect(() => {
         if (!items.some((item) => item.exiting || item.users.some((user) => user.exiting))) {
@@ -266,20 +324,23 @@ export default function ReactionTray({ children, reactions, users, fromPeer = fa
     }, [items]);
 
     const renderItems = useMemo(() => (items.length ? items : active ? makeItems(groups) : []), [active, groups, items]);
-    const present = renderItems.length > 0;
-    const rowSpace = active ? REACTION_SPACE : 0;
+    const present = trayVisible && renderItems.length > 0;
+    const rowSpaceStyle = useAnimatedStyle(() => ({
+        paddingBottom: rowSpace.value,
+    }));
     const trayStyle = useAnimatedStyle(() => ({
+        bottom: REACTION_MARK_BOTTOM + rowSpace.value - REACTION_BORDER,
         transform: [{ scale: trayScale.value }],
     }));
 
     return (
-        <View
+        <Animated.View
             style={[
                 {
                     position: 'relative',
                     maxWidth: '100%',
-                    paddingBottom: rowSpace,
                 },
+                rowSpaceStyle,
                 style,
             ]}
         >
@@ -290,7 +351,6 @@ export default function ReactionTray({ children, reactions, users, fromPeer = fa
                     style={[
                         {
                             position: 'absolute',
-                            bottom: REACTION_MARK_BOTTOM + rowSpace - REACTION_BORDER,
                             ...(fromPeer ? { left: REACTION_MARK_INSET } : { right: REACTION_MARK_INSET }),
                             borderRadius: REACTION_OUTER_RADIUS,
                             overflow: 'hidden',
@@ -320,6 +380,6 @@ export default function ReactionTray({ children, reactions, users, fromPeer = fa
                     </GlassView>
                 </Animated.View>
             )}
-        </View>
+        </Animated.View>
     );
 }

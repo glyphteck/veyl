@@ -6,7 +6,7 @@ const BOTTOM_GAP = 8;
 const KeyboardChatScrollView = KeyboardController.KeyboardChatScrollView;
 const KeyboardProvider = KeyboardController.KeyboardProvider;
 
-export const KeyboardGestureArea = KeyboardController.KeyboardGestureArea;
+export const useKeyboardHandler = KeyboardController.useKeyboardHandler;
 export const KeyboardStickyView = KeyboardController.KeyboardStickyView;
 export const useReanimatedKeyboardAnimation = KeyboardController.useReanimatedKeyboardAnimation;
 

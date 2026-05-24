@@ -7,6 +7,7 @@ import { useTheme } from '@/providers/themeprovider';
 import { useTap } from '@/lib/tap';
 import GlassView from '@/components/glass/glassview';
 import Icon from '@/components/icon';
+import { mark } from '@/lib/diagnostics';
 import { parseCommand } from '@glyphteck/shared/commands';
 
 const INACTIVE_OPACITY = 0.32;
@@ -210,7 +211,7 @@ export function CommandBubbles({ items, onSelect, interactive = true }) {
     );
 }
 
-function ChatInput({ nativeID, onLayout, onSend, onEditMessage, onSendImage, onSendAttachment, onSendMoney, onCommand, onCommandChange, inputApiRef, draft, onClearDraft, draftKey }) {
+function ChatInput({ onLayout, onSend, onEditMessage, onSendImage, onSendAttachment, onSendMoney, onCommand, onCommandChange, inputApiRef, draft, onClearDraft, draftKey }) {
     const { theme } = useTheme();
 
     const inputRef = useRef(null);
@@ -282,24 +283,31 @@ function ChatInput({ nativeID, onLayout, onSend, onEditMessage, onSendImage, onS
     }, [draft, onClearDraft, onCommand, onCommandChange, onEditMessage, onSend, parsedCommand]);
 
     const handlePickImage = useCallback(async () => {
+        mark('chat.imagePicker.start', {});
         try {
             const existing = await ImagePicker.getMediaLibraryPermissionsAsync();
+            mark('chat.imagePicker.permission.existing', { granted: !!existing.granted, status: existing.status || '', accessPrivileges: existing.accessPrivileges || '' });
             const perm = existing.granted ? existing : await ImagePicker.requestMediaLibraryPermissionsAsync();
 
             if (!perm.granted) {
+                mark('chat.imagePicker.permission.denied', { status: perm.status || '', accessPrivileges: perm.accessPrivileges || '' });
                 Alert.alert('Permission needed', 'Please allow photo access to choose a picture.');
                 return;
             }
 
+            mark('chat.imagePicker.launch.start', {});
             const result = await ImagePicker.launchImageLibraryAsync({
                 mediaTypes: ['images', 'videos'],
                 quality: 0.85,
                 videoExportPreset: ImagePicker.VideoExportPreset.H264_1280x720,
             });
+            mark('chat.imagePicker.launch.done', { canceled: !!result.canceled, assets: result.assets?.length || 0, firstType: result.assets?.[0]?.mimeType || '', firstUri: result.assets?.[0]?.uri || '' });
 
             if (result.canceled || !result.assets?.length) return;
+            mark('chat.imagePicker.send.start', { mimeType: result.assets[0]?.mimeType || '', width: result.assets[0]?.width || 0, height: result.assets[0]?.height || 0, fileSize: result.assets[0]?.fileSize || result.assets[0]?.size || 0 });
             Promise.resolve(onSendImage?.(result.assets[0])).catch(() => {});
         } catch (e) {
+            mark('chat.imagePicker.error', { message: e?.message || String(e), code: e?.code || '' });
             console.warn('chat image picker failed', e);
         }
     }, [onSendImage]);
@@ -350,7 +358,6 @@ function ChatInput({ nativeID, onLayout, onSend, onEditMessage, onSendImage, onS
         >
             <TextInput
                 ref={inputRef}
-                nativeID={nativeID}
                 value={message}
                 onChange={handleChange}
                 placeholder="send a message"

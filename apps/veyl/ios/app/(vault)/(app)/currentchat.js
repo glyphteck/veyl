@@ -3,7 +3,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronLeft } from 'lucide-react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useSharedValue } from 'react-native-reanimated';
 import { Image as ExpoImage } from 'expo-image';
 import { useTheme } from '@/providers/themeprovider';
 import { useChat } from '@/providers/chatprovider';
@@ -13,17 +12,20 @@ import { useWallet } from '@/providers/walletprovider';
 import GlassHeader from '@/components/glass/glassheader';
 import ChatInput, { CommandBubbles, DraftBar } from '@/components/chat/chatinput';
 import MessageList from '@/components/chat/messagelist';
-import { getKeyboardOffset, KeyboardStickyView } from '@/components/keyboardscroll';
+import { KeyboardStickyView } from '@/components/keyboardscroll';
 import Icon from '@/components/icon';
 import Avatar from '@/components/avatar';
 import { prepareAssetForChatUpload } from '@/lib/chatmedia';
+import { mark } from '@/lib/diagnostics';
 import { formatUserDisplay } from '@glyphteck/shared/utils';
 import { getPeerChatPKFromChatId } from '@glyphteck/shared/chat/utils';
 import { canReplyToMsg, makeReq, makeTxt, setReply, setTxt } from '@glyphteck/shared/chat/messages';
 import { useTap } from '@/lib/tap';
 import { getCommandContext, parseCommandAmountSats } from '@glyphteck/shared/commands';
 
-const INPUT_ID = 'chat-input';
+const ENABLE_CHAT_COMPOSER = true;
+const ENABLE_CHAT_INPUT = true;
+const COMPOSER_KEYBOARD_GAP = 8;
 
 export default function CurrentChatRoute() {
     const { theme } = useTheme();
@@ -35,15 +37,14 @@ export default function CurrentChatRoute() {
     const { sendMoneyWithSpark } = useWallet();
     const { peers, updatePeer } = usePeer() || {};
     const backTap = useTap({ onPress: router.back });
-    const baseH = useRef(0);
     const inputH = useRef(0);
-    const pad = useSharedValue(0);
     const routeLockRef = useRef(false);
     const routeLockTimerRef = useRef(null);
     const inputApiRef = useRef(null);
     const [draft, setDraft] = useState(null);
     const [commandContext, setCommandContext] = useState({ kind: 'none', items: [] });
     const [inputBase, setInputBase] = useState(48);
+    const stickyOffset = useMemo(() => ({ closed: 0, opened: insets.bottom - COMPOSER_KEYBOARD_GAP }), [insets.bottom]);
 
     const chatId = typeof params?.id === 'string' ? params.id : Array.isArray(params?.id) ? params.id[0] : null;
     const currentChat = useMemo(() => (chatId && Array.isArray(chats) ? (chats.find((chat) => chat?.id === chatId) ?? null) : null), [chatId, chats]);
@@ -59,6 +60,8 @@ export default function CurrentChatRoute() {
     }, [peerChatPK, peerProfile?.username]);
     const peerAvatarSource = useMemo(() => (peerProfile?.avatar ? { uri: peerProfile.avatar } : null), [peerProfile?.avatar]);
     const peerRoute = peerProfile?.username || '';
+    const hasCurrentChat = !!currentChat;
+    const hasPeerProfile = !!peerProfile;
 
     const lockRoute = useCallback((ms = 1200) => {
         if (routeLockRef.current) return false;
@@ -75,8 +78,25 @@ export default function CurrentChatRoute() {
         if (!chatId) {
             return;
         }
+        mark('chat.select', { chatId });
         selectChat?.(chatId);
     }, [chatId, selectChat]);
+
+    useEffect(() => {
+        mark('chat.route', {
+            chatId: chatId || '',
+            peerChatPK: peerChatPK || '',
+            hasCurrentChat,
+            hasPeerProfile,
+            title: chatTitle,
+        });
+    }, [chatId, chatTitle, hasCurrentChat, hasPeerProfile, peerChatPK]);
+
+    useEffect(() => {
+        return () => {
+            mark('chat.route.unmount', { chatId: chatId || '' });
+        };
+    }, [chatId]);
 
     useEffect(() => {
         if (!peerProfile?.uid) {
@@ -108,8 +128,7 @@ export default function CurrentChatRoute() {
     useEffect(() => {
         setDraft(null);
         setCommandContext({ kind: 'none', items: [] });
-        pad.value = 0;
-    }, [chatId, pad]);
+    }, [chatId]);
 
     const handleOpenHistory = useCallback(() => {
         if (!peerProfile?.walletPK || !peerChatPK) {
@@ -168,22 +187,30 @@ export default function CurrentChatRoute() {
     const handleSendImage = useCallback(
         async (asset) => {
             if (!peerChatPK || !asset?.uri) return;
+            mark('chat.image.prepare.start', { uri: asset.uri, mimeType: asset?.mimeType || '', width: asset?.width || 0, height: asset?.height || 0, fileSize: asset?.fileSize || asset?.size || 0 });
 
             let prepared;
             try {
                 prepared = await prepareAssetForChatUpload(asset);
+                mark('chat.image.prepare.done', { mimeType: prepared?.mimeType || '', size: prepared?.size || prepared?.data?.byteLength || 0, width: prepared?.width || 0, height: prepared?.height || 0, name: prepared?.name || '' });
             } catch (error) {
+                mark('chat.image.prepare.error', { message: error?.message || String(error), code: error?.code || '' });
                 console.warn('chat image prepare failed', error);
                 return;
             }
 
             try {
                 if (String(prepared?.mimeType || '').startsWith('video/')) {
+                    mark('chat.image.sendVideo.start', { size: prepared?.size || prepared?.data?.byteLength || 0 });
                     await sendAttachment?.(peerChatPK, prepared);
+                    mark('chat.image.sendVideo.done', {});
                     return;
                 }
+                mark('chat.image.send.start', { size: prepared?.size || prepared?.data?.byteLength || 0 });
                 await sendImage?.(peerChatPK, prepared);
+                mark('chat.image.send.done', {});
             } catch (error) {
+                mark('chat.image.send.error', { message: error?.message || String(error), code: error?.code || '', stage: error?.stage || '' });
                 console.warn('chat image send failed', error);
             }
         },
@@ -236,13 +263,9 @@ export default function CurrentChatRoute() {
             if (!h) return;
             if (h === inputH.current) return;
             inputH.current = h;
-            if (!baseH.current) {
-                baseH.current = h;
-                setInputBase(h);
-            }
-            pad.value = Math.max(h - baseH.current, 0);
+            setInputBase(h);
         },
-        [pad]
+        []
     );
 
     const handleReply = useCallback((msg) => {
@@ -327,7 +350,8 @@ export default function CurrentChatRoute() {
     const draftKey = draft ? `${draft.mode}:${draft.msg?.cid || draft.msg?.id || draft.msg?.ts?.toMillis?.() || ''}` : '';
 
     return (
-        <View style={{ flex: 1, overflow: 'hidden' }}>
+        <View style={{ flex: 1 }}>
+            <View style={{ flex: 1, overflow: 'hidden' }}>
             <GlassHeader
                 style={{ zIndex: 2 }}
                 contentStyle={{
@@ -367,50 +391,53 @@ export default function CurrentChatRoute() {
             <MessageList
                 chatId={chatId}
                 chatTitle={chatTitle}
-                inputId={INPUT_ID}
                 onRequestHold={handleOpenHistory}
                 onReply={handleReply}
                 onEdit={handleEdit}
                 draftKey={draftKey}
                 inputH={inputBase}
-                pad={pad}
                 peerAvatarSource={peerAvatarSource}
                 peerBot={!!peerProfile?.bot}
                 peerChatPK={peerChatPK}
                 peerUid={peerProfile?.uid}
                 peerWalletPK={peerProfile?.walletPK}
             >
-                <KeyboardStickyView
-                    offset={{ opened: getKeyboardOffset(insets.bottom) }}
-                    style={{
-                        position: 'absolute',
-                        bottom: insets.bottom,
-                        left: 0,
-                        right: 0,
-                        paddingHorizontal: 16,
-                        zIndex: 2,
-                    }}
-                >
-                    <View onLayout={onInputLayout}>
-                        <CommandBubbles items={commandContext.items} onSelect={handleCommandBubblePress} interactive={commandContext.kind === 'pick'} />
-                        <DraftBar draft={draft} onClear={handleClearDraft} />
-                        <ChatInput
-                            nativeID={INPUT_ID}
-                            onSend={handleSend}
-                            onEditMessage={handleEditMessage}
-                            onSendImage={handleSendImage}
-                            onSendAttachment={handleSendAttachment}
-                            onSendMoney={peerProfile?.walletPK ? () => handleOpenTransfer('send') : undefined}
-                            onCommand={handleCommand}
-                            onCommandChange={handleCommandChange}
-                            inputApiRef={inputApiRef}
-                            draft={draft}
-                            onClearDraft={handleClearDraft}
-                            draftKey={draftKey}
-                        />
-                    </View>
-                </KeyboardStickyView>
+                {ENABLE_CHAT_COMPOSER ? (
+                    <KeyboardStickyView
+                        offset={stickyOffset}
+                        style={{
+                            position: 'absolute',
+                            bottom: insets.bottom,
+                            left: 0,
+                            right: 0,
+                            zIndex: 2,
+                        }}
+                        pointerEvents="box-none"
+                    >
+                        <View onLayout={onInputLayout} style={{ paddingHorizontal: 16 }}>
+                            <CommandBubbles items={commandContext.items} onSelect={handleCommandBubblePress} interactive={commandContext.kind === 'pick'} />
+                            <DraftBar draft={draft} onClear={handleClearDraft} />
+                            {ENABLE_CHAT_INPUT ? (
+                                <ChatInput
+                                    onSend={handleSend}
+                                    onEditMessage={handleEditMessage}
+                                    onSendImage={handleSendImage}
+                                    onSendAttachment={handleSendAttachment}
+                                    onSendMoney={peerProfile?.walletPK ? () => handleOpenTransfer('send') : undefined}
+                                    onCommand={handleCommand}
+                                    onCommandChange={handleCommandChange}
+                                    draft={draft}
+                                    onClearDraft={handleClearDraft}
+                                    draftKey={draftKey}
+                                />
+                            ) : (
+                                <View style={{ height: inputBase, borderRadius: 24, backgroundColor: theme.background }} />
+                            )}
+                        </View>
+                    </KeyboardStickyView>
+                ) : null}
             </MessageList>
+            </View>
         </View>
     );
 }

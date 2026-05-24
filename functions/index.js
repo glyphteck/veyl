@@ -18,8 +18,5 @@ export { submitReport } from './user/actions/report.js';
 export { setMediaSaved } from './chat/media.js';
 export { onChatMessage } from './chat/messagepush.js';
 
-// wallet functions
-export { checkWalletDepositNotifications, confirmWalletNotifications, prepareWalletNotifications, sparkWalletWebhook } from './wallet/notifications.js';
-
 // bot functions
 export { setBotPower } from './admin/setbotpower.js';

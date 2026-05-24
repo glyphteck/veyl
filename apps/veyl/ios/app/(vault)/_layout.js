@@ -26,6 +26,8 @@ function VaultContent() {
         <Stack
             screenOptions={{
                 headerShown: false,
+                gestureEnabled: true,
+                fullScreenGestureEnabled: true,
                 animationDuration: 500,
                 contentStyle: { backgroundColor: theme?.background },
             }}

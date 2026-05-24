@@ -29,13 +29,18 @@ const Button = React.forwardRef(function Button({ className, asChild = false, va
         return null;
     }
 
-    return React.cloneElement(child, {
+    const nextProps = {
         ...props,
         ...child.props,
         ref,
         className: cn(classes, child.props.className),
-        onClick: composeEventHandlers(child.props.onClick, props.onClick),
-    });
+    };
+
+    if (props.onClick || child.props.onClick) {
+        nextProps.onClick = composeEventHandlers(child.props.onClick, props.onClick);
+    }
+
+    return React.cloneElement(child, nextProps);
 });
 
 export { Button };

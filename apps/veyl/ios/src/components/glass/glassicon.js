@@ -39,7 +39,6 @@ export default function GlassIcon({
         value: scale,
         disabled: disabled || !visible,
         onPress,
-        hapticIn: 'light',
         drift,
     });
     const animStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));

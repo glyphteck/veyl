@@ -95,17 +95,12 @@ export default function BlockedRoute() {
     const enableBackSwipe = useCallback(() => {
         navigation.setOptions({ gestureEnabled: true });
     }, [navigation]);
-    const handleScrollEndDrag = useCallback(
-        (event) => {
-            const velocityY = event?.nativeEvent?.velocity?.y ?? 0;
-            if (Math.abs(velocityY) < 0.1) {
-                enableBackSwipe();
-            } else {
-                disableBackSwipe();
-            }
-        },
-        [disableBackSwipe, enableBackSwipe]
-    );
+
+    useEffect(() => () => enableBackSwipe(), [enableBackSwipe]);
+
+    const handleScrollEndDrag = useCallback(() => {
+        enableBackSwipe();
+    }, [enableBackSwipe]);
 
     return (
         <View style={{ flex: 1, overflow: 'hidden' }}>

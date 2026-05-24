@@ -28,6 +28,7 @@ import { useUser } from '@/providers/userprovider';
 import { useWallet } from '@/providers/walletprovider';
 import { usePop } from '@/lib/pop';
 import { useTap } from '@/lib/tap';
+import { mark } from '@/lib/diagnostics';
 import { CAMERA_WARM_EVENT, CAMERA_WARM_MS } from '@/lib/camerawarm';
 import { alpha } from '@/lib/colors';
 
@@ -57,8 +58,6 @@ const EXIT_HOLD = 500;
 const VIDEO_MIME = 'video/mp4';
 const CAMERA_PHOTO_RESOLUTION = CommonResolutions.FHD_4_3;
 const CAMERA_VIDEO_RESOLUTION = CommonResolutions.HD_16_9;
-const CAMERA_WARMER_OUTPUTS = [];
-const CAMERA_WARMER_STYLE = { position: 'absolute', left: -4, top: -4, width: 1, height: 1 };
 const INITIAL_ROUTE_STATE = {
     taking: false,
     holding: false,
@@ -202,18 +201,7 @@ function StagedPreview({ media }) {
     );
 }
 
-function ignoreCameraWarmError() {}
-
-function CameraWarmer({ device }) {
-    if (!device) return null;
-    return (
-        <View pointerEvents="none" style={CAMERA_WARMER_STYLE}>
-            <VCamera style={CAMERA_WARMER_STYLE} device={device} isActive={false} outputs={CAMERA_WARMER_OUTPUTS} onError={ignoreCameraWarmError} resizeMode="cover" />
-        </View>
-    );
-}
-
-function CameraSurface({ active, cameraRef, canUseZoomDevice, device, facing, onCameraStarted, onFlip, onFocus, onUseZoomDevice, outputs }) {
+function CameraSurface({ active, cameraRef, canUseZoomDevice, device, facing, onCameraError, onCameraStarted, onFlip, onFocus, onUseZoomDevice, outputs }) {
     const minZoom = Number.isFinite(device?.minZoom) ? device.minZoom : NORMAL_ZOOM;
     const maxZoom = Number.isFinite(device?.maxZoom) ? device.maxZoom : NORMAL_ZOOM;
     const regularZoom = getRegularZoom(device);
@@ -233,6 +221,7 @@ function CameraSurface({ active, cameraRef, canUseZoomDevice, device, facing, on
         .maxDistance(DOUBLE_TAP_MAX_DISTANCE)
         .maxDuration(DOUBLE_TAP_MAX_DURATION)
         .onEnd(() => {
+            'worklet';
             scheduleOnRN(onFlip);
         });
 
@@ -240,9 +229,11 @@ function CameraSurface({ active, cameraRef, canUseZoomDevice, device, facing, on
         () =>
             Gesture.Pinch()
                 .onBegin(() => {
+                    'worklet';
                     pinchStartZoom.value = cameraZoom.value;
                 })
                 .onUpdate((event) => {
+                    'worklet';
                     if (canUseZoomDevice && !zoomDeviceRequested.value && (event.scale < 0.98 || event.scale > 1.08)) {
                         zoomDeviceRequested.value = true;
                         scheduleOnRN(onUseZoomDevice);
@@ -258,6 +249,7 @@ function CameraSurface({ active, cameraRef, canUseZoomDevice, device, facing, on
         .maxDistance(FOCUS_DRIFT)
         .numberOfPointers(1)
         .onStart((e) => {
+            'worklet';
             scheduleOnRN(onFocus, e.x, e.y);
         });
 
@@ -273,6 +265,7 @@ function CameraSurface({ active, cameraRef, canUseZoomDevice, device, facing, on
                     isActive={active}
                     outputs={outputs}
                     mirrorMode={facing === 'front' ? 'on' : 'off'}
+                    onError={onCameraError}
                     onStarted={onCameraStarted}
                     resizeMode="cover"
                     zoom={cameraZoom}
@@ -475,17 +468,25 @@ export default function CameraTab() {
     const previewStyle = useAnimatedStyle(() => ({ opacity: previewOpacity.value }));
 
     const flipCamera = useCallback(() => {
-        if (taking || stagedMedia) return;
-        if (recordingRef.current && (!recorderRef.current || stopAfterStartRef.current)) return;
+        if (taking || stagedMedia) {
+            mark('camera.flip.blocked', { taking, staged: stagedMedia?.kind || '' });
+            return;
+        }
+        if (recordingRef.current && (!recorderRef.current || stopAfterStartRef.current)) {
+            mark('camera.flip.blocked', { recording: true, recorderReady: !!recorderRef.current, stopAfterStart: !!stopAfterStartRef.current });
+            return;
+        }
+        mark('camera.flip', { from: facing, to: facing === 'back' ? 'front' : 'back', deviceId: device?.id || '' });
         setBackLensMode('regular');
         setFacing((current) => (current === 'back' ? 'front' : 'back'));
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    }, [stagedMedia, taking]);
+    }, [device?.id, facing, stagedMedia, taking]);
 
     const useBackZoomDevice = useCallback(() => {
         if (facing !== 'back' || !backZoomDevice) return;
+        mark('camera.zoomDevice', { from: device?.id || '', to: backZoomDevice.id || '' });
         setBackLensMode('zoom');
-    }, [backZoomDevice, facing]);
+    }, [backZoomDevice, device?.id, facing]);
 
     const handleFocus = useCallback(
         async (x, y) => {
@@ -519,20 +520,23 @@ export default function CameraTab() {
 
         let photo;
         try {
+            mark('camera.photo.start', { deviceId: device?.id || '', facing, orientation: orientationRef.current });
             updateRouteState({ taking: true });
             photo = await photoOutput.capturePhoto({ enableShutterSound: true }, {});
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
             const path = await photo.saveToTemporaryFileAsync();
             const uri = path.startsWith('file://') ? path : `file://${path}`;
+            mark('camera.photo.done', { width: photo?.width || 0, height: photo?.height || 0, orientation: photo?.orientation || '' });
             updateRouteState({ stagedMedia: { kind: 'photo', ...stageCapturedPhoto(photo, uri, orientationRef.current) } });
         } catch (err) {
+            mark('camera.photo.error', { message: err?.message || String(err) });
             console.warn('take picture failed', err);
             Alert.alert('Capture failed', 'Could not take the photo.');
         } finally {
             photo?.dispose();
             updateRouteState({ taking: false });
         }
-    }, [photoOutput, taking, updateRouteState]);
+    }, [device?.id, facing, photoOutput, taking, updateRouteState]);
 
     const clearRecording = useCallback((token = recordingTokenRef.current) => {
         if (token !== recordingTokenRef.current) return;
@@ -549,6 +553,7 @@ export default function CameraTab() {
     }, [animateShutter, lockGestureEnabled, setShutterHeldValue, updateRouteState]);
 
     const stopVideoRecording = useCallback(() => {
+        mark('camera.video.stop', { recording: !!recordingRef.current, hasRecorder: !!recorderRef.current, locked: !!recordingLockedRef.current });
         setShutterHeldValue(false);
         recordingLockedRef.current = false;
         lockPendingRef.current = false;
@@ -566,6 +571,7 @@ export default function CameraTab() {
         const recorder = recorderRef.current;
         if (!recorder?.stopRecording) return;
         recorder.stopRecording().catch((error) => {
+            mark('camera.video.stop.error', { message: error?.message || String(error) });
             console.warn('stop video recording failed', error);
             clearRecording();
         });
@@ -611,6 +617,7 @@ export default function CameraTab() {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
 
         try {
+            mark('camera.video.start', { deviceId: device?.id || '', facing, orientation: recordingOrientationRef.current });
             const recorder = await videoOutput.createRecorder({});
             if (!mountedRef.current || token !== recordingTokenRef.current) {
                 recorder.stopRecording?.().catch?.(() => {});
@@ -627,8 +634,10 @@ export default function CameraTab() {
                     clearRecording(token);
                     try {
                         const video = stageCapturedVideo(path, recordingOrientationRef.current);
+                        mark('camera.video.done', { uri: video.uri, orientation: recordingOrientationRef.current });
                         updateRouteState({ stagedMedia: video });
                     } catch (error) {
+                        mark('camera.video.stage.error', { message: error?.message || String(error) });
                         console.warn('stage video failed', error);
                         if (mountedRef.current) Alert.alert('Capture failed', 'Could not record the video.');
                     }
@@ -636,6 +645,7 @@ export default function CameraTab() {
                 (error) => {
                     if (token !== recordingTokenRef.current) return;
                     clearRecording(token);
+                    mark('camera.video.record.error', { message: error?.message || String(error) });
                     console.warn('record video failed', error);
                     if (mountedRef.current) Alert.alert('Capture failed', 'Could not record the video.');
                 }
@@ -647,14 +657,21 @@ export default function CameraTab() {
         } catch (error) {
             if (token !== recordingTokenRef.current) return;
             clearRecording(token);
+            mark('camera.video.start.error', { message: error?.message || String(error) });
             console.warn('start video recording failed', error);
             if (mountedRef.current) Alert.alert('Capture failed', 'Could not record the video.');
         }
-    }, [animateShutter, clearRecording, hidePreview, lockGestureEnabled, previewVisible, stagedMedia, stopVideoRecording, taking, updateRouteState, videoOutput]);
+    }, [animateShutter, clearRecording, device?.id, facing, hidePreview, lockGestureEnabled, previewVisible, stagedMedia, stopVideoRecording, taking, updateRouteState, videoOutput]);
 
     const handleCameraStarted = useCallback(() => {
+        mark('camera.started', { deviceId: device?.id || '', facing });
         setCameraReady(true);
-    }, []);
+    }, [device?.id, facing]);
+
+    const handleCameraError = useCallback((error) => {
+        mark('camera.error', { deviceId: device?.id || '', facing, message: error?.message || String(error), code: error?.code || '' });
+        console.warn('camera failed', error);
+    }, [device?.id, facing]);
 
     useEffect(() => {
         const sub = DeviceEventEmitter.addListener('photosent', () => updateRouteState({ stagedMedia: null }));
@@ -1002,23 +1019,32 @@ export default function CameraTab() {
             if (barcode) handleScanResult(barcode.rawValue ?? barcode.displayValue ?? '');
         },
         onError: (error) => {
+            mark('camera.scan.error', { message: error?.message || String(error) });
             console.warn('qr scan failed', error);
         },
     });
 
     const active = pageOpen || warming || holding;
     const cameraOutputs = useMemo(() => [photoOutput, videoOutput, barcodeOutput], [barcodeOutput, photoOutput, videoOutput]);
-    const warmDevices = useMemo(() => {
-        const seen = new Set();
-        if (device?.id) seen.add(device.id);
-        return [frontDevice, backRegularDevice, backZoomDevice].filter((warmDevice) => {
-            const id = warmDevice?.id;
-            if (!id || seen.has(id)) return false;
-            seen.add(id);
-            return true;
+    useEffect(() => {
+        mark('camera.state', {
+            pageOpen,
+            active,
+            facing,
+            backLensMode,
+            deviceId: device?.id || '',
+            devicePosition: device?.position || '',
+            hasFront: !!frontDevice,
+            hasBackRegular: !!backRegularDevice,
+            hasBackZoom: !!backZoomDevice,
+            cameraReady,
+            taking,
+            recording,
+            recordingLocked,
+            staged: stagedMedia?.kind || '',
+            outputs: cameraOutputs.length,
         });
-    }, [backRegularDevice, backZoomDevice, device?.id, frontDevice]);
-    const warmOtherCameras = pageOpen && cameraReady && !stagedMedia;
+    }, [active, backLensMode, backRegularDevice, backZoomDevice, cameraOutputs.length, cameraReady, device?.id, device?.position, facing, frontDevice, pageOpen, recording, recordingLocked, stagedMedia?.kind, taking]);
     const canPreviewChat = previewVisible && !!previewPeer?.chatPK && !!chatPK && !chatBanned;
     const canPreviewSend = previewVisible && !!previewPeer?.walletPK;
     const chatPop = usePop({ show: canPreviewChat, width: 56, gapAfter: ACTION_GAP, enterBounce: 12, exitDuration: 130 });
@@ -1037,12 +1063,14 @@ export default function CameraTab() {
                 .manualActivation(true)
                 .shouldCancelWhenOutside(false)
                 .onTouchesDown((event) => {
+                    'worklet';
                     const point = getGestureTouch(event);
                     lockStartX.value = point.x;
                     lockStartY.value = point.y;
                     lockGestureActive.value = false;
                 })
                 .onTouchesMove((event, state) => {
+                    'worklet';
                     if (lockGestureActive.value) return;
 
                     const point = getGestureTouch(event);
@@ -1072,6 +1100,7 @@ export default function CameraTab() {
                     }
                 })
                 .onUpdate((event) => {
+                    'worklet';
                     if (!lockGestureEnabled.value) return;
 
                     const ax = Math.abs(event.translationX);
@@ -1082,6 +1111,7 @@ export default function CameraTab() {
                     }
                 })
                 .onFinalize(() => {
+                    'worklet';
                     const shouldStopRecording = lockGestureActive.value && lockGestureEnabled.value;
                     lockGestureActive.value = false;
                     if (shouldStopRecording) {
@@ -1154,18 +1184,19 @@ export default function CameraTab() {
     return (
         <View style={{ flex: 1, overflow: 'hidden' }}>
             <CameraSurface
+                key={device.id}
                 active={active}
                 cameraRef={cameraRef}
                 canUseZoomDevice={canUseBackZoomDevice}
                 device={device}
                 facing={facing}
+                onCameraError={handleCameraError}
                 onCameraStarted={handleCameraStarted}
                 onFlip={flipCamera}
                 onFocus={handleFocus}
                 onUseZoomDevice={useBackZoomDevice}
                 outputs={cameraOutputs}
             />
-            {warmOtherCameras ? warmDevices.map((warmDevice) => <CameraWarmer key={warmDevice.id} device={warmDevice} />) : null}
             <GlassHeader style={{ height: insets.top }} pointerEvents="none" />
             {stagedMedia ? (
                 <View style={[StyleSheet.absoluteFill, { backgroundColor: theme.background, overflow: 'hidden', justifyContent: 'center', alignItems: 'center' }]} pointerEvents="box-none">

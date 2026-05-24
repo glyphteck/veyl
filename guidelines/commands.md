@@ -130,11 +130,11 @@ bun make lifecycle
 - `bun veyl web mem` starts web with V8 heap snapshots near the heap limit; combine with `trace` for Turbopack trace output or `inspect` for Chrome DevTools memory profiling.
 - `bun veyl ios clear` clears only the veyl iOS `.expo` and Metro caches before starting.
 - `bun veyl ios` starts Expo in dev-client mode for the installed `dev.veyl` app.
-- `bun make ios` installs the `dev.veyl` Expo dev-client build on `REGTEST` with bundle id `com.glyphteck.veyl.dev`. It does not start Metro; run the dev server separately with `bun veyl ios` or the combined runtime.
+- `bun make ios` runs a clean Expo prebuild, then installs the `dev.veyl` Expo dev-client build on `REGTEST` with bundle id `com.glyphteck.veyl.dev`. It does not start Metro; run the dev server separately with `bun veyl ios` or the combined runtime.
 - `bun make ios reset` uninstalls the dev app before reinstalling it, which clears on-device app data and forces iOS to reprocess the current app identity.
 - `bun make ios test` installs the standalone test `test.veyl` build on `REGTEST` with bundle id `com.glyphteck.veyl.test`.
 - `bun make ios prod` installs the standalone production `veyl` build on `MAINNET` with bundle id `com.glyphteck.veyl`.
-- `bun make ios` is quiet by default: it prints phase lines and one-line warning summaries. Add `-v` or `--verbose` to show full child command output.
+- `bun make ios` is quiet by default: it prints phase lines, writes child command output under `apps/veyl/ios/ios/build/<scheme>/logs/<timestamp>/`, logs warning details to `*.warnings.log`, and prints the first failure details plus the full log path when a child command fails. Add `-v` or `--verbose` to also show full child command output.
 - `bun veyl mainnet` and `bun veyl regtest` apply the selected network to web, iOS, and bot.
 
 ## iOS Production Builds
@@ -145,7 +145,7 @@ bun make lifecycle
 bun make ios prod
 ```
 
-The command builds `com.glyphteck.veyl` on `MAINNET` with the Release configuration and does not require the Expo dev server after install. Local iOS make commands use Expo for prebuild/config sync only, then run `xcodebuild` and install the finished `.app` with `devicectl` because Expo's device-install wrapper hangs on this machine.
+The command builds `com.glyphteck.veyl` on `MAINNET` with the Release configuration and does not require the Expo dev server after install. Local iOS make commands use Expo for clean prebuild/config sync, then run `xcodebuild` and install the finished `.app` with `devicectl` because Expo's device-install wrapper hangs on this machine.
 
 Use `bun make ios store` for the cloud EAS App Store build:
 
@@ -185,7 +185,7 @@ Local root-site work belongs in the separate Website repo.
 
 Use [packages.md](packages.md) for package, Expo SDK, and native dependency rules.
 
-If native iOS dependencies change, the generated native project must be refreshed before judging runtime behavior. The normal local phone path is `bun make ios`, which runs Expo prebuild/config sync, builds, installs, and launches the dev client. A manual `pod install` inside `apps/veyl/ios/ios` can refresh pods for an already-generated native project, but it is not a replacement for the repo's prebuild/build path after Expo config or package changes.
+If native iOS dependencies change, the generated native project must be refreshed before judging runtime behavior. The normal local phone path is `bun make ios`, which runs clean Expo prebuild/config sync, builds, installs, and launches the dev client. A manual `pod install` inside `apps/veyl/ios/ios` can refresh pods for an already-generated native project, but it is not a replacement for the repo's prebuild/build path after Expo config or package changes.
 
 Do not run a manual app build by default after native package changes. Tell the user what changed and that they need to rebuild.
 

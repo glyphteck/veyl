@@ -2,13 +2,6 @@ import { getKeyPair } from './crypto/seed.js';
 import { clearChatPairCache } from './chat/utils.js';
 import { hasWalletPKForNetwork } from './walletkeys.js';
 
-const WALLET_WEBHOOK_EVENT_TYPES = [
-    'SPARK_STATIC_DEPOSIT_FINISHED',
-    'SPARK_LIGHTNING_RECEIVE_FINISHED',
-    'SPARK_LIGHTNING_SEND_FINISHED',
-    'SPARK_COOP_EXIT_FINISHED',
-];
-
 function getBootWalletClass(SparkWallet, { enableTokenSync = false } = {}) {
     if (enableTokenSync) {
         return SparkWallet;
@@ -34,90 +27,6 @@ async function syncWalletPrivacy(wallet, ghostWallet) {
     }
 
     await wallet.setPrivacyEnabled(desired);
-}
-
-function normalizedEventSet(events) {
-    return new Set((Array.isArray(events) ? events : []).map((event) => String(event ?? '').trim()).filter(Boolean));
-}
-
-function sameEventSet(left, right) {
-    const a = normalizedEventSet(left);
-    const b = normalizedEventSet(right);
-    if (a.size !== b.size) {
-        return false;
-    }
-    for (const item of a) {
-        if (!b.has(item)) {
-            return false;
-        }
-    }
-    return true;
-}
-
-function readWebhookId(result) {
-    if (typeof result?.id === 'string' && result.id) {
-        return result.id;
-    }
-    if (typeof result?.webhook_id === 'string' && result.webhook_id) {
-        return result.webhook_id;
-    }
-    return typeof result?.webhookId === 'string' && result.webhookId ? result.webhookId : null;
-}
-
-async function findRegisteredWebhook(wallet, url, eventTypes) {
-    if (typeof wallet?.listSparkWalletWebhooks !== 'function') {
-        return null;
-    }
-
-    const result = await wallet.listSparkWalletWebhooks();
-    const webhooks = Array.isArray(result?.webhooks) ? result.webhooks : [];
-    return webhooks.find((entry) => entry?.url === url && sameEventSet(entry.event_types ?? entry.eventTypes, eventTypes)) || null;
-}
-
-async function registerWalletNotifications(wallet, user, walletPK, { httpsCallable, functions, network } = {}) {
-    if (typeof wallet?.registerSparkWalletWebhook !== 'function') {
-        return;
-    }
-
-    try {
-        const prepare = httpsCallable(functions, 'prepareWalletNotifications');
-        const confirm = httpsCallable(functions, 'confirmWalletNotifications');
-        const prepared = await prepare({ network, walletPK });
-        const url = typeof prepared?.data?.url === 'string' ? prepared.data.url : '';
-        const secret = typeof prepared?.data?.secret === 'string' ? prepared.data.secret : '';
-        const eventTypes = Array.isArray(prepared?.data?.eventTypes) && prepared.data.eventTypes.length ? prepared.data.eventTypes : WALLET_WEBHOOK_EVENT_TYPES;
-        if (!url || !secret) {
-            throw new Error('wallet notification route missing');
-        }
-
-        const existing = await findRegisteredWebhook(wallet, url, eventTypes).catch(() => null);
-        let webhookId = readWebhookId(existing);
-        if (!webhookId) {
-            const registered = await wallet.registerSparkWalletWebhook({
-                secret,
-                url,
-                event_types: eventTypes,
-            });
-            webhookId = readWebhookId(registered);
-        }
-
-        await confirm({ network, walletPK, webhookId, url });
-    } catch (error) {
-        console.warn('wallet notification registration failed', error?.message ?? error);
-    }
-}
-
-function scheduleWalletNotifications(wallet, user, walletPK, options) {
-    const run = () => {
-        void registerWalletNotifications(wallet, user, walletPK, options);
-    };
-
-    if (typeof setTimeout === 'function') {
-        setTimeout(run, 0);
-        return;
-    }
-
-    run();
 }
 
 function bytesToHex(bytes) {
@@ -155,7 +64,6 @@ export async function bootWallet(walletMnemonic, user, { SparkWallet, httpsCalla
     } else if (!hasWalletPKForNetwork(user, network)) {
         await httpsCallable(functions, 'setWalletPK')({ walletPK: idPk, network });
     }
-    scheduleWalletNotifications(wallet, user, walletPK, { httpsCallable, functions, network });
     return wallet;
 }
 

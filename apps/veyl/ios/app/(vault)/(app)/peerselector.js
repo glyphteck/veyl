@@ -1,7 +1,7 @@
-import { forwardRef, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, FlatList, Keyboard, Pressable, Text, TextInput, View } from 'react-native';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, Keyboard, Pressable, Text, TextInput, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import Animated, { Easing, useAnimatedStyle, useDerivedValue, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, { Easing, scrollTo, useAnimatedRef, useAnimatedStyle, useDerivedValue, useSharedValue, withTiming } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowDownLeft, ArrowUpRight, MessageCircle, Search } from 'lucide-react-native';
@@ -24,14 +24,26 @@ import GlassField from '@/components/glass/glassfield';
 import GlassIcon from '@/components/glass/glassicon';
 import Icon from '@/components/icon';
 import SearchInput from '@/components/search';
-import { getKeyboardOffset, KeyboardGestureArea, KeyboardListScrollView, KeyboardStickyView, useReanimatedKeyboardAnimation } from '@/components/keyboardscroll';
+import { KeyboardStickyView, useReanimatedKeyboardAnimation } from '@/components/keyboardscroll';
 import { tap } from '@/lib/tap';
 
 const UNITS = ['sats', 'btc', 'usd'];
 const FOOTER_OFFSCREEN = 260;
-const FOOTER_CONTENT_HEIGHT = 98;
+const FOOTER_HEIGHT_FALLBACK = 122;
+const FOOTER_LIST_CLEARANCE = 12;
+const FOOTER_SCROLL_RELAX = 8;
+const FOOTER_KEYBOARD_GAP = 8;
+const FOOTER_PRELOAD_SCALE = 0.001;
+const FOOTER_ANIMATION_MS = 220;
+const FOOTER_KEYBOARD_CLOSE_MAX_EXTRA_MS = 140;
+const FOOTER_KEYBOARD_CLOSE_MS_PER_PX = 0.35;
+const FOOTER_EASING = Easing.out(Easing.cubic);
+const FOOTER_CLOSE_EASING = Easing.inOut(Easing.cubic);
+const PEER_ROW_HEIGHT_FALLBACK = 112;
+const LIST_CROP_TOP = 20;
+const LIST_CONTENT_TOP = 18 + 24;
+const LIST_DEFAULT_BOTTOM_GAP = 12;
 const MAX_REQUEST_AMOUNT = satsInABitcoin * 100000n;
-const INPUT_ID = 'peer-footer-input';
 
 function getPeerLabel(peer) {
     if (!peer) return '';
@@ -89,20 +101,6 @@ function arePeerCellsEqual(prev, next) {
     );
 }
 
-const PeerScroll = forwardRef(function PeerScroll({ pad, ...props }, ref) {
-    return (
-        <KeyboardListScrollView
-            ref={ref}
-            {...props}
-            bounces
-            alwaysBounceVertical
-            keyboardDismissMode="interactive"
-            keyboardLiftBehavior="never"
-            extraContentPadding={pad}
-        />
-    );
-});
-
 export default function PeerSelectorScreen() {
     const { theme } = useTheme();
     const { peers, recentPeers } = usePeer() || {};
@@ -117,14 +115,16 @@ export default function PeerSelectorScreen() {
 
     const searchInputRef = useRef(null);
     const amountInputRef = useRef(null);
+    const listRef = useAnimatedRef();
+    const listHeightRef = useRef(0);
+    const listScrollYRef = useRef(0);
+    const footerHeightRef = useRef(FOOTER_HEIGHT_FALLBACK);
+    const filteredPeersRef = useRef([]);
     const activePeer = useRef(null);
     const openRef = useRef(true);
     const busyRef = useRef(false);
     const routeLockRef = useRef(false);
     const routeLockTimerRef = useRef(null);
-    const keyboardVisibleRef = useRef(false);
-    const keyboardTransitionUntilRef = useRef(0);
-    const sheetHeightRef = useRef(null);
 
     const [selectedPeer, setSelectedPeer] = useState(null);
     const [amount, setAmount] = useState('');
@@ -135,7 +135,20 @@ export default function PeerSelectorScreen() {
     const [mode, setMode] = useState('send');
 
     const cycleScale = useSharedValue(1);
-    const translateY = useSharedValue(FOOTER_OFFSCREEN);
+    const footerLive = useSharedValue(0);
+    const footerProgress = useSharedValue(0);
+    const footerReserve = useSharedValue(FOOTER_HEIGHT_FALLBACK + FOOTER_LIST_CLEARANCE);
+    const linkedScrollBase = useSharedValue(0);
+    const linkedScrollDelta = useSharedValue(0);
+    const linkedScrollActive = useSharedValue(0);
+
+    useDerivedValue(() => {
+        if (!linkedScrollActive.value) {
+            return;
+        }
+
+        scrollTo(listRef, 0, Math.max(0, linkedScrollBase.value + linkedScrollDelta.value * footerProgress.value), false);
+    });
 
     useEffect(() => {
         return () => {
@@ -162,41 +175,6 @@ export default function PeerSelectorScreen() {
         return true;
     }, []);
 
-    useEffect(() => {
-        const markKeyboardTransition = () => {
-            keyboardTransitionUntilRef.current = Date.now() + 350;
-        };
-        const handleKeyboardWillShow = () => {
-            keyboardVisibleRef.current = true;
-            markKeyboardTransition();
-        };
-        const handleKeyboardWillHide = () => {
-            keyboardVisibleRef.current = false;
-            markKeyboardTransition();
-        };
-        const handleKeyboardDidShow = () => {
-            keyboardVisibleRef.current = true;
-            markKeyboardTransition();
-        };
-        const handleKeyboardDidHide = () => {
-            keyboardVisibleRef.current = false;
-            markKeyboardTransition();
-        };
-
-        const subscriptions = [
-            Keyboard.addListener('keyboardWillShow', handleKeyboardWillShow),
-            Keyboard.addListener('keyboardWillHide', handleKeyboardWillHide),
-            Keyboard.addListener('keyboardDidShow', handleKeyboardDidShow),
-            Keyboard.addListener('keyboardDidHide', handleKeyboardDidHide),
-        ];
-
-        return () => {
-            for (const subscription of subscriptions) {
-                subscription.remove();
-            }
-        };
-    }, []);
-
     const pickPeer = useCallback((peer) => {
         activePeer.current = peer;
         setSelectedPeer(peer);
@@ -214,11 +192,75 @@ export default function PeerSelectorScreen() {
         resetOverlay();
     }, [resetOverlay]);
 
+    const getFooterHeight = useCallback(() => Math.max(0, footerHeightRef.current || FOOTER_HEIGHT_FALLBACK), []);
+    const getFooterReserveHeight = useCallback(() => getFooterHeight() + FOOTER_LIST_CLEARANCE, [getFooterHeight]);
+    const getFooterCloseDuration = useCallback(() => {
+        const metricHeight = Math.max(0, Number(Keyboard.metrics?.()?.height) || 0);
+        const animatedHeight = Math.max(0, -(Number(keyboardHeight.value) || 0));
+        const keyboardLift = Math.max(metricHeight, animatedHeight);
+        if (keyboardLift <= 0) return FOOTER_ANIMATION_MS;
+        return FOOTER_ANIMATION_MS + Math.min(FOOTER_KEYBOARD_CLOSE_MAX_EXTRA_MS, Math.round(keyboardLift * FOOTER_KEYBOARD_CLOSE_MS_PER_PX));
+    }, [keyboardHeight]);
+
+    const getPeerFooterDelta = useCallback(
+        (peer) => {
+            const listHeight = listHeightRef.current;
+            const footerHeight = getFooterHeight();
+            if (!peer || listHeight <= 0 || footerHeight <= 0) return 0;
+
+            const index = filteredPeersRef.current.findIndex((item) => samePeer(item, peer));
+            if (index < 0) return 0;
+
+            const rowBottom = LIST_CONTENT_TOP + (Math.floor(index / 3) + 1) * PEER_ROW_HEIGHT_FALLBACK;
+            const currentOffset = Math.max(0, listScrollYRef.current);
+            const selectedBottom = rowBottom - currentOffset;
+            const footerTop = listHeight - insets.bottom - footerHeight - FOOTER_LIST_CLEARANCE + FOOTER_SCROLL_RELAX;
+
+            return Math.max(0, selectedBottom - footerTop);
+        },
+        [getFooterHeight, insets.bottom]
+    );
+
+    const startLinkedFooterOpen = useCallback(
+        (peer) => {
+            const delta = getPeerFooterDelta(peer);
+            footerLive.value = 1;
+            footerReserve.value = getFooterReserveHeight();
+            linkedScrollBase.value = Math.max(0, listScrollYRef.current);
+            linkedScrollDelta.value = delta;
+            linkedScrollActive.value = delta > 0 ? 1 : 0;
+            footerProgress.value = 0;
+            footerProgress.value = withTiming(1, { duration: FOOTER_ANIMATION_MS, easing: FOOTER_EASING }, () => {
+                linkedScrollActive.value = 0;
+            });
+        },
+        [footerLive, footerProgress, footerReserve, getFooterReserveHeight, getPeerFooterDelta, linkedScrollActive, linkedScrollBase, linkedScrollDelta]
+    );
+
+    const scrollPeerAboveFooter = useCallback(
+        (peer) => {
+            if (!samePeer(activePeer.current, peer)) return;
+            const delta = getPeerFooterDelta(peer);
+            if (delta <= 0) return;
+
+            listRef.current?.scrollToOffset?.({
+                offset: Math.max(0, listScrollYRef.current + delta),
+                animated: true,
+            });
+        },
+        [getPeerFooterDelta, listRef]
+    );
+
     const closePanel = useCallback(() => {
-        translateY.value = withTiming(FOOTER_OFFSCREEN, { duration: 220, easing: Easing.out(Easing.cubic) }, (done) => {
-            if (done) scheduleOnRN(finishClose);
+        const closeDuration = getFooterCloseDuration();
+        linkedScrollActive.value = 0;
+        footerProgress.value = withTiming(0, { duration: closeDuration, easing: FOOTER_CLOSE_EASING }, (done) => {
+            if (done) {
+                footerLive.value = 0;
+                scheduleOnRN(finishClose);
+            }
         });
-    }, [finishClose, translateY]);
+    }, [finishClose, footerLive, footerProgress, getFooterCloseDuration, linkedScrollActive]);
 
     const handleSelectPeer = useCallback(
         (nextPeer) => {
@@ -240,11 +282,12 @@ export default function PeerSelectorScreen() {
 
             if (isFirst) {
                 setOverlayVisible(true);
-                translateY.value = FOOTER_OFFSCREEN;
-                translateY.value = withTiming(0, { duration: 220, easing: Easing.out(Easing.cubic) });
+                startLinkedFooterOpen(nextPeer);
+            } else {
+                scrollPeerAboveFooter(nextPeer);
             }
         },
-        [closePanel, pickPeer, settings?.moneyFormat, translateY]
+        [closePanel, pickPeer, scrollPeerAboveFooter, settings?.moneyFormat, startLinkedFooterOpen]
     );
 
     const handleSearchChange = useCallback(
@@ -259,26 +302,6 @@ export default function PeerSelectorScreen() {
         setSearch('');
         clearSearch();
     }, [clearSearch]);
-
-    const handleSearchFocus = useCallback(() => {
-        if (!activePeer.current || isSending) return;
-        amountInputRef.current?.blur();
-        pickPeer(null);
-        closePanel();
-    }, [closePanel, isSending, pickPeer]);
-
-    const handleSheetLayout = useCallback((event) => {
-        const nextHeight = Math.round(event.nativeEvent.layout.height);
-        const previousHeight = sheetHeightRef.current;
-        sheetHeightRef.current = nextHeight;
-
-        if (previousHeight == null || previousHeight === nextHeight) return;
-        if (!keyboardVisibleRef.current) return;
-        if (Date.now() < keyboardTransitionUntilRef.current) return;
-
-        searchInputRef.current?.blur();
-        amountInputRef.current?.blur();
-    }, []);
 
     const closeRoute = useCallback(async () => {
         searchInputRef.current?.blur?.();
@@ -326,6 +349,7 @@ export default function PeerSelectorScreen() {
             extraFilter: requireWalletAndChat,
         });
     }, [mode, peers, query, recentPeers?.all, results, search]);
+    filteredPeersRef.current = filteredPeers;
 
     const handleOpenChat = useCallback(() => {
         if (chatBanned) return;
@@ -391,6 +415,25 @@ export default function PeerSelectorScreen() {
             });
     }, [closeRoute, isSending, mode, selectedPeer, sendMessage, sendMoneyWithSpark, validSats]);
 
+    const handleListLayout = useCallback((event) => {
+        listHeightRef.current = Math.round(event?.nativeEvent?.layout?.height || 0);
+    }, []);
+    const handleListScroll = useCallback((event) => {
+        listScrollYRef.current = Math.max(0, Number(event?.nativeEvent?.contentOffset?.y) || 0);
+    }, []);
+    const handleFooterLayout = useCallback(
+        (event) => {
+            const height = Math.round(event?.nativeEvent?.layout?.height || 0);
+            if (height <= 0 || height === footerHeightRef.current) return;
+            footerHeightRef.current = height;
+            footerReserve.value = height + FOOTER_LIST_CLEARANCE;
+            if (overlayVisible) {
+                scrollPeerAboveFooter(activePeer.current);
+            }
+        },
+        [footerReserve, overlayVisible, scrollPeerAboveFooter]
+    );
+
     const renderPeer = useCallback(
         ({ item }) => {
             const selected = samePeer(selectedPeer, item);
@@ -401,12 +444,17 @@ export default function PeerSelectorScreen() {
 
     const peerKey = useCallback((item, index) => item?.uid || item?.chatPK || item?.walletPK || `${index}`, []);
     const cycleStyle = useAnimatedStyle(() => ({ transform: [{ scale: cycleScale.value }] }));
-    const slideStyle = useAnimatedStyle(() => ({ transform: [{ translateY: translateY.value }] }));
-    const footerPad = useDerivedValue(() => {
-        const footerInset = keyboardHeight.value > 0 ? 8 : insets.bottom;
-        return overlayVisible ? FOOTER_CONTENT_HEIGHT + footerInset : 0;
-    }, [overlayVisible, insets.bottom]);
-    const renderScrollComponent = useCallback((props) => <PeerScroll {...props} pad={footerPad} />, [footerPad]);
+    const slideStyle = useAnimatedStyle(() => {
+        if (!footerLive.value && footerProgress.value <= 0) {
+            return { transform: [{ scale: FOOTER_PRELOAD_SCALE }] };
+        }
+
+        return { transform: [{ translateY: FOOTER_OFFSCREEN * (1 - footerProgress.value) }, { scale: 1 }] };
+    });
+    const footerReserveStyle = useAnimatedStyle(() => ({ height: footerReserve.value * footerProgress.value + Math.max(0, -keyboardHeight.value - insets.bottom) }));
+    const stickyOffset = useMemo(() => ({ closed: 0, opened: insets.bottom - FOOTER_KEYBOARD_GAP }), [insets.bottom]);
+    const footerBottom = insets.bottom;
+    const listBottomPadding = insets.bottom + LIST_DEFAULT_BOTTOM_GAP;
     const cyclePress = tap({ value: cycleScale, disabled: isSending, onPress: cycleUnit });
     const modeIcon = mode === 'request' ? ArrowDownLeft : ArrowUpRight;
     const sendLabel =
@@ -422,9 +470,10 @@ export default function PeerSelectorScreen() {
                 ? `send to ${formatUserDisplay(selectedPeer, false)}`
                 : 'send';
     const sendDisabled = !validSats || isSending || (mode === 'request' ? chatBanned || !selectedPeer?.chatPK : !selectedPeer?.walletPK);
+    const amountPlaceholder = inputUnit === 'sats' ? '0000' : '0.00';
 
     return (
-        <View style={{ flex: 1, overflow: 'hidden', paddingHorizontal: 12 }} onLayout={handleSheetLayout}>
+        <View style={{ flex: 1, overflow: 'hidden', paddingHorizontal: 12 }}>
             <View
                 style={{
                     paddingHorizontal: 16,
@@ -439,7 +488,6 @@ export default function PeerSelectorScreen() {
                     ref={searchInputRef}
                     value={search}
                     onChangeText={handleSearchChange}
-                    onFocus={handleSearchFocus}
                     onClear={handleClearSearch}
                     searching={searching}
                     glassEffectStyle="regular"
@@ -448,22 +496,26 @@ export default function PeerSelectorScreen() {
                     }}
                 />
             </View>
-            <KeyboardGestureArea interpolator="ios" style={{ flex: 1, paddingTop: 20 }} textInputNativeID={INPUT_ID}>
-                <FlatList
+            <View onLayout={handleListLayout} style={{ position: 'absolute', top: LIST_CROP_TOP, left: 0, right: 0, bottom: 0, overflow: 'hidden' }}>
+                <Animated.FlatList
+                    ref={listRef}
                     data={filteredPeers}
                     keyExtractor={peerKey}
                     renderItem={renderPeer}
-                    renderScrollComponent={renderScrollComponent}
                     numColumns={3}
+                    keyboardDismissMode="interactive"
                     keyboardShouldPersistTaps="handled"
-                    contentContainerStyle={{ flexGrow: 1, paddingTop: 18 + 24, paddingBottom: insets.bottom + 12 }}
+                    contentContainerStyle={{ flexGrow: 1, paddingTop: LIST_CONTENT_TOP, paddingBottom: listBottomPadding }}
                     style={{ flex: 1 }}
+                    onScroll={handleListScroll}
+                    scrollEventThrottle={16}
                     showsVerticalScrollIndicator={false}
                     bounces
                     alwaysBounceVertical
                     automaticallyAdjustContentInsets={false}
                     automaticallyAdjustsScrollIndicatorInsets={false}
                     contentInsetAdjustmentBehavior="never"
+                    ListFooterComponent={<Animated.View pointerEvents="none" style={footerReserveStyle} />}
                     ListEmptyComponent={
                         searching ? (
                             <EmptyState busy title="searching..." />
@@ -477,18 +529,23 @@ export default function PeerSelectorScreen() {
                     }
                 />
 
-                <KeyboardStickyView offset={{ opened: getKeyboardOffset(insets.bottom) }} style={{ position: 'absolute', left: 0, right: 0, bottom: insets.bottom, zIndex: 2 }} pointerEvents="box-none">
-                    <Animated.View pointerEvents={isSending ? 'none' : 'box-none'} style={[{ paddingHorizontal: 14, gap: 12 }, slideStyle]}>
+                <KeyboardStickyView offset={stickyOffset} style={{ position: 'absolute', left: 0, right: 0, bottom: footerBottom, zIndex: 2 }} pointerEvents="box-none">
+                    <Animated.View
+                        onLayout={handleFooterLayout}
+                        pointerEvents={isSending || !overlayVisible ? 'none' : 'box-none'}
+                        accessibilityElementsHidden={!overlayVisible}
+                        importantForAccessibility={overlayVisible ? 'auto' : 'no-hide-descendants'}
+                        style={[{ paddingHorizontal: 14, gap: 12 }, slideStyle]}
+                    >
                         <GlassField disabled={isSending} style={{ flex: 1, paddingHorizontal: 16 }}>
                             <TextInput
                                 ref={amountInputRef}
-                                nativeID={INPUT_ID}
                                 value={amount}
-                                placeholder={inputUnit === 'sats' ? '0000' : '0.00'}
+                                placeholder={amountPlaceholder}
                                 placeholderTextColor={theme.muted}
                                 keyboardType="numeric"
                                 onChangeText={setAmount}
-                                editable={!isSending}
+                                editable={overlayVisible && !isSending}
                                 style={{ flex: 1, fontSize: 24, fontWeight: '900', color: theme.foreground, paddingVertical: 10 }}
                             />
                             <Pressable {...cyclePress} hitSlop={8} disabled={isSending}>
@@ -500,13 +557,13 @@ export default function PeerSelectorScreen() {
                             </Pressable>
                         </GlassField>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                            <GlassIcon icon={modeIcon} iconSize={32} onPress={toggleMode} disabled={isSending || chatBanned} />
-                            <GlassButton onPress={handleSend} label={sendLabel} accent disabled={sendDisabled} pressableStyle={{ flex: 1 }} />
                             <GlassIcon icon={MessageCircle} onPress={handleOpenChat} disabled={!selectedPeer?.chatPK || isSending || chatBanned} />
+                            <GlassButton onPress={handleSend} label={sendLabel} accent disabled={sendDisabled} pressableStyle={{ flex: 1 }} />
+                            <GlassIcon icon={modeIcon} iconSize={32} onPress={toggleMode} disabled={isSending || chatBanned} />
                         </View>
                     </Animated.View>
                 </KeyboardStickyView>
-            </KeyboardGestureArea>
+            </View>
         </View>
     );
 }

@@ -152,7 +152,7 @@ The wrapper URL is intentional for veyl-specific actions. On iOS, the veyl web h
 - Peer payments use the other user’s stored `walletPK`.
 - The app also tracks funding addresses, claims on-chain deposits, withdrawals, balance, and transfer history.
 - The `ghost wallet` setting enables Spark Bitcoin privacy mode for the unlocked wallet, hiding Bitcoin activity from public read-only Spark lookups while keeping the owner wallet fully usable in veyl. Spark privacy mode does not currently hide token transactions.
-- Wallet push notifications are registered after wallet unlock: the client asks Functions for a stable Spark webhook URL, then the initialized Spark wallet performs Spark webhook registration. Veyl does not store static funding addresses by default. Static Bitcoin deposit APNs are paused unless they become an explicit opt-in feature because reliable offline deposit alerts require server-side address watching. The client remains the only deposit-claim executor.
+- Wallet push notifications and Spark webhook registration are not active. Veyl does not store static funding addresses by default, and static Bitcoin deposit APNs are paused unless they become an explicit opt-in feature because reliable offline deposit alerts require server-side address watching. The client remains the only deposit-claim executor.
 - Withdrawal flows must reject addresses that do not match the active wallet network. That check exists in scanner/QR entry points, form disabled states, and the shared wallet withdraw function.
 - Transaction history hydrates from the vaulted local cache on unlock, then Spark pagination fetches recent pages until it reaches a stable cached transfer boundary. Balance remains live-only.
 
@@ -174,7 +174,7 @@ The wrapper URL is intentional for veyl-specific actions. On iOS, the veyl web h
 
 ### Backend and data
 
-- Firebase Functions handle passkeys, onboarding writes, settings writes, push token registration, Spark wallet webhook notification routing, account deletion, reports, and scheduled BTC metadata refreshes.
+- Firebase Functions handle passkeys, onboarding writes, settings writes, push token registration, chat message push routing, account deletion, reports, and scheduled BTC metadata refreshes.
 - Firestore stores user state, public profiles, encrypted seeds, chats, messages, usernames, cached bitcoin metadata, and passkey records.
 - Firebase Storage stores avatars and chat or report file blobs.
 

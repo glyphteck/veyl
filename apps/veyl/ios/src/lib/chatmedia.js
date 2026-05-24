@@ -10,6 +10,7 @@ import { cleanBytes, randomBytes, toBytes } from '@glyphteck/shared/crypto/core'
 import { packRawData, unpackBodyData } from '@glyphteck/shared/crypto/pack';
 import { makeAttachment } from '@glyphteck/shared/chat/messages';
 import { pickAttachmentMeta } from '@glyphteck/shared/chat/media';
+import { mark } from '@/lib/diagnostics';
 
 export const MAX_CHAT_IMAGE_EDGE = 1600;
 export const CHAT_IMAGE_COMPRESS = 0.82;
@@ -40,14 +41,37 @@ async function readUriBytes(uri) {
         throw new Error('asset uri required');
     }
     try {
+        mark('chat.media.readFile.start', { uri });
         return await new File(uri).bytes();
     } catch (error) {
+        mark('chat.media.readFile.fallback', { uri, message: error?.message || String(error) });
         const response = await fetch(uri);
         if (!response.ok && response.status !== 0) {
             throw error;
         }
         return new Uint8Array(await response.arrayBuffer());
     }
+}
+
+function readUriBlob(uri) {
+    return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.onload = () => {
+            if (xhr.status && (xhr.status < 200 || xhr.status >= 300)) {
+                reject(new Error(`blob read failed (${xhr.status})`));
+                return;
+            }
+            if (!xhr.response) {
+                reject(new Error('blob read failed'));
+                return;
+            }
+            resolve(xhr.response);
+        };
+        xhr.onerror = () => reject(new Error('blob read failed'));
+        xhr.responseType = 'blob';
+        xhr.open('GET', uri);
+        xhr.send();
+    });
 }
 
 function assertChatFileSize(bytes) {
@@ -179,15 +203,22 @@ export async function uploadStorageBytesNative(storage, path, data, metadata = {
 
     const body = toBytes(data, 'upload bytes');
     const temp = new File(Paths.cache, `chatupload-${Date.now()}-${Math.random().toString(36).slice(2)}.bin`);
+    let blob = null;
 
     try {
+        mark('chat.media.uploadBytes.start', { path, bytes: body.byteLength || 0, contentType: metadata?.contentType || '' });
         temp.create({ overwrite: true });
+        mark('chat.media.uploadBytes.write.start', { uri: temp.uri });
         temp.write(body);
-        const response = await fetch(temp.uri);
-        const blob = await response.blob();
+        mark('chat.media.uploadBytes.write.done', { uri: temp.uri });
+        mark('chat.media.uploadBytes.blob.start', { uri: temp.uri });
+        blob = await readUriBlob(temp.uri);
+        mark('chat.media.uploadBytes.blob.done', { size: blob?.size || 0, type: blob?.type || '' });
         await uploadBytes(ref(storage, path), blob, metadata);
+        mark('chat.media.uploadBytes.done', { path });
         return path;
     } finally {
+        blob?.close?.();
         try {
             temp.delete();
         } catch {}
@@ -197,6 +228,7 @@ export async function uploadStorageBytesNative(storage, path, data, metadata = {
 async function sealChatFileNative(key, bytes, path) {
     const fileKey = new Uint8Array(decodeFileKey(key));
     try {
+        mark('chat.media.encrypt.start', { path, bytes: bytes?.byteLength || 0 });
         const aesKey = await AESEncryptionKey.import(fileKey);
         const sealed = await aesEncryptAsync(bytes, aesKey, {
             nonce: { bytes: randomBytes(FILE_IV_BYTES) },
@@ -204,6 +236,7 @@ async function sealChatFileNative(key, bytes, path) {
         });
         const nonce = new Uint8Array(await sealed.iv());
         const ciphertext = new Uint8Array(await sealed.ciphertext({ includeTag: true }));
+        mark('chat.media.encrypt.done', { path, bytes: ciphertext.byteLength || 0 });
         return packRawData(nonce, ciphertext);
     } finally {
         cleanBytes(fileKey);
@@ -289,8 +322,10 @@ export async function prepareAssetForChatUpload(asset) {
     }
 
     const mimeType = String(asset?.mimeType || '').toLowerCase();
+    mark('chat.media.prepare.start', { uri: asset.uri, mimeType, width: asset?.width || 0, height: asset?.height || 0, fileSize: asset?.fileSize || asset?.size || 0 });
     if (isImageAsset(asset)) {
         if (asset?.preserveImage === true) {
+            mark('chat.media.prepare.image.preserve', {});
             const data = await readUriBytes(asset.uri);
             const png = isPngAsset(asset);
             const width = Number(asset?.width);
@@ -306,30 +341,51 @@ export async function prepareAssetForChatUpload(asset) {
             };
         }
 
-        const normalized = await ImageManipulator.manipulate(asset.uri).renderAsync();
-        const resize = getResizedImageSize(normalized.width, normalized.height);
-        const result = resize ? await ImageManipulator.manipulate(normalized).resize(resize).renderAsync() : normalized;
+        const sourceWidth = Number(asset?.width);
+        const sourceHeight = Number(asset?.height);
+        const resize = getResizedImageSize(sourceWidth, sourceHeight);
         const png = isPngAsset(asset);
-        const saved = await result.saveAsync({
-            compress: png ? 1 : CHAT_IMAGE_COMPRESS,
-            format: png ? SaveFormat.PNG : SaveFormat.JPEG,
-        });
-        const data = await readUriBytes(saved.uri);
-        return {
-            data,
-            mimeType: png ? 'image/png' : 'image/jpeg',
-            size: Number.isFinite(data?.byteLength) ? data.byteLength : (asset?.fileSize ?? asset?.size),
-            width: saved.width,
-            height: saved.height,
-            name: getAssetName(asset, png ? 'png' : 'jpg'),
-            previewUri: saved.uri,
-        };
+        let context = null;
+        let rendered = null;
+        try {
+            context = ImageManipulator.manipulate(asset.uri);
+            mark('chat.media.prepare.image.resize.start', { resize: !!resize, width: resize?.width || sourceWidth || 0, height: resize?.height || sourceHeight || 0 });
+            if (resize) {
+                context.resize(resize);
+            }
+            mark('chat.media.prepare.image.resize.done', { resize: !!resize });
+            mark('chat.media.prepare.image.render.start', { resize: !!resize, width: resize?.width || sourceWidth || 0, height: resize?.height || sourceHeight || 0 });
+            rendered = await context.renderAsync();
+            mark('chat.media.prepare.image.render.done', { width: rendered.width || 0, height: rendered.height || 0 });
+            mark('chat.media.prepare.image.save.start', { png });
+            const saved = await rendered.saveAsync({
+                compress: png ? 1 : CHAT_IMAGE_COMPRESS,
+                format: png ? SaveFormat.PNG : SaveFormat.JPEG,
+            });
+            mark('chat.media.prepare.image.save.done', { uri: saved.uri, width: saved.width || 0, height: saved.height || 0 });
+            const data = await readUriBytes(saved.uri);
+            mark('chat.media.prepare.image.done', { bytes: data?.byteLength || 0 });
+            return {
+                data,
+                mimeType: png ? 'image/png' : 'image/jpeg',
+                size: Number.isFinite(data?.byteLength) ? data.byteLength : (asset?.fileSize ?? asset?.size),
+                width: saved.width,
+                height: saved.height,
+                name: getAssetName(asset, png ? 'png' : 'jpg'),
+                previewUri: saved.uri,
+            };
+        } finally {
+            rendered?.release?.();
+            context?.release?.();
+        }
     }
 
     if (isVideoAsset(asset)) {
+        mark('chat.media.prepare.video.start', {});
         const videoMeta = await readVideoMeta(asset.uri);
         const data = await readUriBytes(asset.uri);
         assertReadableVideoBytes(data);
+        mark('chat.media.prepare.video.done', { bytes: data?.byteLength || 0, duration: videoMeta?.duration || 0 });
         return {
             data,
             mimeType: 'video/mp4',
@@ -343,6 +399,7 @@ export async function prepareAssetForChatUpload(asset) {
     }
 
     const data = await readUriBytes(asset.uri);
+    mark('chat.media.prepare.file.done', { bytes: data?.byteLength || 0, mimeType });
     return {
         data,
         mimeType: asset?.mimeType || 'application/octet-stream',

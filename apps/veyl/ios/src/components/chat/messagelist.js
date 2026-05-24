@@ -1,11 +1,11 @@
-import { ActivityIndicator, Alert, Text, View, useWindowDimensions } from 'react-native';
-import { forwardRef, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, FlatList, Text, View, useWindowDimensions } from 'react-native';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useNavigation, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { httpsCallable } from 'firebase/functions';
-import { Bookmark, Copy, Download, Flag, History, Reply, RotateCcw, Share2, SquarePen, Trash2 } from 'lucide-react-native';
-import Animated, { Easing, LinearTransition, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
+import { ArrowDown, Bookmark, Copy, Download, Flag, History, Reply, RotateCcw, Share2, SquarePen, Trash2 } from 'lucide-react-native';
+import Animated, { Easing, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { scheduleOnRN } from 'react-native-worklets';
 import { useChat } from '@/providers/chatprovider';
@@ -15,12 +15,14 @@ import { useMediaViewer } from '@/providers/mediaviewerprovider';
 import { useUser } from '@/providers/userprovider';
 import { useWallet } from '@/providers/walletprovider';
 import GlassView from '@/components/glass/glassview';
-import Avatar, { StaticAvatar } from '@/components/avatar';
+import GlassIcon from '@/components/glass/glassicon';
+import { KeyboardStickyView, useReanimatedKeyboardAnimation } from '@/components/keyboardscroll';
 import { ChatMessageType, TextBubble } from '@/components/chat/messages';
+import ReceiptMark, { RECEIPT_MARK_RESERVE } from '@/components/chat/receiptmark';
 import { REACTION_SPACE } from '@/components/chat/messages/reactiontray';
 import { MessageGestureProvider } from '@/components/chat/messagegesturecontext';
 import Icon from '@/components/icon';
-import { KeyboardGestureArea, KeyboardListScrollView } from '@/components/keyboardscroll';
+import { mark } from '@/lib/diagnostics';
 import { useChatMessages } from '@/lib/usechatmessages';
 import { uploadStorageBytesNative } from '@/lib/chatmedia';
 import { getMediaViewerKey, isMediaViewerMsg } from '@/lib/chatmediaitems';
@@ -43,31 +45,31 @@ const REPLY_HINT_W = 44;
 const REPLY_TRIGGER = 64;
 const REPLY_ICON_DELAY = 24;
 const NEWEST_MESSAGE_GAP = 8;
-const MESSAGE_ROW_ANIMATION_MS = 3000;
-const MESSAGE_ROW_EXIT_ANIMATION_MS = 3000;
-const MESSAGE_ROW_LEAVE_MS = MESSAGE_ROW_EXIT_ANIMATION_MS;
+const SCROLL_BOTTOM_SHOW_MIN_DISTANCE = 360;
+const SCROLL_BOTTOM_SHOW_PAGE_FRACTION = 1.25;
+const SCROLL_BOTTOM_HIDE_PAGE_FRACTION = 1;
+const SCROLL_BOTTOM_ANIMATION_MS = 160;
+const SCROLL_BOTTOM_START_SCALE = 0.001;
+const MESSAGE_ROW_ANIMATION_MS = 160;
+const MESSAGE_ROW_EXIT_ANIMATION_MS = 160;
+const MESSAGE_ROW_SHRINK_ANIMATION_MS = MESSAGE_ROW_ANIMATION_MS;
+const MESSAGE_ROW_LEAVE_MS = MESSAGE_ROW_EXIT_ANIMATION_MS + MESSAGE_ROW_SHRINK_ANIMATION_MS;
 const MESSAGE_ROW_EASING = Easing.out(Easing.cubic);
 const MESSAGE_ROW_EXIT_EASING = Easing.linear;
 const MESSAGE_ROW_EXIT_CLEARANCE_PX = 1;
-const MESSAGE_ROW_LAYOUT = LinearTransition.duration(MESSAGE_ROW_ANIMATION_MS).easing(MESSAGE_ROW_EASING);
 const MESSAGE_ROW_EXIT_SCALE = 0.01;
 const LIKE_PREVIEW_INSET = 22;
 const LIKE_BLOCK_MS = 320;
 const MESSAGE_ROW_PADDING_TOP = 4;
 const MESSAGE_ROW_PADDING_BOTTOM = 8;
 const RECEIPT_STAMP_BOTTOM = 7;
-const RECEIPT_MARK_SIZE = 16;
-const RECEIPT_MARK_RESERVE = RECEIPT_MARK_SIZE + 5;
-const RECEIPT_ANIMATION_MS = 3000;
-const RECEIPT_START_SCALE = 0.01;
 const REPLY_SPRING = {
     mass: 0.16,
     stiffness: 200,
     damping: 4.5,
 };
-const SWIPE_KEYBOARD = true;
-const KEYBOARD_DISMISS_MODE = SWIPE_KEYBOARD ? 'interactive' : 'none';
-const KEYBOARD_INTERPOLATOR = 'ios';
+const KEYBOARD_DISMISS_MODE = 'interactive';
+const CHAT_KEYBOARD_GAP = 8;
 
 function roundPx(value) {
     return Math.round(Number.isFinite(value) ? value : 0);
@@ -346,13 +348,94 @@ function hasMsgFile(msg) {
     return (typeof msg?.localUri === 'string' && msg.localUri.trim().length > 0) || (typeof msg?.p === 'string' && !!msg.p && typeof msg?.k === 'string' && !!msg.k);
 }
 
+function useLeavingRowCollapse(leaving) {
+    const rowHeight = useSharedValue(0);
+    const collapse = useSharedValue(0);
+    const shrinkTimerRef = useRef(null);
+
+    const clearShrinkTimer = useCallback(() => {
+        if (shrinkTimerRef.current) {
+            clearTimeout(shrinkTimerRef.current);
+            shrinkTimerRef.current = null;
+        }
+    }, []);
+
+    const handleRowLayout = useCallback(
+        (event) => {
+            if (leaving) {
+                return;
+            }
+            const height = roundPx(event?.nativeEvent?.layout?.height);
+            if (height > 0) {
+                rowHeight.value = height;
+            }
+        },
+        [leaving, rowHeight]
+    );
+
+    useEffect(() => {
+        clearShrinkTimer();
+        if (!leaving) {
+            collapse.value = 0;
+            return undefined;
+        }
+
+        collapse.value = 0;
+        shrinkTimerRef.current = setTimeout(() => {
+            shrinkTimerRef.current = null;
+            collapse.value = withTiming(1, {
+                duration: MESSAGE_ROW_SHRINK_ANIMATION_MS,
+                easing: MESSAGE_ROW_EASING,
+            });
+        }, MESSAGE_ROW_EXIT_ANIMATION_MS);
+
+        return clearShrinkTimer;
+    }, [clearShrinkTimer, collapse, leaving]);
+
+    const rowCollapseStyle = useAnimatedStyle(() => {
+        if (!leaving || rowHeight.value <= 0) {
+            return {};
+        }
+        return {
+            height: Math.max(0, rowHeight.value * (1 - collapse.value)),
+        };
+    });
+
+    return { handleRowLayout, rowCollapseStyle };
+}
+
 function MsgDot({ show, failed, saved = false, side = 'right', bottomInset = 0, exitToken = 0, theme }) {
     const progress = useSharedValue(exitToken ? 1 : 0);
+    const bottomOffset = useSharedValue(bottomInset);
     const [visualSaved, setVisualSaved] = useState(saved);
+    const bottomOffsetTimerRef = useRef(null);
+
+    const clearBottomOffsetTimer = useCallback(() => {
+        if (bottomOffsetTimerRef.current) {
+            clearTimeout(bottomOffsetTimerRef.current);
+            bottomOffsetTimerRef.current = null;
+        }
+    }, []);
 
     useEffect(() => {
         progress.value = withTiming(show ? 1 : 0, { duration: MESSAGE_ROW_ANIMATION_MS, easing: MESSAGE_ROW_EASING });
     }, [progress, show]);
+
+    useEffect(() => {
+        clearBottomOffsetTimer();
+        const nextInset = positivePx(bottomInset);
+        const timing = { duration: MESSAGE_ROW_ANIMATION_MS, easing: MESSAGE_ROW_EASING };
+        if (nextInset < bottomOffset.value) {
+            bottomOffsetTimerRef.current = setTimeout(() => {
+                bottomOffsetTimerRef.current = null;
+                bottomOffset.value = withTiming(nextInset, timing);
+            }, MESSAGE_ROW_ANIMATION_MS);
+            return undefined;
+        }
+
+        bottomOffset.value = withTiming(nextInset, timing);
+        return undefined;
+    }, [bottomInset, bottomOffset, clearBottomOffsetTimer]);
 
     useEffect(() => {
         if (show || saved) {
@@ -364,9 +447,12 @@ function MsgDot({ show, failed, saved = false, side = 'right', bottomInset = 0, 
         return () => clearTimeout(timeout);
     }, [saved, show]);
 
+    useEffect(() => clearBottomOffsetTimer, [clearBottomOffsetTimer]);
+
     const dotSpaceStyle = useAnimatedStyle(() => ({
         marginLeft: side === 'right' ? 8 * progress.value : 0,
         marginRight: side === 'left' ? 8 * progress.value : 0,
+        marginBottom: bottomOffset.value,
         width: 8 * progress.value,
     }));
     const dotVisualStyle = useAnimatedStyle(() => ({
@@ -382,7 +468,6 @@ function MsgDot({ show, failed, saved = false, side = 'right', bottomInset = 0, 
                 {
                     width: 0,
                     height: 8,
-                    marginBottom: bottomInset,
                     alignSelf: 'center',
                     overflow: 'visible',
                 },
@@ -410,61 +495,11 @@ function MsgDot({ show, failed, saved = false, side = 'right', bottomInset = 0, 
     );
 }
 
-function ReceiptAvatar({ source, bot }) {
-    if (!source) {
-        return <Avatar pointerEvents="none" source={source} size={RECEIPT_MARK_SIZE} bot={!!bot} />;
-    }
-
-    return <StaticAvatar pointerEvents="none" source={source} size={RECEIPT_MARK_SIZE} />;
-}
-
-function ReceiptMark({ show, source, bot }) {
-    const [present, setPresent] = useState(show);
-    const prevShowRef = useRef(false);
-    const opacity = useSharedValue(0);
-    const scale = useSharedValue(RECEIPT_START_SCALE);
-    const markStyle = useAnimatedStyle(() => ({
-        opacity: opacity.value,
-        transform: [{ scale: scale.value }],
-    }));
-
-    useEffect(() => {
-        if (!show) {
-            prevShowRef.current = false;
-            opacity.value = withTiming(0, { duration: RECEIPT_ANIMATION_MS });
-            scale.value = withTiming(RECEIPT_START_SCALE, { duration: RECEIPT_ANIMATION_MS });
-            const timeout = setTimeout(() => setPresent(false), RECEIPT_ANIMATION_MS);
-            return () => clearTimeout(timeout);
-        }
-
-        setPresent(true);
-        const wasShown = prevShowRef.current;
-        prevShowRef.current = true;
-        opacity.value = wasShown ? 1 : 0;
-        scale.value = wasShown ? 1 : RECEIPT_START_SCALE;
-        opacity.value = withTiming(1, { duration: RECEIPT_ANIMATION_MS });
-        scale.value = withTiming(1, { duration: RECEIPT_ANIMATION_MS });
-        return undefined;
-    }, [opacity, scale, show]);
-
-    if (!present && !show) return null;
-
-    return (
-        <Animated.View pointerEvents="none" style={[{ marginTop: 5, paddingRight: 4, alignSelf: 'flex-end', flexDirection: 'row', alignItems: 'center' }, markStyle]}>
-            <ReceiptAvatar source={source} bot={bot} />
-        </Animated.View>
-    );
-}
-
 function ReportedBubble({ fromPeer = false }) {
     return <TextBubble msg={{ c: 'reported message hidden' }} fromPeer={fromPeer} />;
 }
 
-const ChatScroll = forwardRef(function ChatScroll({ dismissMode, pad, ...props }, ref) {
-    return <KeyboardListScrollView ref={ref} {...props} inverted bounces alwaysBounceVertical keyboardDismissMode={dismissMode} keyboardLiftBehavior="always" extraContentPadding={pad} />;
-});
-
-function MessageRow({ chatPad, msg, rowState = 'present', fromPeer = false, theme, nativeListGesture, timeGesture, screenW, receiptStamp, stampBottomInset = 0, onReply, onLike, children }) {
+function MessageRow({ chatPad, msg, rowState = 'present', fromPeer = false, theme, timeGesture, screenW, receiptStamp, stampBottomInset = 0, onReply, onLike, children }) {
     const reply = useSharedValue(0);
     const appear = useSharedValue(rowState === 'entering' ? 0 : 1);
     const exit = useSharedValue(0);
@@ -482,6 +517,7 @@ function MessageRow({ chatPad, msg, rowState = 'present', fromPeer = false, them
     const canLike = !leaving && typeof onLike === 'function';
     const hasPan = canReply;
     const replyIconLeft = fromPeer;
+    const { handleRowLayout, rowCollapseStyle } = useLeavingRowCollapse(leaving);
     const triggerReply = useCallback(() => {
         Haptics.selectionAsync().catch(() => {});
         onReply?.(msg);
@@ -580,29 +616,33 @@ function MessageRow({ chatPad, msg, rowState = 'present', fromPeer = false, them
         return () => cancelAnimationFrame(frame);
     }, [appear, entering, exit, exitDistance, instant, leaving, measureExitTranslate]);
 
-    const replyGesture = useMemo(
-        () =>
-            Gesture.Pan()
-                .enabled(canReply && !swipeBlocked)
-                .activeOffsetX(fromPeer ? 4 : -4)
-                .failOffsetY([-10, 10])
-                .failOffsetX(fromPeer ? -4 : 4)
-                .blocksExternalGesture(nativeListGesture, ...(!fromPeer && timeGesture ? [timeGesture] : []))
-                .onUpdate((event) => {
-                    const drag = fromPeer ? Math.max(event.translationX, 0) : Math.max(-event.translationX, 0);
-                    reply.value = fromPeer ? revealReply(drag) : -revealReply(drag);
-                })
-                .onEnd((event) => {
-                    const drag = fromPeer ? event.translationX : -event.translationX;
-                    if (drag >= REPLY_TRIGGER && canReply) {
-                        scheduleOnRN(triggerReply);
-                    }
-                })
-                .onFinalize(() => {
-                    reply.value = withSpring(0, REPLY_SPRING);
-                }),
-        [canReply, fromPeer, nativeListGesture, reply, swipeBlocked, timeGesture, triggerReply]
-    );
+    const replyGesture = useMemo(() => {
+        const gesture = Gesture.Pan()
+            .enabled(canReply && !swipeBlocked)
+            .activeOffsetX(fromPeer ? 4 : -4)
+            .failOffsetY([-10, 10])
+            .failOffsetX(fromPeer ? -4 : 4);
+        if (!fromPeer && timeGesture) {
+            gesture.blocksExternalGesture(timeGesture);
+        }
+        return gesture
+            .onUpdate((event) => {
+                'worklet';
+                const drag = fromPeer ? Math.max(event.translationX, 0) : Math.max(-event.translationX, 0);
+                reply.value = fromPeer ? revealReply(drag) : -revealReply(drag);
+            })
+            .onEnd((event) => {
+                'worklet';
+                const drag = fromPeer ? event.translationX : -event.translationX;
+                if (drag >= REPLY_TRIGGER && canReply) {
+                    scheduleOnRN(triggerReply);
+                }
+            })
+            .onFinalize(() => {
+                'worklet';
+                reply.value = withSpring(0, REPLY_SPRING);
+            });
+    }, [canReply, fromPeer, reply, swipeBlocked, timeGesture, triggerReply]);
 
     const likeGesture = useMemo(
         () =>
@@ -644,67 +684,75 @@ function MessageRow({ chatPad, msg, rowState = 'present', fromPeer = false, them
     return (
         <Animated.View
             collapsable={false}
-            layout={MESSAGE_ROW_LAYOUT}
+            onLayout={handleRowLayout}
             pointerEvents={leaving ? 'none' : 'auto'}
-            style={{ width: screenW + STAMP_TRAY, paddingTop: MESSAGE_ROW_PADDING_TOP, paddingBottom: MESSAGE_ROW_PADDING_BOTTOM, overflow: 'hidden' }}
+            style={[
+                {
+                    width: screenW + STAMP_TRAY,
+                    overflow: 'hidden',
+                },
+                rowCollapseStyle,
+            ]}
         >
-            {stamp ? (
-                <View
-                    pointerEvents="none"
-                    style={{
-                        position: 'absolute',
-                        left: screenW + STAMP_WAIT,
-                        top: MESSAGE_ROW_PADDING_TOP,
-                        bottom: MESSAGE_ROW_PADDING_BOTTOM + stampBottomInset,
-                        width: STAMP_W,
-                        justifyContent: 'center',
-                        alignItems: 'flex-start',
-                    }}
-                >
-                    <Text style={{ color: theme.muted, fontSize: 11, fontWeight: '800' }}>{stamp}</Text>
-                </View>
-            ) : null}
-            {receiptStamp ? (
-                <View
-                    pointerEvents="none"
-                    style={{
-                        position: 'absolute',
-                        left: screenW + STAMP_WAIT,
-                        bottom: RECEIPT_STAMP_BOTTOM,
-                        width: STAMP_W,
-                        justifyContent: 'center',
-                        alignItems: 'flex-start',
-                    }}
-                >
-                    <Text style={{ color: theme.muted, fontSize: 11, fontWeight: '800' }}>{receiptStamp}</Text>
-                </View>
-            ) : null}
-            {canReply ? (
-                <Animated.View
-                    pointerEvents="none"
-                    style={[
-                        {
+            <View style={{ position: 'relative', width: screenW + STAMP_TRAY, paddingTop: MESSAGE_ROW_PADDING_TOP, paddingBottom: MESSAGE_ROW_PADDING_BOTTOM }}>
+                {stamp ? (
+                    <View
+                        pointerEvents="none"
+                        style={{
                             position: 'absolute',
-                            left: replyIconLeft ? 12 : undefined,
-                            right: replyIconLeft ? undefined : STAMP_TRAY + Math.max(chatPad - 4, 12),
-                            top: 0,
-                            bottom: 0,
-                            width: REPLY_HINT_W,
+                            left: screenW + STAMP_WAIT,
+                            top: MESSAGE_ROW_PADDING_TOP,
+                            bottom: MESSAGE_ROW_PADDING_BOTTOM + stampBottomInset,
+                            width: STAMP_W,
                             justifyContent: 'center',
-                            alignItems: 'center',
-                        },
-                        replyStyle,
-                    ]}
-                >
-                    <Icon icon={Reply} color={theme.foreground} />
-                </Animated.View>
-            ) : null}
-            <View style={{ width: screenW, paddingHorizontal: chatPad, flexDirection: 'row', justifyContent: fromPeer ? 'flex-start' : 'flex-end' }}>
-                {rowGesture ? (
-                    <GestureDetector gesture={rowGesture}>{contentNode}</GestureDetector>
-                ) : (
-                    contentNode
-                )}
+                            alignItems: 'flex-start',
+                        }}
+                    >
+                        <Text style={{ color: theme.muted, fontSize: 11, fontWeight: '800' }}>{stamp}</Text>
+                    </View>
+                ) : null}
+                {receiptStamp ? (
+                    <View
+                        pointerEvents="none"
+                        style={{
+                            position: 'absolute',
+                            left: screenW + STAMP_WAIT,
+                            bottom: RECEIPT_STAMP_BOTTOM,
+                            width: STAMP_W,
+                            justifyContent: 'center',
+                            alignItems: 'flex-start',
+                        }}
+                    >
+                        <Text style={{ color: theme.muted, fontSize: 11, fontWeight: '800' }}>{receiptStamp}</Text>
+                    </View>
+                ) : null}
+                {canReply ? (
+                    <Animated.View
+                        pointerEvents="none"
+                        style={[
+                            {
+                                position: 'absolute',
+                                left: replyIconLeft ? 12 : undefined,
+                                right: replyIconLeft ? undefined : STAMP_TRAY + Math.max(chatPad - 4, 12),
+                                top: 0,
+                                bottom: 0,
+                                width: REPLY_HINT_W,
+                                justifyContent: 'center',
+                                alignItems: 'center',
+                            },
+                            replyStyle,
+                        ]}
+                    >
+                        <Icon icon={Reply} color={theme.foreground} />
+                    </Animated.View>
+                ) : null}
+                <View style={{ width: screenW, paddingHorizontal: chatPad, flexDirection: 'row', justifyContent: fromPeer ? 'flex-start' : 'flex-end' }}>
+                    {rowGesture ? (
+                        <GestureDetector gesture={rowGesture}>{contentNode}</GestureDetector>
+                    ) : (
+                        contentNode
+                    )}
+                </View>
             </View>
         </Animated.View>
     );
@@ -716,6 +764,7 @@ function SystemMessageRow({ chatPad, msg, rowState = 'present', screenW, theme }
     const leaving = rowState === 'leaving';
     const entering = rowState === 'entering';
     const instant = rowState === 'instant';
+    const { handleRowLayout, rowCollapseStyle } = useLeavingRowCollapse(leaving);
     const visualStyle = useAnimatedStyle(() => ({
         opacity: 1 - exit.value,
         transform: [{ scale: exit.value > 0 ? 1 - exit.value * (1 - MESSAGE_ROW_EXIT_SCALE) : 0.98 + appear.value * 0.02 }],
@@ -746,10 +795,22 @@ function SystemMessageRow({ chatPad, msg, rowState = 'present', screenW, theme }
     }, [appear, entering, exit, instant, leaving]);
 
     return (
-        <Animated.View layout={MESSAGE_ROW_LAYOUT} pointerEvents={leaving ? 'none' : 'auto'} style={{ width: screenW + STAMP_TRAY, paddingTop: 2, paddingBottom: 4, overflow: 'hidden' }}>
-            <Animated.View style={[{ width: screenW, paddingHorizontal: chatPad, alignItems: 'center' }, visualStyle]}>
-                <Text style={{ maxWidth: '76%', color: theme.muted, fontSize: 11, fontWeight: '800', lineHeight: 14, textAlign: 'center' }}>{getSystemMsgText(msg)}</Text>
-            </Animated.View>
+        <Animated.View
+            onLayout={handleRowLayout}
+            pointerEvents={leaving ? 'none' : 'auto'}
+            style={[
+                {
+                    width: screenW + STAMP_TRAY,
+                    overflow: 'hidden',
+                },
+                rowCollapseStyle,
+            ]}
+        >
+            <View style={{ width: screenW + STAMP_TRAY, paddingTop: 2, paddingBottom: 4 }}>
+                <Animated.View style={[{ width: screenW, paddingHorizontal: chatPad, alignItems: 'center' }, visualStyle]}>
+                    <Text style={{ maxWidth: '76%', color: theme.muted, fontSize: 11, fontWeight: '800', lineHeight: 14, textAlign: 'center' }}>{getSystemMsgText(msg)}</Text>
+                </Animated.View>
+            </View>
         </Animated.View>
     );
 }
@@ -760,9 +821,7 @@ export default function MessageList({
     chatTitle,
     children,
     inputH = 48,
-    inputId,
     onRequestHold,
-    pad,
     peerAvatarSource,
     peerBot = false,
     peerChatPK,
@@ -780,6 +839,7 @@ export default function MessageList({
     const { updateMessage, deleteMessage, retryMessage, makeMessagePermanent, makeMessageTemporary, readMessageFile, sendReaction } = useChat();
     const { sendMoneyWithSpark } = useWallet();
     const insets = useSafeAreaInsets();
+    const { height: keyboardHeight } = useReanimatedKeyboardAnimation();
     const { width: screenW } = useWindowDimensions();
     const { messages: messagesAsc, ready, hasOlder, loadingOlder, loadOlder, patchMessage, removeMessage } = useChatMessages(chatId);
     const submitReport = useMemo(() => httpsCallable(functions, 'submitReport'), []);
@@ -787,7 +847,16 @@ export default function MessageList({
     const [savingForeverMessages, setSavingForeverMessages] = useState(new Map());
     const [reportedMessageKeys, setReportedMessageKeys] = useState(new Set());
     const [deletingMessageIds, setDeletingMessageIds] = useState(new Set());
+    const [showScrollBottom, setShowScrollBottom] = useState(false);
+    const [scrollBottomMounted, setScrollBottomMounted] = useState(false);
     const time = useSharedValue(0);
+    const scrollBottomProgress = useSharedValue(0);
+    const receiptSnapshotRef = useRef(new Map());
+    const receiptSnapshotChatRef = useRef('');
+    if (receiptSnapshotChatRef.current !== (chatId || '')) {
+        receiptSnapshotChatRef.current = chatId || '';
+        receiptSnapshotRef.current.clear();
+    }
     const userAvatarSource = useMemo(() => (avatar ? { uri: avatar } : null), [avatar]);
     const reactionUsers = useMemo(
         () => ({
@@ -807,15 +876,38 @@ export default function MessageList({
         sendReaction,
         onError: (error) => console.warn('message like failed', error),
     });
-    const visibleMessagesAsc = useMemo(
-        () => collapseSystemMessages((messagesAsc || []).filter((msg) => canShowMsg(msg) && (!msg?.id || !deletingMessageIds.has(msg.id)))),
-        [deletingMessageIds, messagesAsc]
-    );
+    const activeMessagesAsc = useMemo(() => (messagesAsc || []).filter((msg) => !msg?.id || !deletingMessageIds.has(msg.id)), [deletingMessageIds, messagesAsc]);
+    const visibleMessagesAsc = useMemo(() => collapseSystemMessages(activeMessagesAsc.filter(canShowMsg)), [activeMessagesAsc]);
     const messages = useMemo(() => [...visibleMessagesAsc].reverse(), [visibleMessagesAsc]);
     const displayRows = useAnimatedMessageRows(messages, chatId || '', ready);
-    const latestReadReceipt = useMemo(() => getLatestReadOutgoingReceipt(messagesAsc, chatPK, peerChatPK), [chatPK, messagesAsc, peerChatPK]);
+    const latestReadReceipt = useMemo(() => getLatestReadOutgoingReceipt(activeMessagesAsc, chatPK, peerChatPK), [activeMessagesAsc, chatPK, peerChatPK]);
     const latestReadReceiptKey = getMsgKey(latestReadReceipt?.message);
     const latestReadReceiptStamp = useMemo(() => getMsgStamp(latestReadReceipt?.receipt), [latestReadReceipt?.receipt?.cid, latestReadReceipt?.receipt?.id, latestReadReceipt?.receipt?.ts]);
+    const latestReceiptMeta = useMemo(
+        () =>
+            latestReadReceiptKey
+                ? {
+                      bot: peerBot,
+                      source: peerAvatarSource,
+                      stamp: latestReadReceiptStamp,
+                  }
+                : null,
+        [latestReadReceiptKey, latestReadReceiptStamp, peerAvatarSource, peerBot]
+    );
+    const leavingReceiptKeys = useMemo(() => displayRows.filter((row) => row?.state === 'leaving' && row?.key).map((row) => row.key), [displayRows]);
+
+    useEffect(() => {
+        const retainedKeys = new Set(leavingReceiptKeys);
+        if (latestReadReceiptKey && latestReceiptMeta) {
+            receiptSnapshotRef.current.set(latestReadReceiptKey, latestReceiptMeta);
+            retainedKeys.add(latestReadReceiptKey);
+        }
+        for (const key of receiptSnapshotRef.current.keys()) {
+            if (!retainedKeys.has(key)) {
+                receiptSnapshotRef.current.delete(key);
+            }
+        }
+    }, [latestReadReceiptKey, latestReceiptMeta, leavingReceiptKeys]);
 
     useEffect(() => {
         setSavingForeverMessages((prev) => {
@@ -873,15 +965,57 @@ export default function MessageList({
     }, [visibleMessagesAsc]);
     const listRef = useRef(null);
     const loadingOlderRef = useRef(false);
+    const keyboardReserveStyle = useAnimatedStyle(() => ({ height: Math.max(0, Math.round(-keyboardHeight.value - insets.bottom)) }));
+    const stickyOffset = useMemo(() => ({ closed: 0, opened: insets.bottom - CHAT_KEYBOARD_GAP }), [insets.bottom]);
+    const scrollBottomStyle = useAnimatedStyle(() => ({
+        transform: [
+            {
+                scale: SCROLL_BOTTOM_START_SCALE + (1 - SCROLL_BOTTOM_START_SCALE) * scrollBottomProgress.value,
+            },
+        ],
+    }));
 
-    const scrollComp = useCallback((props) => <ChatScroll {...props} dismissMode={KEYBOARD_DISMISS_MODE} pad={pad} />, [pad]);
+    useEffect(() => {
+        let timer;
 
-    const nativeListGesture = useMemo(() => Gesture.Native(), []);
+        if (showScrollBottom) {
+            setScrollBottomMounted(true);
+            scrollBottomProgress.value = withTiming(1, {
+                duration: SCROLL_BOTTOM_ANIMATION_MS,
+                easing: Easing.out(Easing.cubic),
+            });
+            return undefined;
+        }
+
+        scrollBottomProgress.value = withTiming(0, {
+            duration: SCROLL_BOTTOM_ANIMATION_MS,
+            easing: Easing.in(Easing.cubic),
+        });
+        timer = setTimeout(() => setScrollBottomMounted(false), SCROLL_BOTTOM_ANIMATION_MS);
+        return () => clearTimeout(timer);
+    }, [scrollBottomProgress, showScrollBottom]);
 
     useEffect(() => {
         setMediaItems([]);
         loadingOlderRef.current = false;
+        setShowScrollBottom(false);
+        mark('chat.list.mount', { chatId: chatId || '' });
+        return () => {
+            mark('chat.list.unmount', { chatId: chatId || '' });
+        };
     }, [chatId, setMediaItems]);
+
+    useEffect(() => {
+        mark('chat.list.state', {
+            chatId: chatId || '',
+            ready: !!ready,
+            messages: messagesAsc?.length || 0,
+            visible: visibleMessagesAsc.length,
+            rows: displayRows.length,
+            hasOlder: !!hasOlder,
+            loadingOlder: !!loadingOlder,
+        });
+    }, [chatId, displayRows.length, hasOlder, loadingOlder, messagesAsc?.length, ready, visibleMessagesAsc.length]);
 
     const handleLoadOlder = useCallback(async () => {
         if (!hasOlder || loadingOlder || loadingOlderRef.current) {
@@ -914,17 +1048,25 @@ export default function MessageList({
         navigation.setOptions({ gestureEnabled: true });
     }, [navigation]);
 
-    const handleScrollEndDrag = useCallback(
-        (event) => {
-            const velocityY = event?.nativeEvent?.velocity?.y ?? 0;
-            if (Math.abs(velocityY) < 0.1) {
-                enableBackSwipe();
-            } else {
-                disableBackSwipe();
-            }
-        },
-        [disableBackSwipe, enableBackSwipe]
-    );
+    useEffect(() => () => enableBackSwipe(), [enableBackSwipe]);
+
+    const handleScrollEndDrag = useCallback(() => {
+        enableBackSwipe();
+    }, [enableBackSwipe]);
+
+    const handleListScroll = useCallback((event) => {
+        const y = Number(event?.nativeEvent?.contentOffset?.y) || 0;
+        const page = Number(event?.nativeEvent?.layoutMeasurement?.height) || 0;
+        const distance = Math.abs(y);
+        const showDistance = Math.max(SCROLL_BOTTOM_SHOW_MIN_DISTANCE, page * SCROLL_BOTTOM_SHOW_PAGE_FRACTION);
+        const hideDistance = page * SCROLL_BOTTOM_HIDE_PAGE_FRACTION;
+        setShowScrollBottom((show) => (show ? distance > hideDistance : distance > showDistance));
+    }, []);
+
+    const scrollToBottom = useCallback(() => {
+        listRef.current?.scrollToOffset?.({ offset: 0, animated: true });
+        setShowScrollBottom(false);
+    }, []);
 
     const timeGesture = useMemo(
         () =>
@@ -932,14 +1074,15 @@ export default function MessageList({
                 .activeOffsetX(-4)
                 .failOffsetX(4)
                 .failOffsetY([-10, 10])
-                .blocksExternalGesture(nativeListGesture)
                 .onUpdate((event) => {
+                    'worklet';
                     time.value = Math.min(rubberBand(Math.max(-event.translationX, 0), STAMP_TRAY), STAMP_TRAY);
                 })
                 .onFinalize(() => {
+                    'worklet';
                     time.value = withSpring(0, REPLY_SPRING);
                 }),
-        [nativeListGesture, time]
+        [time]
     );
 
     const promptReportNote = useCallback((title, onSubmit) => {
@@ -1321,7 +1464,11 @@ export default function MessageList({
             const canLike = !isReported && canLikeMessage(msg);
             const reactions = isReported ? [] : getOptimisticReactions(msg);
             const reactionBottomInset = reactions.length ? REACTION_SPACE : 0;
-            const showReceipt = userSent && msgKey && msgKey === latestReadReceiptKey;
+            const currentReceipt = userSent && msgKey && msgKey === latestReadReceiptKey ? latestReceiptMeta : null;
+            const frozenReceipt = rowState === 'leaving' && msgKey ? receiptSnapshotRef.current.get(msgKey) || (msgKey === latestReadReceiptKey ? latestReceiptMeta : null) : null;
+            const receipt = frozenReceipt || currentReceipt;
+            const showReceipt = !!receipt;
+            const receiptFrozen = rowState === 'leaving' && showReceipt;
 
             return (
                 <MessageRow
@@ -1331,9 +1478,8 @@ export default function MessageList({
                     fromPeer={fromPeer}
                     theme={theme}
                     screenW={screenW}
-                    nativeListGesture={nativeListGesture}
                     timeGesture={timeGesture}
-                    receiptStamp={showReceipt ? latestReadReceiptStamp : ''}
+                    receiptStamp={receipt?.stamp || ''}
                     stampBottomInset={reactionBottomInset + (showReceipt ? RECEIPT_MARK_RESERVE : 0)}
                     onReply={canReplyToMsg(msg) ? onReply : undefined}
                     onLike={canLike && !viewerMedia ? handleLike : undefined}
@@ -1368,7 +1514,7 @@ export default function MessageList({
                                 )}
                                 {!fromPeer ? <MsgDot show={showMsgDot} failed={msg.failed} saved={dotSavedForever} side="right" bottomInset={reactionBottomInset} exitToken={msgDotExitToken} theme={theme} /> : null}
                             </View>
-                            <ReceiptMark show={showReceipt} source={peerAvatarSource} bot={peerBot} />
+                            <ReceiptMark show={showReceipt} source={receipt?.source ?? peerAvatarSource} bot={receipt?.bot ?? peerBot} frozen={receiptFrozen} />
                         </View>
                     )}
                 </MessageRow>
@@ -1384,8 +1530,7 @@ export default function MessageList({
             handlePay,
             jumpToReply,
             latestReadReceiptKey,
-            latestReadReceiptStamp,
-            nativeListGesture,
+            latestReceiptMeta,
             onReply,
             onRequestHold,
             payingMessages,
@@ -1403,62 +1548,56 @@ export default function MessageList({
     );
 
     return (
-        <KeyboardGestureArea
-            enableSwipeToDismiss={SWIPE_KEYBOARD}
-            interpolator={KEYBOARD_INTERPOLATOR}
-            offset={SWIPE_KEYBOARD ? positivePx(inputH) : 0}
-            style={{ flex: 1 }}
-            textInputNativeID={SWIPE_KEYBOARD ? inputId : undefined}
-        >
+        <View style={{ flex: 1 }}>
             <GestureDetector gesture={timeGesture}>
                 <Animated.View style={{ flex: 1, width: screenW, overflow: 'hidden' }}>
                     <Animated.View style={[{ flex: 1, width: screenW + STAMP_TRAY }, timeStyle]}>
                         <View style={{ flex: 1, width: screenW + STAMP_TRAY }}>
-                            <GestureDetector gesture={nativeListGesture}>
-                                <Animated.FlatList
-                                    ref={(node) => {
-                                        listRef.current = node;
-                                    }}
-                                    data={displayRows}
-                                    keyExtractor={(row) => row.key}
-                                    renderItem={renderItem}
-                                    renderScrollComponent={scrollComp}
-                                    itemLayoutAnimation={MESSAGE_ROW_LAYOUT}
-                                    style={{ flex: 1, width: screenW + STAMP_TRAY, zIndex: 0 }}
-                                    inverted
-                                    contentContainerStyle={{
-                                        paddingTop: positivePx(insets.bottom + inputH + NEWEST_MESSAGE_GAP),
-                                        paddingBottom: insets.top + 42 + 24,
-                                    }}
-                                    automaticallyAdjustKeyboardInsets={false}
-                                    contentInsetAdjustmentBehavior="never"
-                                    keyboardShouldPersistTaps="handled"
-                                    initialNumToRender={10}
-                                    maxToRenderPerBatch={6}
-                                    windowSize={5}
-                                    removeClippedSubviews={false}
-                                    scrollEnabled={!menuActive}
-                                    onScrollBeginDrag={disableBackSwipe}
-                                    onScrollEndDrag={handleScrollEndDrag}
-                                    onMomentumScrollBegin={disableBackSwipe}
-                                    onMomentumScrollEnd={enableBackSwipe}
-                                    directionalLockEnabled
-                                    bounces
-                                    alwaysBounceVertical
-                                    alwaysBounceHorizontal={false}
-                                    onEndReached={handleLoadOlder}
-                                    onEndReachedThreshold={0.35}
-                                    onScrollToIndexFailed={({ index }) => {
-                                        setTimeout(() => {
-                                            listRef.current?.scrollToIndex?.({
-                                                index,
-                                                animated: true,
-                                                viewPosition: 0.5,
-                                            });
-                                        }, 120);
-                                    }}
-                                />
-                            </GestureDetector>
+                            <FlatList
+                                ref={(node) => {
+                                    listRef.current = node;
+                                }}
+                                data={displayRows}
+                                keyExtractor={(row) => row.key}
+                                renderItem={renderItem}
+                                style={{ flex: 1, width: screenW + STAMP_TRAY, zIndex: 0 }}
+                                inverted
+                                contentContainerStyle={{
+                                    paddingTop: positivePx(insets.bottom + inputH + NEWEST_MESSAGE_GAP),
+                                    paddingBottom: insets.top + 42 + 24,
+                                }}
+                                ListHeaderComponent={<Animated.View pointerEvents="none" style={keyboardReserveStyle} />}
+                                automaticallyAdjustKeyboardInsets={false}
+                                contentInsetAdjustmentBehavior="never"
+                                keyboardDismissMode={KEYBOARD_DISMISS_MODE}
+                                keyboardShouldPersistTaps="handled"
+                                initialNumToRender={10}
+                                maxToRenderPerBatch={6}
+                                windowSize={5}
+                                removeClippedSubviews={false}
+                                scrollEnabled={!menuActive}
+                                onScrollBeginDrag={disableBackSwipe}
+                                onScrollEndDrag={handleScrollEndDrag}
+                                onScroll={handleListScroll}
+                                onMomentumScrollBegin={disableBackSwipe}
+                                onMomentumScrollEnd={enableBackSwipe}
+                                scrollEventThrottle={16}
+                                directionalLockEnabled
+                                bounces
+                                alwaysBounceVertical
+                                alwaysBounceHorizontal={false}
+                                onEndReached={handleLoadOlder}
+                                onEndReachedThreshold={0.35}
+                                onScrollToIndexFailed={({ index }) => {
+                                    setTimeout(() => {
+                                        listRef.current?.scrollToIndex?.({
+                                            index,
+                                            animated: true,
+                                            viewPosition: 0.5,
+                                        });
+                                    }, 120);
+                                }}
+                            />
                             {!ready && !messagesAsc.length ? (
                                 <View pointerEvents="none" style={{ position: 'absolute', top: 0, right: STAMP_TRAY, bottom: 0, left: 0, alignItems: 'center', justifyContent: 'center' }}>
                                     <ActivityIndicator size="small" color={theme.muted} />
@@ -1469,6 +1608,25 @@ export default function MessageList({
                 </Animated.View>
             </GestureDetector>
             {children}
-        </KeyboardGestureArea>
+            {showScrollBottom || scrollBottomMounted ? (
+                <KeyboardStickyView
+                    offset={stickyOffset}
+                    style={{
+                        position: 'absolute',
+                        left: 0,
+                        right: 0,
+                        bottom: positivePx(insets.bottom + inputH + 20),
+                        zIndex: 4,
+                        alignItems: 'flex-end',
+                        paddingRight: 16,
+                    }}
+                    pointerEvents="box-none"
+                >
+                    <Animated.View pointerEvents={showScrollBottom ? 'auto' : 'none'} style={scrollBottomStyle}>
+                        <GlassIcon glassEffectStyle="regular" icon={ArrowDown} onPress={scrollToBottom} />
+                    </Animated.View>
+                </KeyboardStickyView>
+            ) : null}
+        </View>
     );
 }

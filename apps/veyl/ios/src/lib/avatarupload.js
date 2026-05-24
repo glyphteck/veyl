@@ -17,6 +17,7 @@ async function updateProfileAvatar(uid, avatar) {
 }
 
 async function prepareAvatarBlob(uri) {
+    let context = null;
     let source = null;
     let rendered = null;
     let savedUri = '';
@@ -26,10 +27,8 @@ async function prepareAvatarBlob(uri) {
         const side = Math.max(1, Math.min(source.width || 1, source.height || 1));
         const originX = Math.max(0, Math.floor(((source.width || side) - side) / 2));
         const originY = Math.max(0, Math.floor(((source.height || side) - side) / 2));
-        rendered = await ImageManipulator.manipulate(source)
-            .crop({ originX, originY, width: side, height: side })
-            .resize({ width: 128, height: 128 })
-            .renderAsync();
+        context = ImageManipulator.manipulate(uri).crop({ originX, originY, width: side, height: side }).resize({ width: 128, height: 128 });
+        rendered = await context.renderAsync();
         const saved = await rendered.saveAsync({
             compress: 0.85,
             format: SaveFormat.WEBP,
@@ -41,6 +40,7 @@ async function prepareAvatarBlob(uri) {
         await FileSystem.deleteAsync(savedUri, { idempotent: true }).catch(() => {});
         rendered?.release?.();
         source?.release?.();
+        context?.release?.();
     }
 }
 

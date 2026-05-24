@@ -1,14 +1,15 @@
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { dirname, resolve } from 'node:path';
+import { dirname, relative, resolve } from 'node:path';
 import { writeFunctionsLinks, writeIosLinks, writeStorageCors } from './links.mjs';
 
 const rawArgs = process.argv.slice(2);
 const verbose = rawArgs.includes('-v') || rawArgs.includes('--verbose');
 const [target, ...rest] = rawArgs.filter((arg) => arg !== '-v' && arg !== '--verbose');
 const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const runStamp = new Date().toISOString().replace(/[:.]/g, '-');
 const firebaseTargets = {
     backend: 'firestore:rules,firestore:indexes,storage,functions',
     db: 'firestore:indexes',
@@ -85,6 +86,15 @@ function clipLine(value) {
     return line.length > 220 ? `${line.slice(0, 217)}...` : line;
 }
 
+function logSlug(value) {
+    return cleanLine(value).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'command';
+}
+
+function displayPath(file) {
+    const path = relative(rootDir, file);
+    return path && !path.startsWith('..') ? path : file;
+}
+
 function warningLines(output) {
     return outputLines(output).filter((line) => /\bwarn(?:ing)?\b/i.test(line));
 }
@@ -98,6 +108,26 @@ function failureLine(output) {
     );
 }
 
+function failureDetailLines(output, limit = 4) {
+    const details = [];
+    for (const line of outputLines(output)) {
+        if (!/\b(error|failed|unable|denied|cannot|not found)\b/i.test(line)) {
+            continue;
+        }
+
+        const clipped = clipLine(line);
+        if (!details.includes(clipped)) {
+            details.push(clipped);
+        }
+
+        if (details.length >= limit) {
+            break;
+        }
+    }
+
+    return details;
+}
+
 function emitWarningSummary(label, output) {
     const lines = [...new Set(warningLines(output).map(clipLine))];
     if (!lines.length) {
@@ -107,15 +137,45 @@ function emitWarningSummary(label, output) {
     console.warn(`warning: ${label}: ${lines.length} warning${lines.length === 1 ? '' : 's'}${lines[0] ? `; ${lines[0]}` : ''}`);
 }
 
-function makeCommandError(cmd, args, code, signal, output) {
-    const summary = clipLine(failureLine(output));
-    const error = new Error(`${cmd} ${args.join(' ')} failed with ${signal ? `signal ${signal}` : `code ${code}`}${summary ? `: ${summary}` : ''}`);
+function writeTextLog(file, contents) {
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, contents.endsWith('\n') ? contents : `${contents}\n`);
+}
+
+function writeRunLogs(label, output, logDir) {
+    if (!logDir) {
+        return {};
+    }
+
+    const slug = logSlug(label);
+    const fullLog = resolve(logDir, `${slug}.log`);
+    writeTextLog(fullLog, String(output || ''));
+
+    const warnings = [...new Set(warningLines(output))];
+    if (!warnings.length) {
+        return { fullLog };
+    }
+
+    const warningLog = resolve(logDir, `${slug}.warnings.log`);
+    writeTextLog(warningLog, warnings.join('\n'));
+    status(`${label}: ${warnings.length} warning${warnings.length === 1 ? '' : 's'} logged to ${displayPath(warningLog)}`);
+    return { fullLog, warningLog };
+}
+
+function makeCommandError(cmd, args, code, signal, output, logPath, label = cmd) {
+    const reason = signal ? `signal ${signal}` : `code ${code}`;
+    const details = failureDetailLines(output);
+    const fallback = clipLine(failureLine(output));
+    const error = new Error(`${label} failed with ${reason}`);
+    error.command = `${cmd} ${args.join(' ')}`;
+    error.details = details.length ? details : fallback ? [fallback] : [];
+    error.logPath = logPath ? displayPath(logPath) : '';
     error.output = output;
     return error;
 }
 
 function runQuiet(cmd, args, options = {}) {
-    const { label = cmd, reject = true, ...spawnOptions } = options;
+    const { label = cmd, reject = true, logDir, ...spawnOptions } = options;
 
     if (verbose) {
         return new Promise((resolve, rejectRun) => {
@@ -137,13 +197,14 @@ function runQuiet(cmd, args, options = {}) {
 
             child.on('exit', (code, signal) => {
                 const output = [stderr, stdout].filter(Boolean).join('\n');
-                const result = { code, signal, stdout, stderr, output };
+                const logs = writeRunLogs(label, output, logDir);
+                const result = { code, signal, stdout, stderr, output, ...logs };
                 if (code === 0 || !reject) {
                     resolve(result);
                     return;
                 }
 
-                rejectRun(makeCommandError(cmd, args, code, signal, output));
+                rejectRun(makeCommandError(cmd, args, code, signal, output, logs.fullLog, label));
             });
 
             child.on('error', rejectRun);
@@ -167,15 +228,18 @@ function runQuiet(cmd, args, options = {}) {
 
         child.on('exit', (code, signal) => {
             const output = [stderr, stdout].filter(Boolean).join('\n');
-            emitWarningSummary(label, output);
-            const result = { code, signal, stdout, stderr, output };
+            const logs = writeRunLogs(label, output, logDir);
+            const result = { code, signal, stdout, stderr, output, ...logs };
+            if (!logDir) {
+                emitWarningSummary(label, output);
+            }
 
             if (code === 0 || !reject) {
                 resolve(result);
                 return;
             }
 
-            rejectRun(makeCommandError(cmd, args, code, signal, output));
+            rejectRun(makeCommandError(cmd, args, code, signal, output, logs.fullLog, label));
         });
 
         child.on('error', rejectRun);
@@ -232,7 +296,7 @@ function lockedLaunch(output) {
     return /BSErrorCodeDescription = Locked|reason: Locked|because the device was not, or could not be, unlocked/i.test(output);
 }
 
-async function buildAndInstallIos({ iosDir, iosArgs, reset, settings, env }) {
+async function buildAndInstallIos({ iosDir, iosArgs, reset, settings, env, logDir }) {
     const device = resolveIosDevice(process.env.VEYL_IOS_DEVICE || 'zak 15');
     const iosNativeDir = resolve(iosDir, 'ios');
     const workspace = resolve(iosNativeDir, `${settings.scheme}.xcworkspace`);
@@ -272,6 +336,7 @@ async function buildAndInstallIos({ iosDir, iosArgs, reset, settings, env }) {
                 RCT_NO_LAUNCH_PACKAGER: 'true',
             },
             label: 'ios build',
+            logDir,
         }
     );
 
@@ -281,28 +346,28 @@ async function buildAndInstallIos({ iosDir, iosArgs, reset, settings, env }) {
 
     if (reset) {
         status(`ios ${settings.scheme}: reset`);
-        await runQuiet('xcrun', ['devicectl', 'device', 'uninstall', 'app', '--device', device.installId, settings.bundleIdentifier, '--timeout', '60'], { label: 'ios reset' }).catch((error) => {
-            console.warn(`warning: ios reset skipped; ${error.message}`);
+        await runQuiet('xcrun', ['devicectl', 'device', 'uninstall', 'app', '--device', device.installId, settings.bundleIdentifier, '--timeout', '60'], { label: 'ios reset', logDir }).catch((error) => {
+            status(`ios ${settings.scheme}: reset skipped; ${error.message}`);
         });
     }
 
     status(`ios ${settings.scheme}: install`);
-    await runQuiet('xcrun', ['devicectl', 'device', 'install', 'app', '--device', device.installId, appPath, '--timeout', '120'], { label: 'ios install' });
+    await runQuiet('xcrun', ['devicectl', 'device', 'install', 'app', '--device', device.installId, appPath, '--timeout', '120'], { label: 'ios install', logDir });
 
     status(`ios ${settings.scheme}: launch`);
     const launchArgs = ['devicectl', 'device', 'process', 'launch', '--device', device.installId, '--terminate-existing', ...(verbose ? [] : ['--quiet']), settings.bundleIdentifier];
-    const launch = await runQuiet('xcrun', launchArgs, { label: 'ios launch', reject: false });
+    const launch = await runQuiet('xcrun', launchArgs, { label: 'ios launch', reject: false, logDir });
     if (launch.code === 0) {
         status(`ios ${settings.scheme}: launched ${settings.bundleIdentifier}`);
         return;
     }
 
     if (lockedLaunch(launch.output)) {
-        console.warn(`warning: ios launch skipped; device is locked, open ${settings.bundleIdentifier} after unlocking`);
+        status(`ios ${settings.scheme}: launch skipped; device is locked, open ${settings.bundleIdentifier} after unlocking`);
         return;
     }
 
-    throw makeCommandError('xcrun', launchArgs, launch.code, launch.signal, launch.output);
+    throw makeCommandError('xcrun', launchArgs, launch.code, launch.signal, launch.output, launch.fullLog, 'ios launch');
 }
 
 async function main() {
@@ -365,10 +430,12 @@ async function main() {
             ...(settings.associatedDomainsMode ? { VEYL_ASSOCIATED_DOMAINS_MODE: settings.associatedDomainsMode } : {}),
             EXPO_PUBLIC_NETWORK: settings.network,
         };
+        const logDir = resolve(iosDir, 'ios', 'build', settings.scheme, 'logs', runStamp);
+        status(`ios ${settings.scheme}: logs ${displayPath(logDir)}`);
 
-        status(`ios ${settings.scheme}: prebuild`);
-        await runQuiet('bun', ['x', 'expo', 'prebuild', '-p', 'ios'], { cwd: iosDir, env, label: 'ios prebuild' });
-        await buildAndInstallIos({ iosDir, iosArgs, reset, settings, env });
+        status(`ios ${settings.scheme}: clean prebuild`);
+        await runQuiet('bun', ['x', 'expo', 'prebuild', '-p', 'ios', '--clean'], { cwd: iosDir, env, label: 'ios prebuild', logDir });
+        await buildAndInstallIos({ iosDir, iosArgs, reset, settings, env, logDir });
         return;
     }
 
@@ -404,7 +471,15 @@ async function main() {
 try {
     await main();
 } catch (error) {
-    const detail = clipLine(error?.message || error);
-    console.error(`error: ${detail}${verbose ? '' : ' (rerun with -v for full output)'}`);
+    console.error(`error: ${cleanLine(error?.message || error)}`);
+    for (const detail of error?.details || []) {
+        console.error(`error detail: ${detail}`);
+    }
+    if (error?.logPath) {
+        console.error(`error log: ${error.logPath}`);
+    }
+    if (!verbose && error?.command) {
+        console.error('rerun with -v or --verbose for full command output');
+    }
     process.exitCode = 1;
 }

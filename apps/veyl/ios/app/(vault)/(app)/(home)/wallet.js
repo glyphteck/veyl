@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, Pressable, Text, View, FlatList } from 'react-native';
+import { ActivityIndicator, Animated, FlatList, InteractionManager, Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useIsFocused, useRouter } from 'expo-router';
 import { BanknoteArrowDown, BanknoteArrowUp, UserRoundPlus } from 'lucide-react-native';
 
 import { useBitcoin } from '@/providers/bitcoinprovider';
@@ -23,6 +23,7 @@ import { formatFullDateTime, formatUserDisplay, renderBalance, renderMoney } fro
 const BALANCE_HEIGHT = 42;
 const ACTIONS_HEIGHT = 72;
 const ACTION_ICON_SIZE = 56;
+const PEER_SELECTOR_LOCK_MS = 520;
 
 function TxRow({ tx, theme, moneyFormat, btcPrice, isLast, openRoute }) {
     const { peers } = usePeer() || {};
@@ -135,6 +136,7 @@ function WalletLoading() {
 export default function Wallet() {
     const { theme } = useTheme();
     const router = useRouter();
+    const isFocused = useIsFocused();
     const insets = useSafeAreaInsets();
     const bitcoin = useBitcoin();
     const { balance, txReady } = useWallet();
@@ -217,6 +219,16 @@ export default function Wallet() {
     }, []);
 
     useEffect(() => {
+        if (!isFocused || chatBanned) return;
+
+        const task = InteractionManager.runAfterInteractions(() => {
+            router.prefetch('/peerselector');
+        });
+
+        return () => task.cancel?.();
+    }, [chatBanned, isFocused, router]);
+
+    useEffect(() => {
         if (showBalance) {
             setDisplayBalance(balance);
         }
@@ -286,8 +298,8 @@ export default function Wallet() {
     );
 
     const openRoute = useCallback(
-        (href, mode = 'push') => {
-            if (!lockRoute()) return;
+        (href, mode = 'push', lockMs = 1200) => {
+            if (!lockRoute(lockMs)) return;
             if (mode === 'navigate') {
                 router.navigate(href);
                 return;
@@ -340,7 +352,7 @@ export default function Wallet() {
                                 <GlassIcon glassEffectStyle="regular" rounded={16} icon={BanknoteArrowUp} onPress={() => showBalance && openRoute('/withdraw')} />
                             </Animated.View>
                         </Animated.View>
-                        <GlassIcon glassEffectStyle="regular" rounded={16} icon={UserRoundPlus} onPress={() => openRoute('/peerselector')} disabled={chatBanned} />
+                        <GlassIcon glassEffectStyle="regular" rounded={16} icon={UserRoundPlus} onPress={() => openRoute('/peerselector', 'push', PEER_SELECTOR_LOCK_MS)} disabled={chatBanned} />
                     </View>
                 </GlassHeader>
             </Animated.View>

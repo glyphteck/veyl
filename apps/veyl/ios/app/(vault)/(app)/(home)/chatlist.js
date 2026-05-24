@@ -81,6 +81,7 @@ function ChatRow({ onPress, onDelete, title, subtitle, rightLabel, isUnseen, ava
                 .failOffsetX(-4)
                 .failOffsetY([-10, 10])
                 .onUpdate((event) => {
+                    'worklet';
                     const drag = Math.max(event.translationX, 0);
                     swipe.value = revealDelete(drag);
                     if (drag >= DELETE_TRIGGER && !deleteFired.value) {
@@ -91,12 +92,14 @@ function ChatRow({ onPress, onDelete, title, subtitle, rightLabel, isUnseen, ava
                     }
                 })
                 .onEnd((event) => {
+                    'worklet';
                     const drag = Math.max(event.translationX, 0);
                     if (drag >= DELETE_TRIGGER) {
                         scheduleOnRN(handleDelete);
                     }
                 })
                 .onFinalize(() => {
+                    'worklet';
                     swipe.value = withSpring(0, DELETE_SPRING);
                     deleteFired.value = false;
                 }),

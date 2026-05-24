@@ -11,6 +11,10 @@ export function proxy(request) {
 
     const isMobile = ['mobile', 'tablet'].includes(userAgent(request).device.type);
 
+    if (pathname === '/landing') {
+        return NextResponse.next();
+    }
+
     if (pathname === '/download') {
         return isMobile ? NextResponse.next() : NextResponse.redirect(new URL('/', request.url));
     }

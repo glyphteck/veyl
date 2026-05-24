@@ -849,11 +849,13 @@ export function FullscreenRail({ activeIndex, items, onCloseComplete, onMove }) 
             Gesture.Pan()
                 .minDistance(PAN_MIN_DISTANCE)
                 .onTouchesDown((event) => {
+                    'worklet';
                     const touch = getGesturePoint(event);
                     const point = pointToStage(touch.x, touch.y, activeMediaLayout);
                     panStartedOnSlider.value = activeIsVideo && isSliderHit(point, activeRect);
                 })
                 .onBegin((event) => {
+                    'worklet';
                     cancelAnimation(railX);
                     panStartX.value = railX.value;
                     panDidEnd.value = false;
@@ -863,6 +865,7 @@ export function FullscreenRail({ activeIndex, items, onCloseComplete, onMove }) 
                     }
                 })
                 .onUpdate((event) => {
+                    'worklet';
                     if (panMode.value === PAN_SCRUB) {
                         const point = pointToStage(event.x, event.y, activeMediaLayout);
                         scheduleOnRN(moveScrub, sliderProgress(point, activeRect));
@@ -913,6 +916,7 @@ export function FullscreenRail({ activeIndex, items, onCloseComplete, onMove }) 
                     }
                 })
                 .onEnd((event) => {
+                    'worklet';
                     panDidEnd.value = true;
                     if (panMode.value === PAN_SCRUB) {
                         panMode.value = PAN_NONE;
@@ -965,6 +969,7 @@ export function FullscreenRail({ activeIndex, items, onCloseComplete, onMove }) 
                     }
                 })
                 .onFinalize(() => {
+                    'worklet';
                     if (panDidEnd.value) {
                         panDidEnd.value = false;
                         panMode.value = PAN_NONE;

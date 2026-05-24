@@ -3,7 +3,7 @@
 import { renderMoney } from '../utils.js';
 import { getMessageOrderMs } from './state.js';
 import { CHAT_MEDIA_TTL_MS, getMediaFileId } from './filepayload.js';
-import { CHAT_RETENTION_24H, CHAT_RETENTION_SEEN, cleanChatRetention, hasChatRetention, isTtlExpired, withMessageRetention } from './ttl.js';
+import { CHAT_RETENTION_24H, CHAT_RETENTION_SEEN, cleanChatRetention, getMessageRetention, hasChatRetention, isTtlExpired, seenMessageTtlMs, withMessageRetention } from './ttl.js';
 
 export const ATTACHMENT_MSG_TYPES = ['img', 'mp3', 'mp4', 'file'];
 export const UNAVAILABLE_REPLY_MSG_TYPE = 'uav';
@@ -181,6 +181,19 @@ function isServerConfirmedMsg(msg) {
 
 function msgKey(msg) {
     return msg?.cid || msg?.id || null;
+}
+
+function msgKeys(msg) {
+    return [...new Set([msgKey(msg), msg?.id, msg?.cid].filter(Boolean))];
+}
+
+function messageOrderMs(message) {
+    const ms = getMessageOrderMs(message);
+    return Number.isFinite(ms) ? ms : null;
+}
+
+function hasAnyMsgKey(msg, keys) {
+    return !!(keys?.size && msgKeys(msg).some((key) => keys.has(key)));
 }
 
 export function makeReadReceipt(target) {
@@ -408,6 +421,100 @@ export function getLatestReadOutgoingReceipt(messages, chatPK, peerChatPK) {
 
 export function getLatestReadOutgoingReceiptMessage(messages, chatPK, peerChatPK) {
     return getLatestReadOutgoingReceipt(messages, chatPK, peerChatPK)?.message ?? null;
+}
+
+function readReceiptFromRecipient(receipt, msg, chatPK, peerChatPK) {
+    const messageFromPeer = isPeerMsg(msg, chatPK);
+    const receiptFromPeer = isPeerMsg(receipt, chatPK);
+    return messageFromPeer ? !receiptFromPeer : receiptFromPeer && (!peerChatPK || receipt?.s === peerChatPK);
+}
+
+function readReceiptCoversMessage(receipt, msg, byKey, chatPK, peerChatPK) {
+    const targetKey = typeof receipt?.upto === 'string' ? receipt.upto.trim() : '';
+    if (!targetKey || !readReceiptFromRecipient(receipt, msg, chatPK, peerChatPK)) {
+        return false;
+    }
+    if (msgKeys(msg).includes(targetKey)) {
+        return true;
+    }
+
+    const target = byKey.get(targetKey);
+    if (target && isPeerMsg(target, chatPK) !== isPeerMsg(msg, chatPK)) {
+        return false;
+    }
+
+    const messageMs = messageOrderMs(msg);
+    const targetMs = messageOrderMs(target) ?? messageOrderMs({ cid: targetKey }) ?? messageOrderMs(receipt);
+    return messageMs != null && targetMs != null && messageMs <= targetMs;
+}
+
+function messageSeenAtMs(msg, receipts, byKey, chatPK, peerChatPK) {
+    let seenAt = null;
+    for (const receipt of receipts || []) {
+        if (!readReceiptCoversMessage(receipt, msg, byKey, chatPK, peerChatPK)) {
+            continue;
+        }
+        const receiptMs = messageOrderMs(receipt);
+        if (receiptMs != null && (seenAt == null || receiptMs < seenAt)) {
+            seenAt = receiptMs;
+        }
+    }
+    return seenAt;
+}
+
+function isSeenHiddenMsg(msg, receipts, byKey, chatPK, peerChatPK, now) {
+    if (!isServerConfirmedMsg(msg) || isControlMsg(msg) || isSystemMsg(msg) || !canShowMsg(msg) || msg.ttl == null) {
+        return false;
+    }
+
+    const seenAt = messageSeenAtMs(msg, receipts, byKey, chatPK, peerChatPK);
+    if (seenAt == null) {
+        return false;
+    }
+
+    return getMessageRetention(msg) === CHAT_RETENTION_SEEN || seenMessageTtlMs(seenAt) <= now;
+}
+
+export function getSeenHiddenMessages(messages, chatPK, peerChatPK, options = {}) {
+    if (!Array.isArray(messages) || !messages.length || !chatPK) {
+        return [];
+    }
+
+    const keepKeys = options?.keepKeys instanceof Set ? options.keepKeys : new Set(Array.isArray(options?.keepKeys) ? options.keepKeys.filter(Boolean) : []);
+    const now = Number.isFinite(options?.now) ? options.now : Date.now();
+    const byKey = new Map();
+    const receipts = [];
+
+    for (const msg of messages) {
+        for (const key of msgKeys(msg)) {
+            byKey.set(key, msg);
+        }
+        if (isServerConfirmedMsg(msg) && isReadReceiptMsg(msg)) {
+            receipts.push(msg);
+        }
+    }
+
+    if (!receipts.length) {
+        return [];
+    }
+
+    return messages.filter((msg) => !hasAnyMsgKey(msg, keepKeys) && isSeenHiddenMsg(msg, receipts, byKey, chatPK, peerChatPK, now));
+}
+
+export function filterSeenMessages(messages, chatPK, peerChatPK, options = {}) {
+    const hidden = getSeenHiddenMessages(messages, chatPK, peerChatPK, options);
+    if (!hidden.length) {
+        return messages || [];
+    }
+
+    const hiddenKeys = new Set();
+    for (const msg of hidden) {
+        for (const key of msgKeys(msg)) {
+            hiddenKeys.add(key);
+        }
+    }
+
+    return (messages || []).filter((msg) => !hasAnyMsgKey(msg, hiddenKeys));
 }
 
 export function formatAttachmentSize(value) {

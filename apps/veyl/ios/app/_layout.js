@@ -11,18 +11,22 @@ import { UserProvider, useUser } from '@/providers/userprovider';
 import { BitcoinProvider } from '@/providers/bitcoinprovider';
 import { VaultProvider, useVault } from '@/providers/vaultprovider';
 import { Stack } from 'expo-router';
+import { usePathname } from 'expo-router';
 import { onAuthStateChanged } from 'firebase/auth';
 import * as SplashScreen from 'expo-splash-screen';
 import { auth } from '@/lib/firebase';
 import { hasCurrentCommunityRules } from '@/lib/community';
 import { KeyboardRootProvider } from '@/components/keyboardscroll';
+import { installDiagnostics, mark } from '@/lib/diagnostics';
 
+installDiagnostics();
 void SplashScreen.preventAutoHideAsync();
 
 function AppContent() {
     const { theme } = useTheme();
     const user = useUser();
     const { seedReady, encSeed, touch } = useVault();
+    const pathname = usePathname();
     const [authReady, setAuthReady] = useState(!!auth.currentUser);
     const [ready, setReady] = useState(false);
 
@@ -34,6 +38,10 @@ function AppContent() {
         });
         return unsub;
     }, []);
+
+    useEffect(() => {
+        mark('route.path', { pathname });
+    }, [pathname]);
 
     const hasAuthSession = !!auth.currentUser || !!user.uid;
     const signedIn = !!user.uid;
@@ -56,6 +64,21 @@ function AppContent() {
     const onboardingComplete = hasUsername && hasAvatarEntry && hasSeed && acceptedRules;
     const showLogin = !signedIn || !routeReady;
     const showAuthed = signedIn && routeReady;
+
+    useEffect(() => {
+        mark('app.gates', {
+            authReady,
+            hasAuthSession,
+            signedIn,
+            profileReady: !!user.profileReady,
+            settingsReady: !!user.settingsReady,
+            seedReady: !!seedReady,
+            routeReady,
+            loaded,
+            ready,
+            onboardingComplete,
+        });
+    }, [authReady, hasAuthSession, loaded, onboardingComplete, ready, routeReady, seedReady, signedIn, user.profileReady, user.settingsReady]);
 
     if (!ready) {
         return null;

@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { canShowMsg, getLatestOwnReadReceiptTarget, getLatestReadReceiptTarget, hasStoredFileRef, isAttachmentMsgType, isExpiredAttachmentMsg, isLongTxt, isPeerMsg, makeSharedAttachment } from '../chat/messages.js';
+import { getLatestOwnReadReceiptTarget, getLatestReadReceiptTarget, hasStoredFileRef, isAttachmentMsgType, isExpiredAttachmentMsg, isLongTxt, makeSharedAttachment } from '../chat/messages.js';
 import { CHAT_MEDIA_TTL_MS, getMediaFileId } from '../chat/filepayload.js';
 import { getChatId } from '../crypto/chat.js';
 import {
@@ -18,7 +18,6 @@ import {
     applyReadCache,
     clearChatPreviewsByHiddenKeys,
     clearChatPreviewsByKeys,
-    clearChatPreviewsByMessages,
     collectMessageKeys,
     filterPendingDeleteChats,
     getLastChat,
@@ -66,12 +65,11 @@ import {
     uploadAttachmentMsg as uploadAttachmentShared,
     uploadImgMsg as uploadImageShared,
     updateMsg as updateMessageShared,
-    updateSeenMsgTtls as updateSeenMessageTtlsShared,
     getPeerChatPKFromChatId,
     getChatRowLastMsgKey as getRowLastMsgKey,
     MSG_BATCH_SIZE,
 } from '../chat/utils.js';
-import { CHAT_RETENTION_24H, CHAT_RETENTION_SEEN, cleanChatRetention, getMessageRetention, normalizeChatSettings, onSeenMessageTtlMs, seenMessageTtlMs, shouldShortenTtl, withMessageRetention } from '../chat/ttl.js';
+import { CHAT_RETENTION_24H, cleanChatRetention, getMessageRetention, normalizeChatSettings, withMessageRetention } from '../chat/ttl.js';
 import { sortMessages } from '../chat/state.js';
 import { dropCachedChat, dropCachedMedia, readCachedChats, readCachedMedia, writeCachedChats, writeCachedMedia } from '../localdatacache.js';
 import { randomBytes, toHex } from '../crypto/core.js';
@@ -226,9 +224,6 @@ export function createChat({ db, storage, getStorage, uploadAttachment: uploadAt
         setChatTtl(chatId, senderPubkey, senderPrivkey, peerChatPK, retention) {
             return setChatRetentionShared(db, chatId, senderPubkey, senderPrivkey, peerChatPK, retention);
         },
-        updateSeenTtl(chatId, messages, ttlMs) {
-            return updateSeenMessageTtlsShared(db, chatId, messages, ttlMs);
-        },
         makeMessagePermanent(chatId, messages) {
             return makeMessagePermanentShared(db, chatId, messages);
         },
@@ -340,7 +335,6 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
         const chatsRef = useRef([]);
         const adoptedLocalMediaRef = useRef(new Set());
         const cachedLocalMediaRef = useRef(new Set());
-        const seenTtlRef = useRef(new Set());
 
         const updateRenderedChats = useCallback(
             (nextChats) => {
@@ -373,13 +367,6 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
             return changed;
         }, []);
 
-        const rememberHiddenChatPreviews = useCallback(
-            (chatId, messages) => {
-                return rememberHiddenChatPreviewKeys(chatId, collectMessageKeys(messages));
-            },
-            [rememberHiddenChatPreviewKeys]
-        );
-
         const clearChatPreviewKeys = useCallback(
             (chatId, keys) => {
                 const remembered = rememberHiddenChatPreviewKeys(chatId, keys);
@@ -392,20 +379,6 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
                 updateRenderedChats(nextServerChats);
             },
             [localCache, rememberHiddenChatPreviewKeys, updateRenderedChats]
-        );
-
-        const clearChatPreviewMessages = useCallback(
-            (chatId, messages) => {
-                const remembered = rememberHiddenChatPreviews(chatId, messages);
-                const nextServerChats = clearChatPreviewsByHiddenKeys(clearChatPreviewsByMessages(lastServerChatsRef.current, chatId, messages), hiddenChatPreviewKeysRef.current);
-                if (!remembered && nextServerChats === lastServerChatsRef.current) {
-                    return;
-                }
-                lastServerChatsRef.current = nextServerChats;
-                writeCachedChats(localCache, filterPendingDeleteChats(nextServerChats, pendingDeleteIdsRef.current));
-                updateRenderedChats(nextServerChats);
-            },
-            [localCache, rememberHiddenChatPreviews, updateRenderedChats]
         );
 
         const finishPendingDeleteWait = useCallback((chatId) => {
@@ -653,7 +626,6 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
             localByChatRef.current = new Map();
             adoptedLocalMediaRef.current.clear();
             cachedLocalMediaRef.current.clear();
-            seenTtlRef.current.clear();
 
             clearReadWrites(pendingReadRef.current);
             pendingReadRef.current = new Map();
@@ -1196,80 +1168,6 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
                 void checkLastRead(chatId, message, { sendReceipt: false });
             },
             [checkLastRead]
-        );
-
-        const markMessagesSeenTtl = useCallback(
-            (chatId, messages) => {
-                if (chatBanned || !chatId || !Array.isArray(messages) || !messages.length) {
-                    return;
-                }
-
-                const nextTtlMs = seenMessageTtlMs();
-                const candidates = [];
-                const keys = [];
-                for (const message of messages) {
-                    const id = typeof message?.id === 'string' ? message.id.trim() : '';
-                    if (!id || id.startsWith('local:') || getMessageRetention(message) !== CHAT_RETENTION_24H || !isPeerMsg(message, chatPK) || !canShowMsg(message) || !shouldShortenTtl(message.ttl, nextTtlMs)) {
-                        continue;
-                    }
-                    const key = `${chatId}:${id}:${message.ttl?.toMillis?.() ?? ''}`;
-                    if (seenTtlRef.current.has(key)) {
-                        continue;
-                    }
-                    seenTtlRef.current.add(key);
-                    keys.push(key);
-                    candidates.push(message);
-                }
-
-                if (!candidates.length) {
-                    return;
-                }
-
-                void chat.updateSeenTtl(chatId, candidates, nextTtlMs).catch(() => {
-                    for (const key of keys) {
-                        seenTtlRef.current.delete(key);
-                    }
-                });
-            },
-            [chat, chatBanned, chatPK]
-        );
-
-        const expireMessagesOnLeaveTtl = useCallback(
-            (chatId, messages) => {
-                if (chatBanned || !chatId || !Array.isArray(messages) || !messages.length) {
-                    return [];
-                }
-
-                const nextTtlMs = onSeenMessageTtlMs();
-                const candidates = [];
-                const keys = [];
-                for (const message of messages) {
-                    const id = typeof message?.id === 'string' ? message.id.trim() : '';
-                    if (!id || id.startsWith('local:') || getMessageRetention(message) !== CHAT_RETENTION_SEEN || !isPeerMsg(message, chatPK) || !canShowMsg(message) || !shouldShortenTtl(message.ttl, nextTtlMs)) {
-                        continue;
-                    }
-                    const key = `${chatId}:leave:${id}:${message.ttl?.toMillis?.() ?? ''}`;
-                    if (seenTtlRef.current.has(key)) {
-                        continue;
-                    }
-                    seenTtlRef.current.add(key);
-                    keys.push(key);
-                    candidates.push(message);
-                }
-
-                if (!candidates.length) {
-                    return [];
-                }
-
-                clearChatPreviewMessages(chatId, candidates);
-                void chat.updateSeenTtl(chatId, candidates, nextTtlMs).catch(() => {
-                    for (const key of keys) {
-                        seenTtlRef.current.delete(key);
-                    }
-                });
-                return candidates;
-            },
-            [chat, chatBanned, chatPK, clearChatPreviewMessages]
         );
 
         const showLocalMessage = useCallback(
@@ -1815,8 +1713,6 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
                 restoreDeletedChat,
                 markChatReadReceipt,
                 markChatRead,
-                markMessagesSeenTtl,
-                expireMessagesOnLeaveTtl,
                 hasChatDoc,
                 getMessages,
                 wasChatDeletedLocally,
@@ -1862,8 +1758,6 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
                 restoreDeletedChat,
                 markChatReadReceipt,
                 markChatRead,
-                markMessagesSeenTtl,
-                expireMessagesOnLeaveTtl,
                 hasChatDoc,
                 getMessages,
                 wasChatDeletedLocally,

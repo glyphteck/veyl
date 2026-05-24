@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Animated, FlatList, Pressable, Text, View } from 'react-native';
 import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import { ChevronLeft, History } from 'lucide-react-native';
@@ -138,17 +138,12 @@ export default function HistoryRoute() {
     const enableBackSwipe = useCallback(() => {
         navigation.setOptions({ gestureEnabled: true });
     }, [navigation]);
-    const handleScrollEndDrag = useCallback(
-        (event) => {
-            const velocityY = event?.nativeEvent?.velocity?.y ?? 0;
-            if (Math.abs(velocityY) < 0.1) {
-                enableBackSwipe();
-            } else {
-                disableBackSwipe();
-            }
-        },
-        [disableBackSwipe, enableBackSwipe]
-    );
+
+    useEffect(() => () => enableBackSwipe(), [enableBackSwipe]);
+
+    const handleScrollEndDrag = useCallback(() => {
+        enableBackSwipe();
+    }, [enableBackSwipe]);
 
     return (
         <View style={{ flex: 1, overflow: 'hidden' }}>

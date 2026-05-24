@@ -1,6 +1,7 @@
 'use client';
-import { Bookmark, Download, Flag, Loader, Reply, RotateCcw, Share2, SquarePen, Trash2 } from 'lucide-react';
+import { ArrowDown, Bookmark, Download, Flag, Loader, Reply, RotateCcw, Share2, SquarePen, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { Button } from '@/components/button';
 import { useChat } from '@/components/providers/chatprovider';
 import { useUser } from '@/components/providers/userprovider';
 import { usePeer } from '@/components/providers/peerprovider';
@@ -31,6 +32,7 @@ const MESSAGE_ROW_GAP_PX = 8;
 const MAX_CHAT_SCROLL_MEMORY = 50;
 const MESSAGE_ACTION_ICON = 'size-4';
 const BOTTOM_STICK_PX = 32;
+const SCROLL_BOTTOM_PAGES = 2;
 const EMPTY_RECEIPT_PEER = Object.freeze({});
 const EMPTY_MESSAGE_ACTIONS = Object.freeze([]);
 const EMPTY_MESSAGE_KEY_SET = new Set();
@@ -196,8 +198,17 @@ function afterNextPaint(callback) {
     };
 }
 
+function getReverseBottomDistance(node) {
+    return node ? Math.max(0, -node.scrollTop) : 0;
+}
+
 function isAtReverseBottom(node) {
-    return !!node && Math.max(0, -node.scrollTop) <= BOTTOM_STICK_PX;
+    return !!node && getReverseBottomDistance(node) <= BOTTOM_STICK_PX;
+}
+
+function isFarFromReverseBottom(node) {
+    const page = node?.clientHeight || 0;
+    return page > 0 && getReverseBottomDistance(node) > page * SCROLL_BOTTOM_PAGES;
 }
 
 function scrollToReverseBottom(node) {
@@ -780,7 +791,7 @@ function InteractiveMessageRow({
                 <div
                     data-message-exit-target
                     ref={exitTargetRef}
-                    className="relative max-w-[60%] flex min-w-0 items-center ease-out"
+                    className={`relative max-w-[60%] flex min-w-0 flex-col ease-out ${userSent ? 'items-end' : 'items-start'}`}
                     style={{
                         transform: exitOuterTransform,
                         transition: `margin-right ${MESSAGE_ROW_ANIMATION_MS}ms ${MESSAGE_ROW_EASE}, transform ${MESSAGE_ROW_EXIT_ANIMATION_MS}ms ${MESSAGE_ROW_EXIT_EASE}`,
@@ -789,7 +800,7 @@ function InteractiveMessageRow({
                     }}
                 >
                     <div
-                        className="flex min-w-0 items-center"
+                        className={`flex min-w-0 flex-col ${userSent ? 'items-end' : 'items-start'}`}
                         style={{
                             opacity: visualExiting ? 0 : 1,
                             transform: exitInnerTransform,
@@ -798,35 +809,37 @@ function InteractiveMessageRow({
                             willChange: leaving ? 'opacity, transform' : undefined,
                         }}
                     >
-                        {fromPeer ? <MsgDot show={showMsgDot} failed={msg.failed} saved={dotSavedForever} side="left" /> : null}
-                        {isReported ? (
-                            <>
-                                <MessageActions actions={visibleActions} fromPeer={fromPeer} />
-                                <ReportedMessage fromPeer={fromPeer} />
-                            </>
-                        ) : (
-                            <div className="relative min-w-0 max-w-full touch-manipulation" onPointerUp={leaving ? undefined : handlePointerUp}>
-                                <ChatMessageType
-                                    msg={msg}
-                                    fromPeer={fromPeer}
-                                    peerChatPK={peerChatPK}
-                                    peerDisplayName={peerDisplayName}
-                                    onPay={handlePay}
-                                    isPaying={isPaying}
-                                    reply={reply}
-                                    replyFromPeer={replyFromPeer}
-                                    onReplyPress={handleReplyPress}
-                                    reactions={reactions}
-                                    reactionUsers={reactionUsers}
-                                    actionSlot={<MessageActions actions={visibleActions} fromPeer={fromPeer} />}
-                                />
-                            </div>
-                        )}
-                        {!fromPeer ? <MsgDot show={showMsgDot} failed={msg.failed} saved={dotSavedForever} side="right" /> : null}
+                        <div className="flex min-w-0 items-center">
+                            {fromPeer ? <MsgDot show={showMsgDot} failed={msg.failed} saved={dotSavedForever} side="left" /> : null}
+                            {isReported ? (
+                                <>
+                                    <MessageActions actions={visibleActions} fromPeer={fromPeer} />
+                                    <ReportedMessage fromPeer={fromPeer} />
+                                </>
+                            ) : (
+                                <div className="relative min-w-0 max-w-full touch-manipulation" onPointerUp={leaving ? undefined : handlePointerUp}>
+                                    <ChatMessageType
+                                        msg={msg}
+                                        fromPeer={fromPeer}
+                                        peerChatPK={peerChatPK}
+                                        peerDisplayName={peerDisplayName}
+                                        onPay={handlePay}
+                                        isPaying={isPaying}
+                                        reply={reply}
+                                        replyFromPeer={replyFromPeer}
+                                        onReplyPress={handleReplyPress}
+                                        reactions={reactions}
+                                        reactionUsers={reactionUsers}
+                                        actionSlot={<MessageActions actions={visibleActions} fromPeer={fromPeer} />}
+                                    />
+                                </div>
+                            )}
+                            {!fromPeer ? <MsgDot show={showMsgDot} failed={msg.failed} saved={dotSavedForever} side="right" /> : null}
+                        </div>
+                        <MessageMeta time={messageTime} receiptTime={receiptTime} receiptPeer={receiptPeer} userSent={userSent} />
                     </div>
                 </div>
             </div>
-            <MessageMeta time={messageTime} receiptTime={receiptTime} receiptPeer={receiptPeer} userSent={userSent} />
         </MessageRowShell>
     );
 }
@@ -845,6 +858,7 @@ export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
     const [reportedMessageKeys, setReportedMessageKeys] = useState(new Set());
     const [deletingMessageKeys, setDeletingMessageKeys] = useState(EMPTY_MESSAGE_KEY_SET);
     const [showOlderLoader, setShowOlderLoader] = useState(false);
+    const [showScrollBottom, setShowScrollBottom] = useState(false);
     const scrollRef = useRef(null);
     const loadMoreRef = useRef(null);
     const loadingOlderRef = useRef(false);
@@ -856,6 +870,12 @@ export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
     const deleteCleanupTimersRef = useRef(new Map());
     const rowRefs = useRef(new Map());
     const lastLikeTapRef = useRef(null);
+    const receiptSnapshotRef = useRef(new Map());
+    const receiptSnapshotChatRef = useRef('');
+    if (receiptSnapshotChatRef.current !== (selectedChatId || '')) {
+        receiptSnapshotChatRef.current = selectedChatId || '';
+        receiptSnapshotRef.current.clear();
+    }
 
     const { messages: msgs, ready, hasOlder, loadingOlder, loadOlder, patchMessage, removeMessage } = useChatMessages(selectedChatId);
     const visibleMsgs = useMemo(() => collapseSystemMessages((msgs || []).filter(canShowMsg)), [msgs]);
@@ -888,6 +908,7 @@ export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
             return;
         }
         scrollToReverseBottom(node);
+        setShowScrollBottom(false);
     }, []);
 
     const scheduleBottomScroll = useCallback(() => {
@@ -907,15 +928,27 @@ export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
 
     const handleListScroll = useCallback(
         (event) => {
-        const node = event.currentTarget;
-        rememberChatScroll(selectedChatId, node.scrollTop);
-        stickToBottomRef.current = isAtReverseBottom(node);
-        if (!stickToBottomRef.current) {
-            setShowOlderLoader(true);
-        }
-    },
+            const node = event.currentTarget;
+            rememberChatScroll(selectedChatId, node.scrollTop);
+            const sticky = isAtReverseBottom(node);
+            stickToBottomRef.current = sticky;
+            setShowScrollBottom(!sticky && isFarFromReverseBottom(node));
+            if (!sticky) {
+                setShowOlderLoader(true);
+            }
+        },
         [selectedChatId]
     );
+
+    const scrollToBottom = useCallback(() => {
+        const node = scrollRef.current;
+        scrollToReverseBottom(node);
+        if (node) {
+            rememberChatScroll(selectedChatId, node.scrollTop);
+        }
+        stickToBottomRef.current = true;
+        setShowScrollBottom(false);
+    }, [selectedChatId]);
 
     const handleListTransitionEnd = useCallback(
         (event) => {
@@ -943,6 +976,7 @@ export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
         selectedChatIdRef.current = selectedChatId;
         loadingOlderRef.current = false;
         setShowOlderLoader(false);
+        setShowScrollBottom(false);
     }, [selectedChatId]);
 
     useEffect(() => {
@@ -964,6 +998,7 @@ export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
         node.scrollTop = nextScrollTop;
         stickToBottomRef.current = isAtReverseBottom(node);
         setShowOlderLoader(!stickToBottomRef.current);
+        setShowScrollBottom(!stickToBottomRef.current && isFarFromReverseBottom(node));
         restoredChatIdRef.current = selectedChatId;
 
         if (restoreFrameRef.current) {
@@ -975,6 +1010,7 @@ export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
                 node.scrollTop = nextScrollTop;
                 stickToBottomRef.current = isAtReverseBottom(node);
                 setShowOlderLoader(!stickToBottomRef.current);
+                setShowScrollBottom(!stickToBottomRef.current && isFarFromReverseBottom(node));
             }
         });
 
@@ -1064,6 +1100,34 @@ export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
     const latestReadReceipt = useMemo(() => getLatestReadOutgoingReceipt(msgs, chatPK, peerChatPK), [chatPK, msgs, peerChatPK]);
     const latestReadReceiptKey = latestReadReceipt?.message?.cid || latestReadReceipt?.message?.id || null;
     const latestReadReceiptTime = useMemo(() => formatMsgFullDateTime(latestReadReceipt?.receipt), [latestReadReceipt?.receipt]);
+    const latestReceiptMeta = useMemo(
+        () =>
+            latestReadReceiptKey
+                ? {
+                      peer: peerProfile || EMPTY_RECEIPT_PEER,
+                      time: latestReadReceiptTime,
+                  }
+                : null,
+        [latestReadReceiptKey, latestReadReceiptTime, peerProfile]
+    );
+    const leavingReceiptKey = useMemo(
+        () =>
+            displayRows.find((row) => {
+                if (row?.state !== 'leaving' || !row?.key) {
+                    return false;
+                }
+                return receiptSnapshotRef.current.has(row.key) || row.key === latestReadReceiptKey;
+            })?.key || '',
+        [displayRows, latestReadReceiptKey]
+    );
+    const suppressLiveReceipt = !!leavingReceiptKey && leavingReceiptKey !== latestReadReceiptKey;
+
+    useEffect(() => {
+        if (!latestReadReceiptKey || !latestReceiptMeta) {
+            return;
+        }
+        receiptSnapshotRef.current.set(latestReadReceiptKey, latestReceiptMeta);
+    }, [latestReadReceiptKey, latestReceiptMeta]);
 
     useEffect(() => {
         setSavingForeverMessages((prev) => {
@@ -1379,69 +1443,80 @@ export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
     }
 
     return (
-        <div
-            ref={scrollRef}
-            className="flex h-full min-h-0 flex-col-reverse overflow-y-auto px-4 pt-17"
-            style={{ paddingBottom: Math.max(68, bottomPad + 32) }}
-            onScroll={handleListScroll}
-            onTransitionEnd={handleListTransitionEnd}
-        >
-            {displayRows.map(({ key, msg, state: rowState }, index) => {
-                const fromPeer = isPeerMsg(msg, chatPK);
-                const userSent = !fromPeer;
-                const msgKey = getMsgKey(msg);
-                const isReported = !!msgKey && reportedMessageKeys.has(msgKey);
-                const saving = !!msgKey && savingMessages.has(msgKey);
-                const savingForever = !!msgKey && savingForeverMessages.has(msgKey);
-                const saveForeverTargetSaved = savingForever ? savingForeverMessages.get(msgKey) === true : null;
-                const savedForever = isSavedForeverMsg(msg);
-                const reply = msg?.r ? replyMap.get(msg.r) || null : null;
-                const replyFromPeer = reply ? isPeerMsg(reply, chatPK) : false;
-                const hasReceipt = userSent && msgKey && msgKey === latestReadReceiptKey;
-                return (
-                    <MemoMessageRow
-                        key={key}
-                        msg={msg}
-                        rowState={rowState}
-                        hasRowAbove={index < displayRows.length - 1}
-                        fromPeer={fromPeer}
-                        userSent={userSent}
-                        peerChatPK={peerChatPK}
-                        peerDisplayName={peerDisplayName}
-                        peerProfile={peerProfile}
-                        reactionUsers={reactionUsers}
-                        reply={reply}
-                        replyFromPeer={replyFromPeer}
-                        receiptPeer={hasReceipt ? peerProfile || EMPTY_RECEIPT_PEER : null}
-                        receiptTime={hasReceipt ? latestReadReceiptTime : ''}
-                        isReported={isReported}
-                        isSaving={saving}
-                        isSavedForever={savedForever}
-                        saveForeverTargetSaved={saveForeverTargetSaved}
-                        isSavingForever={savingForever}
-                        isPaying={payingMessages.has(msg.id)}
-                        rowRefs={rowRefs}
-                        getOptimisticReactions={getOptimisticReactions}
-                        onReply={onReply}
-                        onEdit={onEdit}
-                        onRetry={retrySentMessage}
-                        onDownload={saveMessage}
-                        onSaveForever={toggleSaveForeverMessage}
-                        onShare={openShareDialog}
-                        onDelete={openDeleteDialog}
-                        onReport={reportMessage}
-                        onPay={handlePayment}
-                        onPointerUp={handleMessagePointerUp}
-                        onJumpToReply={jumpToReply}
-                    />
-                );
-            })}
-            {loadingOlder && showOlderLoader ? (
-                <div className="flex items-center justify-center py-2">
-                    <Loader className="animate-spin size-5" />
+        <div className="relative h-full min-h-0">
+            <div
+                ref={scrollRef}
+                className="flex h-full min-h-0 flex-col-reverse overflow-y-auto px-4 pt-17"
+                style={{ paddingBottom: Math.max(68, bottomPad + 32) }}
+                onScroll={handleListScroll}
+                onTransitionEnd={handleListTransitionEnd}
+            >
+                {displayRows.map(({ key, msg, state: rowState }, index) => {
+                    const fromPeer = isPeerMsg(msg, chatPK);
+                    const userSent = !fromPeer;
+                    const msgKey = getMsgKey(msg);
+                    const isReported = !!msgKey && reportedMessageKeys.has(msgKey);
+                    const saving = !!msgKey && savingMessages.has(msgKey);
+                    const savingForever = !!msgKey && savingForeverMessages.has(msgKey);
+                    const saveForeverTargetSaved = savingForever ? savingForeverMessages.get(msgKey) === true : null;
+                    const savedForever = isSavedForeverMsg(msg);
+                    const reply = msg?.r ? replyMap.get(msg.r) || null : null;
+                    const replyFromPeer = reply ? isPeerMsg(reply, chatPK) : false;
+                    const currentReceipt = !suppressLiveReceipt && userSent && msgKey && msgKey === latestReadReceiptKey ? latestReceiptMeta : null;
+                    const frozenReceipt = rowState === 'leaving' && msgKey ? receiptSnapshotRef.current.get(msgKey) || (msgKey === latestReadReceiptKey ? latestReceiptMeta : null) : null;
+                    const receipt = frozenReceipt || currentReceipt;
+                    return (
+                        <MemoMessageRow
+                            key={key}
+                            msg={msg}
+                            rowState={rowState}
+                            hasRowAbove={index < displayRows.length - 1}
+                            fromPeer={fromPeer}
+                            userSent={userSent}
+                            peerChatPK={peerChatPK}
+                            peerDisplayName={peerDisplayName}
+                            peerProfile={peerProfile}
+                            reactionUsers={reactionUsers}
+                            reply={reply}
+                            replyFromPeer={replyFromPeer}
+                            receiptPeer={receipt?.peer || null}
+                            receiptTime={receipt?.time || ''}
+                            isReported={isReported}
+                            isSaving={saving}
+                            isSavedForever={savedForever}
+                            saveForeverTargetSaved={saveForeverTargetSaved}
+                            isSavingForever={savingForever}
+                            isPaying={payingMessages.has(msg.id)}
+                            rowRefs={rowRefs}
+                            getOptimisticReactions={getOptimisticReactions}
+                            onReply={onReply}
+                            onEdit={onEdit}
+                            onRetry={retrySentMessage}
+                            onDownload={saveMessage}
+                            onSaveForever={toggleSaveForeverMessage}
+                            onShare={openShareDialog}
+                            onDelete={openDeleteDialog}
+                            onReport={reportMessage}
+                            onPay={handlePayment}
+                            onPointerUp={handleMessagePointerUp}
+                            onJumpToReply={jumpToReply}
+                        />
+                    );
+                })}
+                {loadingOlder && showOlderLoader ? (
+                    <div className="flex items-center justify-center py-2">
+                        <Loader className="animate-spin size-5" />
+                    </div>
+                ) : null}
+                <div ref={loadMoreRef} />
+            </div>
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 z-30 mb-6 flex justify-end px-6">
+                <div className="pop pointer-events-auto" data-open={showScrollBottom}>
+                    <Button type="button" title="scroll to bottom" aria-label="scroll to bottom" className="grower-lg size-10 rounded-full bg-background/85 p-0 text-foreground shadow backdrop-blur-sm" onClick={scrollToBottom}>
+                        <ArrowDown className="size-6" />
+                    </Button>
                 </div>
-            ) : null}
-            <div ref={loadMoreRef} />
+            </div>
         </div>
     );
 }
