@@ -2,9 +2,7 @@
 
 ## Open Question
 
-Media files now use opaque encrypted `media/{mediaId}/main` Storage objects with a 21-day lifecycle TTL. Per-message permanence keeps the same Storage object and records encrypted random message stays while Firestore stores only opaque per-file stay counts. Cloud Storage temporary holds are derived from those stay counts instead of moving, copying, or reuploading bytes. Chat/message deletion is intentionally separate from Storage retention, so normal message deletion does not break forwarded messages that reference the same file capability.
-
-The unresolved product question is whether Veyl should add a manual destructive media-delete action before the TTL expires. Users would need to understand whether deleting a media message only removes that chat message or removes the backend file wherever it was shared.
+Decide whether Veyl should add a manual destructive media-delete action before the normal media TTL expires. Users would need to understand whether deleting a media message only removes that chat message or removes the backend file wherever it was shared.
 
 Tradeoffs:
 

@@ -30,7 +30,7 @@ function videoFileType(mimeType) {
 
 function videoFileName(mimeType) {
     const ext = videoFileType(mimeType) === 'video/mp4' ? 'mp4' : 'webm';
-    return `veyl-${Date.now()}.${ext}`;
+    return `veyl-video.${ext}`;
 }
 
 function makeRecordingStream(video) {
@@ -363,7 +363,7 @@ export default function CameraPage() {
         if (!capture) return;
         const a = document.createElement('a');
         a.href = capture.uri;
-        a.download = capture.kind === 'video' ? capture.file?.name || videoFileName(capture.file?.type) : `veyl-${Date.now()}.jpg`;
+        a.download = capture.kind === 'video' ? capture.file?.name || videoFileName(capture.file?.type) : 'veyl-photo.jpg';
         a.click();
     }, [capture]);
 

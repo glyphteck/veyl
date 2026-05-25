@@ -144,7 +144,7 @@ export const passkeyLoginVerify = onCall(async ({ data }) => {
             if (rpId === 'localhost') {
                 throw new HttpsError('failed-precondition', LOCALHOST_PASSKEY_MISMATCH);
             }
-            throw new HttpsError('failed-precondition', 'This passkey belongs to an older Gliftec passkey setup. Register a new passkey.');
+            throw new HttpsError('failed-precondition', 'This passkey belongs to a different Glyphteck passkey setup. Register a new passkey.');
         }
         throw error;
     }

@@ -43,11 +43,6 @@ export default function Blocked() {
                 return;
             }
 
-            const confirmed = window.confirm('Unblock this user? They will be able to message you again.');
-            if (!confirmed) {
-                return;
-            }
-
             setBusyUid(peer.uid);
             try {
                 await unblockPeer?.(peer);
@@ -63,13 +58,13 @@ export default function Blocked() {
 
     return (
         <Card className="w-lg max-w-[calc(100vw-2rem)]">
-            <div className="flex items-center gap-2 px-4 pt-2 pb-2 text-3xl font-black">
-                    <UserX className="size-7" />
-                    <span>blocked users</span>
+            <div className="flex items-center gap-2 px-4 pt-4 pb-2 text-3xl font-black">
+                <UserX className="size-7" />
+                <span>blocked users</span>
             </div>
             <div className="px-4 pt-2 pb-2">
                 {blockedItems.length ? (
-                    <div className="flex max-h-[60vh] flex-col divide-y divide-border overflow-y-auto pr-1">
+                    <div className="flex max-h-[60vh] flex-col gap-1 overflow-y-auto pr-1">
                         {blockedItems.map((peer) => (
                             <BlockedRow key={peer.uid} peer={peer} busy={busyUid === peer.uid} onUnblock={handleUnblock} />
                         ))}

@@ -62,14 +62,6 @@ function getExt(mimeType) {
   }
 }
 
-function cleanPart(value, fallback) {
-  const raw = String(value || fallback || "")
-    .trim()
-    .replace(/[\\/:*?"<>|]/g, "-")
-    .replace(/\s+/g, " ");
-  return raw || fallback;
-}
-
 function getCacheUri(key, mimeType, options = {}) {
   if (!CACHE_DIR) {
     return null;
@@ -80,9 +72,7 @@ function getCacheUri(key, mimeType, options = {}) {
     .match(/\.([a-z0-9]{1,8})$/i)?.[1]
     ?.toLowerCase();
   const ext = namedExt || options?.defaultExt || getExt(mimeType);
-  const name = cleanPart(options?.fileName, null);
-  const suffix = name ? `-${name.replace(/\.[^.]+$/, "")}` : "";
-  return `${CACHE_DIR}${hashKey(key)}${suffix}.${ext}`;
+  return `${CACHE_DIR}${hashKey(key)}.${ext}`;
 }
 
 function touchResolved(key, entry) {

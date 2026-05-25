@@ -13,7 +13,6 @@ export default function GlassField({ children, disabled = false, tintColor, styl
                     flexDirection: 'row',
                     alignItems: 'center',
                     borderRadius: 24,
-                    opacity: disabled ? 0.6 : 1,
                 },
                 style,
             ]}

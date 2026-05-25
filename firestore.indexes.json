@@ -1,18 +1,9 @@
 {
-    "indexes": [
-        {
-            "collectionGroup": "chats",
-            "queryScope": "COLLECTION",
-            "fields": [
-                { "fieldPath": "participants", "arrayConfig": "CONTAINS" },
-                { "fieldPath": "lastMsg.ts", "order": "DESCENDING" }
-            ]
-        }
-    ],
+    "indexes": [],
     "fieldOverrides": [
         {
             "collectionGroup": "passkey_challenges",
-            "fieldPath": "expires",
+            "fieldPath": "ttl",
             "ttl": true,
             "indexes": []
         }

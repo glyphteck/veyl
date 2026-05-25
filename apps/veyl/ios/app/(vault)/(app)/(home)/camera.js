@@ -147,7 +147,7 @@ function stageCapturedVideo(path, orientation) {
         kind: 'video',
         uri,
         mimeType: VIDEO_MIME,
-        name: `veyl-${Date.now()}.mp4`,
+        name: 'veyl-video.mp4',
         rotate: getCaptureRotate(orientation),
     };
 }
@@ -881,7 +881,7 @@ export default function CameraTab() {
             return;
         }
         if (!previewPeer?.chatPK || !chatPK) {
-            Alert.alert('Missing chat key', 'This person has no chat key yet.');
+            Alert.alert('Chat unavailable', 'This person cannot receive messages yet.');
             return;
         }
         if (!lockRoute()) return;
@@ -894,7 +894,7 @@ export default function CameraTab() {
 
     const handlePreviewSend = useCallback(() => {
         if (!previewPeer?.walletPK) {
-            Alert.alert('Missing address', 'This person has no wallet key yet.');
+            Alert.alert('Wallet unavailable', 'This person cannot receive money yet.');
             return;
         }
         if (!lockRoute()) return;

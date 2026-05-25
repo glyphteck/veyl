@@ -17,12 +17,7 @@ export const deleteChat = onCall(async (context) => {
     if (!chatId || typeof chatId !== 'string') throw new HttpsError('invalid-argument', 'chatId required');
 
     const profileSnap = await db.collection('profiles').doc(uid).get();
-    let chatPK = profileSnap.exists ? (profileSnap.data()?.chatPK ?? null) : null;
-
-    if (!chatPK) {
-        const keySnap = await db.collection('chatkeys').where('uid', '==', uid).limit(1).get();
-        chatPK = keySnap.empty ? null : keySnap.docs[0].id;
-    }
+    const chatPK = profileSnap.exists ? (profileSnap.data()?.chatPK ?? null) : null;
 
     if (!chatPK) throw new HttpsError('permission-denied', 'cannot verify participation');
 

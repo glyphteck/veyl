@@ -135,9 +135,9 @@ export default function BotPage() {
                                             onClick={async (event) => {
                                                 event.preventDefault();
                                                 await navigator.clipboard.writeText(bot.walletPK);
-                                                toast('wallet pk copied', { icon: <Wallet /> });
+                                                toast('wallet id copied', { icon: <Wallet /> });
                                             }}
-                                            title="copy wallet pk"
+                                            title="copy wallet id"
                                         >
                                             <Wallet className="size-5" />
                                         </Button>
@@ -148,9 +148,9 @@ export default function BotPage() {
                                             onClick={async (event) => {
                                                 event.preventDefault();
                                                 await navigator.clipboard.writeText(bot.chatPK);
-                                                toast('chat pk copied', { icon: <KeyRound /> });
+                                                toast('chat identity copied', { icon: <KeyRound /> });
                                             }}
-                                            title="copy chat pk"
+                                            title="copy chat identity"
                                         >
                                             <KeyRound className="size-5" />
                                         </Button>
@@ -163,14 +163,16 @@ export default function BotPage() {
                                     >
                                         <MessageCircleOff className="size-5" />
                                     </Button>
-                                    <Avatar
-                                        className={`grower cursor-pointer ${bot.avatarBanned ? 'text-destructive' : 'text-active'}`}
+                                    <Button
+                                        className={`grower-lg size-10 p-0 ${bot.avatarBanned ? 'text-destructive' : 'text-active'}`}
                                         onClick={(event) => handleAvatarBan(event, bot)}
-                                        aria-disabled={banningKey === `${bot.uid}:avatar`}
+                                        disabled={banningKey === `${bot.uid}:avatar`}
                                         title={bot.avatarBanned ? 'unban avatar' : 'ban avatar'}
                                     >
-                                        <AvatarFallback />
-                                    </Avatar>
+                                        <Avatar className="pointer-events-none size-10">
+                                            <AvatarFallback />
+                                        </Avatar>
+                                    </Button>
                                     <Button className={`grower-lg px-2 py-2 ${powerButtonClass(bot)}`} onClick={(event) => handlePower(event, bot)} disabled={pendingUid === bot.uid} title={bot.enabled ? 'turn bot off' : 'turn bot on'}>
                                         {pendingUid === bot.uid ? <Loader className="size-5 animate-spin" /> : <Power className="size-5" />}
                                     </Button>

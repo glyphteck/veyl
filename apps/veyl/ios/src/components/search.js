@@ -5,6 +5,7 @@ import { Search, X } from 'lucide-react-native';
 
 import GlassView from '@/components/glass/glassview';
 import Icon from '@/components/icon';
+import { tap } from '@/lib/tap';
 import { useTheme } from '@/providers/themeprovider';
 
 const SearchInput = forwardRef(function SearchInput(
@@ -27,8 +28,14 @@ const SearchInput = forwardRef(function SearchInput(
     const { theme, isDark } = useTheme();
     const inputRef = useRef(null);
     const focus = useSharedValue(0);
+    const focusScale = useSharedValue(1);
+    const clearScale = useSharedValue(1);
     const mutedIconStyle = useAnimatedStyle(() => ({ opacity: 1 - focus.value }));
     const foregroundIconStyle = useAnimatedStyle(() => ({ opacity: focus.value }));
+    const focusScaleStyle = useAnimatedStyle(() => ({ transform: [{ scale: focusScale.value }] }));
+    const clearScaleStyle = useAnimatedStyle(() => ({ transform: [{ scale: clearScale.value }] }));
+    const focusTap = tap({ value: focusScale, onPress: () => inputRef.current?.focus?.() });
+    const clearTap = tap({ value: clearScale, disabled: !onClear, onPress: onClear });
 
     useImperativeHandle(ref, () => inputRef.current, []);
 
@@ -65,8 +72,8 @@ const SearchInput = forwardRef(function SearchInput(
                 style,
             ]}
         >
-            <Pressable accessibilityRole="button" accessibilityLabel="focus search" onPress={() => inputRef.current?.focus?.()} hitSlop={10}>
-                <Animated.View style={{ paddingVertical: 1 }}>
+            <Pressable accessibilityRole="button" accessibilityLabel="focus search" {...focusTap} hitSlop={10}>
+                <Animated.View style={[{ paddingVertical: 1 }, focusScaleStyle]}>
                     <Animated.View style={mutedIconStyle}>
                         <Icon icon={Search} color={theme.muted} />
                     </Animated.View>
@@ -92,8 +99,10 @@ const SearchInput = forwardRef(function SearchInput(
             {searching ? (
                 <ActivityIndicator size="small" color={theme.muted} />
             ) : value ? (
-                <Pressable onPress={onClear} hitSlop={10}>
-                    <Icon icon={X} color={theme.muted} />
+                <Pressable accessibilityRole="button" accessibilityLabel="clear search" {...clearTap} hitSlop={10}>
+                    <Animated.View style={clearScaleStyle}>
+                        <Icon icon={X} color={theme.muted} />
+                    </Animated.View>
                 </Pressable>
             ) : null}
         </GlassView>

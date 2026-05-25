@@ -44,7 +44,7 @@ export default function SendMoney({ peer, amount }) {
                     ctx.addIssue({
                         path: ['receiver'],
                         code: 'custom',
-                        message: 'receiver must have walletPK',
+                        message: 'choose someone who can receive money',
                     });
                     return;
                 }

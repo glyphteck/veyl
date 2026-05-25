@@ -13,11 +13,11 @@ This document is for the Apple App Review team. It explains what veyl is, how to
 - Dedicated review bot: `@review`
 - Optional live support username: `@zxrl`
 
-veyl uses passkeys instead of passwords. There is no reusable username/password demo credential because a passkey is bound to the reviewer device. To review the full product, create a new account in the app with the device passkey veyl, then message `@review`. Reviewers may also message `@zxrl` for live help if that account is online, but the review flow does not depend on a human response.
+veyl uses passkeys instead of passwords. There is no reusable username/password demo credential because a passkey is bound to the reviewer device. To review the full product, create a new account in the app when prompted for a device passkey, then message `@review`. Reviewers may also message `@zxrl` for live help if that account is online, but the review flow does not depend on a human response.
 
 ## What veyl Does
 
-veyl is a non-custodial Bitcoin and encrypted chat app. The core product veyl is:
+veyl is a non-custodial Bitcoin and encrypted chat app. The core product flow is:
 
 1. Create or sign into a company-wide Glyphteck account with a passkey.
 2. Choose a public username.
@@ -36,8 +36,8 @@ The review environment is `domains.veylTest`. It is intended for App Review and 
 - Non-custodial Spark wallet boot from locally derived key material.
 - Wallet balance display.
 - Bitcoin receive/funding address display.
-- Bitcoin send veyl to another veyl user.
-- On-chain withdrawal veyl.
+- Bitcoin send flow to another veyl user.
+- On-chain withdrawal flow.
 - Transfer history.
 - End-to-end encrypted one-to-one chat.
 - Text messages.
@@ -51,7 +51,7 @@ The review environment is `domains.veylTest`. It is intended for App Review and 
 - Public legal and review pages on the web app.
 - Admin moderation surfaces for reports, bot status, bot power, and chat bans.
 
-## Suggested Review veyl
+## Suggested Review Flow
 
 ### 1. Create a Review Account
 
@@ -67,7 +67,7 @@ The web app can also be used at `links.veylTest`, but the iOS app is the primary
 
 ### 2. Find the Review Bot
 
-1. Open the new-chat or search veyl.
+1. Open the new-chat or search flow.
 2. Search for `@review`.
 3. Open the `@review` profile or chat.
 
@@ -169,7 +169,7 @@ Glyphteck Corp operates internal admin tools for:
 - bot listing and detail inspection,
 - bot power control,
 - bot runtime status,
-- bot wallet/chat key inspection for operational debugging,
+- bot wallet/chat identity inspection for operational debugging,
 - deleting or disabling bot accounts.
 
 The review bot was provisioned with:

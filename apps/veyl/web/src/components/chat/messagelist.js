@@ -847,7 +847,7 @@ function InteractiveMessageRow({
 const MemoMessageRow = memo(MessageRow);
 
 export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
-    const { selectedChatId, updateMessage, retryMessage, makeMessagePermanent, makeMessageTemporary, readMessageFile, sendReaction } = useChat();
+    const { selectedChatId, updateMessage, deleteMessage, retryMessage, makeMessagePermanent, makeMessageTemporary, readMessageFile, sendReaction } = useChat();
     const { avatar, chatPK } = useUser();
     const { peers } = usePeer();
     const { sendMoneyWithSpark } = useWallet();
@@ -1078,7 +1078,7 @@ export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
         () =>
             formatUserDisplay({
                 username: peerProfile?.username,
-                walletPK: peerChatPK,
+                chatPK: peerChatPK,
             }),
         [peerChatPK, peerProfile?.username]
     );
@@ -1383,21 +1383,26 @@ export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
         [clearDeletingMessage, removeMessage]
     );
 
-    const openDeleteDialog = useCallback(
-        (msg) => {
+    const deleteSelectedMessage = useCallback(
+        async (msg) => {
             if (!selectedChatId || !msg?.id || String(msg.id).startsWith('local:')) {
                 return;
             }
 
-            openDialog('deletemessage', {
-                chatId: selectedChatId,
-                msg,
-                onDeleting: startDeletingMessage,
-                onDeleted: finishDeletingMessage,
-                onDeleteFailed: clearDeletingMessage,
-            });
+            startDeletingMessage(msg);
+
+            try {
+                await deleteMessage(selectedChatId, msg.id);
+                finishDeletingMessage(msg.id, msg);
+            } catch (error) {
+                clearDeletingMessage(msg);
+                console.error('delete message failed', error);
+                toast('delete failed', {
+                    description: error?.message || 'Could not delete this message.',
+                });
+            }
         },
-        [clearDeletingMessage, finishDeletingMessage, openDialog, selectedChatId, startDeletingMessage]
+        [clearDeletingMessage, deleteMessage, finishDeletingMessage, selectedChatId, startDeletingMessage]
     );
 
     const openShareDialog = useCallback(
@@ -1495,7 +1500,7 @@ export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
                             onDownload={saveMessage}
                             onSaveForever={toggleSaveForeverMessage}
                             onShare={openShareDialog}
-                            onDelete={openDeleteDialog}
+                            onDelete={deleteSelectedMessage}
                             onReport={reportMessage}
                             onPay={handlePayment}
                             onPointerUp={handleMessagePointerUp}

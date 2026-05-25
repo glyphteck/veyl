@@ -11,31 +11,18 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/avatar';
 import { Card } from '@/components/card';
 import { walletLogoSrc } from '@/lib/brand';
 import { cn } from '@/lib/utils';
-import { Graph } from '../landing/graph';
 
 function isUnlinkedPasskeyError(error) {
     return error?.code === 'passkey-unlinked';
-}
-
-function createFakeQuickAccounts() {
-    return process.env.NODE_ENV === 'production'
-        ? []
-        : Array.from({ length: 5 }, (_, index) => ({
-              uid: `fake-quick-account-${index + 1}`,
-              username: `fake${index + 1}`,
-              avatar: null,
-              fake: true,
-          }));
 }
 
 export default function LoginPage() {
     const [loadingKey, setLoadingKey] = useState(null);
     const [authState, setAuthState] = useState('idle');
     const [remembered, setRemembered] = useState([]);
-    const [fakeAccounts, setFakeAccounts] = useState(createFakeQuickAccounts);
     const router = useRouter();
     const isLoading = !!loadingKey;
-    const accounts = [...(remembered || []), ...fakeAccounts];
+    const accounts = remembered || [];
     const isPasskeyLoading = authState !== 'idle';
     const loaderText = authState === 'preparing' ? 'preparing passkey...' : authState === 'success' ? 'signing in...' : 'waiting for passkey...';
 
@@ -74,7 +61,7 @@ export default function LoginPage() {
             if (uid) {
                 await userAvatarCache.touchLogin?.(uid);
             }
-            router.push('/unlock');
+            router.refresh();
         } catch (error) {
             if (error.name === 'NotAllowedError') {
                 setLoadingKey(null);
@@ -102,7 +89,7 @@ export default function LoginPage() {
                 return;
             }
             if (isPasskeyRpMismatchError(error)) {
-                toast.error('This passkey is from the old Gliftec passkey setup.', {
+                toast.error('This passkey is from a different Glyphteck passkey setup.', {
                     description: 'Create a new account or register a new passkey on this build.',
                 });
                 setLoadingKey(null);
@@ -125,55 +112,48 @@ export default function LoginPage() {
         event?.preventDefault?.();
         event?.stopPropagation?.();
         if (isLoading || !uid) return;
-        if (uid.startsWith('fake-quick-account-')) {
-            setFakeAccounts((current) => current.filter((account) => account.uid !== uid));
-            return;
-        }
         await userAvatarCache.forget?.(uid);
         setRemembered((current) => (Array.isArray(current) ? current.filter((account) => account.uid !== uid) : current));
     }
 
     return (
         <div className="relative min-h-dvh overflow-y-auto bg-background text-foreground">
-            <Graph className="pointer-events-none fixed inset-0 z-0 h-dvh w-full" />
-            <div className="pointer-events-none fixed inset-0 z-0 bg-background/35" />
             <div className="relative z-10 mx-auto flex min-h-dvh w-full flex-col items-center px-5 pt-[14vh] md:pt-[16vh]">
                 <img src={walletLogoSrc} className="pointer-events-none mb-4 size-32 select-none md:size-40" alt="" />
                 {isPasskeyLoading ? (
                     <div className="flex items-center gap-2 text-muted">
-                        <Loader className="size-8 animate-spin" />
-                        <p className="text-lg font-black">{loaderText}</p>
+                        <Loader className="size-6 animate-spin" />
+                        <p className="text-2xl font-black">{loaderText}</p>
                     </div>
                 ) : null}
                 <div className={cn('fixed bottom-[12vh] left-1/2 flex w-3xs -translate-x-1/2 flex-col gap-2 transition-opacity ease-out md:bottom-[14vh]', isLoading ? 'pointer-events-none opacity-0' : 'opacity-100')}>
                     {accounts.length ? (
                         <Card className={accounts.length === 1 ? 'rounded-full' : null}>
                             <div className={cn('max-h-42 overflow-y-auto', accounts.length === 1 ? 'py-0' : 'py-0.5')}>
-                                <div className={accounts.length > 1 ? 'divide-y' : null}>
+                                <div className={accounts.length > 1 ? 'flex flex-col gap-1' : null}>
                                     {accounts.map((account) => (
                                         <div
                                             key={account.uid}
-                                            role="button"
-                                            tabIndex={isLoading ? -1 : 0}
-                                            aria-disabled={isLoading}
-                                            onClick={() => {
-                                                if (!account.fake) login(account.uid);
-                                            }}
-                                            onKeyDown={(event) => {
-                                                if (event.key !== 'Enter' && event.key !== ' ') return;
-                                                event.preventDefault();
-                                                if (!account.fake) login(account.uid);
-                                            }}
                                             className={cn(
-                                                'group flex w-full cursor-pointer items-center gap-2 text-left aria-disabled:pointer-events-none',
-                                                accounts.length === 1 ? 'py-[7px] pr-1.5 pl-[9px]' : 'py-2 pr-1 pl-3'
+                                                'group flex w-full items-center gap-2',
+                                                accounts.length === 1 ? 'pr-1.5' : 'pr-1'
                                             )}
                                         >
-                                            <Avatar className="grower size-8 shadow">
-                                                <AvatarImage src={account.avatar} alt={account.username || 'account'} />
-                                                <AvatarFallback />
-                                            </Avatar>
-                                            <span className="min-w-0 flex-1 truncate text-md font-black">{account.username ? `@${account.username}` : 'account'}</span>
+                                            <Button
+                                                type="button"
+                                                disabled={isLoading}
+                                                onClick={() => login(account.uid)}
+                                                className={cn(
+                                                    'h-auto min-w-0 flex-1 justify-start rounded-none p-0 text-left disabled:opacity-100',
+                                                    accounts.length === 1 ? 'py-[7px] pl-[9px]' : 'py-2 pl-3'
+                                                )}
+                                            >
+                                                <Avatar className="grower size-8 shadow">
+                                                    <AvatarImage src={account.avatar} alt={account.username || 'account'} />
+                                                    <AvatarFallback />
+                                                </Avatar>
+                                                <span className="min-w-0 flex-1 truncate text-md font-black">{account.username ? `@${account.username}` : 'account'}</span>
+                                            </Button>
                                             <Button
                                                 type="button"
                                                 onClick={(event) => forget(account.uid, event)}

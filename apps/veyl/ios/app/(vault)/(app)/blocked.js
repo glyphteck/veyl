@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Animated, FlatList, Pressable, Text, View } from 'react-native';
-import { useNavigation, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { ChevronLeft, UserX } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -47,7 +47,6 @@ function BlockedRow({ item, onUnblock, busyUid }) {
 export default function BlockedRoute() {
     const { theme } = useTheme();
     const insets = useSafeAreaInsets();
-    const navigation = useNavigation();
     const router = useRouter();
     const { blockedPeers, blockedPeersReady, loadBlockedPeers, restorePeer } = usePeer() || {};
     const { unblockPeer } = useUser();
@@ -89,19 +88,6 @@ export default function BlockedRoute() {
         [busyUid, restorePeer, unblockPeer]
     );
 
-    const disableBackSwipe = useCallback(() => {
-        navigation.setOptions({ gestureEnabled: false });
-    }, [navigation]);
-    const enableBackSwipe = useCallback(() => {
-        navigation.setOptions({ gestureEnabled: true });
-    }, [navigation]);
-
-    useEffect(() => () => enableBackSwipe(), [enableBackSwipe]);
-
-    const handleScrollEndDrag = useCallback(() => {
-        enableBackSwipe();
-    }, [enableBackSwipe]);
-
     return (
         <View style={{ flex: 1, overflow: 'hidden' }}>
             <FlatList
@@ -117,10 +103,6 @@ export default function BlockedRoute() {
                 alwaysBounceVertical
                 directionalLockEnabled
                 alwaysBounceHorizontal={false}
-                onScrollBeginDrag={disableBackSwipe}
-                onScrollEndDrag={handleScrollEndDrag}
-                onMomentumScrollBegin={disableBackSwipe}
-                onMomentumScrollEnd={enableBackSwipe}
             />
             <GlassHeader contentStyle={{ flexDirection: 'row', alignItems: 'center' }}>
                 <View style={{ width: 56, alignItems: 'flex-start', justifyContent: 'center' }}>

@@ -11,7 +11,7 @@ export const metadata = {
         template: '%s | veyl',
     },
     description: 'veyl is a passkey-first Bitcoin wallet and encrypted chat app from Glyphteck.',
-    keywords: ['veyl', 'Glyphteck', 'Gliftec', 'Bitcoin wallet', 'Spark wallet', 'encrypted chat', 'passkey wallet'],
+    keywords: ['veyl', 'Glyphteck', 'Bitcoin wallet', 'Spark wallet', 'encrypted chat', 'passkey wallet'],
     alternates: {
         canonical: '/',
     },

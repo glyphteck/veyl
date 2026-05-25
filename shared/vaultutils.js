@@ -56,11 +56,11 @@ export async function bootWallet(walletMnemonic, user, { SparkWallet, httpsCalla
     const idPk = await wallet.getIdentityPublicKey();
     const walletPK = String(idPk).toLowerCase();
 
-    // First time setup
+    // First-time setup.
     if (!user.walletPK) {
         await httpsCallable(functions, 'setWalletPK')({ walletPK: idPk, network });
     } else if (String(user.walletPK).toLowerCase() !== walletPK) {
-        throw new Error('wallet key mismatch for account');
+        throw new Error('wallet identity mismatch for account');
     } else if (!hasWalletPKForNetwork(user, network)) {
         await httpsCallable(functions, 'setWalletPK')({ walletPK: idPk, network });
     }
@@ -75,13 +75,13 @@ export async function bootChat(chatSeed, user, { httpsCallable, functions } = {}
         const chatKeyPair = getKeyPair(chatSeed);
         chatSeed.fill(0);
         const chatPKHex = bytesToHex(chatKeyPair.pub);
-        // fires time set up
+        // First-time setup.
         if (!user.chatPK) {
             await httpsCallable(functions, 'setChatPK')({ chatPK: chatPKHex });
         } else if (String(user.chatPK).toLowerCase() !== chatPKHex) {
             chatKeyPair.priv.fill(0);
             chatKeyPair.pub.fill(0);
-            throw new Error('chat key mismatch for account');
+            throw new Error('chat identity mismatch for account');
         }
         chatKeyPair.pub.fill(0);
         return chatKeyPair.priv;

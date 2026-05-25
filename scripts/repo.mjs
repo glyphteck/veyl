@@ -326,7 +326,7 @@ async function resolveVersion(parsed) {
 
 async function resolveMessage(parsed) {
     const positionalMessage = parsed.positionals.join(' ').trim();
-    return parsed.flags.message?.trim() || positionalMessage || askText('Commit message', 'update');
+    return parsed.flags.message?.trim() || positionalMessage || askText('Commit message', '', { required: true });
 }
 
 async function resolvePush(parsed) {

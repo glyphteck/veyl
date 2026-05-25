@@ -1,5 +1,6 @@
-import { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Animated, Pressable, Text, TextInput } from 'react-native';
+import Reanimated, { Easing, LinearTransition, runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { ArrowRightCircle, HandCoins, Image as ImageIcon, Paperclip, Reply, SquarePen, X } from 'lucide-react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
@@ -11,6 +12,19 @@ import { mark } from '@/lib/diagnostics';
 import { parseCommand } from '@glyphteck/shared/commands';
 
 const INACTIVE_OPACITY = 0.32;
+const COMPOSER_POP_MS = 160;
+const COMPOSER_POP_EXIT_HOLD_MS = COMPOSER_POP_MS + 40;
+const COMPOSER_POP_FROM = 0.001;
+
+const composerLayout = LinearTransition.duration(COMPOSER_POP_MS).easing(Easing.out(Easing.cubic));
+const composerPopInTiming = {
+    duration: COMPOSER_POP_MS,
+    easing: Easing.out(Easing.cubic),
+};
+const composerPopOutTiming = {
+    duration: COMPOSER_POP_MS,
+    easing: Easing.in(Easing.cubic),
+};
 
 const SendButton = memo(function SendButton({ canSend, onPress }) {
     const { theme } = useTheme();
@@ -80,6 +94,28 @@ function MoneyButton({ onPress, disabled = false }) {
     );
 }
 
+function PopScale({ show, children, onHidden, animateIn = true }) {
+    const scale = useSharedValue(show && !animateIn ? 1 : COMPOSER_POP_FROM);
+
+    useEffect(() => {
+        if (show && !animateIn) {
+            scale.value = 1;
+            return;
+        }
+        scale.value = withTiming(show ? 1 : COMPOSER_POP_FROM, show ? composerPopInTiming : composerPopOutTiming, (finished) => {
+            if (finished && !show && onHidden) {
+                runOnJS(onHidden)();
+            }
+        });
+    }, [animateIn, onHidden, scale, show]);
+
+    const style = useAnimatedStyle(() => ({
+        transform: [{ scale: scale.value }],
+    }));
+
+    return <Reanimated.View style={style}>{children}</Reanimated.View>;
+}
+
 function getDraftPreview(msg) {
     if (!msg) {
         return '';
@@ -102,46 +138,63 @@ function getDraftPreview(msg) {
     return 'message';
 }
 
-export function DraftBar({ draft, onClear }) {
+export function DraftBar({ draft, onClear, onHidden }) {
     const { theme } = useTheme();
+    const [mounted, setMounted] = useState(!!draft);
+    const [visibleDraft, setVisibleDraft] = useState(draft);
     const clearTap = useTap({
         onPress: onClear,
         hapticIn: false,
         hapticOut: 'soft',
         hapticPress: false,
     });
+    const hideDraft = useCallback(() => {
+        setMounted(false);
+        setVisibleDraft(null);
+        onHidden?.();
+    }, [onHidden]);
 
-    if (!draft) {
+    useEffect(() => {
+        if (draft) {
+            setVisibleDraft(draft);
+            setMounted(true);
+        }
+    }, [draft]);
+
+    const shownDraft = draft || visibleDraft;
+
+    if (!mounted || !shownDraft) {
         return null;
     }
 
     return (
-        <GlassView
-            glassEffectStyle="regular"
-            tintColor={theme.background}
-            style={{
-                marginBottom: 8,
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 10,
-                borderRadius: 20,
-                paddingLeft: 14,
-                paddingRight: 12,
-                paddingVertical: 10,
-            }}
-        >
-            <Icon icon={draft.mode === 'edit' ? SquarePen : Reply} color={theme.foreground} size={21} />
-            <Animated.View style={{ flex: 1 }}>
-                <Animated.Text numberOfLines={1} ellipsizeMode="tail" style={{ color: theme.foreground, fontSize: 15, fontWeight: '800' }}>
-                    {getDraftPreview(draft.msg)}
-                </Animated.Text>
-            </Animated.View>
-            <Pressable {...clearTap.props} hitSlop={10}>
-                <Animated.View style={{ transform: [{ scale: clearTap.scale }] }}>
-                    <Icon icon={X} color={theme.muted} size={22} />
+        <PopScale show={!!draft} onHidden={hideDraft}>
+            <GlassView
+                glassEffectStyle="regular"
+                tintColor={theme.background}
+                style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 10,
+                    borderRadius: 20,
+                    paddingLeft: 14,
+                    paddingRight: 12,
+                    paddingVertical: 10,
+                }}
+            >
+                <Icon icon={shownDraft.mode === 'edit' ? SquarePen : Reply} color={theme.foreground} size={21} />
+                <Animated.View style={{ flex: 1 }}>
+                    <Animated.Text numberOfLines={1} ellipsizeMode="tail" style={{ color: theme.foreground, fontSize: 15, fontWeight: '800' }}>
+                        {getDraftPreview(shownDraft.msg)}
+                    </Animated.Text>
                 </Animated.View>
-            </Pressable>
-        </GlassView>
+                <Pressable {...clearTap.props} hitSlop={10}>
+                    <Animated.View style={{ transform: [{ scale: clearTap.scale }] }}>
+                        <Icon icon={X} color={theme.muted} size={22} />
+                    </Animated.View>
+                </Pressable>
+            </GlassView>
+        </PopScale>
     );
 }
 
@@ -198,16 +251,47 @@ function CommandBubble({ item, onSelect, interactive = true }) {
 }
 
 export function CommandBubbles({ items, onSelect, interactive = true }) {
-    if (!items?.length) {
+    const activeItems = useMemo(() => (Array.isArray(items) ? items.filter(Boolean) : []), [items]);
+    const activeKey = activeItems.join('\n');
+    const activeSet = useMemo(() => new Set(activeItems), [activeKey]);
+    const previousActiveRef = useRef(activeItems);
+    const [renderItems, setRenderItems] = useState(activeItems);
+    const [animateItemsIn, setAnimateItemsIn] = useState(true);
+
+    useEffect(() => {
+        const previousActive = previousActiveRef.current;
+        const previousHadActive = previousActive.length > 0;
+        previousActiveRef.current = activeItems;
+
+        if (activeItems.length) {
+            setAnimateItemsIn(!previousHadActive);
+            setRenderItems(activeItems);
+            return undefined;
+        }
+
+        setAnimateItemsIn(false);
+        setRenderItems((current) => (current.length ? current : previousActive));
+
+        const timer = setTimeout(() => {
+            setRenderItems((current) => current.filter((item) => activeSet.has(item)));
+        }, COMPOSER_POP_EXIT_HOLD_MS);
+        return () => clearTimeout(timer);
+    }, [activeItems, activeKey, activeSet]);
+
+    if (!renderItems.length) {
         return null;
     }
 
     return (
-        <Animated.View style={{ marginBottom: 8, flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-            {items.map((item) => (
-                <CommandBubble key={item} item={item} onSelect={onSelect} interactive={interactive} />
+        <Reanimated.View collapsable={false} layout={composerLayout} style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+            {renderItems.map((item) => (
+                <Reanimated.View key={item} layout={composerLayout}>
+                    <PopScale show={activeSet.has(item)} animateIn={animateItemsIn}>
+                        <CommandBubble item={item} onSelect={onSelect} interactive={interactive} />
+                    </PopScale>
+                </Reanimated.View>
             ))}
-        </Animated.View>
+        </Reanimated.View>
     );
 }
 
@@ -291,7 +375,7 @@ function ChatInput({ onLayout, onSend, onEditMessage, onSendImage, onSendAttachm
 
             if (!perm.granted) {
                 mark('chat.imagePicker.permission.denied', { status: perm.status || '', accessPrivileges: perm.accessPrivileges || '' });
-                Alert.alert('Permission needed', 'Please allow photo access to choose a picture.');
+                Alert.alert('Permission needed', 'Please allow photo access to choose media.');
                 return;
             }
 
@@ -299,7 +383,6 @@ function ChatInput({ onLayout, onSend, onEditMessage, onSendImage, onSendAttachm
             const result = await ImagePicker.launchImageLibraryAsync({
                 mediaTypes: ['images', 'videos'],
                 quality: 0.85,
-                videoExportPreset: ImagePicker.VideoExportPreset.H264_1280x720,
             });
             mark('chat.imagePicker.launch.done', { canceled: !!result.canceled, assets: result.assets?.length || 0, firstType: result.assets?.[0]?.mimeType || '', firstUri: result.assets?.[0]?.uri || '' });
 
@@ -337,7 +420,9 @@ function ChatInput({ onLayout, onSend, onEditMessage, onSendImage, onSendAttachm
             setMessage(text);
             onCommandChange?.(text);
         }
-        inputRef.current?.focus?.();
+        requestAnimationFrame(() => {
+            inputRef.current?.focus?.();
+        });
     }, [draft, draftKey, onCommandChange]);
 
     return (

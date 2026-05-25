@@ -130,7 +130,7 @@ export default function BotDetailPage() {
 
     const copyUid = async () => {
         await navigator.clipboard.writeText(bot.uid);
-        toast('uid copied', { icon: <Copy /> });
+        toast('account id copied', { icon: <Copy /> });
     };
 
     const handleBan = async (feature) => {
@@ -172,7 +172,7 @@ export default function BotDetailPage() {
                                     <AvatarImage src={bot.avatar} alt={displayBot(bot)} />
                                     <AvatarFallback />
                                 </Avatar>
-                                <button type="button" onClick={copyUid} className="min-w-0 text-left">
+                                <Button type="button" onClick={copyUid} className="h-auto min-w-0 justify-start rounded-none p-0 text-left">
                                     <p className="truncate">
                                         <span>{displayBot(bot)}</span>
                                         <span className="text-muted"> · {bot.uid}</span>
@@ -181,7 +181,7 @@ export default function BotDetailPage() {
                                         <span>{bot.mode || 'mirror'}</span>
                                         {formatBalance(bot.balance) ? <span> · {formatBalance(bot.balance)}</span> : null}
                                     </p>
-                                </button>
+                                </Button>
                             </div>
                             <div className="flex items-center gap-3">
                                 {bot.walletPK ? (
@@ -189,9 +189,9 @@ export default function BotDetailPage() {
                                         className="grower-lg px-2 py-2 text-muted"
                                         onClick={async () => {
                                             await navigator.clipboard.writeText(bot.walletPK);
-                                            toast('wallet pk copied', { icon: <Wallet /> });
+                                            toast('wallet id copied', { icon: <Wallet /> });
                                         }}
-                                        title="copy wallet pk"
+                                        title="copy wallet id"
                                     >
                                         <Wallet className="size-6" />
                                     </Button>
@@ -201,9 +201,9 @@ export default function BotDetailPage() {
                                         className="grower-lg px-2 py-2 text-muted"
                                         onClick={async () => {
                                             await navigator.clipboard.writeText(bot.chatPK);
-                                            toast('chat pk copied', { icon: <KeyRound /> });
+                                            toast('chat identity copied', { icon: <KeyRound /> });
                                         }}
-                                        title="copy chat pk"
+                                        title="copy chat identity"
                                     >
                                         <KeyRound className="size-6" />
                                     </Button>
@@ -216,14 +216,16 @@ export default function BotDetailPage() {
                                 >
                                     <MessageCircleOff className="size-6" />
                                 </Button>
-                                <Avatar
-                                    className={`grower cursor-pointer ${bot.avatarBanned ? 'text-destructive' : 'text-active'}`}
+                                <Button
+                                    className={`grower-lg size-10 p-0 ${bot.avatarBanned ? 'text-destructive' : 'text-active'}`}
                                     onClick={() => handleBan('avatar')}
-                                    aria-disabled={banning === 'avatar'}
+                                    disabled={banning === 'avatar'}
                                     title={bot.avatarBanned ? 'unban avatar' : 'ban avatar'}
                                 >
-                                    <AvatarFallback />
-                                </Avatar>
+                                    <Avatar className="pointer-events-none size-10">
+                                        <AvatarFallback />
+                                    </Avatar>
+                                </Button>
                                 <Button className={`grower-lg px-2 py-2 ${powerButtonClass(bot)}`} onClick={handlePower} disabled={pendingPower} title={bot.enabled ? 'turn bot off' : 'turn bot on'}>
                                     {pendingPower ? <Loader className="size-6 animate-spin" /> : <Power className="size-6" />}
                                 </Button>

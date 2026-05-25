@@ -209,7 +209,7 @@ export default function TransferScreen() {
 
         if (mode === 'request') {
             if (!peerChatPK) {
-                Alert.alert('Missing chat key', 'This person has no chat key yet.');
+                Alert.alert('Chat unavailable', 'This person cannot receive requests yet.');
                 return;
             }
             if (!sendMessage) {
@@ -234,7 +234,7 @@ export default function TransferScreen() {
         }
 
         if (!peerWalletPK) {
-            Alert.alert('Missing address', 'This person has no wallet key yet.');
+            Alert.alert('Wallet unavailable', 'This person cannot receive money yet.');
             return;
         }
 

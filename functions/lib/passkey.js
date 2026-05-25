@@ -93,7 +93,7 @@ export function createFido2Lib(rpId) {
     return new Fido2Lib({
         timeout: 60_000,
         rpId: rpId,
-        rpName: 'GLIFTEC',
+        rpName: 'Glyphteck',
         challengeSize: 32,
         attestation: 'none',
         authenticatorRequirement: 'discouraged',

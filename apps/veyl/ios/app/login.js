@@ -134,7 +134,7 @@ export default function Login() {
                     setRemembered((current) => current.filter((account) => account.uid !== uid));
                 }
             } else if (isPasskeyRpMismatchError(err)) {
-                showFeedback('this passkey is from an older glyphteck setup');
+                showFeedback('this passkey is from a different Glyphteck setup');
             }
             setAuthState('idle');
         }

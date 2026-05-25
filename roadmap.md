@@ -1,4 +1,4 @@
-# Flow Roadmap
+# Veyl Roadmap
 
 ## Account And Wallet Architecture
 
@@ -39,16 +39,16 @@
 ### USD And Multi-Currency
 
 - Support holding multiple currencies inside the wallet.
-- Prioritize BUSD or a USD-denominated wallet surface, but design a currency model that can later support other tokens or digital fiat.
-- Redesign wallet dashboards so BTC and USD/BUSD balances can be shown separately and as one total.
+- Prioritize USDB or a USD-denominated wallet surface, but design a currency model that can later support other tokens or digital fiat.
+- Redesign wallet dashboards so BTC and USDB/USD balances can be shown separately and as one total.
 - Replace the low-value web dashboard `net` section with per-currency balances.
 - Add an iOS currencies section before the transaction list.
 - Make send and request flows currency-aware.
 - Add currency fields to transactions and update transaction UI accordingly.
-- Use BTC and BUSD/USD icons to label balances and transactions.
-- Decide whether to expose `BUSD` directly or abstract it as `USD`.
+- Use BTC and USDB/USD icons to label balances and transactions.
+- Decide whether to expose `USDB` directly or abstract it as `USD`.
 - Revisit BTC price polling cadence; target at least 1-minute polling if price display remains important.
-- Decide whether USD/BUSD should become the display source of truth for fiat value.
+- Decide whether USDB/USD should become the display source of truth for fiat value.
 
 ### On-Ramping
 

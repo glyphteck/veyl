@@ -45,7 +45,7 @@ export default function RequestMoney({ peer, amount }) {
                     ctx.addIssue({
                         path: ['sender'],
                         code: 'custom',
-                        message: 'sender must have walletPK',
+                        message: 'choose someone who can receive money',
                     });
                     return;
                 }
@@ -53,7 +53,7 @@ export default function RequestMoney({ peer, amount }) {
                     ctx.addIssue({
                         path: ['sender'],
                         code: 'custom',
-                        message: 'sender must have chatPK',
+                        message: 'choose someone who can receive requests',
                     });
                     return;
                 }

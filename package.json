@@ -1,6 +1,6 @@
 {
     "name": "veyl",
-    "version": "4.10.0",
+    "version": "4.11.0",
     "private": true,
     "workspaces": {
         "packages": [
@@ -38,7 +38,7 @@
         "dirty": "bun scripts/dirty.mjs",
         "ban": "bun scripts/admin/ban.mjs",
         "nuke": "bun scripts/admin/nuke.mjs",
-        "steal": "bun scripts/admin/steal.mjs",
+        "free": "bun scripts/admin/free.mjs",
         "lint": "eslint . --quiet",
         "lint:warn": "eslint .",
         "lint:fix": "eslint . --fix",

@@ -20,6 +20,7 @@ import { httpsCallable } from 'firebase/functions';
 import { toast } from 'sonner';
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { useForm } from 'react-hook-form';
+import { getChatId } from '@glyphteck/shared/crypto/chat';
 import { getPeerChatPKFromChatId } from '@glyphteck/shared/chat/utils';
 
 const RETENTION_OPTIONS = [
@@ -35,7 +36,7 @@ const RETENTION_OPTIONS = [
 
 export default function UserDetails({ data, close }) {
     const { uid, chatPK, chatBanned, blockPeer, isBlocked } = useUser();
-    const { chats, sendMessage, sendAttachment, selectedChatId, dropChat, setChatTtl, startDeleteChat, finishDeleteChat, restoreDeletedChat } = useChat();
+    const { chats, sendMessage, sendAttachment, dropChat, setChatTtl, startDeleteChat, finishDeleteChat, restoreDeletedChat } = useChat();
     const { openDialog } = useDialog();
     const { cloaked } = useCloak();
     const { peers, updatePeer, dropPeer } = usePeer();
@@ -182,10 +183,10 @@ export default function UserDetails({ data, close }) {
         }
     };
 
-    const handleUsernameClick = () => {
+    const handleWalletIdClick = () => {
         if (user?.walletPK) {
             navigator.clipboard.writeText(user.walletPK);
-            toast('wallet public key copied to clipboard', {
+            toast('wallet id copied to clipboard', {
                 ...(cloaked ? {} : { description: user.walletPK }),
                 icon: <Copy />,
             });
@@ -218,15 +219,19 @@ export default function UserDetails({ data, close }) {
             peer: user,
             onCancel: () => openDialog('userdetails', { user }),
             onConfirm: async () => {
-                await blockPeer?.(user);
-                if (selectedChatId && getPeerChatPKFromChatId(selectedChatId, chatPK) === user?.chatPK) {
-                    dropChat?.(selectedChatId);
+                const blockedChatId = user?.chatPK && chatPK ? getChatId(chatPK, user.chatPK) : chatId;
+                dropChat?.(blockedChatId);
+                try {
+                    await blockPeer?.(user);
+                    dropPeer?.(user);
+                    toast('user blocked', {
+                        icon: <UserX />,
+                        description: formatUserDisplay(user, true),
+                    });
+                } catch (error) {
+                    restoreDeletedChat?.(blockedChatId);
+                    throw error;
                 }
-                dropPeer?.(user);
-                toast('user blocked', {
-                    icon: <UserX />,
-                    description: formatUserDisplay(user, true),
-                });
             },
         });
     };
@@ -285,7 +290,7 @@ export default function UserDetails({ data, close }) {
         <div className="flex flex-col gap-3 w-lg">
             <Card className="py-2">
                 <div className="flex flex-row items-center justify-between gap-2 px-4 pt-2 pb-2">
-                    <div className="pointer-events-none flex items-center gap-2 cursor-pointer" onClick={handleUsernameClick} title="Click to copy address">
+                    <Button type="button" className="h-auto min-w-0 flex-1 justify-start rounded-none p-0 text-left shrinker" onClick={handleWalletIdClick} title="copy wallet id" aria-label="copy wallet id">
                         <Avatar active={user?.active} bot={!!user?.bot} className="size-12 grower pointer-events-auto">
                             <AvatarImage src={user?.avatar} />
                             <AvatarFallback />
@@ -295,7 +300,7 @@ export default function UserDetails({ data, close }) {
                                 <span className="transition-colors pointer-events-auto">{user && formatUserDisplay(user, true)}</span>
                             </div>
                         </div>
-                    </div>
+                    </Button>
                     {!isOwnProfile && (
                         <div className="flex items-center gap-3 shrink-0">
                             <Button className="grower-lg pointer-events-auto" onClick={handleBlock} disabled={blocked}>
@@ -305,19 +310,9 @@ export default function UserDetails({ data, close }) {
                                 <Flag className="size-6" />
                             </Button>
                             {showChatSettings ? (
-                                <Trash2
-                                    className="size-6 grower-lg cursor-pointer text-destructive pointer-events-auto"
-                                    role="button"
-                                    tabIndex={0}
-                                    aria-label="delete chat"
-                                    onClick={handleDeleteChat}
-                                    onKeyDown={(event) => {
-                                        if (event.key === 'Enter' || event.key === ' ') {
-                                            event.preventDefault();
-                                            handleDeleteChat();
-                                        }
-                                    }}
-                                />
+                                <Button className="grower-lg pointer-events-auto text-destructive" onClick={handleDeleteChat} title="delete chat" aria-label="delete chat">
+                                    <Trash2 className="size-6" />
+                                </Button>
                             ) : null}
                         </div>
                     )}

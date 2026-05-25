@@ -16,7 +16,7 @@ export const setWalletPK = onCall(async (context) => {
     const walletPK = typeof context.data?.walletPK === 'string' ? context.data.walletPK.trim().toLowerCase() : '';
     const network = normalizeWalletNetwork(context.data?.network);
     if (!/^0[2-3][0-9a-f]{64}$/i.test(walletPK)) {
-        throw new HttpsError('invalid-argument', 'Invalid wallet public key.');
+        throw new HttpsError('invalid-argument', 'Invalid wallet identity.');
     }
 
     const profileRef = db.collection('profiles').doc(context.auth.uid);
@@ -31,7 +31,7 @@ export const setWalletPK = onCall(async (context) => {
             }
             return OK;
         }
-        throw new HttpsError('already-exists', 'Wallet public key already set.');
+        throw new HttpsError('already-exists', 'Wallet identity already set.');
     }
 
     await profileRef.set({ walletPKs: { [network]: walletPK } }, { merge: true });
@@ -44,7 +44,7 @@ export const setChatPK = onCall(async (context) => {
 
     // sanity check: x25519 pubkey hex, 64 chars
     if (!/^[0-9a-f]{64}$/i.test(chatPK)) {
-        throw new HttpsError('invalid-argument', 'Invalid chat public key.');
+        throw new HttpsError('invalid-argument', 'Invalid chat identity.');
     }
 
     // check if user already has a chat PK
@@ -55,7 +55,7 @@ export const setChatPK = onCall(async (context) => {
         if (existingChatPK === chatPK) {
             return OK;
         }
-        throw new HttpsError('already-exists', 'Chat public key already set.');
+        throw new HttpsError('already-exists', 'Chat identity already set.');
     }
 
     const batch = db.batch();

@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import Loading from '@/components/loading';
 import Navbar from '@/components/navbar';
 import { AppDialogHost } from '@/components/providers/dialogprovider';
@@ -55,11 +54,6 @@ function AppShell({ children }) {
 export default function AppLayout({ children }) {
     const user = useUser();
     const { lockState } = useVault();
-    const router = useRouter();
-
-    useEffect(() => {
-        if (lockState !== 'unlocked') router.replace('/unlock');
-    }, [lockState, router]);
 
     useEffect(() => {
         if (user.authReady && !user.uid) {

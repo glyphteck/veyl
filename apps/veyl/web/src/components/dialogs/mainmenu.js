@@ -118,7 +118,7 @@ export default function MainMenu({ close, data, open = true }) {
                 return;
             }
             if (!peer?.walletPK) {
-                toast.error('missing wallet key');
+                toast.error('this person cannot receive money yet');
                 return;
             }
             if (peer.walletPK === walletPK) {
@@ -149,7 +149,7 @@ export default function MainMenu({ close, data, open = true }) {
                 return;
             }
             if (!peer?.chatPK) {
-                toast.error('missing chat key');
+                toast.error('this person cannot receive requests yet');
                 return;
             }
             if (peer.uid === uid) {
@@ -171,7 +171,7 @@ export default function MainMenu({ close, data, open = true }) {
                 return;
             }
             if (!peer?.chatPK || !parsed.args.message) {
-                toast.error('missing chat key');
+                toast.error('this person cannot receive messages yet');
                 return;
             }
             const chatId = getChatId(chatPK, peer.chatPK);
@@ -460,7 +460,7 @@ export default function MainMenu({ close, data, open = true }) {
                                             const displayName = formatUserDisplay(
                                                 {
                                                     username: profile?.username,
-                                                    walletPK: lastChat.peerChatPK,
+                                                    chatPK: lastChat.peerChatPK,
                                                 },
                                                 true
                                             );

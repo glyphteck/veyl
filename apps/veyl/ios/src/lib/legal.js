@@ -1,6 +1,6 @@
 import { links } from '@glyphteck/shared/links';
 
-export const LEGAL_EFFECTIVE_DATE = 'April 6, 2026';
+export const LEGAL_EFFECTIVE_DATE = 'April 25, 2026';
 export const COMPANY_NAME = 'Glyphteck Corp.';
 export const COMPANY_SITE = links.root;
 export const SUPPORT_EMAIL = links.contact.replace('mailto:', '');

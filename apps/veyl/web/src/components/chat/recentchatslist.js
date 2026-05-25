@@ -1,6 +1,7 @@
 'use client';
 
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/avatar';
+import { Button } from '@/components/button';
 import { Card } from '@/components/card';
 import { formatUserDisplay, formatFullDateTime } from '@/lib/utils';
 import { getMsgPreview as displayLastMsg } from '@glyphteck/shared/chat/messages';
@@ -14,7 +15,7 @@ export function RecentChatsList() {
     const { chatPK, settings } = useUser();
     const { chats, isChatDataReady, selectChat, selectedChatId } = useChat();
     const { focusChatInput } = useChatInput();
-    const { peers, updatePeer } = usePeer();
+    const { peers, updatePeer, isBlockedChatPK } = usePeer();
     const bitcoin = useBitcoin();
     const { cloaked } = useCloak();
 
@@ -26,23 +27,27 @@ export function RecentChatsList() {
     };
 
     if (!isChatDataReady) return;
+    const visibleChats = chats.filter((chat) => {
+        const peerChatPK = chat.participants.find((p) => p !== chatPK);
+        return !isBlockedChatPK?.(peerChatPK);
+    });
     return (
         <Card>
             <div className="overflow-y-auto">
-                <div className={`divide-y ${chats.length < 12 ? 'border-b' : ''}`}>
-                    {chats.map((chat) => {
+                <div className={`divide-y ${visibleChats.length < 12 ? 'border-b' : ''}`}>
+                    {visibleChats.map((chat) => {
                         const peerChatPK = chat.participants.find((p) => p !== chatPK);
                         const profile = peers?.find((peer) => peer.chatPK === peerChatPK) ?? null;
                         const displayName = formatUserDisplay({
                             username: profile?.username,
-                            walletPK: peerChatPK,
+                            chatPK: peerChatPK,
                         });
 
                         return (
-                            <button
+                            <Button
                                 key={chat.id}
                                 type="button"
-                                className={`group w-full px-3 py-2 text-left ${chat.id === selectedChatId ? 'bg-foreground/5' : ''}`}
+                                className={`group h-auto w-full justify-start rounded-none px-3 py-2 text-left ${chat.id === selectedChatId ? 'bg-foreground/5' : ''}`}
                                 onClick={() => {
                                     if (selectedChatId !== chat.id && profile?.uid) {
                                         updatePeer(profile.uid, { refreshAvatar: true });
@@ -65,7 +70,7 @@ export function RecentChatsList() {
                                         </div>
                                     </div>
                                 </div>
-                            </button>
+                            </Button>
                         );
                     })}
                 </div>

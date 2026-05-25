@@ -3,6 +3,7 @@ import Constants from 'expo-constants';
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import { deleteDoc, doc, serverTimestamp, setDoc } from 'firebase/firestore';
+import { randomBytes, toHex } from '@glyphteck/shared/crypto/core';
 import { auth, db } from '@/lib/firebase';
 
 const DID_KEY = 'push.did';
@@ -31,13 +32,7 @@ const pushVariants = {
 };
 
 function makeId() {
-    try {
-        const bytes = new Uint8Array(16);
-        globalThis.crypto?.getRandomValues?.(bytes);
-        return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
-    } catch {}
-
-    return `${Date.now().toString(16)}${Math.random().toString(16).slice(2, 18)}`;
+    return toHex(randomBytes(16));
 }
 
 export async function getDid() {

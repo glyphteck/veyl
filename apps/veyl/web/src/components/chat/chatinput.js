@@ -120,9 +120,9 @@ function CommandBubbles({ items, onSelect, interactive = true }) {
                 }
 
                 return (
-                    <button key={item} type="button" className="grower rounded-round" onClick={() => onSelect?.(getCommandPrefix(item))}>
+                    <Button key={item} type="button" className="h-auto rounded-round p-0 grower" onClick={() => onSelect?.(getCommandPrefix(item))}>
                         {body}
-                    </button>
+                    </Button>
                 );
             })}
         </div>

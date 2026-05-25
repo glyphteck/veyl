@@ -253,7 +253,7 @@ async function sendExpo(uid, docs, body) {
 export async function sendPush(uid, docs, body) {
     const nativeDocs = docs.filter((item) => typeof item.nativeToken === 'string' && item.nativeToken && typeof item.apnsTopic === 'string' && item.apnsTopic);
     const expoDocs = docs.filter((item) => item.platform !== 'ios' && !nativeDocs.includes(item) && typeof item.token === 'string' && item.token);
-    const apns = await sendApns(uid, nativeDocs, body);
+    await sendApns(uid, nativeDocs, body);
 
     if (expoDocs.length) {
         await sendExpo(uid, expoDocs, body);

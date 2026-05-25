@@ -9,7 +9,6 @@ import {
   loadCachedMsgFile,
   loadCachedMsgImage,
 } from "@/lib/msgimagecache";
-import { loadVideoPreviewUri } from "@/lib/chatvideopreview";
 import { isExpiredAttachmentMsg } from "@glyphteck/shared/chat/messages";
 
 const READY_DOWNLOAD_BYTES = 8 * 1024 * 1024;
@@ -259,16 +258,7 @@ export function preloadMessageMediaUri(peerChatPK, msg, readMessageFile) {
   }
   return resolveFileUri(msg, peerChatPK, readMessageFile, {
     defer: true,
-  })
-    .then((uri) => {
-      if (msg?.t === "mp4" && uri) {
-        return loadVideoPreviewUri({ peerChatPK, msg, uri })
-          .catch(() => null)
-          .then(() => uri);
-      }
-      return uri;
-    })
-    .catch(() => null);
+  }).catch(() => null);
 }
 
 export async function copyMessageText(msg) {

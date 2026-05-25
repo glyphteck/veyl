@@ -14,7 +14,7 @@ const features = [
     'End-to-end encrypted one-to-one chat',
     'Text, encrypted attachments, replies, edits, deletes, reports, and payment requests in chat',
     'Search for people by username',
-    'Camera scanning for payment requests and user ids',
+    'Camera scanning for payment requests and user QR codes',
     'Block, report, and account deletion controls',
     'Current community-rules acknowledgement in iOS and web onboarding',
     'Legal, privacy, support, and community-rules screens in the app',
@@ -30,7 +30,7 @@ const steps = [
     `You can also tap fund wallet in the app to get your Bitcoin funding address and paste it into the regtest faucet at ${links.regtestFaucet}.`,
     'Send messages, encrypted attachments, or payment requests in the @review chat.',
     'Try replying, editing, deleting, and reporting messages. You can also test block and report controls against bots or real users.',
-    'Use the camera to scan QR codes for payment requests or user ids.',
+    'Use the camera to scan QR codes for payment requests or usernames.',
     'To test withdrawals, use the funding address from one account as the withdrawal address for another account.',
     'Try the web app too and run a second testing account in parallel to exercise multi-account flows more directly.',
     'Delete the account in Settings when you are done if you do not want to leave history behind.',
@@ -66,7 +66,7 @@ export default function ReviewPage() {
                 <div className="grid gap-3 border-b pb-6">
                     <div className="text-sm font-black uppercase text-muted">Apple App Review</div>
                     <div className="text-4xl font-black leading-tight sm:text-5xl">veyl review guide</div>
-                    <div className="max-w-2xl text-base leading-7 text-muted">
+                    <div className="max-w-2xl text-base leading-7">
                         veyl is a non-custodial Bitcoin and encrypted chat app operated by Glyphteck Corp. Use this page with the iOS app submission and the dedicated review bot.
                     </div>
                 </div>
@@ -99,18 +99,18 @@ export default function ReviewPage() {
                             </a>
                         </div>
                     </div>
-                    <div className="max-w-2xl text-sm leading-6 text-muted">
+                    <div className="max-w-2xl text-sm leading-6">
                         veyl uses passkeys instead of shared passwords. Reviewers can create a fresh account on their device, then message @review to exercise chat and payment flows. Reviewers may also
                         message @zxrl for live help if that account is online, but the review flow does not depend on a human response.
                     </div>
-                    <div className="max-w-3xl text-sm leading-6 text-muted">
+                    <div className="max-w-3xl text-sm leading-6">
                         App Review is testing veyl on Spark&apos;s regtest environment. The live production app uses Spark mainnet with real bitcoin.
                     </div>
                 </div>
 
                 <div className="grid gap-4">
                     <div className="text-2xl font-black">Funding</div>
-                    <div className="grid gap-3 text-sm leading-6 text-muted">
+                    <div className="grid gap-3 text-sm leading-6">
                         <div>
                             The easiest way to get funded is by requesting money from a bot. In the regtest environment, bots automatically fulfill requests if they have enough money to pay them.
                         </div>
@@ -128,16 +128,16 @@ export default function ReviewPage() {
 
                 <div className="grid gap-4">
                     <div className="text-2xl font-black">Chat and Camera</div>
-                    <div className="grid gap-3 text-sm leading-6 text-muted">
+                    <div className="grid gap-3 text-sm leading-6">
                         <div>Reviewers can try text, payment requests, replies, edits, deletes, reports, and encrypted attachments in chat.</div>
                         <div>Reviewers can also reply to messages, edit messages, delete messages, and report messages.</div>
-                        <div>The camera can scan QR codes for payment requests and user ids.</div>
+                        <div>The camera can scan QR codes for payment requests and usernames.</div>
                     </div>
                 </div>
 
                 <div className="grid gap-4">
                     <div className="text-2xl font-black">Other Things To Try</div>
-                    <div className="grid gap-3 text-sm leading-6 text-muted">
+                    <div className="grid gap-3 text-sm leading-6">
                         <div>Reviewers can report or block other users. This can be tested against any bot or any real user account.</div>
                         <div>Reviewers are encouraged to also use the web app and run a second testing account in parallel to test person-to-person flows more directly.</div>
                         <div>When testing is complete, reviewers can delete their account from Settings if they do not want to leave history behind.</div>
@@ -166,7 +166,7 @@ export default function ReviewPage() {
 
                 <div className="grid gap-4">
                     <div className="text-2xl font-black">Safety and legal posture</div>
-                    <div className="grid gap-3 text-sm leading-6 text-muted">
+                    <div className="grid gap-3 text-sm leading-6">
                         <div>
                             veyl includes user-generated one-to-one chat, encrypted attachments, and payment-request content. Users can block accounts, report users or messages, and delete their account from
                             Settings.
@@ -190,7 +190,7 @@ export default function ReviewPage() {
                         {guidelineMap.map((item) => (
                             <div key={item.title} className="grid gap-1 border-b pb-3">
                                 <div className="font-black">{item.title}</div>
-                                <div className="text-muted">{item.body}</div>
+                                <div>{item.body}</div>
                             </div>
                         ))}
                     </div>

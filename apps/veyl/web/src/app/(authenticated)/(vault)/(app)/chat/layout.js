@@ -32,7 +32,7 @@ export default function ChatTitleLayout({ children }) {
         const profile = peers?.find((peer) => peer.chatPK === peerChatPK) ?? null;
         const displayName = formatUserDisplay({
             username: profile?.username,
-            walletPK: peerChatPK,
+            chatPK: peerChatPK,
         });
         const preview = displayLastMsg(selectedChat.lastMsg, chatPK, settings, bitcoin.price);
         document.title = `${displayName}: ${preview}`;

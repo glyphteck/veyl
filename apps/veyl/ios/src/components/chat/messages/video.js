@@ -77,7 +77,7 @@ export default function VideoMessage({ msg, peerChatPK, fromPeer = false, menuIt
                 }
             })
             .catch((nextError) => {
-                if (!cancelled && nextError?.message !== 'video preview pending') {
+                if (!cancelled && nextError?.message !== 'video preview pending' && nextError?.message !== 'video preview unavailable') {
                     console.warn('chat video preview failed', nextError);
                 }
             });

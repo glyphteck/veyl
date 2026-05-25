@@ -19,7 +19,7 @@ function normalizeLoginError(error) {
         return next;
     }
     if (error?.code === 'functions/failed-precondition') {
-        const next = new Error('This passkey belongs to an older Gliftec passkey setup.');
+        const next = new Error('This passkey belongs to a different Glyphteck passkey setup.');
         next.code = 'passkey-rp-mismatch';
         next.cause = error;
         return next;
@@ -29,7 +29,7 @@ function normalizeLoginError(error) {
 
 function normalizeRegisterError(error) {
     if (error?.code === 'functions/failed-precondition') {
-        const next = new Error('This passkey belongs to a different Gliftec passkey setup.');
+        const next = new Error('This passkey belongs to a different Glyphteck passkey setup.');
         next.code = 'passkey-rp-mismatch';
         next.cause = error;
         return next;

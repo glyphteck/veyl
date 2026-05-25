@@ -71,7 +71,7 @@ export const passkeyRegisterVerify = onCall(async ({ data }) => {
         });
     } catch (error) {
         if (isRpIdHashMismatch(error)) {
-            throw new HttpsError('failed-precondition', 'This passkey belongs to a different Gliftec passkey setup. Retry with a newly created passkey.');
+            throw new HttpsError('failed-precondition', 'This passkey belongs to a different Glyphteck passkey setup. Retry with a newly created passkey.');
         }
         throw new HttpsError('invalid-argument', error?.message || 'Passkey registration failed');
     }

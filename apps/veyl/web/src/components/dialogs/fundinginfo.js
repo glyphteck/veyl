@@ -54,7 +54,7 @@ export default function FundingInfo({ data, close }) {
                 <div className="flex flex-col gap-3">
                     <div className="text-2xl font-black">about funding</div>
                     <div className="text-sm leading-6 font-bold text-muted">
-                        you can send bitcoin from any regular bitcoin wallet to your funding address to fund your veyl account. bitcoin transactions are not free. in order to be validated you not to pay a fee.
+                        you can send bitcoin from any regular bitcoin wallet to your funding address to fund your veyl account. bitcoin transactions are not free. in order to be validated, they need a network fee.
                     </div>
                     <div className="text-sm font-black text-foreground">
                         {feeFormula} = {feeDisplay}

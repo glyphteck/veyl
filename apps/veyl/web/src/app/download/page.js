@@ -19,7 +19,7 @@ export default function DownloadPage() {
                 <img src={walletLogoSrc} alt="" className="size-32" />
                 <div className="space-y-2">
                     <h1 className="text-2xl">download the app</h1>
-                    <p className="text-muted">get veyl on the appstore or use the browser version on desktop.</p>
+                    <p className="text-muted">get veyl on the App Store or use the browser version on desktop.</p>
                 </div>
             </section>
         </main>

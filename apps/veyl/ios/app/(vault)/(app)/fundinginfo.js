@@ -45,7 +45,7 @@ export default function FundingInfoScreen() {
         <View style={{ backgroundColor: 'transparent', paddingHorizontal: 24, paddingTop: 24, gap: 14 }}>
             <Text style={{ fontSize: 32, fontWeight: '900', color: theme.foreground }}>about funding</Text>
             <Text style={{ fontSize: 15, lineHeight: 23, fontWeight: '700', color: theme.muted }}>
-                you can send bitcoin from any regular bitcoin wallet to your funding address to fund your veyl account. bitcoin transactions are not free. in order to be validated you not to pay a fee.
+                you can send bitcoin from any regular bitcoin wallet to your funding address to fund your veyl account. bitcoin transactions are not free. in order to be validated, they need a network fee.
             </Text>
             <Text selectable style={{ fontSize: 14, fontWeight: '900', color: theme.foreground, fontVariant: ['tabular-nums'] }}>
                 {feeFormula} = {feeDisplay}

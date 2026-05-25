@@ -706,7 +706,7 @@ export default function SettingsScreen() {
                     <Row
                         icon={Trash2}
                         label="delete account"
-                        description="export or empty the wallet first. deleting can burn remaining bitcoin and chats forever."
+                        description="export or empty the wallet first. deleting can make remaining bitcoin and chats unrecoverable."
                         onPress={handleDeleteAccount}
                         color={theme.destructive}
                         disabled={isBusy}

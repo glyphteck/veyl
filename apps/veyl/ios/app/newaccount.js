@@ -118,7 +118,7 @@ export default function NewAccount() {
         <View style={{ flex: 1 }}>
             <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
                 <View style={{ width: '100%', maxWidth: 360, gap: 12 }}>
-                    <Text style={{ fontSize: 20, fontWeight: '700', color: theme.foreground, paddingLeft: 4 }}>what will you call this account?</Text>
+                    <Text style={{ fontSize: 20, fontWeight: '700', color: theme.foreground, paddingLeft: 4 }}>name your account</Text>
                     <GlassField disabled={isLoading} style={{ paddingHorizontal: 14 }}>
                         <TextInput
                             value={accountName}

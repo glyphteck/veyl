@@ -1237,18 +1237,14 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
                 if (chatBanned) {
                     throw makeChatUnavailableError();
                 }
+                if (!chatPK || !chatPrivateKey || !peerChatPK) {
+                    throw makeChatUnavailableError();
+                }
                 const sendOptions = sendOptionsForPeer(peerChatPK);
                 const nextMessage = withMessageRetention(message, sendOptions.retention);
                 if (isLongTxt(nextMessage)) {
                     const cid = makeSendCid(nextMessage);
                     const attachment = makeTxtFileAttachment(nextMessage);
-
-                    if (!chatPK || !chatPrivateKey || !peerChatPK) {
-                        const uploaded = await chat.uploadAttachment(chatPK, chatPrivateKey, peerChatPK, { cid, ...attachment, meta: attachment });
-                        saveMedia(localCache, uploaded, attachment.data, attachment);
-                        rememberCachedLocalMedia(peerChatPK, cid, uploaded);
-                        return chat.sendMessage(chatPK, chatPrivateKey, peerChatPK, makeSentLongTxtMessage(chatPK, cid, uploaded, nextMessage), sendOptions);
-                    }
 
                     const localMessage = makeLongTxtLocalMessage(chatPK, cid, attachment, nextMessage);
 
@@ -1258,9 +1254,6 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
                         rememberCachedLocalMedia(peerChatPK, cid, uploaded);
                         await chat.sendMessage(chatPK, chatPrivateKey, peerChatPK, makeSentLongTxtMessage(chatPK, cid, uploaded, nextMessage), sendOptions);
                     });
-                }
-                if (!chatPK || !chatPrivateKey || !peerChatPK) {
-                    return chat.sendMessage(chatPK, chatPrivateKey, peerChatPK, nextMessage, sendOptions);
                 }
 
                 const queued = makeSendMessage(chatPK, nextMessage);
@@ -1344,22 +1337,15 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
                 if (chatBanned) {
                     throw makeChatUnavailableError();
                 }
+                if (!chatPK || !chatPrivateKey || !peerChatPK) {
+                    throw makeChatUnavailableError();
+                }
                 const { cid, nextAttachment, localMessage } = prepareAttachment(chatPK, attachment);
                 const permanent = shouldUploadPermanentMedia(attachment);
                 const stayId = permanent ? newMediaStayId() : '';
                 const uploadAttachment = attachmentWithPermanence(nextAttachment, permanent, stayId);
                 const sendOptions = sendOptionsForPeer(peerChatPK);
                 const localPayload = withMessageRetention(localMessage, sendOptions.retention);
-
-                if (!chatPK || !chatPrivateKey || !peerChatPK) {
-                    const uploaded = await chat.uploadAttachment(chatPK, chatPrivateKey, peerChatPK, uploadAttachment);
-                    if (permanent) {
-                        await requireMediaSaved(chat, uploaded.p, stayId, true);
-                    }
-                    saveMedia(localCache, uploaded, attachment?.data, attachment);
-                    rememberCachedLocalMedia(peerChatPK, cid, uploaded);
-                    return chat.sendMessage(chatPK, chatPrivateKey, peerChatPK, withMessageRetention({ ...uploaded, cid, s: chatPK }, sendOptions.retention), sendOptions);
-                }
 
                 return queueSend(peerChatPK, localPayload, async () => {
                     const uploaded = await chat.uploadAttachment(chatPK, chatPrivateKey, peerChatPK, uploadAttachment);
@@ -1386,16 +1372,7 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
                 }
 
                 if (!chatPK || !chatPrivateKey) {
-                    const results = [];
-                    for (const peerChatPK of targets) {
-                        try {
-                            await sendAttachment(peerChatPK, attachment);
-                            results.push({ peerChatPK, ok: true });
-                        } catch (error) {
-                            results.push({ peerChatPK, ok: false, error });
-                        }
-                    }
-                    return results;
+                    throw makeChatUnavailableError();
                 }
 
                 const locals = targets.map((peerChatPK) => {
@@ -1477,7 +1454,7 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
                     enqueueSendJob(targets, job, reject);
                 });
             },
-            [chat, chatBanned, chatPK, chatPrivateKey, enqueueSendJob, localCache, markLocalStatus, rememberCachedLocalMedia, sendAttachment, sendOptionsForPeer, showLocalMessage]
+            [chat, chatBanned, chatPK, chatPrivateKey, enqueueSendJob, localCache, markLocalStatus, rememberCachedLocalMedia, sendOptionsForPeer, showLocalMessage]
         );
         const sendImageMany = useCallback((peerChatPKs, image) => sendAttachmentMany(peerChatPKs, { ...image, type: 'img' }), [sendAttachmentMany]);
         const shareAttachment = useCallback(
@@ -1485,11 +1462,11 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
                 if (chatBanned) {
                     throw makeChatUnavailableError();
                 }
+                if (!chatPK || !chatPrivateKey || !peerChatPK) {
+                    throw makeChatUnavailableError();
+                }
                 const sendOptions = sendOptionsForPeer(peerChatPK);
                 const shared = withMessageRetention(makeSharedAttachment(message), sendOptions.retention);
-                if (!chatPK || !chatPrivateKey || !peerChatPK) {
-                    return chat.sendMessage(chatPK, chatPrivateKey, peerChatPK, shared, sendOptions);
-                }
 
                 const queued = makeSendMessage(chatPK, shared);
                 return queueSend(peerChatPK, queued.message, async () => {

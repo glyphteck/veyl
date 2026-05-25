@@ -1,7 +1,7 @@
 'use client';
 import { createContext, useContext, useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { getDoc, doc } from 'firebase/firestore';
-import { db } from '@/lib/firebase/firebaseclient';
+import { auth, db } from '@/lib/firebase/firebaseclient';
 import { openLocalDataCache } from '@/lib/localdatacache';
 import { unpackSeedData } from '@glyphteck/shared/crypto/pack';
 import { deriveSeed, deriveWalletMnemonic } from '@glyphteck/shared/crypto/seed';
@@ -30,14 +30,73 @@ export function VaultProvider({ children }) {
     const [localCache, setLocalCache] = useState(null);
     const [lockState, setLockState] = useState('locked');
     const { timer: autolockTimer, onHide: autolockOnHide, onBlur: autolockOnBlur } = user.settings?.autolock || {};
+    const seedUidRef = useRef(null);
+    const walletRef = useRef(null);
+    const chatPrivateKeyRef = useRef(null);
+    const localCacheRef = useRef(null);
+
+    useEffect(() => {
+        walletRef.current = wallet;
+    }, [wallet]);
+
+    useEffect(() => {
+        chatPrivateKeyRef.current = chatPrivateKey;
+    }, [chatPrivateKey]);
+
+    useEffect(() => {
+        localCacheRef.current = localCache;
+    }, [localCache]);
 
     //get encrypted seed on mount
     useEffect(() => {
-        if (!user.uid) return;
+        const uid = user.uid || null;
+        const previousUid = seedUidRef.current;
+        const uidChanged = previousUid !== uid;
+        seedUidRef.current = uid;
+
+        if (uidChanged) {
+            const liveWallet = walletRef.current;
+            const liveChatPrivateKey = chatPrivateKeyRef.current;
+            const liveLocalCache = localCacheRef.current;
+
+            try {
+                lockWallet(liveWallet);
+                lockChat(liveChatPrivateKey);
+                liveLocalCache?.close?.();
+            } catch {}
+
+            walletRef.current = null;
+            chatPrivateKeyRef.current = null;
+            localCacheRef.current = null;
+            setWallet(null);
+            setChatPrivateKey(null);
+            setLocalCache(null);
+            setEncSeed(null);
+            setLockState('locked');
+
+            if (previousUid) {
+                writePresence(db, previousUid, false).catch(() => {});
+            }
+        }
+
+        if (!uid) return;
+        let cancelled = false;
         (async () => {
-            const snap = await getDoc(doc(db, 'seeds', user.uid));
-            setEncSeed(snap.data()?.es ?? null);
+            try {
+                const snap = await getDoc(doc(db, 'seeds', uid));
+                if (!cancelled && seedUidRef.current === uid) {
+                    setEncSeed(snap.data()?.es ?? null);
+                }
+            } catch (error) {
+                console.warn('failed to fetch encrypted seed', error);
+                if (!cancelled && seedUidRef.current === uid) {
+                    setEncSeed(null);
+                }
+            }
         })();
+        return () => {
+            cancelled = true;
+        };
     }, [user.uid]);
 
     //boot features from master seed
@@ -46,51 +105,78 @@ export function VaultProvider({ children }) {
             //decrypt seed
             if (!encSeed) throw new Error('seed not ready');
             if (UNLOCK_STATES.has(lockState)) throw new Error('unlock in progress');
+            const unlockUid = user.uid || auth.currentUser?.uid || null;
+            if (!unlockUid) throw new Error('account not ready');
+            const isCurrentUnlock = () => seedUidRef.current === unlockUid && auth.currentUser?.uid === unlockUid;
             setLockState('decrypting');
             let w = null;
             let chatPrivKey = null;
+            let masterSeed = null;
+            let chatSeed = null;
             let cacheKey = null;
             let nextCache = null;
             try {
                 const { salt, iv, ct, kdf } = unpackSeedData(encSeed);
-                const masterSeed = await decryptSeed(ct, salt, iv, normalizePassword(password), kdf);
+                masterSeed = await decryptSeed(ct, salt, iv, normalizePassword(password), kdf);
 
                 // Derive feature-specific seeds
                 setLockState('deriving');
                 const walletMnemonic = deriveWalletMnemonic(masterSeed);
-                const chatSeed = deriveSeed(masterSeed, 'chat');
+                chatSeed = deriveSeed(masterSeed, 'chat');
                 cacheKey = deriveSeed(masterSeed, LOCAL_DATA_CACHE_LABEL);
 
                 // Zero the master seed from memory
                 masterSeed.fill(0);
+                masterSeed = null;
+
+                if (!isCurrentUnlock()) {
+                    throw new Error('account changed during unlock');
+                }
 
                 //boot wallet
                 setLockState('wallet');
                 w = await bootWallet(walletMnemonic, user);
-                setWallet(w);
+                if (!isCurrentUnlock()) {
+                    throw new Error('account changed during unlock');
+                }
                 // boot chat
                 setLockState('chat');
                 chatPrivKey = await bootChat(chatSeed, user);
-                setChatPrivateKey(chatPrivKey);
-                nextCache = await openLocalDataCache(cacheKey, { uid: user.uid });
-                setLocalCache(nextCache);
+                chatSeed = null;
+                if (!isCurrentUnlock()) {
+                    throw new Error('account changed during unlock');
+                }
+                nextCache = await openLocalDataCache(cacheKey, { uid: unlockUid });
 
                 // Zero derived seeds from memory
-                chatSeed.fill(0);
                 cacheKey.fill(0);
                 cacheKey = null;
+
+                if (!isCurrentUnlock()) {
+                    throw new Error('account changed during unlock');
+                }
+
+                walletRef.current = w;
+                chatPrivateKeyRef.current = chatPrivKey;
+                localCacheRef.current = nextCache;
+                setWallet(w);
+                setChatPrivateKey(chatPrivKey);
+                setLocalCache(nextCache);
 
                 // Mark as unlocked
                 setLockState('launching');
                 await nextTick();
+                if (!isCurrentUnlock()) {
+                    throw new Error('account changed during unlock');
+                }
                 setLockState('unlocked');
 
                 // mark active (best-effort)
-                if (user.uid) {
-                    writePresence(db, user.uid, true).catch(() => {});
-                }
+                writePresence(db, unlockUid, true).catch(() => {});
             } catch (error) {
                 try {
+                    masterSeed?.fill?.(0);
+                    chatSeed?.fill?.(0);
                     cacheKey?.fill?.(0);
                 } catch {}
                 try {
@@ -98,15 +184,18 @@ export function VaultProvider({ children }) {
                     lockChat(chatPrivKey);
                     nextCache?.close?.();
                 } catch {}
-                setWallet(null);
-                setChatPrivateKey(null);
-                setLocalCache(null);
-                setLockState('locked');
+                if (isCurrentUnlock()) {
+                    walletRef.current = null;
+                    chatPrivateKeyRef.current = null;
+                    localCacheRef.current = null;
+                    setWallet(null);
+                    setChatPrivateKey(null);
+                    setLocalCache(null);
+                    setLockState('locked');
+                }
 
                 // mark inactive (best-effort)
-                if (user.uid) {
-                    writePresence(db, user.uid, false).catch(() => {});
-                }
+                writePresence(db, unlockUid, false).catch(() => {});
                 throw error;
             }
         },
@@ -123,6 +212,9 @@ export function VaultProvider({ children }) {
                 lockChat(chatPrivateKey);
                 localCache?.close?.();
             } finally {
+                walletRef.current = null;
+                chatPrivateKeyRef.current = null;
+                localCacheRef.current = null;
                 setWallet(null);
                 setChatPrivateKey(null);
                 setLocalCache(null);

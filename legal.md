@@ -1,6 +1,6 @@
 # VEYL PRIVACY POLICY AND TERMS OF SERVICE
 
-**Effective Date:** April 8, 2026
+**Effective Date:** April 25, 2026
 
 **Operator:** Glyphteck Corp
 
@@ -100,7 +100,7 @@ Some information is designed to be visible to other authenticated users or count
 - chat public key
 - online or active state
 
-This public or peer-visible information is part of how veyl resolves users, routes payments, and opens chats.
+This public or counterparty-visible information is part of how veyl resolves users, routes payments, and opens chats.
 
 #### F. Blockchain and network data
 
@@ -143,7 +143,7 @@ Glyphteck Corp may also use account-level, network-level, and report-based signa
 
 veyl is designed around end-to-end encryption for private chat content. Because of that:
 
-- Glyphteck Corp may be unable to review private message content unless a user chooses to provide evidence from their own device or the product later exposes a user-controlled report veyl that shares such evidence.
+- Glyphteck Corp may be unable to review private message content unless a user chooses to provide evidence from their own device or the product later exposes a user-controlled report flow that shares such evidence.
 - Glyphteck Corp may still act on account-level abuse signals, repeated reports, metadata that it lawfully possesses, public profile information, spam patterns, upload behavior, and other non-content indicators.
 
 Nothing in this policy should be read to mean that Glyphteck Corp supports, authorizes, endorses, or condones unlawful or abusive use of the service.
@@ -184,7 +184,7 @@ Glyphteck Corp reserves the right to investigate abuse reports and to suspend, l
 Glyphteck Corp may, in its discretion:
 
 - disable chat for abusive users
-- disable uploads or peer discovery
+- disable uploads or user discovery
 - remove or reassign usernames
 - suspend an account
 - permanently terminate service access

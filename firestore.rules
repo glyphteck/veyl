@@ -364,6 +364,18 @@ service cloud.firestore {
         && isPushVariant(data.appVariant)
         && isApnsTopic(data.apnsTopic)
         && isPushEnvironment(data.apnsEnvironment)
+        && (
+          (
+            data.provider == 'apns'
+            && data.platform == 'ios'
+            && data.token == null
+            && mapGet(data, 'nativeToken') is string
+          )
+          || (
+            data.provider == 'expo'
+            && data.token is string
+          )
+        )
         && data.enabled is bool
         && data.updatedAt == request.time;
     }
@@ -519,8 +531,9 @@ service cloud.firestore {
       allow delete: if false;
     }
     match /seeds/{uid} {
-      allow get: if request.auth.uid == uid;
-      allow create: if request.auth.uid == uid
+      allow get: if request.auth != null && request.auth.uid == uid;
+      allow create: if request.auth != null
+                    && request.auth.uid == uid
                     && request.resource.data.keys().hasOnly(['es']);
       allow list, update, delete: if false;
     }
@@ -535,10 +548,7 @@ service cloud.firestore {
     //usernames
     match /usernames/{name} {
       allow get: if request.auth != null;
-      allow create: if request.auth != null
-                    && request.resource.data.keys().hasOnly(['uid'])
-                    && !exists(resource.path);
-      allow list, update, delete: if false;
+      allow list, create, update, delete: if false;
     }
 
     /* ---------- chats ---------- */

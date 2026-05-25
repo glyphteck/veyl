@@ -13,7 +13,6 @@ console.error = (...args) => {
 };
 
 const botDir = resolve(import.meta.dirname, '..');
-const legacyLockfile = resolve(botDir, '.bot.pid');
 const lockdir = resolve(botDir, '.bot.lock');
 const lockfile = resolve(lockdir, 'pid');
 
@@ -106,8 +105,7 @@ function acquireLock() {
         writeFileSync(lockfile, String(process.pid));
     }
 
-    const legacyPid = readPid(legacyLockfile);
-    const pids = new Set([legacyPid, ...botRuntimePids()].filter((pid) => isRunning(pid)));
+    const pids = new Set(botRuntimePids());
     if (pids.size) {
         removeLock();
         throw new Error(`bot runtime already running (pid${pids.size === 1 ? '' : 's'} ${[...pids].join(', ')})`);

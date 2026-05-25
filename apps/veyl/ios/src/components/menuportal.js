@@ -1,4 +1,4 @@
-import { Animated as RNAnimated, Pressable, Text, View } from 'react-native';
+import { Animated as RNAnimated, Pressable, ScrollView, Text, View } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { useTheme } from '@/providers/themeprovider';
 import { useTap } from '@/lib/tap';
@@ -13,26 +13,84 @@ const LIST_PAD = 8;
 const EDGE = PAD;
 const MENU_GAP = 8;
 
+function clamp(value, min, max) {
+    if (max < min) {
+        return min;
+    }
+    return Math.min(Math.max(value, min), max);
+}
+
+function makeMenuPosition({ left, top, height, placement }) {
+    return { left, top, width: WIDTH, maxHeight: height, placement };
+}
+
 export function getMenuPosition(anchor, count, insets, screenW, screenH) {
     if (!anchor || !count || !screenW || !screenH) return null;
 
     const menuH = LIST_PAD * 2 + count * ROW_H + Math.max(count - 1, 0);
-    const minX = EDGE;
-    const maxX = screenW - EDGE - WIDTH;
-    const minY = insets.top + EDGE;
-    const maxBottom = screenH - insets.bottom - EDGE;
-    const maxY = maxBottom - menuH;
+    const safeLeft = EDGE;
+    const safeRight = screenW - EDGE;
+    const safeTop = insets.top + EDGE;
+    const safeBottom = screenH - insets.bottom - EDGE;
+    const safeHeight = Math.max(0, safeBottom - safeTop);
+    const minMenuH = Math.min(menuH, LIST_PAD * 2 + ROW_H);
+    const anchorCenterX = anchor.x + anchor.width / 2;
+    const anchorCenterY = anchor.y + anchor.height / 2;
+    const centeredLeft = clamp(anchorCenterX - WIDTH / 2, safeLeft, safeRight - WIDTH);
+    const aboveSpace = anchor.y - MENU_GAP - safeTop;
+    const belowTop = anchor.y + anchor.height + MENU_GAP;
+    const belowSpace = safeBottom - belowTop;
+    const candidates = [];
 
-    let left = anchor.x + anchor.width / 2 - WIDTH / 2;
-    left = Math.min(Math.max(left, minX), Math.max(minX, maxX));
+    if (aboveSpace >= menuH) {
+        candidates.push(makeMenuPosition({ left: centeredLeft, top: anchor.y - MENU_GAP - menuH, height: menuH, placement: 'above' }));
+    }
+    if (belowSpace >= menuH) {
+        candidates.push(makeMenuPosition({ left: centeredLeft, top: belowTop, height: menuH, placement: 'below' }));
+    }
 
-    const above = anchor.y - menuH - MENU_GAP;
-    const below = anchor.y + anchor.height + MENU_GAP;
-    const fitsAbove = above >= minY;
-    const fitsBelow = below + menuH <= maxBottom;
-    const top = fitsAbove || !fitsBelow ? Math.min(Math.max(above, minY), Math.max(minY, maxY)) : below;
+    const sideHeight = Math.min(menuH, safeHeight);
+    const sideTop = clamp(anchorCenterY - sideHeight / 2, safeTop, safeBottom - sideHeight);
+    const leftSpace = anchor.x - MENU_GAP - safeLeft;
+    const rightSpace = safeRight - (anchor.x + anchor.width + MENU_GAP);
+    const sideCandidates = [];
 
-    return { left, top, width: WIDTH };
+    if (leftSpace >= WIDTH) {
+        sideCandidates.push(makeMenuPosition({ left: anchor.x - MENU_GAP - WIDTH, top: sideTop, height: sideHeight, placement: 'left' }));
+    }
+    if (rightSpace >= WIDTH) {
+        sideCandidates.push(makeMenuPosition({ left: anchor.x + anchor.width + MENU_GAP, top: sideTop, height: sideHeight, placement: 'right' }));
+    }
+    sideCandidates.sort((a, b) => {
+        const aSpace = a.placement === 'left' ? leftSpace : rightSpace;
+        const bSpace = b.placement === 'left' ? leftSpace : rightSpace;
+        return bSpace - aSpace;
+    });
+    candidates.push(...sideCandidates);
+
+    if (aboveSpace >= minMenuH) {
+        const height = Math.min(menuH, aboveSpace);
+        candidates.push(makeMenuPosition({ left: centeredLeft, top: anchor.y - MENU_GAP - height, height, placement: 'above' }));
+    }
+    if (belowSpace >= minMenuH) {
+        const height = Math.min(menuH, belowSpace);
+        candidates.push(makeMenuPosition({ left: centeredLeft, top: belowTop, height, placement: 'below' }));
+    }
+
+    if (candidates.length) {
+        return candidates[0];
+    }
+
+    if (aboveSpace >= belowSpace && aboveSpace > 0) {
+        const height = Math.min(menuH, aboveSpace);
+        return makeMenuPosition({ left: centeredLeft, top: anchor.y - MENU_GAP - height, height, placement: 'above' });
+    }
+    if (belowSpace > 0) {
+        const height = Math.min(menuH, belowSpace);
+        return makeMenuPosition({ left: centeredLeft, top: belowTop, height, placement: 'below' });
+    }
+
+    return makeMenuPosition({ left: centeredLeft, top: safeTop, height: Math.min(menuH, safeHeight), placement: 'screen' });
 }
 
 function MenuRow({ item, theme, onPress }) {
@@ -95,14 +153,17 @@ export function MenuPortal({ menu, pos, backdropOpacity, menuScale, onClose, onR
                     left: pos.left,
                     top: pos.top,
                     width: pos.width,
+                    maxHeight: pos.maxHeight,
                     zIndex: 42,
                     transform: [{ scale: menuScale }],
                 }}
             >
-                <GlassView glassEffectStyle="clear" tintColor={theme.background} style={{ borderRadius: 22, paddingVertical: 2, overflow: 'hidden' }}>
-                    {menu.items.map((item) => (
-                        <MenuRow key={item.id} item={item} theme={theme} onPress={() => onRunItem(item)} />
-                    ))}
+                <GlassView glassEffectStyle="clear" tintColor={theme.background} style={{ borderRadius: 22, paddingVertical: 2, maxHeight: pos.maxHeight, overflow: 'hidden' }}>
+                    <ScrollView bounces={false} showsVerticalScrollIndicator={false}>
+                        {menu.items.map((item) => (
+                            <MenuRow key={item.id} item={item} theme={theme} onPress={() => onRunItem(item)} />
+                        ))}
+                    </ScrollView>
                 </GlassView>
             </RNAnimated.View>
         </View>

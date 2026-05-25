@@ -8,7 +8,7 @@ Every bot has:
 
 - a real Firebase Auth user
 - a `users/{uid}` doc (same as regular users)
-- a `profiles/{uid}` doc with `walletPK`, `chatPK`, `username`, and a `bot` marker
+- a `profiles/{uid}` doc with network-scoped `walletPKs`, `chatPK`, `username`, and a `bot` marker
 - a `usernames/{username}` reservation
 - a `chatkeys/{chatPK}` lookup entry
 - a Spark wallet and an encrypted chat identity
@@ -57,7 +57,7 @@ Bots use the same UID-based systems as regular users:
 The core bot loop. `BotRuntime` is a long-lived process that:
 
 1. subscribes to `bots` where `enabled == true` in Firestore
-2. for each enabled bot, reads its profile for `walletPK`/`chatPK`, boots a Spark wallet session, and subscribes to its chats
+2. for each enabled bot, reads its profile for the active network wallet key and `chatPK`, boots a Spark wallet session, and subscribes to its chats
 3. listens for Spark `transfer:claimed` and `balance:update` events to keep the admin-facing balance snapshot current
 4. processes new peer messages in bot-owned chats by comparing timestamps against `seen` and `resumeAt`
 
@@ -116,7 +116,7 @@ Bots that have no custom avatar show a bot icon instead of the default user silh
 ### Normal account records (same as regular users)
 
 - `users/{uid}` — standard account doc, block lists under `users/{uid}/blocked/{peerUid}`
-- `profiles/{uid}` — public identity, avatar, `walletPK`, `chatPK`, presence, `bot` marker
+- `profiles/{uid}` — public identity, avatar, network-scoped `walletPKs`, `chatPK`, presence, `bot` marker
 - `usernames/{username}` — username reservation
 - `chatkeys/{chatPK}` — chat public-key lookup
 - no `seeds/{uid}` — bot seeds are in Secret Manager
@@ -131,7 +131,7 @@ Bots that have no custom avatar show a bot icon instead of the default user silh
     - `balance` — admin-facing balance snapshot
     - `lastBootAt`, `lastRunAt`, `lastError`
     - `resumeAt` — replay cutoff when re-enabling
-    - `walletPK`, `chatPK` — copied from the profile for runtime seed verification (avoids an extra Firestore read per boot)
+    - network-scoped `walletPKs`, `chatPK` — copied from the profile for runtime seed verification (avoids an extra Firestore read per boot)
 
 ### Moderation
 
@@ -203,7 +203,7 @@ bun nuke bots @mybot   # one bot
 bun nuke bots           # all bots
 ```
 
-Removes `bots/{uid}`, `users/{uid}`, `profiles/{uid}`, `moderation/{uid}`, `usernames/*`, `chatkeys/{chatPK}`, and chats containing the bot, plus associated bot avatar/chatmedia files. Does not delete the seed secret or the Auth user.
+Removes `bots/{uid}`, `users/{uid}`, `profiles/{uid}`, `moderation/{uid}`, `usernames/*`, `chatkeys/{chatPK}`, and chats containing the bot, plus associated bot avatar and chat media files. Does not delete the seed secret or the Auth user.
 
 ### Test it
 

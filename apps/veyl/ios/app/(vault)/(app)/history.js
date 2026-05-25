@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Animated, FlatList, Pressable, Text, View } from 'react-native';
-import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ChevronLeft, History } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -69,7 +69,6 @@ function TxRow({ tx, theme, moneyFormat, btcPrice, peerAvatarSource, userAvatarS
 export default function HistoryRoute() {
     const { theme } = useTheme();
     const insets = useSafeAreaInsets();
-    const navigation = useNavigation();
     const router = useRouter();
     const params = useLocalSearchParams();
     const { peers } = usePeer() || {};
@@ -132,19 +131,6 @@ export default function HistoryRoute() {
             setDisplayFormat(cycle[(idx + 1) % cycle.length]);
         },
     });
-    const disableBackSwipe = useCallback(() => {
-        navigation.setOptions({ gestureEnabled: false });
-    }, [navigation]);
-    const enableBackSwipe = useCallback(() => {
-        navigation.setOptions({ gestureEnabled: true });
-    }, [navigation]);
-
-    useEffect(() => () => enableBackSwipe(), [enableBackSwipe]);
-
-    const handleScrollEndDrag = useCallback(() => {
-        enableBackSwipe();
-    }, [enableBackSwipe]);
-
     return (
         <View style={{ flex: 1, overflow: 'hidden' }}>
             <FlatList
@@ -171,10 +157,6 @@ export default function HistoryRoute() {
                 alwaysBounceVertical
                 directionalLockEnabled
                 alwaysBounceHorizontal={false}
-                onScrollBeginDrag={disableBackSwipe}
-                onScrollEndDrag={handleScrollEndDrag}
-                onMomentumScrollBegin={disableBackSwipe}
-                onMomentumScrollEnd={enableBackSwipe}
             />
             <GlassFooter onLayout={(e) => setFooterHeight(e.nativeEvent.layout.height)}>
                 <Pressable {...volumeTap.props} style={{ alignSelf: 'center' }}>

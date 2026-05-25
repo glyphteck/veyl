@@ -3,7 +3,7 @@ import * as KeyboardController from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const BOTTOM_GAP = 8;
-const KeyboardChatScrollView = KeyboardController.KeyboardChatScrollView;
+const ControllerKeyboardChatScrollView = KeyboardController.KeyboardChatScrollView;
 const KeyboardProvider = KeyboardController.KeyboardProvider;
 
 export const useKeyboardHandler = KeyboardController.useKeyboardHandler;
@@ -18,12 +18,12 @@ export function KeyboardRootProvider({ children }) {
     return <KeyboardProvider>{children}</KeyboardProvider>;
 }
 
-export const KeyboardListScrollView = forwardRef(function KeyboardListScrollView({ keyboardDismissMode = 'interactive', keyboardLiftBehavior = 'always', bottomOffset, extraContentPadding, ...props }, ref) {
+export const KeyboardChatScrollView = forwardRef(function KeyboardChatScrollView({ keyboardDismissMode = 'interactive', keyboardLiftBehavior = 'always', bottomOffset, extraContentPadding, ...props }, ref) {
     const insets = useSafeAreaInsets();
     const offset = Number.isFinite(bottomOffset) ? bottomOffset : getKeyboardOffset(insets.bottom);
 
     return (
-        <KeyboardChatScrollView
+        <ControllerKeyboardChatScrollView
             ref={ref}
             {...props}
             automaticallyAdjustContentInsets={false}

@@ -15,7 +15,7 @@ export default function GlassIcon({
     disabled = false,
     accent = false,
     visible = true,
-    duration = 250,
+    duration = 160,
     size = 56,
     iconSize = size * 0.5,
     rounded = 'full',

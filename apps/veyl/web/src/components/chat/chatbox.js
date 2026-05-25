@@ -41,7 +41,7 @@ export function Chatbox() {
     const peerProfile = peers?.find((peer) => peer.chatPK === peerChatPK) ?? null;
     const peerDisplayName = formatUserDisplay({
         username: peerProfile?.username,
-        walletPK: peerChatPK,
+        chatPK: peerChatPK,
     });
 
     // Auto-focus input when chat is selected
@@ -134,7 +134,7 @@ export function Chatbox() {
             }
             if (command.name === 'send') {
                 if (!peerProfile?.walletPK) {
-                    toast.error('missing wallet key');
+                    toast.error('this person cannot receive money yet');
                     return;
                 }
                 const moneyFormat = settings?.moneyFormat || 'sats';
@@ -154,7 +154,7 @@ export function Chatbox() {
                     return;
                 }
                 if (!peerChatPK) {
-                    toast.error('missing chat key');
+                    toast.error('this person cannot receive requests yet');
                     return;
                 }
                 try {
@@ -253,7 +253,7 @@ export function Chatbox() {
 
     if (!selectedChatId) {
         return (
-            <Card className="h-full border flex flex-col">
+            <Card className="h-full flex flex-col">
                 <div className="flex flex-1 items-center justify-center p-6">
                     <p className="text-2xl text-muted">Select a chat.</p>
                 </div>

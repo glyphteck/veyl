@@ -7,6 +7,8 @@ const videoCache = new Map();
 const videoPosterCache = new Map();
 const MAX_VIDEO_CACHE = 16;
 const MAX_VIDEO_POSTER_CACHE = 40;
+let videoCacheEpoch = 0;
+let videoPosterCacheEpoch = 0;
 
 export function getVideoCacheKey(peerChatPK, msg) {
     if (msg?.p && msg?.k) {
@@ -113,6 +115,23 @@ function setReadyEntry(key, url, options = {}) {
     return url;
 }
 
+export function clearMsgVideoCache() {
+    videoCacheEpoch += 1;
+    videoPosterCacheEpoch += 1;
+    for (const entry of videoCache.values()) {
+        if (entry?.status === 'ready') {
+            revokeUrl(entry.url);
+        }
+    }
+    for (const entry of videoPosterCache.values()) {
+        if (entry?.status === 'ready') {
+            revokeUrl(entry.url);
+        }
+    }
+    videoCache.clear();
+    videoPosterCache.clear();
+}
+
 export function loadVideoObjectUrl(peerChatPK, msg, readMessageFile, options = {}) {
     if (msg?.t !== 'mp4' || !peerChatPK || !msg?.p || !msg?.k || typeof readMessageFile !== 'function') {
         return Promise.resolve('');
@@ -130,12 +149,17 @@ export function loadVideoObjectUrl(peerChatPK, msg, readMessageFile, options = {
         return current.promise;
     }
 
+    const epoch = videoCacheEpoch;
     const task = Promise.resolve(readMessageFile(peerChatPK, msg))
         .then((bytes) => {
             if (!bytes?.byteLength) {
                 throw new Error('video unavailable');
             }
             const objectUrl = URL.createObjectURL(new Blob([bytes], { type: msg?.m || 'video/mp4' }));
+            if (epoch !== videoCacheEpoch) {
+                revokeUrl(objectUrl);
+                return '';
+            }
             return setReadyEntry(key, objectUrl, options);
         })
         .catch((error) => {
@@ -327,16 +351,24 @@ export function loadVideoPoster(key, src, msg, readMessagePreview, writeMessageP
         }
     }
 
+    const epoch = videoPosterCacheEpoch;
     const task = waitForIdle()
         .then(async () => {
             const cachedBytes = typeof readMessagePreview === 'function' ? await readMessagePreview(msg) : null;
             if (cachedBytes?.byteLength) {
+                if (epoch !== videoPosterCacheEpoch) {
+                    return '';
+                }
                 return setReadyPosterBytes(key, cachedBytes, options);
             }
             if (!src) {
                 throw new Error('video poster pending');
             }
             const poster = await drawVideoPoster(src);
+            if (epoch !== videoPosterCacheEpoch) {
+                revokeUrl(poster?.url);
+                return '';
+            }
             if (poster?.bytes?.byteLength && typeof writeMessagePreview === 'function') {
                 void writeMessagePreview(msg, poster.bytes, { mimeType: MESSAGE_PREVIEW_MIME }).catch(() => {});
             }

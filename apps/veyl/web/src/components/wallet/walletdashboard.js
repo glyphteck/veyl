@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import { Button } from '@/components/button';
 import { Card } from '@/components/card';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/avatar';
 import { ToggleGroup, ToggleGroupItem } from '@/components/togglegroup';
@@ -251,10 +252,10 @@ export function WalletDashboard() {
                                 {topPeers.map((peer) => {
                                     const peerId = peer.walletPK;
                                     return (
-                                        <button
+                                        <Button
                                             key={peerId}
                                             type="button"
-                                            className="group grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-4 py-2 text-left"
+                                            className="group h-auto grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-none px-4 py-2 text-left"
                                             onClick={() => openUser(peer)}
                                         >
                                             <div className="flex min-w-0 items-center gap-2.5 pr-4">
@@ -277,7 +278,7 @@ export function WalletDashboard() {
                                                 </div>
                                                 <div className={`text-sm text-muted ${cloaked ? 'cloaked' : ''}`}>{renderMoney(peer.periodStats?.vol || 0, moneyFormat, bitcoin.price)}</div>
                                             </div>
-                                        </button>
+                                        </Button>
                                     );
                                 })}
                             </div>

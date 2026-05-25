@@ -715,8 +715,10 @@ export class BotRuntime {
             return this.chatPeers.get(key);
         }
 
-        const snap = await db.collection('profiles').where('chatPK', '==', chatPK).limit(1).get();
-        const peer = snap.docs[0] ? { uid: snap.docs[0].id, ...snap.docs[0].data() } : null;
+        const keySnap = await db.collection('chatkeys').doc(key).get();
+        const uid = typeof keySnap.data()?.uid === 'string' ? keySnap.data().uid.trim() : '';
+        const profileSnap = uid ? await db.collection('profiles').doc(uid).get() : null;
+        const peer = uid ? { uid, ...(profileSnap?.exists ? profileSnap.data() : { chatPK: key }) } : null;
         setLimitedMap(this.chatPeers, key, peer, MAX_BOT_PEER_CACHE);
         return peer;
     }
@@ -804,7 +806,7 @@ export class BotRuntime {
                     msgTs: msgData?.ts,
                     peerUid: peer.uid,
                     peerChatPK,
-                    peerWalletPK: peer.walletPK || null,
+                    peerWalletPK: resolveWalletPK(peer, SPARK_NETWORK),
                     retention,
                 },
                 msgData
@@ -882,7 +884,7 @@ export class BotRuntime {
             return;
         }
 
-        const peerWalletPK = context.peerWalletPK || (await getProfile(context.peerUid))?.walletPK || '';
+        const peerWalletPK = context.peerWalletPK || resolveWalletPK(await getProfile(context.peerUid), SPARK_NETWORK) || '';
         if (!peerWalletPK) {
             throw new Error('peer wallet missing');
         }

@@ -2,6 +2,7 @@
 
 import { useMemo } from 'react';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/avatar';
+import { Button } from '@/components/button';
 import { Card } from '@/components/card';
 import { formatUserDisplay, formatFullDateTime, renderMoney } from '@/lib/utils';
 import { useBitcoin } from '@/components/providers/bitcoinprovider';
@@ -67,7 +68,7 @@ export default function TransactionsPage() {
                                     });
 
                             return (
-                                <button key={tx.id} type="button" className="group grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-3 py-2 text-left" onClick={() => openDialog('txdetails', { tx })}>
+                                <Button key={tx.id} type="button" className="group h-auto grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-none px-3 py-2 text-left" onClick={() => openDialog('txdetails', { tx })}>
                                     <div className="flex min-w-0 items-center gap-2.5 pr-4">
                                         <Avatar active={tx.funding || tx.withdrawal ? false : profile?.active} bot={!!profile?.bot} className="grower">
                                             <AvatarImage src={tx.funding || tx.withdrawal ? user?.avatar : profile?.avatar} alt={displayName} />
@@ -79,7 +80,7 @@ export default function TransactionsPage() {
                                         <span className={`${isInflow ? 'text-inflow' : 'text-outflow'} font-black ${tx.pending ? 'opacity-50' : ''} ${cloaked ? 'cloaked' : ''}`}>{formattedAmount}</span>
                                         <span className="whitespace-nowrap text-sm text-muted">{tx.pending ? 'pending' : label}</span>
                                     </div>
-                                </button>
+                                </Button>
                             );
                         })}
                     </div>

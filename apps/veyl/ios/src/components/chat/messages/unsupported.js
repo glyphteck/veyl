@@ -4,7 +4,7 @@ import GlassView from '@/components/glass/glassview';
 import Menu from '@/components/menu';
 import ReactionTray from './reactiontray';
 
-function UnsupportedBubble({ msg }) {
+function UnsupportedBubble() {
     const { theme } = useTheme();
 
     return (
@@ -24,17 +24,17 @@ function UnsupportedBubble({ msg }) {
                     color: theme.background,
                 }}
             >
-                [unsupported message type]: {'\n'} {msg?.c}
+                this message cannot be shown
             </Text>
         </GlassView>
     );
 }
 
-export default function UnsupportedMessage({ msg, fromPeer = false, menuItems, menuId, reactions = [], reactionUsers, reactionPreviewInset = 0 }) {
+export default function UnsupportedMessage({ fromPeer = false, menuItems, menuId, reactions = [], reactionUsers, reactionPreviewInset = 0 }) {
     return (
         <Menu id={menuId} items={menuItems} previewBottomInset={reactionPreviewInset}>
             <ReactionTray reactions={reactions} users={reactionUsers} fromPeer={fromPeer}>
-                <UnsupportedBubble msg={msg} />
+                <UnsupportedBubble />
             </ReactionTray>
         </Menu>
     );

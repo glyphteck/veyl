@@ -4,6 +4,7 @@ import { ChevronLeft } from 'lucide-react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Image as ExpoImage } from 'expo-image';
+import Reanimated, { Easing, LinearTransition, useDerivedValue, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useTheme } from '@/providers/themeprovider';
 import { useChat } from '@/providers/chatprovider';
 import { useUser } from '@/providers/userprovider';
@@ -26,6 +27,14 @@ import { getCommandContext, parseCommandAmountSats } from '@glyphteck/shared/com
 const ENABLE_CHAT_COMPOSER = true;
 const ENABLE_CHAT_INPUT = true;
 const COMPOSER_KEYBOARD_GAP = 8;
+const COMPOSER_OVERLAY_GAP = 8;
+const COMPOSER_OVERLAY_MS = 160;
+const COMPOSER_OVERLAY_EXIT_HOLD_MS = COMPOSER_OVERLAY_MS + 40;
+const composerOverlayTiming = {
+    duration: COMPOSER_OVERLAY_MS,
+    easing: Easing.out(Easing.cubic),
+};
+const composerOverlayLayout = LinearTransition.duration(COMPOSER_OVERLAY_MS).easing(Easing.out(Easing.cubic));
 
 export default function CurrentChatRoute() {
     const { theme } = useTheme();
@@ -41,10 +50,18 @@ export default function CurrentChatRoute() {
     const routeLockRef = useRef(false);
     const routeLockTimerRef = useRef(null);
     const inputApiRef = useRef(null);
+    const inputBaseH = useRef(0);
+    const overlayH = useRef(0);
+    const activeOverlayRef = useRef(false);
     const [draft, setDraft] = useState(null);
+    const [draftMounted, setDraftMounted] = useState(false);
     const [commandContext, setCommandContext] = useState({ kind: 'none', items: [] });
     const [inputBase, setInputBase] = useState(48);
+    const [composerOverlayMounted, setComposerOverlayMounted] = useState(false);
     const stickyOffset = useMemo(() => ({ closed: 0, opened: insets.bottom - COMPOSER_KEYBOARD_GAP }), [insets.bottom]);
+    const composerOverlayPadding = useSharedValue(0);
+    const composerInputPadding = useSharedValue(0);
+    const composerExtraPadding = useDerivedValue(() => composerOverlayPadding.value + composerInputPadding.value);
 
     const chatId = typeof params?.id === 'string' ? params.id : Array.isArray(params?.id) ? params.id[0] : null;
     const currentChat = useMemo(() => (chatId && Array.isArray(chats) ? (chats.find((chat) => chat?.id === chatId) ?? null) : null), [chatId, chats]);
@@ -263,9 +280,26 @@ export default function CurrentChatRoute() {
             if (!h) return;
             if (h === inputH.current) return;
             inputH.current = h;
-            setInputBase(h);
+            if (!inputBaseH.current) {
+                inputBaseH.current = h;
+                setInputBase(h);
+                composerInputPadding.value = 0;
+                return;
+            }
+            composerInputPadding.value = withTiming(Math.max(0, h - inputBaseH.current), composerOverlayTiming);
         },
-        []
+        [composerInputPadding]
+    );
+    const onOverlayLayout = useCallback(
+        (e) => {
+            const h = Math.round(e?.nativeEvent?.layout?.height ?? 0);
+            if (h === overlayH.current) return;
+            overlayH.current = h;
+            if (activeOverlayRef.current) {
+                composerOverlayPadding.value = withTiming(h, composerOverlayTiming);
+            }
+        },
+        [composerOverlayPadding]
     );
 
     const handleReply = useCallback((msg) => {
@@ -281,6 +315,10 @@ export default function CurrentChatRoute() {
 
     const handleClearDraft = useCallback(() => {
         setDraft(null);
+    }, []);
+
+    const handleDraftHidden = useCallback(() => {
+        setDraftMounted(false);
     }, []);
 
     const handleCommandChange = useCallback(
@@ -310,7 +348,7 @@ export default function CurrentChatRoute() {
             }
             if (command.name === 'send') {
                 if (!peerProfile?.walletPK) {
-                    Alert.alert('Missing address', 'This person has no wallet key yet.');
+                    Alert.alert('Wallet unavailable', 'This person cannot receive money yet.');
                     return;
                 }
                 try {
@@ -326,7 +364,7 @@ export default function CurrentChatRoute() {
                     return;
                 }
                 if (!peerChatPK) {
-                    Alert.alert('Missing chat key', 'This person has no chat key yet.');
+                    Alert.alert('Chat unavailable', 'This person cannot receive requests yet.');
                     return;
                 }
                 try {
@@ -342,6 +380,29 @@ export default function CurrentChatRoute() {
     const handleCommandBubblePress = useCallback((prefix) => {
         inputApiRef.current?.setText?.(prefix);
     }, []);
+
+    useEffect(() => {
+        if (draft) {
+            setDraftMounted(true);
+        }
+    }, [draft]);
+
+    const hasComposerOverlay = !!draft || draftMounted || !!commandContext.items?.length;
+
+    useEffect(() => {
+        activeOverlayRef.current = hasComposerOverlay;
+        if (hasComposerOverlay) {
+            setComposerOverlayMounted(true);
+            if (overlayH.current) {
+                composerOverlayPadding.value = withTiming(overlayH.current, composerOverlayTiming);
+            }
+            return undefined;
+        }
+
+        composerOverlayPadding.value = withTiming(0, composerOverlayTiming);
+        const timer = setTimeout(() => setComposerOverlayMounted(false), COMPOSER_OVERLAY_EXIT_HOLD_MS);
+        return () => clearTimeout(timer);
+    }, [composerOverlayPadding, hasComposerOverlay]);
 
     if (chatBanned) {
         return null;
@@ -396,6 +457,7 @@ export default function CurrentChatRoute() {
                 onEdit={handleEdit}
                 draftKey={draftKey}
                 inputH={inputBase}
+                extraContentPadding={composerExtraPadding}
                 peerAvatarSource={peerAvatarSource}
                 peerBot={!!peerProfile?.bot}
                 peerChatPK={peerChatPK}
@@ -414,11 +476,19 @@ export default function CurrentChatRoute() {
                         }}
                         pointerEvents="box-none"
                     >
-                        <View onLayout={onInputLayout} style={{ paddingHorizontal: 16 }}>
-                            <CommandBubbles items={commandContext.items} onSelect={handleCommandBubblePress} interactive={commandContext.kind === 'pick'} />
-                            <DraftBar draft={draft} onClear={handleClearDraft} />
+                        <View style={{ paddingHorizontal: 16 }}>
+                            <Reanimated.View
+                                collapsable={false}
+                                layout={composerOverlayLayout}
+                                onLayout={onOverlayLayout}
+                                style={{ gap: COMPOSER_OVERLAY_GAP, paddingBottom: composerOverlayMounted ? COMPOSER_OVERLAY_GAP : 0 }}
+                            >
+                                <CommandBubbles items={commandContext.items} onSelect={handleCommandBubblePress} interactive={commandContext.kind === 'pick'} />
+                                <DraftBar draft={draft} onClear={handleClearDraft} onHidden={handleDraftHidden} />
+                            </Reanimated.View>
                             {ENABLE_CHAT_INPUT ? (
                                 <ChatInput
+                                    onLayout={onInputLayout}
                                     onSend={handleSend}
                                     onEditMessage={handleEditMessage}
                                     onSendImage={handleSendImage}
@@ -426,12 +496,13 @@ export default function CurrentChatRoute() {
                                     onSendMoney={peerProfile?.walletPK ? () => handleOpenTransfer('send') : undefined}
                                     onCommand={handleCommand}
                                     onCommandChange={handleCommandChange}
+                                    inputApiRef={inputApiRef}
                                     draft={draft}
                                     onClearDraft={handleClearDraft}
                                     draftKey={draftKey}
                                 />
                             ) : (
-                                <View style={{ height: inputBase, borderRadius: 24, backgroundColor: theme.background }} />
+                                <View onLayout={onInputLayout} style={{ height: inputBase, borderRadius: 24, backgroundColor: theme.background }} />
                             )}
                         </View>
                     </KeyboardStickyView>

@@ -5,12 +5,10 @@ import { Loader, Pause, Play } from 'lucide-react';
 import { useChat } from '@/components/providers/chatprovider';
 import { bubbleBg } from '@/lib/messages';
 import { clear, play } from '@/lib/media';
+import { getAudioCacheKey, loadAudioObjectUrl, releaseAudio, retainAudio } from '@/components/chat/audiocache';
 import { getAttachmentCaption, getAttachmentTitle, isExpiredAttachmentMsg } from '@glyphteck/shared/chat/messages';
 import { useCloak } from '@glyphteck/shared/providers/cloakprovider';
 import { stopClick } from './utils';
-
-const audioCache = new Map();
-const MAX_AUDIO_CACHE = 16;
 
 function fmtTime(value) {
     if (!Number.isFinite(value) || value <= 0) {
@@ -21,94 +19,6 @@ function fmtTime(value) {
     const mins = Math.floor(total / 60);
     const secs = String(total % 60).padStart(2, '0');
     return `${mins}:${secs}`;
-}
-
-function getCacheKey(peerChatPK, msg) {
-    return `${peerChatPK}:${msg?.p || ''}:${msg?.k || ''}`;
-}
-
-function isPromise(value) {
-    return !!value && typeof value.then === 'function';
-}
-
-function revokeUrl(value) {
-    if (typeof value !== 'string' || !value.startsWith('blob:')) {
-        return;
-    }
-
-    try {
-        URL.revokeObjectURL(value);
-    } catch {}
-}
-
-function trimAudioCache() {
-    if (audioCache.size <= MAX_AUDIO_CACHE) {
-        return;
-    }
-
-    for (const [key, entry] of audioCache.entries()) {
-        if (audioCache.size <= MAX_AUDIO_CACHE) {
-            break;
-        }
-        if (!entry || entry.status !== 'ready' || entry.refs > 0) {
-            continue;
-        }
-
-        audioCache.delete(key);
-        revokeUrl(entry.url);
-    }
-}
-
-function getReadyEntry(key) {
-    const entry = audioCache.get(key);
-    return entry?.status === 'ready' ? entry : null;
-}
-
-function retainAudio(key) {
-    const entry = getReadyEntry(key);
-    if (!entry) {
-        return null;
-    }
-
-    audioCache.set(key, {
-        ...entry,
-        refs: entry.refs + 1,
-    });
-    return entry.url;
-}
-
-function releaseAudio(key) {
-    const entry = getReadyEntry(key);
-    if (!entry) {
-        return;
-    }
-
-    audioCache.set(key, {
-        ...entry,
-        refs: Math.max(0, entry.refs - 1),
-    });
-}
-
-function setPendingEntry(key, promise) {
-    audioCache.set(key, {
-        status: 'pending',
-        promise,
-    });
-}
-
-function setReadyEntry(key, url) {
-    const previous = getReadyEntry(key);
-    if (previous?.url && previous.url !== url) {
-        revokeUrl(previous.url);
-    }
-
-    audioCache.set(key, {
-        status: 'ready',
-        url,
-        refs: previous?.refs ?? 0,
-    });
-    trimAudioCache();
-    return url;
 }
 
 export default function AudioMessage({ msg, peerChatPK, fromPeer = false }) {
@@ -145,6 +55,14 @@ export default function AudioMessage({ msg, peerChatPK, fromPeer = false }) {
             return;
         }
 
+        if (expired) {
+            setSrc('');
+            setLoading(false);
+            setError('audio unavailable');
+            setPlaying(false);
+            return;
+        }
+
         if (msg?.t !== 'mp3' || !peerChatPK || !msg?.p || !msg?.k) {
             setSrc('');
             setLoading(false);
@@ -152,9 +70,8 @@ export default function AudioMessage({ msg, peerChatPK, fromPeer = false }) {
             return;
         }
 
-        const key = getCacheKey(peerChatPK, msg);
-        const cached = expired ? null : audioCache.get(key);
-        const cachedUrl = expired ? null : retainAudio(key);
+        const key = getAudioCacheKey(peerChatPK, msg);
+        const cachedUrl = retainAudio(key);
         if (cachedUrl) {
             retainedKey = key;
             setSrc(cachedUrl);
@@ -171,25 +88,15 @@ export default function AudioMessage({ msg, peerChatPK, fromPeer = false }) {
         setTime(0);
         setPlaying(false);
 
-        const task =
-            cached?.status === 'pending' && isPromise(cached.promise)
-                ? cached.promise
-                : Promise.resolve(readMessageFile(peerChatPK, msg))
-                      .then((bytes) => {
-                          const objectUrl = URL.createObjectURL(new Blob([bytes], { type: msg?.m || 'audio/mpeg' }));
-                          return setReadyEntry(key, objectUrl);
-                      })
-                      .catch((nextError) => {
-                          audioCache.delete(key);
-                          throw nextError;
-                      });
-
-        if (!(cached?.status === 'pending' && cached.promise === task)) {
-            setPendingEntry(key, task);
-        }
+        const task = loadAudioObjectUrl(peerChatPK, msg, readMessageFile);
 
         task.then((objectUrl) => {
             if (cancelled) {
+                return;
+            }
+            if (!objectUrl) {
+                setSrc('');
+                setLoading(false);
                 return;
             }
             retainAudio(key);

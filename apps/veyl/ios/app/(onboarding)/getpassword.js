@@ -60,11 +60,11 @@ export default function NewUserPassword() {
 
         setIsSubmitting(true);
         try {
-            setSubmitStatus('checking your wallet…');
+            setSubmitStatus('checking your vault…');
             await yieldToUi();
             const seedDoc = await getDoc(doc(db, 'seeds', uid));
             if (!seedDoc.exists()) {
-                setSubmitStatus('securing your wallet…');
+                setSubmitStatus('securing your vault…');
                 await yieldToUi();
                 const seedData = await encryptSeed(nextPassword);
                 setSubmitStatus('saving…');
@@ -116,7 +116,7 @@ export default function NewUserPassword() {
                             </Animated.View>
                         </Pressable>
                     </GlassField>
-                    <Text style={{ color: theme.muted, fontSize: 13 }}>This password unlocks your encrypted wallet. Without it, your funds are lost forever.</Text>
+                    <Text style={{ color: theme.muted, fontSize: 13 }}>This password unlocks your encrypted vault. Without it, your funds and chats are lost forever.</Text>
 
                     {submitError ? <Text style={{ color: theme.destructive, fontSize: 13 }}>{submitError}</Text> : null}
 

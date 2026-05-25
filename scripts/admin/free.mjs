@@ -9,7 +9,7 @@ import { cliArgs } from './common.mjs';
 const ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789';
 
 function usage() {
-    console.error('usage: bun steal <@username>');
+    console.error('usage: bun free <@username>');
     process.exit(1);
 }
 
@@ -73,7 +73,7 @@ async function moveUsername(target, replacement) {
     });
 }
 
-export async function stealUsername(rawTarget) {
+export async function freeUsername(rawTarget) {
     const target = cleanInput(rawTarget);
     if (!isUsername(target)) {
         throw new Error(`invalid username: ${rawTarget}`);
@@ -97,7 +97,7 @@ export async function stealUsername(rawTarget) {
         }
     }
 
-    throw new Error('could not steal username');
+    throw new Error('could not free username');
 }
 
 async function main() {
@@ -106,7 +106,7 @@ async function main() {
         usage();
     }
 
-    const result = await stealUsername(target);
+    const result = await freeUsername(target);
     console.log(`freed @${cleanInput(target)} by renaming ${result.uid} from @${result.previous} to @${result.replacement}`);
 }
 

@@ -5,6 +5,26 @@ import Constants from 'expo-constants';
 const DIR = FileSystem.documentDirectory ? `${FileSystem.documentDirectory}diagnostics/` : null;
 const FILE = DIR ? `${DIR}breadcrumbs.log` : null;
 const MAX_LINES = 120;
+const SAFE_STRING_KEYS = new Set([
+    'accessPrivileges',
+    'appVersion',
+    'build',
+    'code',
+    'contentType',
+    'executionEnvironment',
+    'facing',
+    'firstType',
+    'kind',
+    'mimeType',
+    'orientation',
+    'platform',
+    'resize',
+    'stage',
+    'state',
+    'status',
+    'type',
+]);
+const SENSITIVE_STRING_KEYS = new Set(['chatId', 'deviceId', 'message', 'name', 'path', 'pathname', 'stack', 'to', 'uri']);
 
 let installed = false;
 let writeChain = Promise.resolve();
@@ -18,8 +38,30 @@ function safeJson(value) {
     }
 }
 
+function redactValue(value, key = '') {
+    if (value == null || typeof value === 'boolean' || typeof value === 'number') {
+        return value;
+    }
+    if (typeof value === 'string') {
+        if (SAFE_STRING_KEYS.has(key)) {
+            return value;
+        }
+        if (SENSITIVE_STRING_KEYS.has(key)) {
+            return value ? '[redacted]' : '';
+        }
+        return value.length <= 24 && /^[a-z0-9_.:-]+$/i.test(value) ? value : '[redacted]';
+    }
+    if (Array.isArray(value)) {
+        return value.map((item) => redactValue(item, key));
+    }
+    if (typeof value === 'object') {
+        return Object.fromEntries(Object.entries(value).map(([entryKey, entryValue]) => [entryKey, redactValue(entryValue, entryKey)]));
+    }
+    return '[redacted]';
+}
+
 function line(label, data) {
-    const payload = data == null ? '' : ` ${safeJson(data)}`;
+    const payload = data == null ? '' : ` ${safeJson(redactValue(data))}`;
     return `${new Date().toISOString()} ${label}${payload}`;
 }
 
@@ -46,18 +88,11 @@ export function mark(label, data) {
     persist(nextLine);
 }
 
-async function loadPrevious() {
+async function clearPrevious() {
     if (!FILE) return;
     await ensureDir();
-    const previous = await FileSystem.readAsStringAsync(FILE).catch(() => '');
-    lines = previous
-        .split('\n')
-        .map((item) => item.trim())
-        .filter(Boolean)
-        .slice(-MAX_LINES);
-    if (lines.length) {
-        console.log(`[diag] previous breadcrumbs\n${lines.slice(-40).join('\n')}`);
-    }
+    lines = [];
+    await FileSystem.deleteAsync(FILE, { idempotent: true }).catch(() => {});
 }
 
 function installErrorHandler() {
@@ -88,7 +123,7 @@ function installErrorHandler() {
 export function installDiagnostics() {
     if (installed) return;
     installed = true;
-    void loadPrevious().finally(() => {
+    void clearPrevious().finally(() => {
         mark('app.boot', {
             appVersion: Constants.expoConfig?.version || '',
             build: Constants.expoConfig?.ios?.buildNumber || '',

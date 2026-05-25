@@ -325,11 +325,11 @@ export default function ReactionTray({ children, reactions, users, fromPeer = fa
 
     const renderItems = useMemo(() => (items.length ? items : active ? makeItems(groups) : []), [active, groups, items]);
     const present = trayVisible && renderItems.length > 0;
-    const rowSpaceStyle = useAnimatedStyle(() => ({
-        paddingBottom: rowSpace.value,
+    const spacerStyle = useAnimatedStyle(() => ({
+        height: rowSpace.value,
     }));
     const trayStyle = useAnimatedStyle(() => ({
-        bottom: REACTION_MARK_BOTTOM + rowSpace.value - REACTION_BORDER,
+        bottom: REACTION_MARK_BOTTOM + REACTION_SPACE - REACTION_BORDER,
         transform: [{ scale: trayScale.value }],
     }));
 
@@ -340,11 +340,11 @@ export default function ReactionTray({ children, reactions, users, fromPeer = fa
                     position: 'relative',
                     maxWidth: '100%',
                 },
-                rowSpaceStyle,
                 style,
             ]}
         >
             {children}
+            <Animated.View pointerEvents="none" style={spacerStyle} />
             {present && (
                 <Animated.View
                     pointerEvents="box-none"

@@ -9,7 +9,6 @@ export { default as MainMenu } from './mainmenu';
 export { default as QRCode } from './qrcode';
 export { default as DeleteAccount } from './deleteaccount';
 export { default as Report } from './report';
-export { default as DeleteMessage } from './deletemessage';
 export { default as Blocked } from './blocked';
 export { default as NewChat } from './newchat';
 export { default as SendPhoto } from './sendphoto';

@@ -279,9 +279,12 @@ function resolveIosDevice(selector) {
             throw new Error(`Unable to find paired iOS device "${selector}".`);
         }
 
+        const udid = device.hardwareProperties?.udid;
+        const identifier = device.identifier;
+
         return {
-            installId: device.identifier || device.hardwareProperties?.udid || selector,
-            xcodeId: device.hardwareProperties?.udid || device.identifier || selector,
+            installId: udid || identifier || selector,
+            xcodeId: udid || identifier || selector,
         };
     } finally {
         rmSync(tmp, { force: true, recursive: true });

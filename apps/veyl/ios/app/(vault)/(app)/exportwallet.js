@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Animated as RNAnimated, Keyboard, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { Animated as RNAnimated, Keyboard, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Clipboard from 'expo-clipboard';
@@ -52,6 +52,7 @@ export default function ExportWalletScreen() {
     const eyeFeedback = useTap({ disabled: isLoading, onPress: () => setShowPassword((prev) => !prev) });
 
     const canLoad = !!encSeed && !isLoading && isPassword(password);
+    const mnemonicWords = walletMnemonic ? walletMnemonic.trim().split(/\s+/).filter(Boolean) : [];
 
     const yieldToUi = useCallback(async () => {
         await new Promise((resolve) => requestAnimationFrame(resolve));
@@ -84,7 +85,7 @@ export default function ExportWalletScreen() {
             setCopyError(false);
             setStep('seed');
         } catch (err) {
-            setError(err?.message === 'vault not ready' ? 'wallet not ready' : 'incorrect password');
+            setError(err?.message === 'vault not ready' ? 'vault not ready' : 'incorrect password');
         } finally {
             setIsLoading(false);
         }
@@ -149,15 +150,15 @@ export default function ExportWalletScreen() {
                             <GlassView glassEffectStyle="clear" tintColor={theme.background} style={{ borderRadius: 28, paddingHorizontal: 18, paddingVertical: 18, gap: 12 }}>
                                 <Text style={{ fontSize: 28, fontWeight: '900', color: theme.foreground }}>this is not a bitcoin wallet.</Text>
                                 <Text style={{ fontSize: 16, lineHeight: 24, color: theme.foreground }}>
-                                    you cannot use it as so. you can only use it with the spark network. either with a new account on this platform, on
+                                    you cannot use it like a normal bitcoin wallet. you can only use it with the spark network. either with a new account on this platform, on
                                     a different platform that uses spark wallets, or yourself through the spark sdk.
                                 </Text>
                             </GlassView>
 
                             <GlassView glassEffectStyle="clear" tintColor={theme.background} style={{ borderRadius: 24, paddingHorizontal: 18, paddingVertical: 18, gap: 10 }}>
                                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                                    <Text style={{ flex: 1, fontSize: 18, fontWeight: '900', color: theme.foreground }}>withdraw instead</Text>
-                                    <GlassIcon icon={BanknoteArrowUp} onPress={() => router.push('/withdraw')} size={42} iconSize={22} />
+                                    <Text style={{ flex: 1, fontSize: 22, fontWeight: '900', color: theme.foreground }}>withdraw instead</Text>
+                                    <GlassIcon accent icon={BanknoteArrowUp} onPress={() => router.push('/withdraw')} size={54} iconSize={28} />
                                 </View>
                                 <Text style={{ fontSize: 15, lineHeight: 23, color: theme.foreground }}>
                                     if you do not want to use this account anymore, it is highly recommended that you withdraw your funds back to a bitcoin wallet instead.
@@ -225,20 +226,29 @@ export default function ExportWalletScreen() {
             {step === 'seed' ? (
                 <>
                     <View style={{ flex: 1, paddingTop: insets.top + 52, paddingHorizontal: 16 }}>
-                        <GlassView glassEffectStyle="clear" tintColor={theme.background} style={{ borderRadius: 24, paddingHorizontal: 18, paddingVertical: 18, gap: 10, opacity: isRevealed ? 1 : 0 }}>
-                            <Text
-                                selectable={isRevealed}
-                                style={{
-                                    fontSize: 16,
-                                    lineHeight: 24,
-                                    fontWeight: '800',
-                                    color: theme.foreground,
-                                    fontVariant: ['tabular-nums'],
-                                }}
-                            >
-                                {walletMnemonic}
-                            </Text>
-                        </GlassView>
+                        {isRevealed ? (
+                            <GlassView glassEffectStyle="clear" tintColor={theme.background} style={{ borderRadius: 24, paddingHorizontal: 18, paddingVertical: 18, gap: 10 }}>
+                                <View style={{ flexDirection: 'row', flexWrap: 'wrap', rowGap: 14 }}>
+                                    {mnemonicWords.map((word, index) => (
+                                        <Text
+                                            key={`${word}-${index}`}
+                                            selectable
+                                            style={{
+                                                width: '33.3333%',
+                                                fontSize: 22,
+                                                lineHeight: 28,
+                                                fontWeight: '900',
+                                                color: theme.foreground,
+                                                fontFamily: Platform.select({ ios: 'Menlo', default: 'monospace' }),
+                                                fontVariant: ['tabular-nums'],
+                                            }}
+                                        >
+                                            {word}
+                                        </Text>
+                                    ))}
+                                </View>
+                            </GlassView>
+                        ) : null}
 
                     </View>
 

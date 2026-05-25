@@ -1,4 +1,4 @@
-import { deleteField, doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 export const defaultSettings = {
     glass: true,
@@ -115,7 +115,6 @@ export async function writeUserSettings({ db, uid, settings, currentSettings }) 
         doc(db, 'users', uid),
         {
             settings: nextSettings,
-            walletNotifications: deleteField(),
         },
         { merge: true }
     );

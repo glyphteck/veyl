@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useCallback, useContext, useMemo, useRef } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef } from 'react';
 import { httpsCallable } from 'firebase/functions';
 import { createChat, createChatProvider } from '@glyphteck/shared/providers/chatprovider';
 import { MSG_BATCH_SIZE } from '@glyphteck/shared/chat/utils';
@@ -8,7 +8,9 @@ import { db, getFunctions, getStorage } from '@/lib/firebase/firebaseclient';
 import { useUser } from '@/components/providers/userprovider';
 import { useVault } from '@/components/providers/vaultprovider';
 import { preloadMessageMedia } from '@/components/chat/mediapreload';
-import { seedMsgImage } from '@/components/chat/usemsgimage';
+import { clearMsgImageCache, seedMsgImage } from '@/components/chat/usemsgimage';
+import { clearMsgVideoCache } from '@/components/chat/videomediacache';
+import { clearAudioCache } from '@/components/chat/audiocache';
 
 const chat = createChat({
     db,
@@ -50,6 +52,21 @@ const { ChatProvider: SharedChatProvider, useChat } = createChatProvider({
 
 const ChatInputContext = createContext(null);
 
+function ChatMediaCacheCleaner() {
+    const { lockState } = useVault();
+
+    useEffect(() => {
+        if (lockState === 'unlocked') {
+            return;
+        }
+        clearMsgImageCache();
+        clearMsgVideoCache();
+        clearAudioCache();
+    }, [lockState]);
+
+    return null;
+}
+
 function ChatInputProvider({ children }) {
     const chatInputRef = useRef(null);
 
@@ -81,6 +98,7 @@ function ChatInputProvider({ children }) {
 function ChatProvider({ children }) {
     return (
         <SharedChatProvider>
+            <ChatMediaCacheCleaner />
             <ChatInputProvider>{children}</ChatInputProvider>
         </SharedChatProvider>
     );

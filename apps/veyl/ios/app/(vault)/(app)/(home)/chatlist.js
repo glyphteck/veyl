@@ -386,6 +386,8 @@ export default function ChatList() {
                 showsVerticalScrollIndicator={false}
                 bounces
                 alwaysBounceVertical
+                keyboardDismissMode="interactive"
+                keyboardShouldPersistTaps="handled"
                 ItemSeparatorComponent={() => <View style={{ height: 1, backgroundColor: theme.border }} />}
                 contentContainerStyle={{ flexGrow: 1, paddingTop: headerHeight, paddingBottom: insets.bottom + 56 }}
                 renderItem={renderItem}

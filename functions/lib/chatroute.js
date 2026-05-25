@@ -1,16 +1,8 @@
 import { db } from './admin.js';
 import { getUidByChatPK } from './chatkeys.js';
 
-export function shortChatKey(chatPK) {
-    if (!chatPK || typeof chatPK !== 'string') {
-        return 'new message';
-    }
-
-    if (chatPK.length <= 8) {
-        return chatPK;
-    }
-
-    return `${chatPK.slice(0, 4)}...${chatPK.slice(-4)}`;
+export function messageSenderFallback() {
+    return 'someone';
 }
 
 export function getChatPair(chatId, senderChatPK) {

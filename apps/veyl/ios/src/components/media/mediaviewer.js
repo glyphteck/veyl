@@ -62,6 +62,7 @@ const EXIT_MEDIA_RADIUS = 64;
 const SWIPE_MEDIA_SCALE = 0.96;
 const SWIPE_MEDIA_RADIUS = 24;
 const SWIPE_MEDIA_DISTANCE = 18;
+const LANDSCAPE_ASPECT_MIN = 1.1;
 
 function clamp(value, min, max) {
     'worklet';
@@ -167,7 +168,10 @@ function getMediaAspect(item) {
 }
 
 function getMediaOrientation(item, aspect) {
-    return item?.orientation || (aspect > 1 ? 'landscape' : 'portrait');
+    if (Number.isFinite(aspect) && aspect > 0) {
+        return aspect >= LANDSCAPE_ASPECT_MIN ? 'landscape' : 'portrait';
+    }
+    return item?.orientation === 'landscape' ? 'landscape' : 'portrait';
 }
 
 function formatTime(seconds) {
@@ -860,9 +864,6 @@ export function FullscreenRail({ activeIndex, items, onCloseComplete, onMove }) 
                     panStartX.value = railX.value;
                     panDidEnd.value = false;
                     panMode.value = PAN_NONE;
-                    if (activeIsVideo) {
-                        scheduleOnRN(pauseActiveVideoForGesture);
-                    }
                 })
                 .onUpdate((event) => {
                     'worklet';
@@ -876,6 +877,7 @@ export function FullscreenRail({ activeIndex, items, onCloseComplete, onMove }) 
                         if (panStartedOnSlider.value) {
                             const point = pointToStage(event.x, event.y, activeMediaLayout);
                             panMode.value = PAN_SCRUB;
+                            scheduleOnRN(pauseActiveVideoForGesture);
                             scheduleOnRN(startScrub, sliderProgress(point, activeRect));
                             return;
                         }
@@ -890,9 +892,15 @@ export function FullscreenRail({ activeIndex, items, onCloseComplete, onMove }) 
                         }
                         if (ax > ay * PAN_AXIS_RATIO) {
                             panMode.value = PAN_SWIPE;
+                            if (activeIsVideo) {
+                                scheduleOnRN(pauseActiveVideoForGesture);
+                            }
                             swipeProgress.value = clamp(ax / SWIPE_MEDIA_DISTANCE, 0, 1);
                         } else if (ay > ax * PAN_AXIS_RATIO) {
                             panMode.value = PAN_EXIT;
+                            if (activeIsVideo) {
+                                scheduleOnRN(pauseActiveVideoForGesture);
+                            }
                             swipeProgress.value = withTiming(0, MEDIA_OUT_TIMING);
                         } else {
                             return;

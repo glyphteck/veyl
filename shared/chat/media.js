@@ -56,10 +56,6 @@ export async function putFile(storage, pair, cid, data, meta = {}) {
     return putAttachment(storage, pair, cid, 'file', data, meta);
 }
 
-export async function putMsgFile(storage, pair, cid, data, meta = {}) {
-    return putFile(storage, pair, cid, data, meta);
-}
-
 export function readMsgAttachment(storage, pair, msg) {
     return readChatFile(storage, pair, msg);
 }

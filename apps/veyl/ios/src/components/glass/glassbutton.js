@@ -30,12 +30,11 @@ export default function GlassButton({
     const scale = useSharedValue(1);
     const press = tap({ value: scale, disabled, onPress, hapticIn: 'light' });
     const animStyle = useAnimatedStyle(() => ({
-        opacity: disabled ? 0.45 : 1,
         transform: [{ scale: scale.value }],
     }));
     const radius = Math.round(height / 2);
-    const resolvedTintColor = tintColor ?? (accent ? alpha(theme.foreground, 100) : theme.background);
-    const resolvedColor = color ?? (accent ? theme.background : theme.foreground);
+    const resolvedTintColor = tintColor ?? (accent ? alpha(theme.foreground, disabled ? 28 : 100) : theme.background);
+    const resolvedColor = color ?? (disabled ? theme.muted : accent ? theme.background : theme.foreground);
     const resolvedGlassEffectStyle = resolveGlassEffectStyle(glassEffectStyle);
 
     return (

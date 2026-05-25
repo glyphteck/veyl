@@ -31,23 +31,10 @@ function ReplyText({ reply, replyFromPeer, onReplyPress }) {
     );
 }
 
-function ReplyUnavailable({ reply, onReplyPress }) {
-    const { theme } = useTheme();
+function ReplyUnavailable({ reply, replyFromPeer, onReplyPress }) {
     return (
         <ReplyPressable onReplyPress={onReplyPress}>
-            <View
-                style={{
-                    maxWidth: '100%',
-                    borderRadius: 20,
-                    paddingHorizontal: 10,
-                    paddingVertical: 7,
-                    backgroundColor: theme.foreground,
-                }}
-            >
-                <Text numberOfLines={1} style={{ color: theme.background, fontSize: 15, fontWeight: '600' }}>
-                    {reply?.c}
-                </Text>
-            </View>
+            <TextBubble msg={reply} fromPeer={replyFromPeer} compact singleLine muted allowEmoji={false} />
         </ReplyPressable>
     );
 }
@@ -72,7 +59,6 @@ function ReplyRequest({ reply, replyFromPeer, peerDisplayName, onReplyPress }) {
                     borderRadius: 20,
                     paddingHorizontal: 12,
                     paddingVertical: 8,
-                    opacity: 0.65,
                 }}
             >
                 <Text numberOfLines={1} style={{ color: theme.muted, fontSize: 11, fontWeight: '900' }}>
@@ -149,7 +135,6 @@ function ReplyAttachment({ reply, replyFromPeer, onReplyPress }) {
                     borderRadius: 20,
                     paddingHorizontal: 12,
                     paddingVertical: 9,
-                    opacity: 0.65,
                 }}
             >
                 <File color={theme.foreground} size={16} />
@@ -171,7 +156,7 @@ function ReplyAttachment({ reply, replyFromPeer, onReplyPress }) {
 function ReplyPreview({ reply, replyFromPeer, peerChatPK, peerDisplayName, onReplyPress }) {
     switch (reply?.t) {
         case UNAVAILABLE_REPLY_MSG_TYPE:
-            return <ReplyUnavailable reply={reply} onReplyPress={onReplyPress} />;
+            return <ReplyUnavailable reply={reply} replyFromPeer={replyFromPeer} onReplyPress={onReplyPress} />;
         case 'txt':
             return <ReplyText reply={reply} replyFromPeer={replyFromPeer} onReplyPress={onReplyPress} />;
         case 'req':

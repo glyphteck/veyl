@@ -27,7 +27,7 @@ export default function GetAvatar() {
                 return;
             }
             await refetchAvatar?.({ optimistic: true });
-            router.replace('/community');
+            router.refresh();
         } catch {
             setStatus('idle');
         }
@@ -41,7 +41,7 @@ export default function GetAvatar() {
             setStatus('idle');
             return;
         }
-        router.replace('/community');
+        router.refresh();
     };
 
     const handleRemoveAvatar = () => {

@@ -119,9 +119,9 @@ function ReportEvidence({ report }) {
             <div className="mt-3 flex flex-col gap-3">
                 {typeLabel ? <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted">{typeLabel}</p> : null}
                 {content ? <p className="text-sm text-muted">{content}</p> : null}
-                <button
+                <Button
                     type="button"
-                    className="cursor-pointer overflow-hidden rounded-round bg-foreground/5 shadow-sm text-left"
+                    className="h-auto cursor-pointer overflow-hidden rounded-round bg-foreground/5 p-0 text-left shadow-sm"
                     style={{ width, maxWidth: '100%' }}
                     onClick={async () => {
                         if (await handleDownload()) {
@@ -142,7 +142,7 @@ function ReportEvidence({ report }) {
                             }
                         }}
                     />
-                </button>
+                </Button>
             </div>
         );
     }
@@ -152,10 +152,10 @@ function ReportEvidence({ report }) {
             <div className="mt-3 flex flex-col gap-3">
                 {typeLabel ? <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted">{typeLabel}</p> : null}
                 {content ? <p className="text-sm text-muted">{content}</p> : null}
-                <button type="button" className="button-outline inline-flex w-fit cursor-pointer items-center gap-2 rounded-full px-4 py-2" onClick={handleDownload} disabled={downloading}>
+                <Button type="button" className="button-outline w-fit px-4 py-2" onClick={handleDownload} disabled={downloading}>
                     {downloading ? <Loader className="size-4 animate-spin" /> : <Download className="size-4" />}
                     <span>{attachment.name || 'download attachment'}</span>
-                </button>
+                </Button>
             </div>
         );
     }
@@ -168,9 +168,9 @@ function ReportEvidence({ report }) {
         <div className="mt-3 flex flex-col gap-2">
             {typeLabel ? <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted">{typeLabel}</p> : null}
             {content ? (
-                <button type="button" className="w-fit max-w-full cursor-pointer whitespace-pre-wrap wrap-break-word rounded-3xl bg-background/50 px-4 py-3 text-left text-sm" onClick={handleCopyText}>
+                <Button type="button" className="h-auto w-fit max-w-full cursor-pointer whitespace-pre-wrap wrap-break-word rounded-3xl bg-background/50 px-4 py-3 text-left text-sm" onClick={handleCopyText}>
                     {content}
-                </button>
+                </Button>
             ) : null}
         </div>
     );
@@ -210,7 +210,7 @@ export default function AdminUserPage() {
     const copyReporterUid = async (event, report) => {
         event.stopPropagation();
         await navigator.clipboard.writeText(report.reporter?.uid || '');
-        toast('uid copied to clipboard', { icon: <Copy /> });
+        toast('account id copied', { icon: <Copy /> });
     };
 
     const handleModeration = async (feature) => {
@@ -269,14 +269,16 @@ export default function AdminUserPage() {
                                 >
                                     <MessageCircleOff className="size-6" />
                                 </Button>
-                                <Avatar
-                                    className={`grower cursor-pointer ${offender.avatarBanned ? 'text-destructive' : 'text-active'}`}
+                                <Button
+                                    className={`grower-lg size-10 p-0 ${offender.avatarBanned ? 'text-destructive' : 'text-active'}`}
                                     onClick={() => handleModeration('avatar')}
-                                    aria-disabled={banning === 'avatar'}
+                                    disabled={banning === 'avatar'}
                                     title={offender.avatarBanned ? 'unban avatar' : 'ban avatar'}
                                 >
-                                    <AvatarFallback />
-                                </Avatar>
+                                    <Avatar className="pointer-events-none size-10">
+                                        <AvatarFallback />
+                                    </Avatar>
+                                </Button>
                             </div>
                         </div>
 
@@ -288,16 +290,16 @@ export default function AdminUserPage() {
                                     <div key={report.id} className="px-3 py-3">
                                         <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(240px,360px)]">
                                             <div className="flex min-w-0 items-center gap-2.5 pr-4">
-                                                <button type="button" className="flex min-w-0 items-center gap-2.5 text-left" onClick={(event) => copyReporterUid(event, report)}>
+                                                <Button type="button" className="h-auto min-w-0 justify-start gap-2.5 rounded-none p-0 text-left" onClick={(event) => copyReporterUid(event, report)}>
                                                     <Avatar active={report.reporter?.active} bot={!!report.reporter?.bot} className="grower">
                                                         <AvatarImage src={report.reporter?.avatar} alt={displayUser(report.reporter)} />
                                                         <AvatarFallback />
                                                     </Avatar>
-                                                </button>
+                                                </Button>
                                                 <div className="min-w-0">
-                                                    <button type="button" className="max-w-full cursor-pointer truncate text-left" onClick={(event) => copyReporterUid(event, report)}>
+                                                    <Button type="button" className="h-auto max-w-full min-w-0 justify-start rounded-none p-0 text-left" onClick={(event) => copyReporterUid(event, report)}>
                                                         {displayUser(report.reporter)}
-                                                    </button>
+                                                    </Button>
                                                     <p className="truncate text-sm text-muted">{formatDateTime(report.createdAt)}</p>
                                                 </div>
                                             </div>

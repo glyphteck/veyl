@@ -7,7 +7,7 @@ function walletPubkey(value) {
     }
     const key = String(value ?? '').trim();
     if (!key) {
-        throw new Error('wallet public key missing');
+        throw new Error('wallet identity missing');
     }
     return key;
 }

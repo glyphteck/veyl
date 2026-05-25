@@ -3,6 +3,7 @@
 import { useMemo } from 'react';
 import Link from 'next/link';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/avatar';
+import { Button } from '@/components/button';
 import { Card } from '@/components/card';
 import { History } from 'lucide-react';
 import { formatUserDisplay, formatFullDateTime, renderMoney } from '@/lib/utils';
@@ -69,7 +70,7 @@ export function RecentTxList() {
                                 });
 
                         return (
-                            <button key={tx.id} type="button" className="group grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-3 py-2 text-left" onClick={() => openDialog('txdetails', { tx })}>
+                            <Button key={tx.id} type="button" className="group h-auto grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-none px-3 py-2 text-left" onClick={() => openDialog('txdetails', { tx })}>
                                 <div className="flex min-w-0 items-center gap-2.5 pr-4">
                                     <Avatar active={tx.funding || tx.withdrawal ? false : profile?.active} bot={!!profile?.bot} className="grower">
                                         <AvatarImage src={tx.funding || tx.withdrawal ? user?.avatar : profile?.avatar} alt={displayName} />
@@ -81,14 +82,16 @@ export function RecentTxList() {
                                     <span className={`${isInflow ? 'text-inflow' : 'text-outflow'} font-black ${tx.pending ? 'opacity-50' : ''} ${cloaked ? 'cloaked' : ''}`}>{formattedAmount}</span>
                                     <span className="whitespace-nowrap text-sm text-muted">{tx.pending ? 'pending' : label}</span>
                                 </div>
-                            </button>
+                            </Button>
                         );
                     })}
                     {hasMoreThanMax && (
-                        <Link href="/transactions" className="group flex items-center gap-2.5 px-3 py-2">
-                            <History className="size-10 shrink-0 transition-transform group-hover:scale-120 group-active:scale-85" />
-                            <span className="text-xl">see all</span>
-                        </Link>
+                        <Button asChild className="group h-auto w-full justify-start rounded-none px-3 py-2 text-left">
+                            <Link href="/transactions">
+                                <History className="size-10 shrink-0 transition-transform group-hover:scale-120 group-active:scale-85" />
+                                <span className="text-xl">see all</span>
+                            </Link>
+                        </Button>
                     )}
                 </div>
             </div>

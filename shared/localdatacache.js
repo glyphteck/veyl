@@ -2,7 +2,7 @@
 
 import { AES_IV_BYTES, openAes, sealAes } from './crypto/aes.js';
 import { makeMessagePreviewMedia } from './chat/previews.js';
-import { cleanBytes, decoder, encoder, toBytes, toHex } from './crypto/core.js';
+import { cleanBytes, decoder, encoder, randomBytes, toBytes, toHex } from './crypto/core.js';
 
 export const LOCAL_DATA_CACHE_VERSION = 2;
 export const LOCAL_DATA_CACHE_LABEL = 'local-cache-v2';
@@ -13,8 +13,8 @@ const MEDIA_CACHE_MAX_ITEMS = 96;
 const MEDIA_ACCESS_TOUCH_MIN_MS = 60 * 1000;
 const MEDIA_ENVELOPE_VERSION = 1;
 
-function nowId() {
-    return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+function makeCacheId() {
+    return toHex(randomBytes(16));
 }
 
 function emptyPayload() {
@@ -386,7 +386,7 @@ export async function openVaultCache({ key, storage, uid, network }) {
     });
 
     return {
-        id: nowId(),
+        id: makeCacheId(),
         read() {
             return payload;
         },
@@ -459,7 +459,7 @@ export async function openVaultCache({ key, storage, uid, network }) {
 
             const mediaBytes = toBytes(bytes, 'media bytes');
             const previous = payload.mediaByKey?.[key];
-            const id = typeof previous?.id === 'string' && previous.id ? previous.id : nowId();
+            const id = typeof previous?.id === 'string' && previous.id ? previous.id : makeCacheId();
             const writeKey = new Uint8Array(cacheKey);
             let raw;
             try {

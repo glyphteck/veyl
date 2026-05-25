@@ -1,15 +1,14 @@
 import { canShareAttachmentMsg, makeSharedAttachment } from '@glyphteck/shared/chat/messages';
+import { randomBytes, toHex } from '@glyphteck/shared/crypto/core';
 
 let staged = null;
-let nextId = 0;
 
 export function stageShareMedia(msg) {
     if (!canShareAttachmentMsg(msg)) {
         return null;
     }
 
-    nextId += 1;
-    const id = `share-${Date.now().toString(36)}-${nextId}`;
+    const id = `share-${toHex(randomBytes(16))}`;
     staged = {
         id,
         msg: makeSharedAttachment(msg),

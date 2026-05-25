@@ -371,7 +371,7 @@ export default function PeerSelectorScreen() {
         if (mode === 'request') {
             const peerChatPK = selectedPeer?.chatPK;
             if (!peerChatPK) {
-                Alert.alert('Missing chat key', 'This person has no chat key yet.');
+                Alert.alert('Chat unavailable', 'This person cannot receive requests yet.');
                 return;
             }
 
@@ -395,7 +395,7 @@ export default function PeerSelectorScreen() {
 
         const receiverWalletPK = selectedPeer?.walletPK;
         if (!receiverWalletPK) {
-            Alert.alert('Missing address', 'This person has no wallet key yet.');
+            Alert.alert('Wallet unavailable', 'This person cannot receive money yet.');
             return;
         }
 

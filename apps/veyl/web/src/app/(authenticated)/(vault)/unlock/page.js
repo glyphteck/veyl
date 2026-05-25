@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import Loading from '@/components/loading';
 import { useChat } from '@/components/providers/chatprovider';
 import { useVault } from '@/components/providers/vaultprovider';
@@ -33,7 +32,6 @@ const lockLabels = {
 };
 
 export default function UnlockPage() {
-    const router = useRouter();
     const { unlock, lockState } = useVault();
     const { isChatDataReady } = useChat();
     const { openDialog } = useDialog();
@@ -58,12 +56,6 @@ export default function UnlockPage() {
     });
 
     const togglePasswordVisibility = () => setShowPassword((prev) => !prev);
-
-    useEffect(() => {
-        if (isUnlocked && isChatDataReady) {
-            router.push('/chat');
-        }
-    }, [isChatDataReady, isUnlocked, router]);
 
     useEffect(() => {
         if (user.authReady && !user.uid) {
@@ -91,8 +83,7 @@ export default function UnlockPage() {
         if (!auth.currentUser?.uid) return;
         try {
             await unlock(password);
-        } catch (e) {
-            console.log(e);
+        } catch {
             setStatus('error');
             setTimeout(() => {
                 setStatus('idle');
@@ -161,12 +152,12 @@ export default function UnlockPage() {
                             <p id="unlock-password-help" className="text-muted">
                                 Your funds are{' '}
                                 <span className="group relative inline-flex align-baseline">
-                                    <button
+                                    <Button
                                         type="button"
-                                        className="underline transition-colors hover:text-foreground focus-visible:text-foreground"
+                                        className="h-auto rounded-none p-0 underline transition-colors hover:text-foreground focus-visible:text-foreground"
                                     >
                                         safe
-                                    </button>
+                                    </Button>
                                     <span
                                         role="tooltip"
                                         className="pointer-events-none absolute top-full left-1/2 z-50 mt-3 w-2xs max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded-round bg-background/85 px-4 py-2.5 text-left text-foreground opacity-0 shadow backdrop-blur-sm transition-opacity ease-out group-hover:opacity-100 group-focus-within:opacity-100"

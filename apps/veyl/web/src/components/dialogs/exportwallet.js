@@ -51,7 +51,7 @@ export default function ExportWallet() {
                 replaceWalletMnemonic(nextMnemonic);
                 setPassword('');
             } catch (err) {
-                setError(err?.message === 'vault not ready' ? 'wallet not ready' : 'incorrect password');
+                setError(err?.message === 'vault not ready' ? 'vault not ready' : 'incorrect password');
             } finally {
                 setIsLoading(false);
             }
@@ -93,7 +93,7 @@ export default function ExportWallet() {
                     <div className="font-black text-lg">this is not a bitcoin wallet.</div>
                     <div className="flex flex-col gap-2">
                         <div className="text-sm">
-                            you cannot use it as so. you can only use it with the spark network. either with a new account on this platform, on a different platform that uses spark wallets, or
+                            you cannot use it like a normal bitcoin wallet. you can only use it with the spark network. either with a new account on this platform, on a different platform that uses spark wallets, or
                             yourself through the spark sdk.
                         </div>
                         <div className="flex flex-col gap-2">

@@ -1,5 +1,6 @@
-import { File, Paths } from 'expo-file-system';
-import { ref, uploadBytes } from 'firebase/storage';
+import { File } from 'expo-file-system';
+import { fetch as nativeFetch } from 'expo/fetch';
+import { ref } from 'firebase/storage';
 import { AESEncryptionKey, AESSealedData, aesDecryptAsync, aesEncryptAsync } from 'expo-crypto';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import { createVideoPlayer } from 'expo-video';
@@ -14,7 +15,96 @@ import { mark } from '@/lib/diagnostics';
 
 export const MAX_CHAT_IMAGE_EDGE = 1600;
 export const CHAT_IMAGE_COMPRESS = 0.82;
-const VIDEO_META_THUMB_MAX = 32;
+const STORAGE_HOST = 'firebasestorage.googleapis.com';
+
+function storageOrigin(storage) {
+    const host = String(storage?.host || storage?._host || STORAGE_HOST).replace(/^https?:\/\//, '');
+    const protocol = storage?._protocol || (String(storage?.host || '').startsWith('http://') ? 'http' : 'https');
+    return `${protocol}://${host}`;
+}
+
+function storageMetadataResource(path, metadata = {}) {
+    const resource = { name: path };
+    if (metadata?.cacheControl) resource.cacheControl = metadata.cacheControl;
+    if (metadata?.contentDisposition) resource.contentDisposition = metadata.contentDisposition;
+    if (metadata?.contentEncoding) resource.contentEncoding = metadata.contentEncoding;
+    if (metadata?.contentLanguage) resource.contentLanguage = metadata.contentLanguage;
+    if (metadata?.contentType) resource.contentType = metadata.contentType;
+    if (metadata?.customMetadata && typeof metadata.customMetadata === 'object') {
+        resource.metadata = metadata.customMetadata;
+    }
+    return resource;
+}
+
+async function storageAuthHeaders(storage) {
+    const headers = {
+        'X-Firebase-Storage-Version': `webjs/${storage?._firebaseVersion || 'AppManager'}`,
+    };
+    const appId = storage?.app?.options?.appId || storage?._appId || '';
+    if (appId) {
+        headers['X-Firebase-GMPID'] = appId;
+    }
+    const authToken = typeof storage?._getAuthToken === 'function' ? await storage._getAuthToken() : null;
+    if (authToken) {
+        headers.Authorization = `Firebase ${authToken}`;
+    }
+    const appCheckToken = typeof storage?._getAppCheckToken === 'function' ? await storage._getAppCheckToken() : null;
+    if (appCheckToken) {
+        headers['X-Firebase-AppCheck'] = appCheckToken;
+    }
+    return headers;
+}
+
+async function startStorageUploadSession(storage, path, bytes, metadata = {}) {
+    const reference = ref(storage, path);
+    const endpoint = `${storageOrigin(reference.storage)}/v0/b/${encodeURIComponent(reference.bucket)}/o?name=${encodeURIComponent(reference.fullPath)}`;
+    const headers = {
+        ...(await storageAuthHeaders(reference.storage)),
+        'Content-Type': 'application/json; charset=utf-8',
+        'X-Goog-Upload-Protocol': 'resumable',
+        'X-Goog-Upload-Command': 'start',
+        'X-Goog-Upload-Header-Content-Length': String(bytes.byteLength || 0),
+        'X-Goog-Upload-Header-Content-Type': metadata?.contentType || 'application/octet-stream',
+    };
+
+    mark('chat.media.uploadBytes.session.start', { path, bytes: bytes.byteLength || 0 });
+    const response = await nativeFetch(endpoint, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(storageMetadataResource(reference.fullPath, metadata)),
+    });
+    const uploadUrl = response.headers?.get?.('X-Goog-Upload-URL') || response.headers?.get?.('x-goog-upload-url') || '';
+    if (!response.ok || !uploadUrl) {
+        const error = new Error(`upload session failed (${response.status || 0})`);
+        error.status = response.status || 0;
+        error.stage = 'upload-session';
+        error.responseText = await response.text().catch(() => '');
+        throw error;
+    }
+    mark('chat.media.uploadBytes.session.done', { path, status: response.status || 0 });
+    return uploadUrl;
+}
+
+async function uploadStorageBody(uploadUrl, body, contentType) {
+    const response = await nativeFetch(uploadUrl, {
+        method: 'POST',
+        headers: {
+            'Content-Type': contentType || 'application/octet-stream',
+            'X-Goog-Upload-Command': 'upload, finalize',
+            'X-Goog-Upload-Offset': '0',
+        },
+        body,
+    });
+    if (!response.ok) {
+        const error = new Error(`upload failed (${response.status || 0})`);
+        error.status = response.status || 0;
+        error.stage = 'upload';
+        error.responseText = await response.text().catch(() => '');
+        throw error;
+    }
+    mark('chat.media.uploadBytes.body.done', { status: response.status || 0 });
+    return response;
+}
 
 function isImageAsset(asset) {
     const mimeType = String(asset?.mimeType || '').toLowerCase();
@@ -51,27 +141,6 @@ async function readUriBytes(uri) {
         }
         return new Uint8Array(await response.arrayBuffer());
     }
-}
-
-function readUriBlob(uri) {
-    return new Promise((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.onload = () => {
-            if (xhr.status && (xhr.status < 200 || xhr.status >= 300)) {
-                reject(new Error(`blob read failed (${xhr.status})`));
-                return;
-            }
-            if (!xhr.response) {
-                reject(new Error('blob read failed'));
-                return;
-            }
-            resolve(xhr.response);
-        };
-        xhr.onerror = () => reject(new Error('blob read failed'));
-        xhr.responseType = 'blob';
-        xhr.open('GET', uri);
-        xhr.send();
-    });
 }
 
 function assertChatFileSize(bytes) {
@@ -179,18 +248,10 @@ function normalizeVideoSize(trackSize, displaySize) {
 }
 
 async function readVideoDisplaySize(player, duration, trackSize) {
-    let thumbnail = null;
-    try {
-        const time = Number.isFinite(duration) && duration > 0.2 ? Math.min(duration * 0.1, 0.35) : 0;
-        const thumbnails = await player.generateThumbnailsAsync(time, { maxWidth: VIDEO_META_THUMB_MAX });
-        thumbnail = thumbnails?.[0] || null;
-        return normalizeVideoSize(trackSize, {
-            width: thumbnail?.width,
-            height: thumbnail?.height,
-        });
-    } finally {
-        thumbnail?.release?.();
-    }
+    void player;
+    void duration;
+    // Thumbnail probing is disabled until the Expo video path is stable on iOS.
+    return normalizeVideoSize(trackSize, null);
 }
 
 export async function uploadStorageBytesNative(storage, path, data, metadata = {}) {
@@ -202,27 +263,13 @@ export async function uploadStorageBytesNative(storage, path, data, metadata = {
     }
 
     const body = toBytes(data, 'upload bytes');
-    const temp = new File(Paths.cache, `chatupload-${Date.now()}-${Math.random().toString(36).slice(2)}.bin`);
-    let blob = null;
 
-    try {
-        mark('chat.media.uploadBytes.start', { path, bytes: body.byteLength || 0, contentType: metadata?.contentType || '' });
-        temp.create({ overwrite: true });
-        mark('chat.media.uploadBytes.write.start', { uri: temp.uri });
-        temp.write(body);
-        mark('chat.media.uploadBytes.write.done', { uri: temp.uri });
-        mark('chat.media.uploadBytes.blob.start', { uri: temp.uri });
-        blob = await readUriBlob(temp.uri);
-        mark('chat.media.uploadBytes.blob.done', { size: blob?.size || 0, type: blob?.type || '' });
-        await uploadBytes(ref(storage, path), blob, metadata);
-        mark('chat.media.uploadBytes.done', { path });
-        return path;
-    } finally {
-        blob?.close?.();
-        try {
-            temp.delete();
-        } catch {}
-    }
+    mark('chat.media.uploadBytes.start', { path, bytes: body.byteLength || 0, contentType: metadata?.contentType || '' });
+    const uploadUrl = await startStorageUploadSession(storage, path, body, metadata);
+    mark('chat.media.uploadBytes.body.start', { path, bytes: body.byteLength || 0 });
+    await uploadStorageBody(uploadUrl, body, metadata?.contentType);
+    mark('chat.media.uploadBytes.done', { path });
+    return path;
 }
 
 async function sealChatFileNative(key, bytes, path) {

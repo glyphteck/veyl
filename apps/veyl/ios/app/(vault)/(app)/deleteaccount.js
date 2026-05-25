@@ -32,7 +32,7 @@ function getVaultError(error) {
         return 'enter your password';
     }
     if (error?.message === 'vault not ready') {
-        return 'your wallet is still loading. try again in a moment.';
+        return 'your vault is still loading. try again in a moment.';
     }
     return 'incorrect password';
 }
@@ -173,7 +173,7 @@ export default function DeleteAccountScreen() {
                 </Text>
             ) : null}
             <Text style={{ fontSize: 18, lineHeight: 27, color: theme.foreground }}>
-                if you choose to delete your account, <Text style={{ color: theme.destructive, fontWeight: '900' }}>you will permanently lose access to your funds and chat</Text>. you can withdraw your funds first to a bitcoin wallet before
+                if you choose to delete your account, <Text style={{ color: theme.destructive, fontWeight: '900' }}>you will permanently lose access to your funds and chats</Text>. you can withdraw your funds first to a bitcoin wallet before
                 deleting your account, export your wallet to a different client, or simply send your remaining balance to another account.
             </Text>
         </GlassView>

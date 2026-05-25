@@ -94,14 +94,16 @@ export default function AdminPage() {
                                     <Button className={`grower-lg ${offender.chatBanned ? 'text-destructive' : 'text-active'}`} onClick={(event) => handleModeration(event, offender, 'chat')} disabled={banningKey === `${offender.uid}:chat`} title={offender.chatBanned ? 'unban chat' : 'ban chat'}>
                                         <MessageCircleOff className="size-6" />
                                     </Button>
-                                    <Avatar
-                                        className={`grower cursor-pointer ${offender.avatarBanned ? 'text-destructive' : 'text-active'}`}
+                                    <Button
+                                        className={`grower-lg size-10 p-0 ${offender.avatarBanned ? 'text-destructive' : 'text-active'}`}
                                         onClick={(event) => handleAvatarModeration(event, offender)}
-                                        aria-disabled={banningKey === `${offender.uid}:avatar`}
+                                        disabled={banningKey === `${offender.uid}:avatar`}
                                         title={offender.avatarBanned ? 'unban avatar' : 'ban avatar'}
                                     >
-                                        <AvatarFallback />
-                                    </Avatar>
+                                        <Avatar className="pointer-events-none size-10">
+                                            <AvatarFallback />
+                                        </Avatar>
+                                    </Button>
                                 </div>
                             </div>
                         ))}

@@ -26,7 +26,7 @@ const GetPsw = () => {
     const [showPassword, setShowPassword] = useState(false);
 
     const getLabelText = () => {
-        if (status === 'submitting') return 'encrypting your password';
+        if (status === 'submitting') return 'encrypting your vault';
         if (status === 'invalid') return 'create a different password';
         if (status === 'short') return 'create a longer password';
         return 'create a strong password';
@@ -59,17 +59,20 @@ const GetPsw = () => {
         const password = normalizePassword(raw);
         if (!isPassword(password)) return;
         setStatus('submitting');
-        console.log('Starting encryption process...');
         const uid = auth.currentUser?.uid;
-        if (!uid) return;
-        if ((await getDoc(doc(db, 'seeds', uid))).exists()) return;
+        if (!uid) {
+            setStatus('idle');
+            router.refresh();
+            return;
+        }
+        if ((await getDoc(doc(db, 'seeds', uid))).exists()) {
+            router.refresh();
+            return;
+        }
 
         try {
-            console.log('Encrypting seed...');
             const seedData = await encryptSeed(password);
-            console.log('Encryption completed, saving to database...');
             await setDoc(doc(db, 'seeds', uid), { es: packSeedData(seedData) });
-            console.log('Saved to database, refreshing route...');
             router.refresh();
         } catch (error) {
             console.error('Error in encryption process:', error);
@@ -139,17 +142,17 @@ const GetPsw = () => {
                             <p id="password-help" className="text-muted">
                                 Keep it safe. It's the{' '}
                                 <span className="group relative inline-flex align-baseline">
-                                    <button type="button" className="underline transition-colors hover:text-foreground focus-visible:text-foreground">
+                                    <Button type="button" className="h-auto rounded-none p-0 underline transition-colors hover:text-foreground focus-visible:text-foreground">
                                         only access
-                                    </button>
+                                    </Button>
                                     <span
                                         role="tooltip"
                                         className="text-foreground pointer-events-none absolute top-full left-1/2 z-50 mt-3 w-2xs max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded-round bg-background/85 px-4 py-2.5 text-left opacity-0 shadow backdrop-blur-sm transition-opacity ease-out group-hover:opacity-100 group-focus-within:opacity-100"
                                     >
-                                        This password unlocks your encrypted wallet. Without it, your funds are lost forever.
+                                        This password unlocks your encrypted vault. Without it, your funds and chats are unavailable.
                                     </span>
                                 </span>{' '}
-                                to your funds.
+                                to your vault.
                             </p>
                         </div>
                     )}

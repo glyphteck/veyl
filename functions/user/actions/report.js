@@ -6,9 +6,15 @@ const MAX_PATH = 500;
 const MAX_NOTE = 1000;
 const REPORT_TYPES = new Set(['txt', 'req', 'img', 'file', 'mp3', 'mp4']);
 const FILE_REPORT_TYPES = new Set(['img', 'file', 'mp3', 'mp4']);
+const UID_RE = /^[^/]{1,128}$/;
+const REPORT_PATH_RE = /^reports\/([^/]{1,128})\/([^/]{1,128})\/([A-Za-z0-9_-]{8,80})$/;
 
 function cleanUid(value) {
-    return typeof value === 'string' ? value.trim() : '';
+    const uid = typeof value === 'string' ? value.trim() : '';
+    if (!UID_RE.test(uid)) {
+        throw new HttpsError('invalid-argument', 'bad uid');
+    }
+    return uid;
 }
 
 function cleanType(value) {
@@ -45,7 +51,7 @@ function cleanContent(value) {
     return content;
 }
 
-function cleanPath(value) {
+function cleanPath(value, reporterUid, targetUid) {
     if (value === undefined) {
         return undefined;
     }
@@ -55,7 +61,8 @@ function cleanPath(value) {
     }
 
     const path = value.trim();
-    if (!path || path.length > MAX_PATH) {
+    const match = path.match(REPORT_PATH_RE);
+    if (!path || path.length > MAX_PATH || match?.[1] !== reporterUid || match?.[2] !== targetUid) {
         throw new HttpsError('invalid-argument', 'bad path');
     }
 
@@ -84,12 +91,11 @@ export const submitReport = onCall(async ({ auth, data }) => {
 
     const uid = auth.uid;
     const targetUid = cleanUid(data?.uid);
-    if (!targetUid) throw new HttpsError('invalid-argument', 'uid required');
     if (targetUid === uid) throw new HttpsError('invalid-argument', 'cannot report self');
 
     const type = cleanType(data?.type);
     const content = cleanContent(data?.content);
-    const path = cleanPath(data?.path);
+    const path = cleanPath(data?.path, uid, targetUid);
     const note = cleanNote(data?.note);
 
     if (!type && (content || path)) {

@@ -107,7 +107,7 @@ function SectionList({ items }) {
                 <section key={section.title} className="grid gap-2">
                     <h3 className="text-xl font-black">{section.title}</h3>
                     {section.body.map((line) => (
-                        <p key={line} className="max-w-3xl text-sm leading-6 text-muted">
+                        <p key={line} className="max-w-3xl text-sm leading-6">
                             {line}
                         </p>
                     ))}
@@ -124,7 +124,7 @@ export default function LegalPage() {
                 <header className="grid gap-3 border-b pb-6">
                     <p className="text-sm font-black uppercase text-muted">Glyphteck Corp</p>
                     <h1 className="text-4xl font-black leading-tight sm:text-5xl">veyl legal</h1>
-                    <p className="max-w-3xl text-base leading-7 text-muted">
+                    <p className="max-w-3xl text-base leading-7">
                         veyl is a direct-transaction Bitcoin and encrypted chat product operated by Glyphteck Corp. This page summarizes the privacy, terms, safety, and support terms for veyl.
                     </p>
                     <dl className="grid gap-1 text-sm leading-6 sm:grid-cols-[8rem_1fr]">
@@ -151,7 +151,7 @@ export default function LegalPage() {
 
                 <section className="grid gap-4">
                     <h2 className="text-2xl font-black">Community Rules</h2>
-                    <ul className="grid gap-2 text-sm leading-6 text-muted">
+                    <ul className="grid gap-2 text-sm leading-6">
                         {community.map((line) => (
                             <li key={line} className="border-b pb-2">
                                 {line}
@@ -162,7 +162,7 @@ export default function LegalPage() {
 
                 <section className="grid gap-4">
                     <h2 className="text-2xl font-black">Third-Party Notices</h2>
-                    <ul className="grid gap-2 text-sm leading-6 text-muted">
+                    <ul className="grid gap-2 text-sm leading-6">
                         {notices.map((line) => (
                             <li key={line} className="border-b pb-2">
                                 {line}

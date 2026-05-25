@@ -94,7 +94,7 @@ export default function Withdraw() {
     const handleWithdraw = useCallback(async () => {
         if (!canSubmit) return;
         if (!withdrawFunds) {
-            Alert.alert('Not available', 'Withdraw is not yet supported.');
+            Alert.alert('Not ready', 'Your wallet is still loading. Please try again in a moment.');
             return;
         }
         Keyboard.dismiss();

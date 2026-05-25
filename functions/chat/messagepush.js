@@ -1,6 +1,6 @@
 import { onDocumentCreated } from 'firebase-functions/v2/firestore';
 import { db } from '../lib/admin.js';
-import { isBlocked, isChatBanned, resolveChatActors, shortChatKey } from '../lib/chatroute.js';
+import { isBlocked, isChatBanned, messageSenderFallback, resolveChatActors } from '../lib/chatroute.js';
 import { getPushDocs, pushSecrets, sendPush } from '../lib/push.js';
 
 export const onChatMessage = onDocumentCreated({ document: 'chats/{chatId}/messages/{msgId}', secrets: pushSecrets }, async (event) => {
@@ -16,7 +16,7 @@ export const onChatMessage = onDocumentCreated({ document: 'chats/{chatId}/messa
         return;
     }
 
-    const { senderUid, receiverUid, senderChatPK: peerChatPK } = actors;
+    const { senderUid, receiverUid } = actors;
     if (!receiverUid || senderUid === receiverUid) {
         console.info('push skip: receiver unresolved', {
             chatId: event.params.chatId,
@@ -68,7 +68,7 @@ export const onChatMessage = onDocumentCreated({ document: 'chats/{chatId}/messa
         return;
     }
 
-    const senderName = senderProfile?.data()?.username || shortChatKey(peerChatPK);
+    const senderName = senderProfile?.data()?.username || messageSenderFallback();
     console.info('push send: chat', {
         chatId: event.params.chatId,
         receiverUid,

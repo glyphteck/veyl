@@ -46,7 +46,7 @@ export default function DeleteAccount({ close }) {
             } catch (error) {
                 setIsPasswordValid(false);
                 if (error?.message === 'vault not ready') {
-                    setError('wallet still loading');
+                    setError('vault still loading');
                 } else {
                     setError('incorrect password');
                 }
@@ -122,7 +122,7 @@ export default function DeleteAccount({ close }) {
                                 </p>
                             ) : null}
                             <p>
-                                if you choose to delete your account, <span className="font-black text-destructive">you will permanently lose access to your funds and chat</span>. you can withdraw your funds first to a bitcoin wallet
+                                if you choose to delete your account, <span className="font-black text-destructive">you will permanently lose access to your funds and chats</span>. you can withdraw your funds first to a bitcoin wallet
                                 before deleting your account, export your wallet to a different client, or simply send your remaining balance to another account.
                             </p>
                         </div>
@@ -148,7 +148,7 @@ export default function DeleteAccount({ close }) {
                                 </p>
                             ) : null}
                             <p>
-                                if you choose to delete your account, <span className="font-black text-destructive">you will permanently lose access to your funds and chat</span>. you can withdraw your funds first to a bitcoin wallet
+                                if you choose to delete your account, <span className="font-black text-destructive">you will permanently lose access to your funds and chats</span>. you can withdraw your funds first to a bitcoin wallet
                                 before deleting your account, export your wallet to a different client, or simply send your remaining balance to another account.
                             </p>
                         </div>

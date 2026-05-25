@@ -1,5 +1,7 @@
+import { randomBytes, toHex } from '../crypto/core.js';
+
 export function makeCid() {
-    return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+    return `${Date.now().toString(36)}${toHex(randomBytes(3))}`;
 }
 
 export function getMessageKey(message) {

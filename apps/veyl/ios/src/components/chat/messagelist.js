@@ -1,11 +1,11 @@
-import { ActivityIndicator, Alert, FlatList, Text, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, Alert, Text, View, useWindowDimensions } from 'react-native';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { useNavigation, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { httpsCallable } from 'firebase/functions';
 import { ArrowDown, Bookmark, Copy, Download, Flag, History, Reply, RotateCcw, Share2, SquarePen, Trash2 } from 'lucide-react-native';
-import Animated, { Easing, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
+import Animated, { Easing, LinearTransition, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { scheduleOnRN } from 'react-native-worklets';
 import { useChat } from '@/providers/chatprovider';
@@ -16,7 +16,7 @@ import { useUser } from '@/providers/userprovider';
 import { useWallet } from '@/providers/walletprovider';
 import GlassView from '@/components/glass/glassview';
 import GlassIcon from '@/components/glass/glassicon';
-import { KeyboardStickyView, useReanimatedKeyboardAnimation } from '@/components/keyboardscroll';
+import { KeyboardChatScrollView, KeyboardStickyView } from '@/components/keyboardscroll';
 import { ChatMessageType, TextBubble } from '@/components/chat/messages';
 import ReceiptMark, { RECEIPT_MARK_RESERVE } from '@/components/chat/receiptmark';
 import { REACTION_SPACE } from '@/components/chat/messages/reactiontray';
@@ -51,12 +51,16 @@ const SCROLL_BOTTOM_HIDE_PAGE_FRACTION = 1;
 const SCROLL_BOTTOM_ANIMATION_MS = 160;
 const SCROLL_BOTTOM_START_SCALE = 0.001;
 const MESSAGE_ROW_ANIMATION_MS = 160;
+const MESSAGE_ROW_ENTER_ANIMATION_MS = MESSAGE_ROW_ANIMATION_MS;
 const MESSAGE_ROW_EXIT_ANIMATION_MS = 160;
 const MESSAGE_ROW_SHRINK_ANIMATION_MS = MESSAGE_ROW_ANIMATION_MS;
 const MESSAGE_ROW_LEAVE_MS = MESSAGE_ROW_EXIT_ANIMATION_MS + MESSAGE_ROW_SHRINK_ANIMATION_MS;
+const MESSAGE_ROW_ENTER_STATE_MS = MESSAGE_ROW_ENTER_ANIMATION_MS + 120;
 const MESSAGE_ROW_EASING = Easing.out(Easing.cubic);
 const MESSAGE_ROW_EXIT_EASING = Easing.linear;
 const MESSAGE_ROW_EXIT_CLEARANCE_PX = 1;
+const MESSAGE_ROW_ENTER_SCALE = 0.2;
+const MESSAGE_ROW_ENTER_OFFSET_Y = 10;
 const MESSAGE_ROW_EXIT_SCALE = 0.01;
 const LIKE_PREVIEW_INSET = 22;
 const LIKE_BLOCK_MS = 320;
@@ -68,6 +72,8 @@ const REPLY_SPRING = {
     stiffness: 200,
     damping: 4.5,
 };
+const MESSAGE_ROW_ENTER_TIMING = { duration: MESSAGE_ROW_ENTER_ANIMATION_MS, easing: MESSAGE_ROW_EASING };
+const MESSAGE_ROW_LAYOUT = LinearTransition.duration(MESSAGE_ROW_ENTER_ANIMATION_MS).easing(MESSAGE_ROW_EASING);
 const KEYBOARD_DISMISS_MODE = 'interactive';
 const CHAT_KEYBOARD_GAP = 8;
 
@@ -162,12 +168,18 @@ function useAnimatedMessageRows(messages, scopeKey, animate = true) {
             const nextRows = presentRows.map((row, index) => {
                 const prevRow = prevByKey.get(row.key);
                 const retained = prevRow && prevRow.state !== 'leaving';
-                const nextState = retained ? 'present' : index < newestInsertCount ? 'entering' : 'instant';
-                const dotExitToken = retained && shouldExitPendingDot(prevRow.msg, row.msg) ? (prevRow.dotExitToken || 0) + 1 : prevRow?.dotExitToken || 0;
+                const confirmed = retained && shouldExitPendingDot(prevRow.msg, row.msg);
+                const retainedState = prevRow?.state === 'entering' || prevRow?.state === 'instant' ? prevRow.state : 'present';
+                const nextState = retained ? retainedState : index < newestInsertCount ? 'entering' : 'instant';
+                const dotExitToken = confirmed ? (prevRow.dotExitToken || 0) + 1 : prevRow?.dotExitToken || 0;
                 if (prevRow && prevRow.state === nextState && prevRow.msg === row.msg && prevRow.dotExitToken === dotExitToken) {
                     return prevRow;
                 }
-                return { ...row, state: nextState, dotExitToken };
+                return {
+                    ...row,
+                    state: nextState,
+                    dotExitToken,
+                };
             });
             const olderInsertStart = nextRows.findIndex((row, index) => index >= newestInsertCount && row.state === 'instant');
             if (olderInsertStart > 0) {
@@ -206,8 +218,24 @@ function useAnimatedMessageRows(messages, scopeKey, animate = true) {
         });
     }, [animate, presentRows, scopeKey]);
 
+    const { instantKeys, enteringKeys } = useMemo(() => {
+        const instant = [];
+        const entering = [];
+        for (const row of state.rows) {
+            if (row.state === 'instant') {
+                instant.push(row.key);
+            } else if (row.state === 'entering') {
+                entering.push(row.key);
+            }
+        }
+        return {
+            instantKeys: instant.join('|'),
+            enteringKeys: entering.join('|'),
+        };
+    }, [state.rows]);
+
     useEffect(() => {
-        if (!state.animated || state.scopeKey !== scopeKey || !state.rows.some((row) => row.state === 'entering' || row.state === 'instant')) {
+        if (!state.animated || state.scopeKey !== scopeKey || !instantKeys) {
             return undefined;
         }
 
@@ -218,12 +246,33 @@ function useAnimatedMessageRows(messages, scopeKey, animate = true) {
                 }
                 return {
                     ...prev,
-                    rows: prev.rows.map((row) => (row.state === 'entering' || row.state === 'instant' ? { ...row, state: 'present' } : row)),
+                    rows: prev.rows.map((row) => (row.state === 'instant' ? { ...row, state: 'present' } : row)),
                 };
             });
         });
         return () => cancelAnimationFrame(frame);
-    }, [scopeKey, state.animated, state.rows, state.scopeKey]);
+    }, [instantKeys, scopeKey, state.animated, state.scopeKey]);
+
+    useEffect(() => {
+        if (!state.animated || state.scopeKey !== scopeKey || !enteringKeys) {
+            return undefined;
+        }
+
+        const keys = new Set(enteringKeys.split('|').filter(Boolean));
+        const timeout = setTimeout(() => {
+            setState((prev) => {
+                if (prev.scopeKey !== scopeKey) {
+                    return prev;
+                }
+                return {
+                    ...prev,
+                    rows: prev.rows.map((row) => (row.state === 'entering' && keys.has(row.key) ? { ...row, state: 'present' } : row)),
+                };
+            });
+        }, MESSAGE_ROW_ENTER_STATE_MS);
+
+        return () => clearTimeout(timeout);
+    }, [enteringKeys, scopeKey, state.animated, state.scopeKey]);
 
     useEffect(() => {
         if (!state.animated || state.scopeKey !== scopeKey || !state.rows.some((row) => row.state === 'leaving')) {
@@ -560,10 +609,10 @@ function MessageRow({ chatPad, msg, rowState = 'present', fromPeer = false, them
     const contentStyle = useAnimatedStyle(() => {
         const exitTranslate = exitDistance.value * exit.value;
         const exitScale = 1 - exit.value * (1 - MESSAGE_ROW_EXIT_SCALE);
-        const enterScale = 0.98 + appear.value * 0.02;
+        const enterScale = MESSAGE_ROW_ENTER_SCALE + appear.value * (1 - MESSAGE_ROW_ENTER_SCALE);
+        const enterOffsetY = (1 - appear.value) * MESSAGE_ROW_ENTER_OFFSET_Y;
         return {
-            opacity: 1 - exit.value,
-            transform: [{ translateX: reply.value + exitTranslate }, { scale: exit.value > 0 ? exitScale : enterScale }],
+            transform: [{ translateX: reply.value + exitTranslate }, { translateY: exit.value > 0 ? 0 : enterOffsetY }, { scale: exit.value > 0 ? exitScale : enterScale }],
         };
     });
 
@@ -584,8 +633,7 @@ function MessageRow({ chatPad, msg, rowState = 'present', fromPeer = false, them
 
         const targetLeft = contentLayout.x + targetLayout.x;
         const targetRight = targetLeft + targetLayout.width;
-        const targetCenter = targetLeft + targetLayout.width / 2;
-        const exitsRight = targetCenter >= screenW / 2;
+        const exitsRight = !fromPeer;
         const distance = exitsRight ? screenW - targetLeft : targetRight;
         return Math.ceil(Math.max(0, distance + MESSAGE_ROW_EXIT_CLEARANCE_PX)) * (exitsRight ? 1 : -1);
     }, [fromPeer, screenW]);
@@ -605,15 +653,13 @@ function MessageRow({ chatPad, msg, rowState = 'present', fromPeer = false, them
             return undefined;
         }
         if (!entering) {
-            appear.value = withTiming(1, { duration: MESSAGE_ROW_ANIMATION_MS, easing: MESSAGE_ROW_EASING });
+            appear.value = 1;
             return undefined;
         }
 
         appear.value = 0;
-        const frame = requestAnimationFrame(() => {
-            appear.value = withTiming(1, { duration: MESSAGE_ROW_ANIMATION_MS, easing: MESSAGE_ROW_EASING });
-        });
-        return () => cancelAnimationFrame(frame);
+        appear.value = withTiming(1, MESSAGE_ROW_ENTER_TIMING);
+        return undefined;
     }, [appear, entering, exit, exitDistance, instant, leaving, measureExitTranslate]);
 
     const replyGesture = useMemo(() => {
@@ -675,10 +721,81 @@ function MessageRow({ chatPad, msg, rowState = 'present', fromPeer = false, them
     const gestureValue = useMemo(() => ({ blockLike, setSwipeBlocked }), [blockLike, setSwipeBlocked]);
     const renderedChildren = typeof children === 'function' ? children({ onExitTargetLayout: handleExitTargetLayout }) : children;
     const content = <MessageGestureProvider value={gestureValue}>{renderedChildren}</MessageGestureProvider>;
+    const contentOriginStyle = useMemo(() => ({ transformOrigin: fromPeer ? 'left bottom' : 'right bottom' }), [fromPeer]);
     const contentNode = (
-        <Animated.View collapsable={false} onLayout={handleExitContentLayout} style={contentStyle}>
+        <Animated.View collapsable={false} onLayout={handleExitContentLayout} style={[contentOriginStyle, contentStyle]}>
             {content}
         </Animated.View>
+    );
+    const rowBody = (
+        <View
+            collapsable={false}
+            style={{
+                position: 'relative',
+                width: screenW + STAMP_TRAY,
+                paddingTop: MESSAGE_ROW_PADDING_TOP,
+                paddingBottom: MESSAGE_ROW_PADDING_BOTTOM,
+            }}
+        >
+            {stamp ? (
+                <View
+                    pointerEvents="none"
+                    style={{
+                        position: 'absolute',
+                        left: screenW + STAMP_WAIT,
+                        top: MESSAGE_ROW_PADDING_TOP,
+                        bottom: MESSAGE_ROW_PADDING_BOTTOM + stampBottomInset,
+                        width: STAMP_W,
+                        justifyContent: 'center',
+                        alignItems: 'flex-start',
+                    }}
+                >
+                    <Text style={{ color: theme.muted, fontSize: 11, fontWeight: '800' }}>{stamp}</Text>
+                </View>
+            ) : null}
+            {receiptStamp ? (
+                <View
+                    pointerEvents="none"
+                    style={{
+                        position: 'absolute',
+                        left: screenW + STAMP_WAIT,
+                        bottom: RECEIPT_STAMP_BOTTOM,
+                        width: STAMP_W,
+                        justifyContent: 'center',
+                        alignItems: 'flex-start',
+                    }}
+                >
+                    <Text style={{ color: theme.muted, fontSize: 11, fontWeight: '800' }}>{receiptStamp}</Text>
+                </View>
+            ) : null}
+            {canReply ? (
+                <Animated.View
+                    pointerEvents="none"
+                    style={[
+                        {
+                            position: 'absolute',
+                            left: replyIconLeft ? 12 : undefined,
+                            right: replyIconLeft ? undefined : STAMP_TRAY + Math.max(chatPad - 4, 12),
+                            top: 0,
+                            bottom: 0,
+                            width: REPLY_HINT_W,
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                        },
+                        replyStyle,
+                    ]}
+                >
+                    <Icon icon={Reply} color={theme.foreground} />
+                </Animated.View>
+            ) : null}
+            <View style={{ width: screenW, paddingHorizontal: chatPad, flexDirection: 'row', justifyContent: fromPeer ? 'flex-start' : 'flex-end' }}>
+                {rowGesture ? (
+                    <GestureDetector gesture={rowGesture}>{contentNode}</GestureDetector>
+                ) : (
+                    contentNode
+                )}
+            </View>
+        </View>
     );
 
     return (
@@ -694,66 +811,7 @@ function MessageRow({ chatPad, msg, rowState = 'present', fromPeer = false, them
                 rowCollapseStyle,
             ]}
         >
-            <View style={{ position: 'relative', width: screenW + STAMP_TRAY, paddingTop: MESSAGE_ROW_PADDING_TOP, paddingBottom: MESSAGE_ROW_PADDING_BOTTOM }}>
-                {stamp ? (
-                    <View
-                        pointerEvents="none"
-                        style={{
-                            position: 'absolute',
-                            left: screenW + STAMP_WAIT,
-                            top: MESSAGE_ROW_PADDING_TOP,
-                            bottom: MESSAGE_ROW_PADDING_BOTTOM + stampBottomInset,
-                            width: STAMP_W,
-                            justifyContent: 'center',
-                            alignItems: 'flex-start',
-                        }}
-                    >
-                        <Text style={{ color: theme.muted, fontSize: 11, fontWeight: '800' }}>{stamp}</Text>
-                    </View>
-                ) : null}
-                {receiptStamp ? (
-                    <View
-                        pointerEvents="none"
-                        style={{
-                            position: 'absolute',
-                            left: screenW + STAMP_WAIT,
-                            bottom: RECEIPT_STAMP_BOTTOM,
-                            width: STAMP_W,
-                            justifyContent: 'center',
-                            alignItems: 'flex-start',
-                        }}
-                    >
-                        <Text style={{ color: theme.muted, fontSize: 11, fontWeight: '800' }}>{receiptStamp}</Text>
-                    </View>
-                ) : null}
-                {canReply ? (
-                    <Animated.View
-                        pointerEvents="none"
-                        style={[
-                            {
-                                position: 'absolute',
-                                left: replyIconLeft ? 12 : undefined,
-                                right: replyIconLeft ? undefined : STAMP_TRAY + Math.max(chatPad - 4, 12),
-                                top: 0,
-                                bottom: 0,
-                                width: REPLY_HINT_W,
-                                justifyContent: 'center',
-                                alignItems: 'center',
-                            },
-                            replyStyle,
-                        ]}
-                    >
-                        <Icon icon={Reply} color={theme.foreground} />
-                    </Animated.View>
-                ) : null}
-                <View style={{ width: screenW, paddingHorizontal: chatPad, flexDirection: 'row', justifyContent: fromPeer ? 'flex-start' : 'flex-end' }}>
-                    {rowGesture ? (
-                        <GestureDetector gesture={rowGesture}>{contentNode}</GestureDetector>
-                    ) : (
-                        contentNode
-                    )}
-                </View>
-            </View>
+            {rowBody}
         </Animated.View>
     );
 }
@@ -767,7 +825,10 @@ function SystemMessageRow({ chatPad, msg, rowState = 'present', screenW, theme }
     const { handleRowLayout, rowCollapseStyle } = useLeavingRowCollapse(leaving);
     const visualStyle = useAnimatedStyle(() => ({
         opacity: 1 - exit.value,
-        transform: [{ scale: exit.value > 0 ? 1 - exit.value * (1 - MESSAGE_ROW_EXIT_SCALE) : 0.98 + appear.value * 0.02 }],
+        transform: [
+            { translateY: exit.value > 0 ? 0 : (1 - appear.value) * MESSAGE_ROW_ENTER_OFFSET_Y },
+            { scale: exit.value > 0 ? 1 - exit.value * (1 - MESSAGE_ROW_EXIT_SCALE) : MESSAGE_ROW_ENTER_SCALE + appear.value * (1 - MESSAGE_ROW_ENTER_SCALE) },
+        ],
     }));
 
     useEffect(() => {
@@ -783,16 +844,29 @@ function SystemMessageRow({ chatPad, msg, rowState = 'present', screenW, theme }
             return undefined;
         }
         if (!entering) {
-            appear.value = withTiming(1, { duration: MESSAGE_ROW_ANIMATION_MS, easing: MESSAGE_ROW_EASING });
+            appear.value = 1;
             return undefined;
         }
 
         appear.value = 0;
-        const frame = requestAnimationFrame(() => {
-            appear.value = withTiming(1, { duration: MESSAGE_ROW_ANIMATION_MS, easing: MESSAGE_ROW_EASING });
-        });
-        return () => cancelAnimationFrame(frame);
+        appear.value = withTiming(1, MESSAGE_ROW_ENTER_TIMING);
+        return undefined;
     }, [appear, entering, exit, instant, leaving]);
+
+    const rowBody = (
+        <View
+            collapsable={false}
+            style={{
+                width: screenW + STAMP_TRAY,
+                paddingTop: 2,
+                paddingBottom: 4,
+            }}
+        >
+            <Animated.View collapsable={false} style={[{ width: screenW, paddingHorizontal: chatPad, alignItems: 'center', transformOrigin: 'center bottom' }, visualStyle]}>
+                <Text style={{ maxWidth: '76%', color: theme.muted, fontSize: 11, fontWeight: '800', lineHeight: 14, textAlign: 'center' }}>{getSystemMsgText(msg)}</Text>
+            </Animated.View>
+        </View>
+    );
 
     return (
         <Animated.View
@@ -806,11 +880,7 @@ function SystemMessageRow({ chatPad, msg, rowState = 'present', screenW, theme }
                 rowCollapseStyle,
             ]}
         >
-            <View style={{ width: screenW + STAMP_TRAY, paddingTop: 2, paddingBottom: 4 }}>
-                <Animated.View style={[{ width: screenW, paddingHorizontal: chatPad, alignItems: 'center' }, visualStyle]}>
-                    <Text style={{ maxWidth: '76%', color: theme.muted, fontSize: 11, fontWeight: '800', lineHeight: 14, textAlign: 'center' }}>{getSystemMsgText(msg)}</Text>
-                </Animated.View>
-            </View>
+            {rowBody}
         </Animated.View>
     );
 }
@@ -820,6 +890,7 @@ export default function MessageList({
     chatPad = 16,
     chatTitle,
     children,
+    extraContentPadding,
     inputH = 48,
     onRequestHold,
     peerAvatarSource,
@@ -830,7 +901,6 @@ export default function MessageList({
     onReply,
     onEdit,
 }) {
-    const navigation = useNavigation();
     const router = useRouter();
     const { avatar, chatPK, uid } = useUser();
     const { theme } = useTheme();
@@ -839,7 +909,6 @@ export default function MessageList({
     const { updateMessage, deleteMessage, retryMessage, makeMessagePermanent, makeMessageTemporary, readMessageFile, sendReaction } = useChat();
     const { sendMoneyWithSpark } = useWallet();
     const insets = useSafeAreaInsets();
-    const { height: keyboardHeight } = useReanimatedKeyboardAnimation();
     const { width: screenW } = useWindowDimensions();
     const { messages: messagesAsc, ready, hasOlder, loadingOlder, loadOlder, patchMessage, removeMessage } = useChatMessages(chatId);
     const submitReport = useMemo(() => httpsCallable(functions, 'submitReport'), []);
@@ -880,6 +949,7 @@ export default function MessageList({
     const visibleMessagesAsc = useMemo(() => collapseSystemMessages(activeMessagesAsc.filter(canShowMsg)), [activeMessagesAsc]);
     const messages = useMemo(() => [...visibleMessagesAsc].reverse(), [visibleMessagesAsc]);
     const displayRows = useAnimatedMessageRows(messages, chatId || '', ready);
+    const rowLayoutAnimation = useMemo(() => (displayRows.some((row) => row?.state === 'entering') ? MESSAGE_ROW_LAYOUT : undefined), [displayRows]);
     const latestReadReceipt = useMemo(() => getLatestReadOutgoingReceipt(activeMessagesAsc, chatPK, peerChatPK), [activeMessagesAsc, chatPK, peerChatPK]);
     const latestReadReceiptKey = getMsgKey(latestReadReceipt?.message);
     const latestReadReceiptStamp = useMemo(() => getMsgStamp(latestReadReceipt?.receipt), [latestReadReceipt?.receipt?.cid, latestReadReceipt?.receipt?.id, latestReadReceipt?.receipt?.ts]);
@@ -965,8 +1035,13 @@ export default function MessageList({
     }, [visibleMessagesAsc]);
     const listRef = useRef(null);
     const loadingOlderRef = useRef(false);
-    const keyboardReserveStyle = useAnimatedStyle(() => ({ height: Math.max(0, Math.round(-keyboardHeight.value - insets.bottom)) }));
     const stickyOffset = useMemo(() => ({ closed: 0, opened: insets.bottom - CHAT_KEYBOARD_GAP }), [insets.bottom]);
+    const renderScrollComponent = useCallback((props) => <KeyboardChatScrollView {...props} inverted />, []);
+    const scrollBottomBase = positivePx(insets.bottom + inputH + 20);
+    const composerReserveStyle = useAnimatedStyle(() => {
+        const extra = extraContentPadding ? extraContentPadding.value : 0;
+        return { height: Math.max(0, Math.round(extra)) };
+    }, [extraContentPadding]);
     const scrollBottomStyle = useAnimatedStyle(() => ({
         transform: [
             {
@@ -974,6 +1049,10 @@ export default function MessageList({
             },
         ],
     }));
+    const scrollBottomPositionStyle = useAnimatedStyle(() => {
+        const extra = extraContentPadding ? extraContentPadding.value : 0;
+        return { bottom: Math.max(0, Math.round(scrollBottomBase + extra)) };
+    }, [extraContentPadding, scrollBottomBase]);
 
     useEffect(() => {
         let timer;
@@ -1039,20 +1118,6 @@ export default function MessageList({
     const timeStyle = useAnimatedStyle(() => ({
         transform: [{ translateX: -time.value }],
     }));
-
-    const disableBackSwipe = useCallback(() => {
-        navigation.setOptions({ gestureEnabled: false });
-    }, [navigation]);
-
-    const enableBackSwipe = useCallback(() => {
-        navigation.setOptions({ gestureEnabled: true });
-    }, [navigation]);
-
-    useEffect(() => () => enableBackSwipe(), [enableBackSwipe]);
-
-    const handleScrollEndDrag = useCallback(() => {
-        enableBackSwipe();
-    }, [enableBackSwipe]);
 
     const handleListScroll = useCallback((event) => {
         const y = Number(event?.nativeEvent?.contentOffset?.y) || 0;
@@ -1169,54 +1234,45 @@ export default function MessageList({
     );
 
     const handleDeleteMessage = useCallback(
-        (msg) => {
+        async (msg) => {
             if (!chatId || !msg?.id || String(msg.id).startsWith('local:')) {
                 return;
             }
 
-            Alert.alert('Delete message?', 'This removes it for both people in this chat.', [
-                { text: 'cancel', style: 'cancel' },
-                {
-                    text: 'delete',
-                    style: 'destructive',
-                    onPress: async () => {
-                        setDeletingMessageIds((prev) => {
-                            if (prev.has(msg.id)) {
-                                return prev;
-                            }
-                            const next = new Set(prev);
-                            next.add(msg.id);
-                            return next;
-                        });
+            setDeletingMessageIds((prev) => {
+                if (prev.has(msg.id)) {
+                    return prev;
+                }
+                const next = new Set(prev);
+                next.add(msg.id);
+                return next;
+            });
 
-                        try {
-                            await deleteMessage(chatId, msg.id);
-                            removeMessage(msg.id);
-                        } catch (error) {
-                            console.warn('delete message failed', error);
-                            setDeletingMessageIds((prev) => {
-                                if (!prev.has(msg.id)) {
-                                    return prev;
-                                }
-                                const next = new Set(prev);
-                                next.delete(msg.id);
-                                return next;
-                            });
-                            Alert.alert('Delete failed', error?.message || 'Could not delete this message.');
-                            return;
-                        }
+            try {
+                await deleteMessage(chatId, msg.id);
+                removeMessage(msg.id);
+            } catch (error) {
+                console.warn('delete message failed', error);
+                setDeletingMessageIds((prev) => {
+                    if (!prev.has(msg.id)) {
+                        return prev;
+                    }
+                    const next = new Set(prev);
+                    next.delete(msg.id);
+                    return next;
+                });
+                Alert.alert('Delete failed', error?.message || 'Could not delete this message.');
+                return;
+            }
 
-                        setDeletingMessageIds((prev) => {
-                            if (!prev.has(msg.id)) {
-                                return prev;
-                            }
-                            const next = new Set(prev);
-                            next.delete(msg.id);
-                            return next;
-                        });
-                    },
-                },
-            ]);
+            setDeletingMessageIds((prev) => {
+                if (!prev.has(msg.id)) {
+                    return prev;
+                }
+                const next = new Set(prev);
+                next.delete(msg.id);
+                return next;
+            });
         },
         [chatId, deleteMessage, removeMessage]
     );
@@ -1553,20 +1609,22 @@ export default function MessageList({
                 <Animated.View style={{ flex: 1, width: screenW, overflow: 'hidden' }}>
                     <Animated.View style={[{ flex: 1, width: screenW + STAMP_TRAY }, timeStyle]}>
                         <View style={{ flex: 1, width: screenW + STAMP_TRAY }}>
-                            <FlatList
+                            <Animated.FlatList
                                 ref={(node) => {
                                     listRef.current = node;
                                 }}
                                 data={displayRows}
                                 keyExtractor={(row) => row.key}
                                 renderItem={renderItem}
+                                itemLayoutAnimation={rowLayoutAnimation}
                                 style={{ flex: 1, width: screenW + STAMP_TRAY, zIndex: 0 }}
                                 inverted
+                                renderScrollComponent={renderScrollComponent}
                                 contentContainerStyle={{
                                     paddingTop: positivePx(insets.bottom + inputH + NEWEST_MESSAGE_GAP),
                                     paddingBottom: insets.top + 42 + 24,
                                 }}
-                                ListHeaderComponent={<Animated.View pointerEvents="none" style={keyboardReserveStyle} />}
+                                ListHeaderComponent={<Animated.View pointerEvents="none" style={composerReserveStyle} />}
                                 automaticallyAdjustKeyboardInsets={false}
                                 contentInsetAdjustmentBehavior="never"
                                 keyboardDismissMode={KEYBOARD_DISMISS_MODE}
@@ -1576,11 +1634,7 @@ export default function MessageList({
                                 windowSize={5}
                                 removeClippedSubviews={false}
                                 scrollEnabled={!menuActive}
-                                onScrollBeginDrag={disableBackSwipe}
-                                onScrollEndDrag={handleScrollEndDrag}
                                 onScroll={handleListScroll}
-                                onMomentumScrollBegin={disableBackSwipe}
-                                onMomentumScrollEnd={enableBackSwipe}
                                 scrollEventThrottle={16}
                                 directionalLockEnabled
                                 bounces
@@ -1611,15 +1665,17 @@ export default function MessageList({
             {showScrollBottom || scrollBottomMounted ? (
                 <KeyboardStickyView
                     offset={stickyOffset}
-                    style={{
-                        position: 'absolute',
-                        left: 0,
-                        right: 0,
-                        bottom: positivePx(insets.bottom + inputH + 20),
-                        zIndex: 4,
-                        alignItems: 'flex-end',
-                        paddingRight: 16,
-                    }}
+                    style={[
+                        {
+                            position: 'absolute',
+                            left: 0,
+                            right: 0,
+                            zIndex: 4,
+                            alignItems: 'flex-end',
+                            paddingRight: 16,
+                        },
+                        scrollBottomPositionStyle,
+                    ]}
                     pointerEvents="box-none"
                 >
                     <Animated.View pointerEvents={showScrollBottom ? 'auto' : 'none'} style={scrollBottomStyle}>

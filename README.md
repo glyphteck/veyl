@@ -34,7 +34,7 @@ The root-domain passkey setup is shared so there is one account model across the
 
 ## Product Model
 
-veyl combines three things in one veyl:
+veyl combines three things in one app:
 
 - passkey-first account access
 - a locally unlocked Bitcoin wallet powered by Spark
@@ -58,7 +58,7 @@ At a high level:
 - Username onboarding
 - Optional avatar upload
 - Password-encrypted vault seed
-- Spark wallet boot, balance, transfers, funding address, withdraw, and L1 claim veyl
+- Spark wallet boot, balance, transfers, funding address, withdraw, and L1 claim flow
 - Custom encrypted 1:1 chat over Firestore
 - Encrypted append-only chat read receipts
 - Payment request messages inside chat
@@ -93,7 +93,7 @@ Chat retention and media lifecycle:
 - Chat media uses random `media/{id}/main` Storage paths with no chat id, user id, username, message id, or permanence state in the path or object metadata. Unsaved media expires through the 21-day Storage lifecycle rule in `storage.lifecycle.json`.
 - Saved media keeps the same Storage object. The message payload carries an encrypted random `stay`, while Firestore stores only opaque `mediaStays/{mediaId}` stay counts. `setMediaSaved` updates the Cloud Storage temporary hold only when the count crosses zero.
 - Sending one captured photo to multiple people uploads the encrypted bytes once, then sends separate encrypted message payloads that point at the same Storage object and decryption key.
-- After a client decrypts an attachment, it can store the plaintext bytes in the device-local vaulted media cache. The durable cache remains server-authoritative for message existence: cached media is used only after the message doc still resolves, and expired/unavailable media paths are ignored by preload/render caches.
+- After a client decrypts an attachment, it can store the bytes as encrypted device-local vaulted media cache entries. The durable cache remains server-authoritative for message existence: cached media is used only after the message doc still resolves, and expired/unavailable media paths are ignored by preload/render caches.
 
 ## Architecture
 
@@ -109,7 +109,7 @@ Current QR structures:
 
 For user QR codes, the username is the scanned account id. Do not encode Firebase UIDs in user QR codes.
 
-The wrapper URL is intentional for veyl-specific actions. On iOS, the veyl web hosts are app links, so a system Camera scan opens veyl when it is installed. Without the app, the website can send mobile users to the download veyl, and desktop users go through the normal web auth/unlock path. Bitcoin funding QR codes intentionally stay standard `bitcoin:` URIs so external wallets can scan them directly.
+The wrapper URL is intentional for veyl-specific actions. On iOS, the veyl web hosts are app links, so a system Camera scan opens veyl when it is installed. Without the app, the website can send mobile users to the download page, and desktop users go through the normal web auth/unlock path. Bitcoin funding QR codes intentionally stay standard `bitcoin:` URIs so external wallets can scan them directly.
 
 ### Identity and auth
 
@@ -132,7 +132,7 @@ The wrapper URL is intentional for veyl-specific actions. On iOS, the veyl web h
 
 ### Vaulted local cache
 
-- iOS and web keep a device-local cache for chat rows, decrypted chat media bytes, peer profiles, and wallet transaction history.
+- iOS and web keep a device-local encrypted cache for chat rows, decrypted chat media bytes, peer profiles, and wallet transaction history.
 - The cache is a vault feature. It is opened only after the vault seed is decrypted and is closed when the vault locks.
 - The durable payload is AES-GCM ciphertext with AAD bound to cache version, user id, and wallet network.
 - Chat media bytes are stored as separate AES-GCM media blobs with opaque local ids; the encrypted main payload stores the media index.
@@ -149,7 +149,7 @@ The wrapper URL is intentional for veyl-specific actions. On iOS, the veyl web h
 ### Wallet
 
 - Wallet behavior is built around `@buildonspark/spark-sdk`.
-- Peer payments use the other user’s stored `walletPK`.
+- Peer payments use the other user’s stored wallet key for the active wallet network.
 - The app also tracks funding addresses, claims on-chain deposits, withdrawals, balance, and transfer history.
 - The `ghost wallet` setting enables Spark Bitcoin privacy mode for the unlocked wallet, hiding Bitcoin activity from public read-only Spark lookups while keeping the owner wallet fully usable in veyl. Spark privacy mode does not currently hide token transactions.
 - Wallet push notifications and Spark webhook registration are not active. Veyl does not store static funding addresses by default, and static Bitcoin deposit APNs are paused unless they become an explicit opt-in feature because reliable offline deposit alerts require server-side address watching. The client remains the only deposit-claim executor.
@@ -167,7 +167,7 @@ The wrapper URL is intentional for veyl-specific actions. On iOS, the veyl web h
 - Chat list rows and previously decrypted media hydrate from the vaulted local cache after unlock, then Firestore listeners reconcile fresh chat-row data. Chat docs carry participants, an independent recency timestamp (`ts`), encrypted retention settings, and an encrypted latest visible-message preview (`lastMsg`) so list ordering does not depend on a still-readable preview or one subcollection query per chat. Visible message lists still come from server-confirmed message reads, not the durable local cache.
 - Chat media files are stored as opaque encrypted Storage blobs under random `media/{id}/main` paths that do not encode chat ids, user ids, usernames, message ids, or permanence state. Unsaved media expires after 21 days through a Storage lifecycle rule on `media/`; saved media keeps the same object path and is protected with a Cloud Storage temporary hold derived from opaque Firestore media stay counts. Attachment messages carry the encrypted file capability needed to fetch and decrypt the blob, and shared attachment messages reuse that capability without copying saved state. Chat/message deletion is separate from Storage retention. Clients drop messages whose encrypted payload or attachment source cannot be resolved, remove their cached media, and render replies to missing messages with a local unavailable preview.
 - Peer profiles may hydrate from the vaulted local cache for immediate UI, but profile refreshes still re-read `profiles/{uid}` for recent or directly opened people. Avatar image URLs are the heavy cached work: `profiles/{uid}.avatar` is a single version field, set to the Storage object generation when a profile picture exists and `null` when it is removed. Clients compare that version before resolving a new Storage URL, so unchanged avatars keep a stable image source.
-- The current user's own avatar image also has a tiny unlocked cache keyed by uid and `profiles/{uid}.avatar` because `UserProvider` sits above the vault and unlock/profile chrome can render it before the vault cache opens. That unlocked cache stores only the live authenticated user's public avatar image bytes and version; sign-out/no-auth purges it, and auth switches prune every other self-avatar entry. It does not store usernames, settings, wallet keys, chat keys, chats, transactions, or decrypted media.
+- The current user's own avatar image also has a tiny unlocked cache keyed by uid and `profiles/{uid}.avatar` because `UserProvider` sits above the vault and unlock/profile chrome can render it before the vault cache opens. That unlocked cache stores only public avatar image bytes and version by default; sign-out/no-auth purges non-remembered entries, and auth switches prune every other non-remembered self-avatar entry. If a user opts into quick login, the remembered-account cache may also keep that account's uid, public username, avatar pointer, and login timestamps so the login screen can show the account shortcut. It does not store settings, wallet keys, chat keys, chats, transactions, decrypted media, or other vault data.
 - On iOS and web, chat warming keeps bounded in-memory latest-message batches for recent chats after unlock. Opening a warmed chat uses that provider-owned message batch as the initial message list instead of attaching a second latest-message listener or rendering an empty list first. The first chat row is warmed first because web lands there by default, but unlock navigation does not wait for warming. Media rows reuse the transient render-file cache before reading vaulted media again, and the warming path fills image/video media caches in the background only after server-confirmed message docs exist. These message batches are never written to the vaulted local cache and are cleared on lock/session teardown.
 - Read receipts are encrypted `t: 'rr'` control messages appended to `chats/{chatId}/messages`. Clients derive read state after decrypting the stream, and outgoing message UI renders the latest peer receipt with the peer avatar.
 - Reactions are encrypted `t: 'rxn'` control messages appended to `chats/{chatId}/messages`. Each reaction payload targets a visible message and is scoped by the sender's chat public key. Clients derive the current reaction state from the latest reaction payload per participant, then render the reacting user's already-loaded avatar beside the emoji.
@@ -335,6 +335,6 @@ The Firebase client config is shared in `shared/firebaseconfig.js`.
 
 Bots are normal veyl accounts backed by a separate Node runtime under `apps/veyl/bot`.
 
-The first bot is a deterministic account for Apple App Review on `domains.veylTest`. The bot runtime can mirror messages and attachments, pay payment requests when funded, append encrypted read receipts for viewed peer messages, and expose admin status/control through the web admin surface and `bun bot` CLI.
+The first bot is a deterministic account for Apple App Review on `domains.veylTest`. The bot runtime can mirror messages and attachments, pay payment requests when funded, append encrypted read receipts for viewed incoming messages, and expose admin status/control through the web admin surface and `bun bot` CLI.
 
 The later goal is to move bot operation from local/manual runtime management into dedicated hosted infrastructure with stronger scale, budget, lifecycle, and worker controls. AI-powered bot behavior is a later layer on top of the account model.

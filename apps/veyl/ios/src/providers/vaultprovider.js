@@ -33,6 +33,7 @@ export function VaultProvider({ children }) {
     const [faceIdFailed, setFaceIdFailed] = useState(false);
 
     const presenceRef = useRef({ uid: null, active: false });
+    const seedUidRef = useRef(null);
     const walletRef = useRef(null);
     const chatPrivateKeyRef = useRef(null);
     const localCacheRef = useRef(null);
@@ -149,6 +150,15 @@ export function VaultProvider({ children }) {
 
     useEffect(() => {
         const uid = user.uid || auth.currentUser?.uid;
+        if (seedUidRef.current !== uid) {
+            seedUidRef.current = uid || null;
+            setPresenceActive(false);
+            wipeLiveSecrets({ resetState: true, resetFaceIdFailed: true });
+            setEncSeed(null);
+            setSeedReady(false);
+            setLockState('locked');
+        }
+
         if (!uid) {
             setPresenceActive(false);
             wipeLiveSecrets({ resetState: true, resetFaceIdFailed: true });
@@ -239,28 +249,59 @@ export function VaultProvider({ children }) {
             setLockState('unlocking');
             let w = null;
             let chatPrivKey = null;
+            let masterSeed = null;
+            let chatSeed = null;
             let cacheKey = null;
             let nextCache = null;
+            const unlockUid = user.uid || auth.currentUser?.uid || null;
+            if (!unlockUid) throw new Error('account not ready');
+            const isCurrentUnlock = () => seedUidRef.current === unlockUid && auth.currentUser?.uid === unlockUid;
 
             try {
-                const uid = user.uid || auth.currentUser?.uid;
                 const { salt, iv, ct, kdf } = unpackSeedData(encSeed);
-                const masterSeed = await decryptSeed(ct, salt, iv, normalizePassword(password), kdf);
+                masterSeed = await decryptSeed(ct, salt, iv, normalizePassword(password), kdf);
 
                 setLockState('seed-decrypted');
                 await options.onSeedDecrypted?.();
 
-                const shouldStagePassword = options.stageFaceId !== false && uid && (await shouldStageFaceIdPassword(uid, user.settings?.faceID));
+                const shouldStagePassword = options.stageFaceId !== false && (await shouldStageFaceIdPassword(unlockUid, user.settings?.faceID));
 
                 const walletMnemonic = deriveWalletMnemonic(masterSeed);
-                const chatSeed = deriveSeed(masterSeed, 'chat');
+                chatSeed = deriveSeed(masterSeed, 'chat');
                 cacheKey = deriveSeed(masterSeed, LOCAL_DATA_CACHE_LABEL);
 
                 masterSeed.fill(0);
+                masterSeed = null;
+
+                if (!isCurrentUnlock()) {
+                    throw new Error('account changed during unlock');
+                }
 
                 w = await bootWallet(walletMnemonic, user);
+                if (!isCurrentUnlock()) {
+                    throw new Error('account changed during unlock');
+                }
                 chatPrivKey = await bootChat(chatSeed, user);
-                nextCache = await openLocalDataCache(cacheKey, { uid });
+                chatSeed = null;
+                if (!isCurrentUnlock()) {
+                    throw new Error('account changed during unlock');
+                }
+                nextCache = await openLocalDataCache(cacheKey, { uid: unlockUid });
+
+                zero(cacheKey);
+                cacheKey = null;
+
+                if (!isCurrentUnlock()) {
+                    throw new Error('account changed during unlock');
+                }
+
+                if (shouldStagePassword) {
+                    await stageFaceIdPassword(normalizePassword(password), unlockUid);
+                }
+
+                if (!isCurrentUnlock()) {
+                    throw new Error('account changed during unlock');
+                }
 
                 walletRef.current = w;
                 chatPrivateKeyRef.current = chatPrivKey;
@@ -268,36 +309,33 @@ export function VaultProvider({ children }) {
                 setWallet(w);
                 setChatPrivateKey(chatPrivKey);
                 setLocalCache(nextCache);
-
-                zero(chatSeed);
-                zero(cacheKey);
-                cacheKey = null;
-
-                if (shouldStagePassword) {
-                    await stageFaceIdPassword(normalizePassword(password), uid);
-                }
-
                 setLockState('unlocked');
                 setPresenceActive(true);
             } catch (err) {
+                zero(masterSeed);
+                zero(chatSeed);
                 zero(cacheKey);
-                setPresenceActive(false);
                 try {
                     lockWallet(w);
                     lockChat(chatPrivKey);
                     nextCache?.close?.();
                 } catch {}
-                walletRef.current = null;
-                chatPrivateKeyRef.current = null;
-                localCacheRef.current = null;
-                setWallet(null);
-                setChatPrivateKey(null);
-                setLocalCache(null);
-                setLockState('locked');
+                if (isCurrentUnlock()) {
+                    setPresenceActive(false);
+                    walletRef.current = null;
+                    chatPrivateKeyRef.current = null;
+                    localCacheRef.current = null;
+                    setWallet(null);
+                    setChatPrivateKey(null);
+                    setLocalCache(null);
+                    setLockState('locked');
+                } else {
+                    void syncPresence(unlockUid, false);
+                }
                 throw err;
             }
         },
-        [encSeed, lockState, user, setPresenceActive]
+        [encSeed, lockState, user, setPresenceActive, syncPresence]
     );
 
     const value = useMemo(

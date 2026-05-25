@@ -20,13 +20,13 @@ import { toast } from 'sonner';
 
 function PeerCell({ peer, onSelect, selected }) {
     return (
-        <button onClick={() => onSelect(peer)} className="flex flex-col items-center cursor-pointer shrinker">
+        <Button type="button" onClick={() => onSelect(peer)} className="h-auto flex-col rounded-none p-0 shrinker">
             <Avatar active={peer?.active} selected={selected} bot={!!peer?.bot} className="size-16">
                 <AvatarImage src={peer?.avatar} alt={peer?.username} />
                 <AvatarFallback />
             </Avatar>
             <span className="text-sm font-bold truncate max-w-20">{formatUserDisplay(peer, true)}</span>
-        </button>
+        </Button>
     );
 }
 

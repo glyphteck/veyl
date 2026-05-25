@@ -69,22 +69,22 @@ async function syncDocs({ uid, username, walletPK, chatPK, network }) {
 
         const chatKeyUid = typeof chatKeySnap.data()?.uid === 'string' ? chatKeySnap.data().uid.trim() : '';
         if (chatKeyUid && chatKeyUid !== uid) {
-            throw new Error('chat key already belongs to another account');
+            throw new Error('chat identity already belongs to another account');
         }
 
         const profileData = profileSnap.exists ? profileSnap.data() : {};
         const existingProfileWalletPK = resolveWalletPK(profileData, walletNetwork);
         if (existingProfileWalletPK && !sameKey(existingProfileWalletPK, walletPK)) {
-            throw new Error('wallet key mismatch on profile');
+            throw new Error('wallet identity mismatch on profile');
         }
         if (profileData?.chatPK && String(profileData.chatPK).toLowerCase() !== String(chatPK).toLowerCase()) {
-            throw new Error('chat key mismatch on profile');
+            throw new Error('chat identity mismatch on profile');
         }
 
         const botData = botSnap.exists ? botSnap.data() : {};
         const existingBotWalletPK = resolveWalletPK(botData, walletNetwork);
         if (existingBotWalletPK && !sameKey(existingBotWalletPK, walletPK)) {
-            throw new Error('wallet key mismatch on bot');
+            throw new Error('wallet identity mismatch on bot');
         }
 
         tx.set(usernameRef, { uid }, { merge: true });

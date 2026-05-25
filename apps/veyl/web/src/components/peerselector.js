@@ -215,10 +215,10 @@ export default function PeerSelector({ selectedPeer, onPeerChange, disabled = fa
                                   displayPeers.map((peer) => {
                                       const displayName = formatUserDisplay(peer, true);
                                       return (
-                                          <button
+                                          <Button
                                               key={peer.uid}
                                               type="button"
-                                              className="relative flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-base outline-none select-none [&>*:nth-child(-n+2)]:transition-transform [&>*:nth-child(-n+2)]:ease-out hover:[&>*:nth-child(-n+2)]:translate-x-3 focus:[&>*:nth-child(-n+2)]:translate-x-3 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&>*.avatar]:size-6"
+                                              className="relative h-auto w-full justify-start rounded-none px-3 py-1.5 text-left text-base select-none [&>*:nth-child(-n+2)]:transition-transform [&>*:nth-child(-n+2)]:ease-out hover:[&>*:nth-child(-n+2)]:translate-x-3 focus:[&>*:nth-child(-n+2)]:translate-x-3 [&>*.avatar]:size-6"
                                               onClick={() => handlePeerSelect(peer)}
                                           >
                                               <Avatar active={peer?.active} bot={!!peer?.bot}>
@@ -227,7 +227,7 @@ export default function PeerSelector({ selectedPeer, onPeerChange, disabled = fa
                                               </Avatar>
                                               <span>{displayName}</span>
                                               {selectedPeer?.uid === peer.uid && <Check className="ml-auto shrink-0" />}
-                                          </button>
+                                          </Button>
                                       );
                                   })
                               ) : (

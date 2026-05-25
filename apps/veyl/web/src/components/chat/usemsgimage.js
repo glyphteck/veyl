@@ -6,6 +6,7 @@ import { isExpiredAttachmentMsg } from '@glyphteck/shared/chat/messages';
 
 const imageCache = new Map();
 const MAX_IMAGE_CACHE = 40;
+let imageCacheEpoch = 0;
 
 function getCacheKey(msg) {
     return `${msg?.p || ''}:${msg?.k || ''}`;
@@ -120,6 +121,16 @@ function setReadyEntry(key, url, options = {}) {
     return url;
 }
 
+export function clearMsgImageCache() {
+    imageCacheEpoch += 1;
+    for (const entry of imageCache.values()) {
+        if (entry?.status === 'ready') {
+            revokeUrl(entry.url);
+        }
+    }
+    imageCache.clear();
+}
+
 function warmImage(url) {
     if (typeof Image === 'undefined' || !url) {
         return Promise.resolve();
@@ -153,6 +164,7 @@ export function preloadMsgImage(peerChatPK, msg, readMessageFile, options = {}) 
         return current.promise;
     }
 
+    const epoch = imageCacheEpoch;
     const task = withTimeout(Promise.resolve(readMessageFile(peerChatPK, msg)), 12000)
         .then(async (bytes) => {
             if (!bytes?.byteLength) {
@@ -160,6 +172,10 @@ export function preloadMsgImage(peerChatPK, msg, readMessageFile, options = {}) 
             }
             const nextSrc = URL.createObjectURL(new Blob([bytes], { type: msg?.m || 'image/jpeg' }));
             await warmImage(nextSrc);
+            if (epoch !== imageCacheEpoch) {
+                revokeUrl(nextSrc);
+                return '';
+            }
             return setReadyEntry(key, nextSrc, options);
         })
         .catch((error) => {
