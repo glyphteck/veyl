@@ -228,6 +228,9 @@ if (network === 'mainnet') {
 } else if (network === 'regtest') {
     env.NEXT_PUBLIC_NETWORK = 'REGTEST';
 }
+if (!env.NEXT_PUBLIC_VEYL_VARIANT) {
+    env.NEXT_PUBLIC_VEYL_VARIANT = network === 'mainnet' ? 'prod' : 'dev';
+}
 
 const config = resolveWebApp(app);
 if (!config) {

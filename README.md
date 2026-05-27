@@ -327,7 +327,10 @@ Important environment and config points:
 
 - `GOOGLE_SERVICE_ACCOUNT`: Firebase Admin service account JSON for server-side web auth, bot runtime, and backend helpers. Local development can use this env var or Google Application Default Credentials.
 - `NEXT_PUBLIC_NETWORK`: web wallet network selection, typically `MAINNET` or `REGTEST`
+- `NEXT_PUBLIC_VEYL_VARIANT`: web branding variant, one of `dev`, `test`, or `prod`; local web runs default to `dev` on `REGTEST` and `prod` on `MAINNET`
 - `EXPO_PUBLIC_EAS_PROJECT_ID` or `EXPO_PROJECT_ID`: optional iOS EAS project override
+
+Veyl has separate environment artwork: `dev` uses `shared/logos/walletdev.png` and `shared/logos/dev.icon`, `test` uses `shared/logos/wallettest.png` and `shared/logos/test.icon`, and `prod` uses `shared/logos/wallet.png` and `shared/logos/veyl.icon`.
 
 The Firebase client config is shared in `shared/firebaseconfig.js`.
 

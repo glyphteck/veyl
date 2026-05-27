@@ -23,8 +23,8 @@ const variants = {
         name: 'test.veyl',
         scheme: 'test.veyl',
         bundleIdentifier: 'com.glyphteck.veyl.test',
-        icon: '../../../shared/logos/dev.icon',
-        logo: '../../../shared/logos/walletdev.png',
+        icon: '../../../shared/logos/test.icon',
+        logo: '../../../shared/logos/wallettest.png',
         aps: 'production',
     },
     prod: {
