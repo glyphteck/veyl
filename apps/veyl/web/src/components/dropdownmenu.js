@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { createPortal } from 'react-dom';
 
+import { listNavigationStep } from '@/lib/focus';
 import { cn } from '@/lib/utils';
 
 const DropdownMenuContext = React.createContext(null);
@@ -104,7 +105,8 @@ const DropdownMenuTrigger = React.forwardRef(function DropdownMenuTrigger({ asCh
                 event.preventDefault();
                 menu?.setOpen((prev) => !prev);
             }
-            if (event.key === 'ArrowDown') {
+            const step = listNavigationStep(event, { ignoreEditable: false });
+            if (step > 0) {
                 event.preventDefault();
                 menu?.setOpen(true);
             }
@@ -264,12 +266,10 @@ const DropdownMenuContent = React.forwardRef(function DropdownMenuContent({ clas
             const currentIndex = items.indexOf(document.activeElement);
             const startIndex = currentIndex === -1 ? 0 : currentIndex;
 
-            if (event.key === 'ArrowDown') {
+            const step = listNavigationStep(event, { ignoreEditable: false });
+            if (step) {
                 event.preventDefault();
-                focusItem(startIndex + 1);
-            } else if (event.key === 'ArrowUp') {
-                event.preventDefault();
-                focusItem(startIndex - 1);
+                focusItem(startIndex + step);
             } else if (event.key === 'Home') {
                 event.preventDefault();
                 focusItem(0);

@@ -1,4 +1,4 @@
-import { walletPKtoSparkAddress } from '../spark.js';
+import { walletPKtoSparkAddress } from '../wallet/spark.js';
 
 function balanceValue(result, fallback = null) {
     const raw = result?.satsBalance?.available ?? result?.balance ?? fallback;

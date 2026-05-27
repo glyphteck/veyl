@@ -15,10 +15,15 @@ const SAFE_STRING_KEYS = new Set([
     'facing',
     'firstType',
     'kind',
+    'lockState',
     'mimeType',
     'orientation',
     'platform',
+    'phase',
+    'reason',
     'resize',
+    'route',
+    'source',
     'stage',
     'state',
     'status',
@@ -82,6 +87,11 @@ function persist(nextLine) {
         .catch(() => {});
 }
 
+function clearConsoleForBundleReload() {
+    if (Platform.OS !== 'ios') return;
+    console.clear?.();
+}
+
 export function mark(label, data) {
     const nextLine = line(label, data);
     console.log(`[diag] ${nextLine}`);
@@ -123,6 +133,7 @@ function installErrorHandler() {
 export function installDiagnostics() {
     if (installed) return;
     installed = true;
+    clearConsoleForBundleReload();
     void clearPrevious().finally(() => {
         mark('app.boot', {
             appVersion: Constants.expoConfig?.version || '',

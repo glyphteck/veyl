@@ -22,10 +22,41 @@ import { installDiagnostics, mark } from '@/lib/diagnostics';
 installDiagnostics();
 void SplashScreen.preventAutoHideAsync();
 
+const SAFE_ROUTES = new Set([
+    '/',
+    '/login',
+    '/quicklogin',
+    '/newaccount',
+    '/faceid',
+    '/unlockwithfaceid',
+    '/unlockwithpassword',
+    '/chat',
+    '/camera',
+    '/wallet',
+    '/peerselector',
+    '/settings',
+    '/fundwallet',
+    '/userscan',
+    '/withdraw',
+    '/transfer',
+    '/deleteaccount',
+    '/exportwallet',
+    '/qr',
+]);
+
+function safeRoute(pathname) {
+    const route = typeof pathname === 'string' ? pathname.trim() : '';
+    if (!route) return '';
+    if (SAFE_ROUTES.has(route)) return route;
+    if (route.startsWith('/chat/')) return '/chat';
+    if (route.startsWith('/qr')) return '/qr';
+    return 'dynamic';
+}
+
 function AppContent() {
     const { theme } = useTheme();
     const user = useUser();
-    const { seedReady, encSeed, touch } = useVault();
+    const { seedReady, encSeed, lockState, touch } = useVault();
     const pathname = usePathname();
     const [authReady, setAuthReady] = useState(!!auth.currentUser);
     const [ready, setReady] = useState(false);
@@ -40,7 +71,7 @@ function AppContent() {
     }, []);
 
     useEffect(() => {
-        mark('route.path', { pathname });
+        mark('route.path', { pathname, route: safeRoute(pathname) });
     }, [pathname]);
 
     const hasAuthSession = !!auth.currentUser || !!user.uid;
@@ -73,12 +104,13 @@ function AppContent() {
             profileReady: !!user.profileReady,
             settingsReady: !!user.settingsReady,
             seedReady: !!seedReady,
+            lockState,
             routeReady,
             loaded,
             ready,
             onboardingComplete,
         });
-    }, [authReady, hasAuthSession, loaded, onboardingComplete, ready, routeReady, seedReady, signedIn, user.profileReady, user.settingsReady]);
+    }, [authReady, hasAuthSession, loaded, lockState, onboardingComplete, ready, routeReady, seedReady, signedIn, user.profileReady, user.settingsReady]);
 
     if (!ready) {
         return null;

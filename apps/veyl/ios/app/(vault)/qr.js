@@ -30,9 +30,9 @@ export default function QRRoute() {
                     const chatId = getChatId(chatPK, peer.chatPK);
                     selectChat?.(chatId);
                     router.replace({
-                        pathname: '/currentchat',
+                        pathname: '/chat/[peerchatpk]',
                         params: {
-                            id: chatId,
+                            peerchatpk: peer.chatPK,
                         },
                     });
                     return;

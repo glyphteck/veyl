@@ -4,6 +4,13 @@ This file is for dormant product, privacy, and architecture ideas that are worth
 
 This is not the active task list. Move an idea into `todo/` only when it becomes a committed large feature or architecture project.
 
+## Chat Presence
+
+- Explore lightweight encrypted-chat presence only if a concrete UX, retention, or deletion-coordination problem needs it.
+- Possible shapes include per-account, per-device, or per-chat-route presence with `active`, `updatedAt`, and stale timeout handling.
+- Decide whether the signal should be visible to the other participant, used only locally, or both.
+- Do not treat presence as the source of truth for seen state; encrypted read receipts remain the current seen-state mechanism.
+
 ## Mailbox Relay Chat Backend
 
 - Explore replacing Firestore as the durable chat message stream with per-device encrypted mailboxes.

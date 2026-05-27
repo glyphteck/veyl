@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { doc, onSnapshot } from 'firebase/firestore';
-import { normalizeOnchainFeeEstimate } from '../walletfees.js';
+import { normalizeOnchainFeeEstimate } from '../wallet/fees.js';
 
 const DEFAULT_BITCOIN = Object.freeze({
     price: null,

@@ -1,6 +1,6 @@
 import { bech32m } from 'bech32';
 
-export const minWithdrawalSats = 10000n;
+export { UNILATERAL_EXIT_MIN_LEAF_SATS as minWithdrawalSats } from './fees.js';
 
 const SPARK_ADDRESS_PREFIX = Object.freeze({
     MAINNET: 'spark',

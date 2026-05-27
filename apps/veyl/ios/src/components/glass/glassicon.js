@@ -1,6 +1,5 @@
-import { useEffect } from 'react';
 import { Pressable } from 'react-native';
-import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 
 import GlassView from '@/components/glass/glassview';
 import Icon from '@/components/icon';
@@ -29,7 +28,6 @@ export default function GlassIcon({
 }) {
     const { theme } = useTheme();
     const scale = useSharedValue(1);
-    const iconOpacity = useSharedValue(visible ? 1 : 0);
     const inset = Math.max(0, (size - iconSize) / 2);
     const resolvedTintColor = tintColor ?? (accent ? alpha(theme.foreground, disabled ? 20 : 100) : theme.background);
     const resolvedColor = color ?? (disabled ? theme.muted : accent ? theme.background : theme.foreground);
@@ -42,11 +40,6 @@ export default function GlassIcon({
         drift,
     });
     const animStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
-    const iconStyle = useAnimatedStyle(() => ({ opacity: iconOpacity.value }));
-
-    useEffect(() => {
-        iconOpacity.value = withTiming(visible ? 1 : 0, { duration });
-    }, [duration, iconOpacity, visible]);
 
     return (
         <Pressable {...press} disabled={disabled || !visible} style={pressableStyle}>
@@ -65,9 +58,7 @@ export default function GlassIcon({
                 ]}
             >
                 <GlassView glassEffectStyle={resolvedGlassEffectStyle} tintColor={resolvedTintColor} style={[{ flex: 1, alignItems: 'center', justifyContent: 'center', borderRadius }, glassStyle]}>
-                    <Animated.View style={iconStyle}>
-                        <Icon icon={icon} size={iconSize} color={resolvedColor} style={{ margin: inset }} />
-                    </Animated.View>
+                    {visible ? <Icon icon={icon} size={iconSize} color={resolvedColor} style={{ margin: inset }} /> : null}
                 </GlassView>
             </Animated.View>
         </Pressable>

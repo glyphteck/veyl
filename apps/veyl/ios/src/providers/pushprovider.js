@@ -6,6 +6,8 @@ import { useUser } from '@/providers/userprovider';
 import { useVault } from '@/providers/vaultprovider';
 import { useChat } from '@/providers/chatprovider';
 import { dropPush, getPushState, setPush } from '@/lib/push';
+import { mark } from '@/lib/diagnostics';
+import { getPeerChatPKFromChatId } from '@glyphteck/shared/chat/utils';
 
 Notifications.setNotificationHandler({
     handleNotification: async () => {
@@ -49,8 +51,8 @@ export function PushProvider({ children }) {
     const { selectChat } = useChat();
     const lastKeyRef = useRef(null);
     const pendingChatRef = useRef(null);
-    const protectedAppReady = !!uid && lockState === 'unlocked' && settingsReady && typeof settings?.faceID === 'boolean';
-    const activeChatId = pathname === '/currentchat' ? readParam(params?.id) : null;
+    const protectedAppReady = !!uid && !!chatPK && lockState === 'unlocked' && settingsReady && typeof settings?.faceID === 'boolean';
+    const activeChatPeer = pathname?.startsWith('/chat/') ? readParam(params?.peerchatpk) : null;
 
     const openChat = useCallback(
         (chatId, key = chatId) => {
@@ -70,7 +72,12 @@ export function PushProvider({ children }) {
             }
 
             pendingChatRef.current = null;
-            if (activeChatId === chatId) {
+            const peerChatPK = getPeerChatPKFromChatId(chatId, chatPK);
+            if (!peerChatPK) {
+                return;
+            }
+
+            if (activeChatPeer === peerChatPK) {
                 lastKeyRef.current = routeKey;
                 return;
             }
@@ -81,14 +88,14 @@ export function PushProvider({ children }) {
 
             lastKeyRef.current = routeKey;
             selectChat?.(chatId);
-            const href = { pathname: '/currentchat', params: { id: chatId } };
-            if (activeChatId) {
+            const href = { pathname: '/chat/[peerchatpk]', params: { peerchatpk: peerChatPK } };
+            if (activeChatPeer) {
                 router.replace(href);
             } else {
                 router.push(href);
             }
         },
-        [activeChatId, chatBanned, protectedAppReady, router, selectChat]
+        [activeChatPeer, chatBanned, chatPK, protectedAppReady, router, selectChat]
     );
 
     useEffect(() => {
@@ -129,23 +136,36 @@ export function PushProvider({ children }) {
         let dead = false;
 
         const sync = async (devicePushToken) => {
+            const startedAt = Date.now();
+            mark('push.sync.start', { tokenEvent: !!devicePushToken });
             try {
                 const push = await getPushState(devicePushToken);
+                mark('push.sync.state', {
+                    elapsedMs: Date.now() - startedAt,
+                    status: push?.status || '',
+                    hasExpoToken: !!push?.token,
+                    hasNativeToken: !!push?.nativeToken,
+                });
                 if (dead) {
+                    mark('push.sync.done', { elapsedMs: Date.now() - startedAt, dead: true });
                     return;
                 }
 
                 if (push.status === 'disabled') {
-                    await dropPush().catch(() => {});
+                    await dropPush({ uid }).catch(() => {});
+                    mark('push.sync.done', { elapsedMs: Date.now() - startedAt, status: push.status });
                     return;
                 }
 
                 if (push.status !== 'ready' || (!push.token && !push.nativeToken)) {
+                    mark('push.sync.done', { elapsedMs: Date.now() - startedAt, status: push.status });
                     return;
                 }
 
                 await setPush(push.token, uid, push.meta, push.nativeToken);
+                mark('push.sync.done', { elapsedMs: Date.now() - startedAt, status: push.status });
             } catch (error) {
+                mark('push.sync.error', { elapsedMs: Date.now() - startedAt, code: error?.code || '', message: error?.message || String(error) });
                 console.warn('push sync failed', error);
             }
         };

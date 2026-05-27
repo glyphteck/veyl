@@ -1,14 +1,18 @@
 'use client';
 
-import { File, Loader } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { File, Loader, Play } from 'lucide-react';
 import { useBitcoin } from '@/components/providers/bitcoinprovider';
+import { useChat } from '@/components/providers/chatprovider';
 import { useTxData } from '@/components/providers/txdataprovider';
 import { useUser } from '@/components/providers/userprovider';
 import { bubbleBg, imageWidth } from '@/lib/messages';
 import { renderMoney } from '@/lib/utils';
-import { UNAVAILABLE_REPLY_MSG_TYPE, getAttachmentCaption, getAttachmentTitle, getImageAspect, makeUnavailableReply } from '@glyphteck/shared/chat/messages';
+import { UNAVAILABLE_REPLY_MSG_TYPE, getAttachmentCaption, getAttachmentTitle, getImageAspect, isExpiredAttachmentMsg, makeUnavailableReply } from '@glyphteck/shared/chat/messages';
+import { getMessagePreviewCacheKey } from '@glyphteck/shared/chat/previews';
 import { useCloak } from '@glyphteck/shared/providers/cloakprovider';
 import { useMsgImage } from '../usemsgimage';
+import { getReadyPoster, getVideoCacheKey, loadVideoObjectUrl, loadVideoPoster } from '../videomediacache';
 import { TextBubble } from './text';
 
 function ReplyButton({ onReplyPress, children }) {
@@ -89,6 +93,81 @@ function ReplyImage({ reply, peerChatPK, onReplyPress }) {
     );
 }
 
+function ReplyVideo({ reply, peerChatPK, onReplyPress }) {
+    const { readMessageFile, readMessagePreview, writeMessagePreview } = useChat();
+    const { cloaked } = useCloak();
+    const aspect = getImageAspect(reply, 16 / 9);
+    const width = Math.round(Math.min(160, imageWidth(aspect) * 0.56));
+    const posterKey = getMessagePreviewCacheKey(peerChatPK, reply) || getVideoCacheKey(peerChatPK, reply);
+    const expired = isExpiredAttachmentMsg(reply);
+    const localSrc = !expired && typeof reply?.localUri === 'string' && reply.localUri ? reply.localUri : '';
+    const [poster, setPoster] = useState(() => (expired ? '' : getReadyPoster(posterKey)));
+    const [loading, setLoading] = useState(() => !expired && !!posterKey && !getReadyPoster(posterKey));
+    const caption = getAttachmentCaption(reply);
+
+    useEffect(() => {
+        if (expired || !posterKey) {
+            setPoster('');
+            setLoading(false);
+            return;
+        }
+
+        const cachedPoster = getReadyPoster(posterKey);
+        if (cachedPoster) {
+            setPoster(cachedPoster);
+            setLoading(false);
+            return;
+        }
+
+        let cancelled = false;
+        setPoster('');
+        setLoading(true);
+
+        const task = async () => {
+            const src = localSrc || (await loadVideoObjectUrl(peerChatPK, reply, readMessageFile, { priority: 1 }).catch(() => ''));
+            const nextPoster = getReadyPoster(posterKey) || (await loadVideoPoster(posterKey, src, reply, readMessagePreview, writeMessagePreview, { priority: 1 }).catch(() => ''));
+            if (cancelled) {
+                return;
+            }
+            setPoster(nextPoster || '');
+            setLoading(false);
+        };
+
+        task().catch(() => {
+            if (!cancelled) {
+                setPoster('');
+                setLoading(false);
+            }
+        });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [expired, localSrc, peerChatPK, posterKey, readMessageFile, readMessagePreview, reply, writeMessagePreview]);
+
+    return (
+        <ReplyButton onReplyPress={onReplyPress}>
+            <div className="overflow-hidden rounded-[20px] bg-foreground/5 shadow-sm opacity-65" style={{ width, maxWidth: '100%' }}>
+                <div className="relative bg-foreground/5" style={{ width: '100%', aspectRatio: aspect }}>
+                    {poster ? (
+                        <img src={poster} alt={reply?.c || 'replied video'} className={`block size-full object-cover ${cloaked ? 'blur-xl saturate-0' : ''}`} />
+                    ) : (
+                        <div className="flex size-full items-center justify-center">{loading ? <Loader className="size-4 animate-spin text-muted" /> : null}</div>
+                    )}
+                    {!loading ? (
+                        <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-white">
+                            <span className="flex size-10 items-center justify-center rounded-full bg-black/35" style={{ WebkitBackdropFilter: 'blur(8px)', backdropFilter: 'blur(8px)' }}>
+                                <Play className="size-5 fill-current stroke-0" />
+                            </span>
+                        </div>
+                    ) : null}
+                </div>
+                {caption ? <p className={`truncate px-2.5 py-2 text-sm ${cloaked ? 'cloaked' : ''}`}>{caption}</p> : null}
+            </div>
+        </ReplyButton>
+    );
+}
+
 function ReplyAttachment({ reply, replyFromPeer, onReplyPress }) {
     const { cloaked } = useCloak();
     const title = getAttachmentTitle(reply);
@@ -117,9 +196,10 @@ function ReplyPreview({ reply, replyFromPeer, peerChatPK, peerDisplayName, onRep
             return <ReplyRequest reply={reply} replyFromPeer={replyFromPeer} peerDisplayName={peerDisplayName} onReplyPress={onReplyPress} />;
         case 'img':
             return <ReplyImage reply={reply} peerChatPK={peerChatPK} onReplyPress={onReplyPress} />;
+        case 'mp4':
+            return <ReplyVideo reply={reply} peerChatPK={peerChatPK} onReplyPress={onReplyPress} />;
         case 'file':
         case 'mp3':
-        case 'mp4':
             return <ReplyAttachment reply={reply} replyFromPeer={replyFromPeer} onReplyPress={onReplyPress} />;
         default:
             return null;

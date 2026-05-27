@@ -2,12 +2,14 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
-import { deleteDoc, doc, serverTimestamp, setDoc } from 'firebase/firestore';
+import { httpsCallable } from 'firebase/functions';
 import { randomBytes, toHex } from '@glyphteck/shared/crypto/core';
-import { auth, db } from '@/lib/firebase';
+import { auth, functions } from '@/lib/firebase';
 
 const DID_KEY = 'push.did';
 const SYNC_KEY = 'push.sync';
+const INFO_KEY = 'push.info';
+const SYNC_VERSION = 'v2';
 const inflightSync = new Set();
 const variantAliases = {
     development: 'dev',
@@ -73,9 +75,21 @@ async function getDeviceToken(devicePushToken) {
     return Notifications.getDevicePushTokenAsync();
 }
 
+async function getCurrentNativeToken() {
+    try {
+        const { status } = await Notifications.getPermissionsAsync();
+        if (status !== 'granted') {
+            return null;
+        }
+        return getTokenData(await getDeviceToken());
+    } catch {
+        return null;
+    }
+}
+
 function getSyncKey(uid, did, token, meta, nativeToken) {
     const deliveryToken = nativeToken || token;
-    return uid && did && deliveryToken ? `${uid}:${did}:ios:apns:${meta.apnsTopic}:${meta.apnsEnvironment}:${deliveryToken}` : '';
+    return uid && did && deliveryToken ? `${SYNC_VERSION}:${uid}:${did}:ios:apns:${meta.apnsTopic}:${meta.apnsEnvironment}:${deliveryToken}` : '';
 }
 
 async function getSavedSyncKey() {
@@ -94,6 +108,29 @@ async function setSavedSyncKey(key) {
         }
         await AsyncStorage.removeItem(SYNC_KEY);
     } catch {}
+}
+
+async function getSavedPushInfo() {
+    try {
+        const raw = await AsyncStorage.getItem(INFO_KEY);
+        return raw ? JSON.parse(raw) : null;
+    } catch {
+        return null;
+    }
+}
+
+async function setSavedPushInfo(info) {
+    try {
+        if (info) {
+            await AsyncStorage.setItem(INFO_KEY, JSON.stringify(info));
+            return;
+        }
+        await AsyncStorage.removeItem(INFO_KEY);
+    } catch {}
+}
+
+async function saveSync(key, info = null) {
+    await Promise.all([setSavedSyncKey(key), setSavedPushInfo(key ? info : null)]);
 }
 
 async function getPushPermissionStatus() {
@@ -146,40 +183,40 @@ export async function setPush(token, uid = auth.currentUser?.uid, meta = getPush
         return false;
     }
 
-    const savedKey = await getSavedSyncKey();
-    if (savedKey === key) {
+    const [savedKey, saved] = await Promise.all([getSavedSyncKey(), getSavedPushInfo()]);
+    if (savedKey === key && saved?.uid === uid && saved?.did === did) {
         return false;
     }
 
     inflightSync.add(key);
     try {
-        await setDoc(doc(db, 'users', uid, 'push', did), {
+        await httpsCallable(functions, 'setPush')({
             did,
-            token,
+            token: token || null,
             nativeToken: nativeToken || null,
-            platform: 'ios',
-            provider: nativeToken ? 'apns' : 'expo',
             appVariant: meta.appVariant,
             apnsTopic: meta.apnsTopic,
             apnsEnvironment: meta.apnsEnvironment,
-            enabled: true,
-            updatedAt: serverTimestamp(),
         });
-        await setSavedSyncKey(key);
+        await saveSync(key, { uid, did, token: token || null, nativeToken: nativeToken || null, meta });
         return true;
     } finally {
         inflightSync.delete(key);
     }
 }
 
-export async function dropPush() {
-    const uid = auth.currentUser?.uid;
-    const did = await getDid();
+export async function dropPush({ uid = auth.currentUser?.uid } = {}) {
+    const saved = await getSavedPushInfo();
+    const did = saved?.uid === uid && saved?.did ? saved.did : await getDid();
     if (!uid || !did) {
         return false;
     }
 
-    await deleteDoc(doc(db, 'users', uid, 'push', did));
-    await setSavedSyncKey('');
+    await httpsCallable(functions, 'dropPush')({
+        did,
+        token: saved?.uid === uid ? saved.token || null : null,
+        nativeToken: saved?.uid === uid ? saved.nativeToken || null : await getCurrentNativeToken(),
+    });
+    await saveSync('');
     return true;
 }

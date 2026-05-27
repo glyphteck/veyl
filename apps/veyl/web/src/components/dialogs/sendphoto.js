@@ -48,6 +48,7 @@ export default function SendPhoto({ data, close }) {
                     data: blob,
                     mimeType: 'image/jpeg',
                     size: blob.size,
+                    ...(media.name ? { name: media.name } : {}),
                     previewUri: photo,
                     ...dims,
                 };

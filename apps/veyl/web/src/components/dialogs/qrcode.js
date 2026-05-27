@@ -2,7 +2,7 @@
 import { useMemo } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { makeQr, qr } from '@glyphteck/shared/qrutils';
-import { FUNDING_TX_PREVIEW_VBYTES, STATIC_DEPOSIT_FEE_ESTIMATE_SATS } from '@glyphteck/shared/walletfees';
+import { FUNDING_TX_PREVIEW_VBYTES, STATIC_DEPOSIT_CLAIM_FEE_SATS } from '@glyphteck/shared/wallet/fees';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/avatar';
 import { Button } from '@/components/button';
 import { Card } from '@/components/card';
@@ -30,7 +30,7 @@ export default function QRCodeDialog({ data }) {
         const estimate = bitcoin.estimateTransactionFees({
             speed: 'medium',
             vbytes: FUNDING_TX_PREVIEW_VBYTES,
-            baseSats: STATIC_DEPOSIT_FEE_ESTIMATE_SATS,
+            baseSats: STATIC_DEPOSIT_CLAIM_FEE_SATS,
         });
         return estimate?.success ? estimate.onchainEstimate : null;
     }, [bitcoin, isBitcoinQr]);

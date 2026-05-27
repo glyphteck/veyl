@@ -12,6 +12,7 @@ const MEDIA_CACHE_MAX_BYTES = 128 * 1024 * 1024;
 const MEDIA_CACHE_MAX_ITEMS = 96;
 const MEDIA_ACCESS_TOUCH_MIN_MS = 60 * 1000;
 const MEDIA_ENVELOPE_VERSION = 1;
+const APP_ROUTES = new Set(['/chat', '/camera', '/wallet']);
 
 function makeCacheId() {
     return toHex(randomBytes(16));
@@ -21,11 +22,15 @@ function emptyPayload() {
     return {
         version: LOCAL_DATA_CACHE_VERSION,
         savedAt: 0,
+        chatsSavedAt: 0,
         chatsById: {},
         transfersById: {},
         transferIds: [],
         profilesByUid: {},
         mediaByKey: {},
+        lastRoute: null,
+        lastChatPeer: null,
+        lastCameraFacing: null,
     };
 }
 
@@ -117,12 +122,33 @@ function normalizePayload(value) {
         ...emptyPayload(),
         version: LOCAL_DATA_CACHE_VERSION,
         savedAt: Number.isFinite(input.savedAt) ? input.savedAt : 0,
+        chatsSavedAt: Number.isFinite(input.chatsSavedAt) ? input.chatsSavedAt : 0,
         chatsById: isObject(input.chatsById) ? input.chatsById : {},
         transfersById: isObject(input.transfersById) ? input.transfersById : {},
         transferIds: Array.isArray(input.transferIds) ? input.transferIds.filter(Boolean) : [],
         profilesByUid: isObject(input.profilesByUid) ? input.profilesByUid : {},
         mediaByKey: isObject(input.mediaByKey) ? input.mediaByKey : {},
+        lastRoute: cleanAppRoute(input.lastRoute),
+        lastChatPeer: cleanChatPeer(input.lastChatPeer),
+        lastCameraFacing: cleanCameraFacing(input.lastCameraFacing),
     };
+}
+
+function cleanAppRoute(route) {
+    const value = typeof route === 'string' ? route.trim() : '';
+    const path = value.split('?')[0].split('#')[0];
+    const first = path === '/' ? '' : `/${path.split('/').filter(Boolean)[0] || ''}`;
+    return APP_ROUTES.has(first) ? first : null;
+}
+
+function cleanChatPeer(peer) {
+    const value = typeof peer === 'string' ? peer.trim().toLowerCase() : '';
+    return /^[0-9a-f]{64}$/.test(value) ? value : null;
+}
+
+function cleanCameraFacing(facing) {
+    const value = typeof facing === 'string' ? facing.trim() : '';
+    return value === 'front' || value === 'back' ? value : null;
 }
 
 function cacheAad(uid, network) {
@@ -647,6 +673,79 @@ export function writeCachedChats(cache, chats) {
             }
         }
         payload.chatsById = next;
+        payload.chatsSavedAt = Date.now();
+        return payload;
+    });
+}
+
+export function readLastCameraFacing(cache) {
+    return cleanCameraFacing(cache?.read?.()?.lastCameraFacing) || 'back';
+}
+
+export function writeLastCameraFacing(cache, facing) {
+    const nextFacing = cleanCameraFacing(facing);
+    if (!cache?.patch || !nextFacing) {
+        return;
+    }
+    if (readLastCameraFacing(cache) === nextFacing) {
+        return;
+    }
+
+    void cache.patch((payload) => {
+        payload.lastCameraFacing = nextFacing;
+        return payload;
+    });
+}
+
+export function readLastAppRoute(cache) {
+    return cleanAppRoute(cache?.read?.()?.lastRoute);
+}
+
+export function readLastAppTarget(cache) {
+    const payload = cache?.read?.();
+    const route = cleanAppRoute(payload?.lastRoute);
+    if (!route) {
+        return null;
+    }
+
+    return {
+        route,
+        chatPeer: route === '/chat' ? cleanChatPeer(payload?.lastChatPeer) : null,
+    };
+}
+
+export function writeLastAppRoute(cache, route) {
+    const nextRoute = cleanAppRoute(route);
+    if (!cache?.patch || !nextRoute) {
+        return;
+    }
+    const current = readLastAppTarget(cache);
+    if (current?.route === nextRoute && current?.chatPeer == null) {
+        return;
+    }
+
+    void cache.patch((payload) => {
+        payload.lastRoute = nextRoute;
+        payload.lastChatPeer = null;
+        return payload;
+    });
+}
+
+export function writeLastAppTarget(cache, target) {
+    const nextRoute = cleanAppRoute(target?.route ?? target);
+    const nextChatPeer = nextRoute === '/chat' ? cleanChatPeer(target?.chatPeer) : null;
+    if (!cache?.patch || !nextRoute) {
+        return;
+    }
+
+    const current = readLastAppTarget(cache);
+    if (current?.route === nextRoute && current?.chatPeer === nextChatPeer) {
+        return;
+    }
+
+    void cache.patch((payload) => {
+        payload.lastRoute = nextRoute;
+        payload.lastChatPeer = nextChatPeer;
         return payload;
     });
 }

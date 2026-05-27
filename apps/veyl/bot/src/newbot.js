@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { SparkWallet } from '@buildonspark/spark-sdk';
 import { generateSeed } from '@glyphteck/shared/crypto/seed';
 import { resolveNetwork } from '@glyphteck/shared/network';
-import { normalizeWalletNetwork, resolveWalletPK, walletPKPatch } from '@glyphteck/shared/walletkeys';
+import { normalizeWalletNetwork, resolveWalletPK, walletPKPatch } from '@glyphteck/shared/wallet/keys';
 import { BOT_MODE } from '@glyphteck/shared/bot/events';
 import { bootBotAccount, closeBotAccount } from '@glyphteck/shared/bot/account';
 import admin, { db, FieldValue, projectId } from './admin.js';

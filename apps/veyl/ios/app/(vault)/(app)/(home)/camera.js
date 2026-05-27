@@ -21,21 +21,32 @@ import { ArrowDownToLine, ArrowUpRight, Lock, MessageCircle, X } from 'lucide-re
 import { qr, readQr } from '@glyphteck/shared/qrutils';
 import { isAddressOnNetwork } from '@glyphteck/shared/network';
 import { getChatId } from '@glyphteck/shared/crypto/chat';
+import { randomBytes, toHex } from '@glyphteck/shared/crypto/core';
+import { readLastCameraFacing, writeLastCameraFacing } from '@glyphteck/shared/localdatacache';
 import { useTheme } from '@/providers/themeprovider';
 import { useChat } from '@/providers/chatprovider';
 import { usePeer } from '@/providers/peerprovider';
 import { useUser } from '@/providers/userprovider';
+import { useVault } from '@/providers/vaultprovider';
 import { useWallet } from '@/providers/walletprovider';
 import { usePop } from '@/lib/pop';
 import { useTap } from '@/lib/tap';
 import { mark } from '@/lib/diagnostics';
-import { CAMERA_WARM_EVENT, CAMERA_WARM_MS } from '@/lib/camerawarm';
+import { useCameraWarming } from '@/lib/camera/warming';
+import { usePagerRouteActive } from '@/lib/pagernav';
 import { alpha } from '@/lib/colors';
 
 const BACK_REGULAR_LENS = { physicalDevices: ['wide-angle'] };
-const BACK_ZOOM_LENS = { physicalDevices: ['ultra-wide-angle', 'wide-angle', 'telephoto'] };
+const BACK_ULTRA_WIDE_LENS = { physicalDevices: ['ultra-wide-angle'] };
 const QR_BARCODE_FORMATS = ['qr-code'];
 const NORMAL_ZOOM = 1;
+const MAX_CAMERA_ZOOM = 6;
+const PINCH_ULTRA_WIDE_SCALE = 0.72;
+const PINCH_REGULAR_SCALE = 1.35;
+const LENS_SWITCH_SETTLE_MS = 500;
+const LENS_SWITCH_COOLDOWN = 1400;
+const SIDE_SWITCH_COOLDOWN = 320;
+const SIDE_SWITCH_BUSY_MS = 450;
 const FOCUS_HOLD = 350;
 const FOCUS_DRIFT = 18;
 const DOUBLE_TAP_MAX_DELAY = 260;
@@ -54,14 +65,11 @@ const PREVIEW_HOLD = 2000;
 const PREVIEW_CHECK = 250;
 const SCAN_COOLDOWN = 700;
 const ACTION_GAP = 48;
-const EXIT_HOLD = 500;
 const VIDEO_MIME = 'video/mp4';
 const CAMERA_PHOTO_RESOLUTION = CommonResolutions.FHD_4_3;
 const CAMERA_VIDEO_RESOLUTION = CommonResolutions.HD_16_9;
 const INITIAL_ROUTE_STATE = {
     taking: false,
-    holding: false,
-    warming: false,
     recording: false,
     recordingLocked: false,
     stagedMedia: null,
@@ -80,11 +88,11 @@ function clampZoom(value, min, max) {
     return Math.min(max, Math.max(min, value));
 }
 
-function getRegularZoom(device) {
+function getInitialZoom(device) {
     const min = Number.isFinite(device?.minZoom) ? device.minZoom : NORMAL_ZOOM;
     const max = Number.isFinite(device?.maxZoom) ? device.maxZoom : NORMAL_ZOOM;
-    const switchZoom = device?.zoomLensSwitchFactors?.find?.((value) => Number.isFinite(value) && value > min && value <= max);
-    return clampZoom(switchZoom || NORMAL_ZOOM, min, max);
+    const normalLensZoom = device?.zoomLensSwitchFactors?.find?.((value) => Number.isFinite(value) && value > min && value <= max);
+    return clampZoom(normalLensZoom || NORMAL_ZOOM, min, max);
 }
 
 function getCaptureRotate(orientation) {
@@ -92,6 +100,11 @@ function getCaptureRotate(orientation) {
     if (orientation === 'right') return '-90deg';
     if (orientation === 'down') return '180deg';
     return '0deg';
+}
+
+function makeCaptureName(ext) {
+    const cleanExt = String(ext || '').replace(/^\./, '').toLowerCase() || 'bin';
+    return `${toHex(randomBytes(8))}.${cleanExt}`;
 }
 
 function getGestureTouch(event) {
@@ -128,6 +141,7 @@ function stageCapturedPhoto(photo, uri, orientation) {
         uri,
         width: size.width,
         height: size.height,
+        name: makeCaptureName('jpg'),
         rotate: getCaptureRotate(orientation || photo?.orientation),
     };
 }
@@ -147,7 +161,7 @@ function stageCapturedVideo(path, orientation) {
         kind: 'video',
         uri,
         mimeType: VIDEO_MIME,
-        name: 'veyl-video.mp4',
+        name: makeCaptureName('mp4'),
         rotate: getCaptureRotate(orientation),
     };
 }
@@ -201,19 +215,19 @@ function StagedPreview({ media }) {
     );
 }
 
-function CameraSurface({ active, cameraRef, canUseZoomDevice, device, facing, onCameraError, onCameraStarted, onFlip, onFocus, onUseZoomDevice, outputs }) {
+function CameraSurface({ active, cameraRef, canUseUltraWide, device, facing, isUltraWide, onCameraError, onCameraStarted, onCancelLensSwitch, onFlip, onFocus, onUseRegularLens, onUseUltraWide, outputs }) {
     const minZoom = Number.isFinite(device?.minZoom) ? device.minZoom : NORMAL_ZOOM;
-    const maxZoom = Number.isFinite(device?.maxZoom) ? device.maxZoom : NORMAL_ZOOM;
-    const regularZoom = getRegularZoom(device);
-    const cameraZoom = useSharedValue(regularZoom);
-    const pinchStartZoom = useSharedValue(regularZoom);
-    const zoomDeviceRequested = useSharedValue(false);
+    const deviceMaxZoom = Number.isFinite(device?.maxZoom) ? device.maxZoom : NORMAL_ZOOM;
+    const maxZoom = Math.max(minZoom, Math.min(deviceMaxZoom, MAX_CAMERA_ZOOM));
+    const initialZoom = getInitialZoom(device);
+    const cameraZoom = useSharedValue(initialZoom);
+    const pinchStartZoom = useSharedValue(initialZoom);
+    const pinchLastScale = useSharedValue(1);
 
     useEffect(() => {
-        cameraZoom.value = regularZoom;
-        pinchStartZoom.value = regularZoom;
-        zoomDeviceRequested.value = false;
-    }, [cameraZoom, device?.id, pinchStartZoom, regularZoom, zoomDeviceRequested]);
+        cameraZoom.value = initialZoom;
+        pinchStartZoom.value = initialZoom;
+    }, [cameraZoom, device?.id, initialZoom, pinchStartZoom]);
 
     const doubleTapGesture = Gesture.Tap()
         .numberOfTaps(2)
@@ -230,18 +244,25 @@ function CameraSurface({ active, cameraRef, canUseZoomDevice, device, facing, on
             Gesture.Pinch()
                 .onBegin(() => {
                     'worklet';
+                    scheduleOnRN(onCancelLensSwitch);
                     pinchStartZoom.value = cameraZoom.value;
+                    pinchLastScale.value = 1;
                 })
                 .onUpdate((event) => {
                     'worklet';
-                    if (canUseZoomDevice && !zoomDeviceRequested.value && (event.scale < 0.98 || event.scale > 1.08)) {
-                        zoomDeviceRequested.value = true;
-                        scheduleOnRN(onUseZoomDevice);
-                    }
+                    pinchLastScale.value = event.scale;
                     const nextZoom = clampZoom(pinchStartZoom.value * event.scale, minZoom, maxZoom);
                     cameraZoom.value = nextZoom;
+                })
+                .onEnd(() => {
+                    'worklet';
+                    if (canUseUltraWide && !isUltraWide && pinchLastScale.value <= PINCH_ULTRA_WIDE_SCALE) {
+                        scheduleOnRN(onUseUltraWide);
+                    } else if (isUltraWide && pinchLastScale.value >= PINCH_REGULAR_SCALE) {
+                        scheduleOnRN(onUseRegularLens);
+                    }
                 }),
-        [cameraZoom, canUseZoomDevice, maxZoom, minZoom, onUseZoomDevice, pinchStartZoom, zoomDeviceRequested]
+        [cameraZoom, canUseUltraWide, isUltraWide, maxZoom, minZoom, onCancelLensSwitch, onUseRegularLens, onUseUltraWide, pinchLastScale, pinchStartZoom]
     );
 
     const focusGesture = Gesture.LongPress()
@@ -257,7 +278,7 @@ function CameraSurface({ active, cameraRef, canUseZoomDevice, device, facing, on
 
     return (
         <GestureDetector gesture={touchGesture}>
-            <View style={StyleSheet.absoluteFill}>
+            <View pointerEvents={active ? 'auto' : 'none'} style={StyleSheet.absoluteFill}>
                 <VCamera
                     ref={cameraRef}
                     style={StyleSheet.absoluteFill}
@@ -275,29 +296,27 @@ function CameraSurface({ active, cameraRef, canUseZoomDevice, device, facing, on
     );
 }
 
-export default function CameraTab() {
+function CameraContent({ cameraActive, pageOpen, warming }) {
     const { theme, isDark } = useTheme();
     const { addPeer } = usePeer() || {};
     const { settings, username, chatPK, walletPK: ownWalletPK, chatBanned } = useUser();
+    const { localCache } = useVault();
     const { network } = useWallet();
     const { selectChat } = useChat();
     const insets = useSafeAreaInsets();
-    const isFocused = useIsFocused();
     const { hasPermission, requestPermission } = useCameraPermission();
     const captureOrientation = useOrientation('device');
-    const [facing, setFacing] = useState('back');
+    const [facing, setFacing] = useState(() => readLastCameraFacing(localCache));
+    const facingRef = useRef(facing);
     const [backLensMode, setBackLensMode] = useState('regular');
     const backRegularDevice = useCameraDevice('back', BACK_REGULAR_LENS);
-    const backZoomDevice = useCameraDevice('back', BACK_ZOOM_LENS);
+    const backUltraWideDevice = useCameraDevice('back', BACK_ULTRA_WIDE_LENS);
     const frontDevice = useCameraDevice('front');
-    const backDevice = backLensMode === 'zoom' ? backZoomDevice || backRegularDevice : backRegularDevice || backZoomDevice;
+    const backDevice = backLensMode === 'ultra-wide' ? backUltraWideDevice || backRegularDevice : backRegularDevice || backUltraWideDevice;
     const device = facing === 'back' ? backDevice : frontDevice;
-    const canUseBackZoomDevice = facing === 'back' && backLensMode !== 'zoom' && !!backZoomDevice && backZoomDevice.id !== backDevice?.id;
     const photoOutput = usePhotoOutput({ targetResolution: CAMERA_PHOTO_RESOLUTION, qualityPrioritization: 'speed' });
     const videoOutput = useVideoOutput({ targetResolution: CAMERA_VIDEO_RESOLUTION, fileType: 'mp4', enablePersistentRecorder: true });
     const cameraRef = useRef(null);
-    const exitTimerRef = useRef(null);
-    const warmTimerRef = useRef(null);
     const routeLockRef = useRef(false);
     const recorderRef = useRef(null);
     const recordingRef = useRef(false);
@@ -310,6 +329,12 @@ export default function CameraTab() {
     const recordingOrientationRef = useRef('up');
     const recordingTokenRef = useRef(0);
     const stopAfterStartRef = useRef(false);
+    const lensSwitchRef = useRef(0);
+    const lensSwitchTimerRef = useRef(null);
+    const lensSwitchBusyRef = useRef(false);
+    const sideSwitchRef = useRef(0);
+    const sideSwitchBusyRef = useRef(false);
+    const sideSwitchTimerRef = useRef(null);
     const mountedRef = useRef(true);
     const previewRef = useRef({
         key: '',
@@ -326,8 +351,13 @@ export default function CameraTab() {
     const [previewVisible, setPreviewVisible] = useState(false);
     const [cameraReady, setCameraReady] = useState(false);
     const [routeState, setRouteState] = useState(INITIAL_ROUTE_STATE);
-    const { taking, holding, recording, recordingLocked, warming, stagedMedia } = routeState;
-    const wasOpenRef = useRef(false);
+    const { taking, recording, recordingLocked, stagedMedia } = routeState;
+    const active = cameraActive && !stagedMedia;
+    const activeRef = useRef(active);
+    const pageOpenRef = useRef(pageOpen);
+    const cameraReadyRef = useRef(cameraReady);
+    const backLensModeRef = useRef(backLensMode);
+    const backUltraWideDeviceRef = useRef(backUltraWideDevice);
     const previewOpacity = useSharedValue(0);
     const lockGestureEnabled = useSharedValue(false);
     const lockGestureActive = useSharedValue(false);
@@ -335,7 +365,6 @@ export default function CameraTab() {
     const lockStartY = useSharedValue(0);
     const shutterScale = useRef(new RNAnimated.Value(1)).current;
     const settingsFeedback = useTap();
-    const pageOpen = isFocused;
 
     const updateRouteState = useCallback((patch) => {
         if (!mountedRef.current) return;
@@ -374,47 +403,51 @@ export default function CameraTab() {
         if (captureOrientation) orientationRef.current = captureOrientation;
     }, [captureOrientation]);
 
-    const clearWarm = useCallback(() => {
-        if (warmTimerRef.current) {
-            clearTimeout(warmTimerRef.current);
-            warmTimerRef.current = null;
-        }
-        updateRouteState({ warming: false });
-    }, [updateRouteState]);
+    useEffect(() => {
+        facingRef.current = facing;
+    }, [facing]);
 
-    const startWarm = useCallback(
-        (ms = CAMERA_WARM_MS) => {
-            if (pageOpen) return;
-            const duration = Number(ms);
-            const hold = Number.isFinite(duration) && duration > 0 ? duration : CAMERA_WARM_MS;
+    useEffect(() => {
+        activeRef.current = active;
+    }, [active]);
 
-            if (warmTimerRef.current) clearTimeout(warmTimerRef.current);
-            updateRouteState({ warming: true });
-            warmTimerRef.current = setTimeout(() => {
-                warmTimerRef.current = null;
-                updateRouteState({ warming: false });
-            }, hold);
-        },
-        [pageOpen, updateRouteState]
-    );
+    useEffect(() => {
+        pageOpenRef.current = pageOpen;
+    }, [pageOpen]);
+
+    useEffect(() => {
+        cameraReadyRef.current = cameraReady;
+    }, [cameraReady]);
+
+    useEffect(() => {
+        cameraReadyRef.current = false;
+        setCameraReady(false);
+    }, [device?.id]);
+
+    useEffect(() => {
+        backLensModeRef.current = backLensMode;
+    }, [backLensMode]);
+
+    useEffect(() => {
+        backUltraWideDeviceRef.current = backUltraWideDevice;
+    }, [backUltraWideDevice]);
+
+    useEffect(() => {
+        const cachedFacing = readLastCameraFacing(localCache);
+        facingRef.current = cachedFacing;
+        setFacing((current) => (current === cachedFacing ? current : cachedFacing));
+    }, [localCache]);
 
     useEffect(() => {
         if (pageOpen && hasPermission === false) requestPermission();
     }, [hasPermission, pageOpen, requestPermission]);
 
-    useEffect(() => {
-        const sub = DeviceEventEmitter.addListener(CAMERA_WARM_EVENT, (payload = {}) => {
-            startWarm(payload?.ms);
-        });
-        return () => sub.remove();
-    }, [startWarm]);
-
     useEffect(
         () => () => {
             mountedRef.current = false;
             if (previewRef.current.timer) clearTimeout(previewRef.current.timer);
-            if (exitTimerRef.current) clearTimeout(exitTimerRef.current);
-            if (warmTimerRef.current) clearTimeout(warmTimerRef.current);
+            if (lensSwitchTimerRef.current) clearTimeout(lensSwitchTimerRef.current);
+            if (sideSwitchTimerRef.current) clearTimeout(sideSwitchTimerRef.current);
             recorderRef.current?.stopRecording?.().catch?.(() => {});
         },
         []
@@ -425,10 +458,7 @@ export default function CameraTab() {
     }, [previewOpacity, previewVisible]);
 
     useEffect(() => {
-        if (pageOpen) {
-            clearWarm();
-            return;
-        }
+        if (pageOpen) return;
         if (previewRef.current.timer) {
             clearTimeout(previewRef.current.timer);
             previewRef.current.timer = null;
@@ -440,61 +470,137 @@ export default function CameraTab() {
         scanRef.current.time = 0;
         scanRef.current.busy = false;
         setPreviewVisible(false);
-        setCameraReady(false);
-    }, [clearWarm, pageOpen]);
+    }, [pageOpen]);
 
     useEffect(() => {
-        if (pageOpen) {
-            wasOpenRef.current = true;
-            if (exitTimerRef.current) {
-                clearTimeout(exitTimerRef.current);
-                exitTimerRef.current = null;
-            }
-            updateRouteState({ holding: false });
-            return;
-        }
-        if (!wasOpenRef.current) return;
-
-        wasOpenRef.current = false;
+        if (backLensMode !== 'ultra-wide' || backUltraWideDevice) return;
+        backLensModeRef.current = 'regular';
         setBackLensMode('regular');
-        updateRouteState({ holding: true });
-        if (exitTimerRef.current) clearTimeout(exitTimerRef.current);
-        exitTimerRef.current = setTimeout(() => {
-            exitTimerRef.current = null;
-            updateRouteState({ holding: false });
-        }, EXIT_HOLD);
-    }, [pageOpen, updateRouteState]);
+    }, [backLensMode, backUltraWideDevice]);
 
     const previewStyle = useAnimatedStyle(() => ({ opacity: previewOpacity.value }));
+
+    const cancelLensSwitch = useCallback(() => {
+        if (!lensSwitchTimerRef.current) return;
+        clearTimeout(lensSwitchTimerRef.current);
+        lensSwitchTimerRef.current = null;
+    }, []);
+
+    const clearSideSwitchBusy = useCallback((ready = false) => {
+        if (sideSwitchTimerRef.current) {
+            clearTimeout(sideSwitchTimerRef.current);
+            sideSwitchTimerRef.current = null;
+        }
+        sideSwitchBusyRef.current = false;
+        if (ready && mountedRef.current && activeRef.current) {
+            cameraReadyRef.current = true;
+            setCameraReady(true);
+        }
+    }, []);
+
+    useEffect(() => {
+        if (device?.position && device.position === facing) {
+            clearSideSwitchBusy(false);
+        }
+    }, [clearSideSwitchBusy, device?.position, facing]);
+
+    const holdSideSwitchBusy = useCallback(() => {
+        if (sideSwitchTimerRef.current) clearTimeout(sideSwitchTimerRef.current);
+        sideSwitchBusyRef.current = true;
+        sideSwitchTimerRef.current = setTimeout(() => {
+            sideSwitchTimerRef.current = null;
+            sideSwitchBusyRef.current = false;
+            if (mountedRef.current && activeRef.current) {
+                cameraReadyRef.current = true;
+                setCameraReady(true);
+            }
+        }, SIDE_SWITCH_BUSY_MS);
+    }, []);
 
     const flipCamera = useCallback(() => {
         if (taking || stagedMedia) {
             mark('camera.flip.blocked', { taking, staged: stagedMedia?.kind || '' });
             return;
         }
-        if (recordingRef.current && (!recorderRef.current || stopAfterStartRef.current)) {
-            mark('camera.flip.blocked', { recording: true, recorderReady: !!recorderRef.current, stopAfterStart: !!stopAfterStartRef.current });
+        const recordingActive = recordingRef.current || recording;
+        if (recordingActive && (!recorderRef.current || stopAfterStartRef.current)) {
+            mark('camera.flip.blocked', { recording: true, recorderReady: !!recorderRef.current, stopping: !!stopAfterStartRef.current });
             return;
         }
-        mark('camera.flip', { from: facing, to: facing === 'back' ? 'front' : 'back', deviceId: device?.id || '' });
-        setBackLensMode('regular');
-        setFacing((current) => (current === 'back' ? 'front' : 'back'));
+        if (!mountedRef.current || !pageOpenRef.current || !activeRef.current) return;
+        if (sideSwitchBusyRef.current) {
+            mark('camera.flip.blocked', { switching: true });
+            return;
+        }
+        const now = Date.now();
+        if (now - sideSwitchRef.current < SIDE_SWITCH_COOLDOWN) return;
+        sideSwitchRef.current = now;
+        const currentFacing = facingRef.current;
+        const nextFacing = currentFacing === 'back' ? 'front' : 'back';
+        mark('camera.flip', { from: currentFacing, to: nextFacing, deviceId: device?.id || '', recording: recordingActive });
+        cancelLensSwitch();
+        lensSwitchBusyRef.current = false;
+        holdSideSwitchBusy();
+        cameraReadyRef.current = false;
+        setCameraReady(false);
+        if (backLensModeRef.current !== 'regular') {
+            backLensModeRef.current = 'regular';
+            setBackLensMode('regular');
+        }
+        facingRef.current = nextFacing;
+        setFacing(nextFacing);
+        writeLastCameraFacing(localCache, nextFacing);
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    }, [device?.id, facing, stagedMedia, taking]);
+    }, [cancelLensSwitch, device?.id, holdSideSwitchBusy, localCache, recording, stagedMedia, taking]);
 
-    const useBackZoomDevice = useCallback(() => {
-        if (facing !== 'back' || !backZoomDevice) return;
-        mark('camera.zoomDevice', { from: device?.id || '', to: backZoomDevice.id || '' });
-        setBackLensMode('zoom');
-    }, [backZoomDevice, device?.id, facing]);
+    const switchBackLens = useCallback(
+        (mode) => {
+            if (mode !== 'regular' && mode !== 'ultra-wide') return;
+            cancelLensSwitch();
+
+            lensSwitchTimerRef.current = setTimeout(() => {
+                lensSwitchTimerRef.current = null;
+                if (!mountedRef.current || !pageOpenRef.current || !activeRef.current) return;
+                if (facingRef.current !== 'back' || taking || stagedMedia || recordingRef.current || recording) return;
+                const currentMode = backLensModeRef.current;
+                if (mode === currentMode) return;
+                if (mode === 'ultra-wide' && !backUltraWideDeviceRef.current) return;
+                if (!cameraReadyRef.current || lensSwitchBusyRef.current) return;
+
+                const now = Date.now();
+                if (now - lensSwitchRef.current < LENS_SWITCH_COOLDOWN) return;
+                lensSwitchRef.current = now;
+                lensSwitchBusyRef.current = true;
+                cameraReadyRef.current = false;
+                setCameraReady(false);
+                mark('camera.lens', { from: currentMode, to: mode, deviceId: device?.id || '' });
+                backLensModeRef.current = mode;
+                setBackLensMode(mode);
+            }, LENS_SWITCH_SETTLE_MS);
+        },
+        [cancelLensSwitch, device?.id, recording, stagedMedia, taking]
+    );
+
+    const useUltraWide = useCallback(() => switchBackLens('ultra-wide'), [switchBackLens]);
+    const useRegularLens = useCallback(() => switchBackLens('regular'), [switchBackLens]);
+
+    useEffect(() => {
+        if (pageOpen && facing === 'back' && !taking && !stagedMedia && !recording) return;
+        cancelLensSwitch();
+        lensSwitchBusyRef.current = false;
+        if (!pageOpen || stagedMedia) clearSideSwitchBusy(false);
+    }, [cancelLensSwitch, clearSideSwitchBusy, facing, pageOpen, recording, stagedMedia, taking]);
 
     const handleFocus = useCallback(
         async (x, y) => {
+            if (!pageOpenRef.current || !activeRef.current || !cameraReadyRef.current || sideSwitchBusyRef.current || lensSwitchBusyRef.current || recordingRef.current) return;
             if (!device?.supportsFocusMetering || !cameraRef.current) return;
+            const point = { x: Number(x), y: Number(y) };
+            if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) return;
             Haptics.selectionAsync().catch(() => {});
 
             try {
-                await cameraRef.current.focusTo({ x, y }, { responsiveness: 'snappy' });
+                await cameraRef.current.focusTo(point, { responsiveness: 'snappy' });
             } catch (err) {
                 console.warn('focus failed', err);
             }
@@ -664,14 +770,21 @@ export default function CameraTab() {
     }, [animateShutter, clearRecording, device?.id, facing, hidePreview, lockGestureEnabled, previewVisible, stagedMedia, stopVideoRecording, taking, updateRouteState, videoOutput]);
 
     const handleCameraStarted = useCallback(() => {
+        lensSwitchBusyRef.current = false;
+        clearSideSwitchBusy(true);
+        cameraReadyRef.current = true;
         mark('camera.started', { deviceId: device?.id || '', facing });
         setCameraReady(true);
-    }, [device?.id, facing]);
+    }, [clearSideSwitchBusy, device?.id, facing]);
 
     const handleCameraError = useCallback((error) => {
+        lensSwitchBusyRef.current = false;
+        clearSideSwitchBusy(false);
+        cameraReadyRef.current = false;
+        setCameraReady(false);
         mark('camera.error', { deviceId: device?.id || '', facing, message: error?.message || String(error), code: error?.code || '' });
         console.warn('camera failed', error);
-    }, [device?.id, facing]);
+    }, [clearSideSwitchBusy, device?.id, facing]);
 
     useEffect(() => {
         const sub = DeviceEventEmitter.addListener('photosent', () => updateRouteState({ stagedMedia: null }));
@@ -889,7 +1002,7 @@ export default function CameraTab() {
         const chatId = getChatId(chatPK, previewPeer.chatPK);
         hidePreview();
         selectChat?.(chatId);
-        router.navigate({ pathname: '/currentchat', params: { id: chatId } });
+        router.navigate({ pathname: '/chat/[peerchatpk]', params: { peerchatpk: previewPeer.chatPK } });
     }, [chatBanned, chatPK, hidePreview, lockRoute, previewPeer, selectChat]);
 
     const handlePreviewSend = useCallback(() => {
@@ -1024,11 +1137,13 @@ export default function CameraTab() {
         },
     });
 
-    const active = pageOpen || warming || holding;
+    const isUltraWide = facing === 'back' && backLensMode === 'ultra-wide' && !!backUltraWideDevice && device?.id === backUltraWideDevice.id;
+    const canUseUltraWide = facing === 'back' && backLensMode !== 'ultra-wide' && !!backUltraWideDevice && device?.id !== backUltraWideDevice.id;
     const cameraOutputs = useMemo(() => [photoOutput, videoOutput, barcodeOutput], [barcodeOutput, photoOutput, videoOutput]);
     useEffect(() => {
         mark('camera.state', {
             pageOpen,
+            warming,
             active,
             facing,
             backLensMode,
@@ -1036,7 +1151,7 @@ export default function CameraTab() {
             devicePosition: device?.position || '',
             hasFront: !!frontDevice,
             hasBackRegular: !!backRegularDevice,
-            hasBackZoom: !!backZoomDevice,
+            hasBackUltraWide: !!backUltraWideDevice,
             cameraReady,
             taking,
             recording,
@@ -1044,7 +1159,7 @@ export default function CameraTab() {
             staged: stagedMedia?.kind || '',
             outputs: cameraOutputs.length,
         });
-    }, [active, backLensMode, backRegularDevice, backZoomDevice, cameraOutputs.length, cameraReady, device?.id, device?.position, facing, frontDevice, pageOpen, recording, recordingLocked, stagedMedia?.kind, taking]);
+    }, [active, backLensMode, backRegularDevice, backUltraWideDevice, cameraOutputs.length, cameraReady, device?.id, device?.position, facing, frontDevice, pageOpen, recording, recordingLocked, stagedMedia?.kind, taking, warming]);
     const canPreviewChat = previewVisible && !!previewPeer?.chatPK && !!chatPK && !chatBanned;
     const canPreviewSend = previewVisible && !!previewPeer?.walletPK;
     const chatPop = usePop({ show: canPreviewChat, width: 56, gapAfter: ACTION_GAP, enterBounce: 12, exitDuration: 130 });
@@ -1184,17 +1299,19 @@ export default function CameraTab() {
     return (
         <View style={{ flex: 1, overflow: 'hidden' }}>
             <CameraSurface
-                key={device.id}
                 active={active}
                 cameraRef={cameraRef}
-                canUseZoomDevice={canUseBackZoomDevice}
+                canUseUltraWide={canUseUltraWide}
                 device={device}
                 facing={facing}
+                isUltraWide={isUltraWide}
                 onCameraError={handleCameraError}
                 onCameraStarted={handleCameraStarted}
+                onCancelLensSwitch={cancelLensSwitch}
                 onFlip={flipCamera}
                 onFocus={handleFocus}
-                onUseZoomDevice={useBackZoomDevice}
+                onUseRegularLens={useRegularLens}
+                onUseUltraWide={useUltraWide}
                 outputs={cameraOutputs}
             />
             <GlassHeader style={{ height: insets.top }} pointerEvents="none" />
@@ -1227,4 +1344,14 @@ export default function CameraTab() {
             ) : null}
         </View>
     );
+}
+
+export default function CameraTab() {
+    const focused = useIsFocused();
+    const pageOpen = usePagerRouteActive(focused);
+    const cameraWarm = useCameraWarming(pageOpen);
+
+    if (!cameraWarm.mounted) return <View style={{ flex: 1 }} />;
+
+    return <CameraContent cameraActive={cameraWarm.active} pageOpen={pageOpen} warming={cameraWarm.warming} />;
 }

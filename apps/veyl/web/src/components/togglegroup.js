@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 
+import { listNavigationStep } from '@/lib/focus';
 import { cn } from '@/lib/utils';
 
 const ToggleGroupContext = React.createContext(null);
@@ -66,10 +67,11 @@ function ToggleGroupItem({ className, children, disabled = false, onClick, onKey
             return;
         }
 
+        const step = listNavigationStep(event, { ignoreEditable: false });
         const nextIndex =
-            event.key === 'ArrowRight' || event.key === 'ArrowDown'
+            step > 0
                 ? (index + 1) % buttons.length
-                : event.key === 'ArrowLeft' || event.key === 'ArrowUp'
+                : step < 0
                   ? (index - 1 + buttons.length) % buttons.length
                   : event.key === 'Home'
                     ? 0

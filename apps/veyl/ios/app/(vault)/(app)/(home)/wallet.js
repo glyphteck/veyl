@@ -15,7 +15,6 @@ import { useChat } from '@/providers/chatprovider';
 import Avatar from '@/components/avatar';
 import GlassHeader from '@/components/glass/glassheader';
 import GlassIcon from '@/components/glass/glassicon';
-import { usePop } from '@/lib/pop';
 import { useTap } from '@/lib/tap';
 import { getChatId } from '@glyphteck/shared/crypto/chat';
 import { formatFullDateTime, formatUserDisplay, renderBalance, renderMoney } from '@glyphteck/shared/utils';
@@ -23,6 +22,8 @@ import { formatFullDateTime, formatUserDisplay, renderBalance, renderMoney } fro
 const BALANCE_HEIGHT = 42;
 const ACTIONS_HEIGHT = 72;
 const ACTION_ICON_SIZE = 56;
+const ACTION_GAP = 24;
+const ACTION_COLLAPSE_OFFSET = (ACTION_ICON_SIZE + ACTION_GAP) / 2;
 const PEER_SELECTOR_LOCK_MS = 520;
 
 function TxRow({ tx, theme, moneyFormat, btcPrice, isLast, openRoute }) {
@@ -52,7 +53,7 @@ function TxRow({ tx, theme, moneyFormat, btcPrice, isLast, openRoute }) {
 
         const chatId = getChatId(chatPK, profile.chatPK);
         selectChat?.(chatId);
-        openRoute({ pathname: '/currentchat', params: { id: chatId } });
+        openRoute({ pathname: '/chat/[peerchatpk]', params: { peerchatpk: profile.chatPK } });
     }, [chatPK, openRoute, profile?.chatPK, selectChat, tx?.funding, tx?.withdrawal]);
 
     const pressFeedback = useTap({
@@ -144,8 +145,6 @@ export default function Wallet() {
     const txData = useTxData();
     const routeLockRef = useRef(false);
     const routeLockTimerRef = useRef(null);
-    const listAtTopRef = useRef(true);
-    const listMovingRef = useRef(false);
 
     const btcPrice = bitcoin?.price ?? 100000;
     const moneyFormat = settings?.moneyFormat ?? 'usd';
@@ -153,22 +152,34 @@ export default function Wallet() {
     const [displayFormat, setDisplayFormat] = useState(null);
     const activeFormat = displayFormat ?? moneyFormat;
     const showBalance = Number(balance ?? 0) > 0;
+    const canWithdraw = showBalance;
     const [displayBalance, setDisplayBalance] = useState(showBalance ? balance : null);
     const fundedAnim = useRef(new Animated.Value(showBalance ? 1 : 0)).current;
-    const spaceAnim = useRef(new Animated.Value(showBalance ? 1 : 0)).current;
     const balanceScale = fundedAnim.interpolate({
         inputRange: [0, 1],
         outputRange: [0.001, 1],
+        extrapolate: 'clamp',
+    });
+    const fundOffset = fundedAnim.interpolate({
+        inputRange: [0, 1],
+        outputRange: [ACTION_COLLAPSE_OFFSET, 0],
+        extrapolate: 'clamp',
+    });
+    const peerOffset = fundedAnim.interpolate({
+        inputRange: [0, 1],
+        outputRange: [-ACTION_COLLAPSE_OFFSET, 0],
         extrapolate: 'clamp',
     });
     const headerOffset = fundedAnim.interpolate({
         inputRange: [0, 1],
         outputRange: [-BALANCE_HEIGHT, 0],
     });
-    const listTopSpace = spaceAnim.interpolate({
+    const listOffset = fundedAnim.interpolate({
         inputRange: [0, 1],
-        outputRange: [insets.top + ACTIONS_HEIGHT, insets.top + ACTIONS_HEIGHT + BALANCE_HEIGHT],
+        outputRange: [0, BALANCE_HEIGHT],
+        extrapolate: 'clamp',
     });
+    const listTopSpace = insets.top + ACTIONS_HEIGHT;
     const cycleFormat = useCallback(() => {
         const abs = Math.abs(Number(balance ?? 0));
         const cycle = abs < 1_000_000 ? ['sats', 'usd'] : ['sats', 'usd', 'btc'];
@@ -176,19 +187,6 @@ export default function Wallet() {
         setDisplayFormat(cycle[(idx + 1) % cycle.length]);
     }, [activeFormat, balance]);
     const balanceFeedback = useTap({ onPress: cycleFormat, disabled: !showBalance });
-    const withdrawPop = usePop({ show: showBalance, width: ACTION_ICON_SIZE, gapAfter: 24, enterBounce: 12, exitDuration: 130 });
-
-    const animateListSpace = useCallback(
-        (show) => {
-            Animated.spring(spaceAnim, {
-                toValue: show ? 1 : 0,
-                useNativeDriver: false,
-                speed: show ? 18 : 22,
-                bounciness: show ? 8 : 10,
-            }).start();
-        },
-        [spaceAnim]
-    );
 
     const recentTxs = useMemo(() => {
         const txs = txData?.transactions ?? [];
@@ -240,9 +238,6 @@ export default function Wallet() {
                 speed: 18,
                 bounciness: 8,
             }).start();
-            if (listAtTopRef.current && !listMovingRef.current) {
-                animateListSpace(true);
-            }
             return;
         }
 
@@ -252,50 +247,7 @@ export default function Wallet() {
             speed: 22,
             bounciness: 10,
         }).start();
-        if (listAtTopRef.current && !listMovingRef.current) {
-            animateListSpace(false);
-        }
-    }, [animateListSpace, balance, fundedAnim, showBalance]);
-
-    const syncListSpaceIfReady = useCallback(() => {
-        if (listAtTopRef.current && !listMovingRef.current) {
-            animateListSpace(showBalance);
-        }
-    }, [animateListSpace, showBalance]);
-
-    const trackScroll = useCallback(
-        (event) => {
-            const y = event.nativeEvent.contentOffset?.y ?? 0;
-            const isAtTop = y <= 2;
-            const wasAtTop = listAtTopRef.current;
-            listAtTopRef.current = isAtTop;
-
-            if (isAtTop && !wasAtTop) {
-                syncListSpaceIfReady();
-            }
-        },
-        [syncListSpaceIfReady]
-    );
-
-    const startListGesture = useCallback(() => {
-        listMovingRef.current = true;
-    }, []);
-
-    const stopListGesture = useCallback(() => {
-        listMovingRef.current = false;
-        syncListSpaceIfReady();
-    }, [syncListSpaceIfReady]);
-
-    const endListDrag = useCallback(
-        (event) => {
-            const velocity = Math.abs(event.nativeEvent.velocity?.y ?? 0);
-            if (velocity > 0.05) {
-                return;
-            }
-            stopListGesture();
-        },
-        [stopListGesture]
-    );
+    }, [balance, fundedAnim, showBalance]);
 
     const openRoute = useCallback(
         (href, mode = 'push', lockMs = 1200) => {
@@ -311,26 +263,22 @@ export default function Wallet() {
 
     return (
         <View style={{ flex: 1, overflow: 'hidden' }}>
-            <FlatList
-                data={recentTxs}
-                keyExtractor={(item) => item.id}
-                renderItem={({ item, index }) => <TxRow tx={item} theme={theme} moneyFormat={moneyFormat} btcPrice={btcPrice} isLast={index === recentTxs.length - 1} openRoute={openRoute} />}
-                ListHeaderComponent={<Animated.View style={{ height: listTopSpace }} />}
-                ListEmptyComponent={() => (txReady ? <WalletEmpty /> : <WalletLoading />)}
-                contentContainerStyle={{ flexGrow: 1, paddingBottom: insets.bottom + 56 }}
-                style={{ flex: 1 }}
-                showsVerticalScrollIndicator={false}
-                bounces
-                alwaysBounceVertical
-                directionalLockEnabled
-                alwaysBounceHorizontal={false}
-                scrollEventThrottle={16}
-                onScroll={trackScroll}
-                onScrollBeginDrag={startListGesture}
-                onScrollEndDrag={endListDrag}
-                onMomentumScrollBegin={startListGesture}
-                onMomentumScrollEnd={stopListGesture}
-            />
+            <Animated.View style={{ flex: 1, transform: [{ translateY: listOffset }] }}>
+                <FlatList
+                    data={recentTxs}
+                    keyExtractor={(item) => item.id}
+                    renderItem={({ item, index }) => <TxRow tx={item} theme={theme} moneyFormat={moneyFormat} btcPrice={btcPrice} isLast={index === recentTxs.length - 1} openRoute={openRoute} />}
+                    ListHeaderComponent={<View style={{ height: listTopSpace }} />}
+                    ListEmptyComponent={() => (txReady ? <WalletEmpty /> : <WalletLoading />)}
+                    contentContainerStyle={{ flexGrow: 1, paddingBottom: insets.bottom + 56 + BALANCE_HEIGHT }}
+                    style={{ flex: 1 }}
+                    showsVerticalScrollIndicator={false}
+                    bounces
+                    alwaysBounceVertical
+                    directionalLockEnabled
+                    alwaysBounceHorizontal={false}
+                />
+            </Animated.View>
 
             <Animated.View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: insets.top + ACTIONS_HEIGHT + BALANCE_HEIGHT, transform: [{ translateY: headerOffset }] }}>
                 <GlassHeader style={{ height: insets.top + ACTIONS_HEIGHT + BALANCE_HEIGHT, overflow: 'hidden' }}>
@@ -344,15 +292,18 @@ export default function Wallet() {
                         </Pressable>
                     </View>
 
-                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 4 }}>
-                        <GlassIcon glassEffectStyle="regular" rounded={16} icon={BanknoteArrowDown} onPress={() => openRoute('/fundwallet')} />
-                        <View style={{ width: 24 }} />
-                        <Animated.View pointerEvents={withdrawPop.pointerEvents} style={[withdrawPop.style, { alignItems: 'center', justifyContent: 'center', overflow: 'visible' }]}>
-                            <Animated.View style={withdrawPop.childStyle}>
-                                <GlassIcon glassEffectStyle="regular" rounded={16} icon={BanknoteArrowUp} onPress={() => showBalance && openRoute('/withdraw')} />
-                            </Animated.View>
+                    <View style={{ width: ACTION_ICON_SIZE * 3 + ACTION_GAP * 2, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 4, overflow: 'visible' }}>
+                        <Animated.View style={{ transform: [{ translateX: fundOffset }] }}>
+                            <GlassIcon glassEffectStyle="regular" rounded={16} icon={BanknoteArrowDown} onPress={() => openRoute('/fundwallet')} />
                         </Animated.View>
-                        <GlassIcon glassEffectStyle="regular" rounded={16} icon={UserRoundPlus} onPress={() => openRoute('/peerselector', 'push', PEER_SELECTOR_LOCK_MS)} disabled={chatBanned} />
+                        <View style={{ width: ACTION_GAP }} />
+                        <Animated.View pointerEvents={canWithdraw ? 'auto' : 'none'} style={{ transform: [{ scale: balanceScale }] }}>
+                            <GlassIcon glassEffectStyle="regular" rounded={16} icon={BanknoteArrowUp} onPress={() => canWithdraw && openRoute('/withdraw')} disabled={!canWithdraw} visible={canWithdraw} />
+                        </Animated.View>
+                        <View style={{ width: ACTION_GAP }} />
+                        <Animated.View style={{ transform: [{ translateX: peerOffset }] }}>
+                            <GlassIcon glassEffectStyle="regular" rounded={16} icon={UserRoundPlus} onPress={() => openRoute('/peerselector', 'push', PEER_SELECTOR_LOCK_MS)} disabled={chatBanned} />
+                        </Animated.View>
                     </View>
                 </GlassHeader>
             </Animated.View>

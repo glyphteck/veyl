@@ -176,9 +176,9 @@ function makeStorage({ uid, network }) {
             if (!file || !(await ensureDir(mediaDirectory))) {
                 return;
             }
-            await FileSystem.writeAsStringAsync(file, Buffer.from(raw).toString('base64'), {
-                encoding: FileSystem.EncodingType.Base64,
-            });
+            const mediaFileRef = new File(file);
+            mediaFileRef.create({ overwrite: true });
+            mediaFileRef.write(toBytes(raw, 'cached media'));
         },
         async removeMedia(id) {
             const file = mediaFile(mediaDirectory, id);

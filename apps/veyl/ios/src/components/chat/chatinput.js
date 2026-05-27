@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Animated, Pressable, Text, TextInput } from 'react-native';
 import Reanimated, { Easing, LinearTransition, runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
-import { ArrowRightCircle, HandCoins, Image as ImageIcon, Paperclip, Reply, SquarePen, X } from 'lucide-react-native';
+import { ArrowRightCircle, AudioLines, File, Film, HandCoins, Image as ImageIcon, Paperclip, Reply, SquarePen, X } from 'lucide-react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { useTheme } from '@/providers/themeprovider';
@@ -116,6 +116,25 @@ function PopScale({ show, children, onHidden, animateIn = true }) {
     return <Reanimated.View style={style}>{children}</Reanimated.View>;
 }
 
+function getAttachmentDraftTitle(msg) {
+    if (typeof msg?.n === 'string' && msg.n.trim()) {
+        return msg.n.trim();
+    }
+
+    switch (msg?.t) {
+        case 'img':
+            return 'image';
+        case 'mp3':
+            return 'audio';
+        case 'mp4':
+            return 'video';
+        case 'file':
+            return 'file';
+        default:
+            return '';
+    }
+}
+
 function getDraftPreview(msg) {
     if (!msg) {
         return '';
@@ -123,19 +142,31 @@ function getDraftPreview(msg) {
     if (msg?.t === 'req') {
         return 'payment request';
     }
+    const attachmentTitle = getAttachmentDraftTitle(msg);
+    if (attachmentTitle) {
+        return attachmentTitle;
+    }
     if (typeof msg?.c === 'string' && msg.c.trim()) {
         return msg.c.trim();
     }
-    if (typeof msg?.n === 'string' && msg.n.trim()) {
-        return msg.n.trim();
-    }
-    if (msg?.t === 'img') {
-        return 'image';
-    }
-    if (msg?.t === 'file' || msg?.t === 'mp3' || msg?.t === 'mp4') {
-        return 'attachment';
-    }
     return 'message';
+}
+
+function getDraftTypeIcon(msg) {
+    switch (msg?.t) {
+        case 'img':
+            return ImageIcon;
+        case 'mp3':
+            return AudioLines;
+        case 'mp4':
+            return Film;
+        case 'file':
+            return File;
+        case 'req':
+            return HandCoins;
+        default:
+            return null;
+    }
 }
 
 export function DraftBar({ draft, onClear, onHidden }) {
@@ -162,6 +193,7 @@ export function DraftBar({ draft, onClear, onHidden }) {
     }, [draft]);
 
     const shownDraft = draft || visibleDraft;
+    const DraftTypeIcon = shownDraft ? getDraftTypeIcon(shownDraft.msg) : null;
 
     if (!mounted || !shownDraft) {
         return null;
@@ -183,6 +215,7 @@ export function DraftBar({ draft, onClear, onHidden }) {
                 }}
             >
                 <Icon icon={shownDraft.mode === 'edit' ? SquarePen : Reply} color={theme.foreground} size={21} />
+                {DraftTypeIcon ? <Icon icon={DraftTypeIcon} color={theme.muted} size={18} /> : null}
                 <Animated.View style={{ flex: 1 }}>
                     <Animated.Text numberOfLines={1} ellipsizeMode="tail" style={{ color: theme.foreground, fontSize: 15, fontWeight: '800' }}>
                         {getDraftPreview(shownDraft.msg)}

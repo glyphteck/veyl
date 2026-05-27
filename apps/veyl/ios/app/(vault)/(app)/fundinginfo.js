@@ -1,6 +1,6 @@
 import { Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import { FUNDING_TX_PREVIEW_VBYTES, STATIC_DEPOSIT_FEE_ESTIMATE_SATS } from '@glyphteck/shared/walletfees';
+import { FUNDING_TX_PREVIEW_VBYTES, STATIC_DEPOSIT_CLAIM_FEE_SATS } from '@glyphteck/shared/wallet/fees';
 import { renderMoney } from '@glyphteck/shared/utils';
 
 import GlassButton from '@/components/glass/glassbutton';
@@ -34,10 +34,10 @@ export default function FundingInfoScreen() {
     const estimate = bitcoin.estimateTransactionFees({
         speed: 'medium',
         vbytes: FUNDING_TX_PREVIEW_VBYTES,
-        baseSats: STATIC_DEPOSIT_FEE_ESTIMATE_SATS,
+        baseSats: STATIC_DEPOSIT_CLAIM_FEE_SATS,
     });
     const fee = estimate?.success ? estimate.onchainEstimate : null;
-    const feeFormula = `${formatFeeRate(fee?.feeRateSatsPerVbyte)} x ${fee?.vbytes ?? FUNDING_TX_PREVIEW_VBYTES} vB + ${formatSats(STATIC_DEPOSIT_FEE_ESTIMATE_SATS)}`;
+    const feeFormula = `${fee?.vbytes ?? FUNDING_TX_PREVIEW_VBYTES} vB x ${formatFeeRate(fee?.feeRateSatsPerVbyte)} + ${formatSats(STATIC_DEPOSIT_CLAIM_FEE_SATS)}`;
     const feeAmount = Number(fee?.feeAmountSats);
     const feeDisplay = Number.isFinite(feeAmount) ? renderMoney(Math.max(0, Math.ceil(feeAmount)), settings?.moneyFormat || 'sats', bitcoin.price) : 'updating';
 
@@ -45,13 +45,13 @@ export default function FundingInfoScreen() {
         <View style={{ backgroundColor: 'transparent', paddingHorizontal: 24, paddingTop: 24, gap: 14 }}>
             <Text style={{ fontSize: 32, fontWeight: '900', color: theme.foreground }}>about funding</Text>
             <Text style={{ fontSize: 15, lineHeight: 23, fontWeight: '700', color: theme.muted }}>
-                you can send bitcoin from any regular bitcoin wallet to your funding address to fund your veyl account. bitcoin transactions are not free. in order to be validated, they need a network fee.
+                you can send bitcoin from any regular bitcoin wallet to your funding address to fund your veyl account. bitcoin transactions are not free. validators need to get paid.
             </Text>
             <Text selectable style={{ fontSize: 14, fontWeight: '900', color: theme.foreground, fontVariant: ['tabular-nums'] }}>
                 {feeFormula} = {feeDisplay}
             </Text>
             <Text style={{ fontSize: 15, lineHeight: 23, fontWeight: '700', color: theme.muted }}>
-                the transaction fee is an estimate on how expensive it is to send a transaction on the bitcoin blockchain at the moment, with an added flat fee to import bitcoin onto the spark chain.
+                the transaction fee is an estimate on how expensive it is to send bitcoin over the network at the moment, with an additional flat fee to import bitcoin onto the spark network.
             </Text>
             <GlassButton onPress={() => router.back()} label="ok" accent />
         </View>

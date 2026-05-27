@@ -1,6 +1,6 @@
 import { collection, doc, getDoc, getDocs, limit, query, where } from 'firebase/firestore';
 import { avatarPath, getFileUrl } from './files.js';
-import { normalizeWalletNetwork, resolveWalletPK, walletPKField } from './walletkeys.js';
+import { normalizeWalletNetwork, resolveWalletPK, walletPKField } from './wallet/keys.js';
 
 export function createPeersApi({ db, storage, getStorage, network }) {
     if (!db) {

@@ -294,6 +294,12 @@ export function loadCachedMsgImage(key, mimeType, loadBytes, options) {
   return loadCachedMsgFile(key, mimeType, loadBytes, options);
 }
 
+export function cancelPendingMsgFileLoads() {
+  cacheEpoch += 1;
+  queue.length = 0;
+  taskCache.clear();
+}
+
 export async function clearMsgImageCache() {
   cacheEpoch += 1;
   queue.length = 0;

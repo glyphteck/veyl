@@ -43,6 +43,7 @@ export async function bootBotAccount(masterSeed, { SparkWallet, network, account
             options: {
                 network,
                 optimizationOptions: { auto: false },
+                tokenOptimizationOptions: { enabled: false },
             },
         });
 

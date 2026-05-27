@@ -4,9 +4,20 @@ import { resolve } from 'node:path';
 import { BotRuntime } from './runtime.js';
 
 const originalError = console.error.bind(console);
+function isQuietConnectionNoise(msg) {
+    if (typeof msg !== 'string') {
+        return false;
+    }
+    if (/^Connection error:.*retrying/i.test(msg)) {
+        return true;
+    }
+    return /Error in periodic token output optimization/i.test(msg)
+        && /query_token_outputs/i.test(msg)
+        && /(?:Transport error|socket connection was closed unexpectedly|Received HTTP 0 response|UNAVAILABLE)/i.test(msg);
+}
+
 console.error = (...args) => {
-    const msg = args[0];
-    if (typeof msg === 'string' && /^Connection error:.*retrying/i.test(msg)) {
+    if (isQuietConnectionNoise(args[0])) {
         return;
     }
     originalError(...args);

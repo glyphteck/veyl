@@ -55,7 +55,7 @@ const sections = [
     {
         icon: Lock,
         icon2: HatGlasses,
-        title: 'on security and privacy',
+        title: 'security and privacy',
         body: 'our servers mind their own business. not yours. anonymous accounts protect your identity, and your data never leaves your device unencrypted. you can delete your account anytime, and all your data is wiped from our servers.',
         shots: { web: null, ios: null },
     },
@@ -88,6 +88,10 @@ function landingCta(device) {
         label: 'take back my freedom',
         icon: ArrowRight,
     };
+}
+
+function featureShot(shots, device) {
+    return device.iphone ? shots?.ios : shots?.web;
 }
 
 function FeatureMark({ icon: Icon, icon2: Icon2, logos }) {
@@ -140,29 +144,32 @@ function FeatureCard({ icon, icon2, logos, title, body }) {
     );
 }
 
-function FeatureShot({ shots, device }) {
-    const shot = device.iphone ? shots?.ios : shots?.web;
-
+function FeatureShot({ shot, iphone }) {
     return (
-        <Card aria-hidden="true" className={cn(device.iphone ? 'mx-auto h-auto aspect-[9/16] min-h-0 w-full max-w-[17rem]' : 'aspect-[4/3] min-h-[22rem] md:min-h-[28rem]')}>
-            {shot?.src ? <img src={shot.src} alt="" className="h-full w-full object-cover" /> : null}
+        <Card aria-hidden="true" className={cn(iphone ? 'mx-auto h-auto aspect-[9/16] min-h-0 w-full max-w-[17rem]' : 'aspect-[4/3] min-h-[22rem] md:min-h-[28rem]')}>
+            <img src={shot.src} alt="" className="h-full w-full object-cover" />
         </Card>
     );
 }
 
 function FeatureSection({ icon, icon2, logos, title, body, shots, device, reverse = false }) {
+    const shot = featureShot(shots, device);
+    const hasShot = !!shot?.src;
+
     return (
-        <section className="grid items-center gap-6 md:gap-8 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
-            <div className={cn('max-w-xl space-y-4', reverse && 'lg:order-2 lg:ml-auto')}>
+        <section className={cn('grid items-center gap-6 md:gap-8', hasShot && 'lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]')}>
+            <div className={cn('max-w-xl space-y-4', hasShot && reverse && 'lg:order-2 lg:ml-auto')}>
                 <FeatureMark icon={icon} icon2={icon2} logos={logos} />
                 <div className="space-y-3">
                     <h2 className="text-3xl font-black leading-none md:text-5xl">{title}</h2>
                     <p className="text-base leading-7 text-foreground md:text-lg">{body}</p>
                 </div>
             </div>
-            <div className={cn(device.iphone && 'flex justify-center', reverse && 'lg:order-1')}>
-                <FeatureShot shots={shots} device={device} />
-            </div>
+            {hasShot ? (
+                <div className={cn(device.iphone && 'flex justify-center', reverse && 'lg:order-1')}>
+                    <FeatureShot shot={shot} iphone={device.iphone} />
+                </div>
+            ) : null}
         </section>
     );
 }
@@ -185,8 +192,8 @@ export default async function LandingPage() {
 
                     <Button asChild className="button-fill shrinker mt-8 px-5 py-3 text-base md:px-6 md:text-lg">
                         <Link href={cta.href}>
-                            <CtaIcon />
                             {cta.label}
+                            <CtaIcon />
                         </Link>
                     </Button>
                 </div>

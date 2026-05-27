@@ -3,7 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { collection, doc, getDoc, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
 import { resolveNetwork } from '@glyphteck/shared/network';
-import { resolveWalletPK } from '@glyphteck/shared/walletkeys';
+import { resolveWalletPK } from '@glyphteck/shared/wallet/keys';
 import { db } from '@/lib/firebase/firebaseclient';
 import { usePeer } from '@/components/providers/peerprovider';
 import { useUser } from '@/components/providers/userprovider';

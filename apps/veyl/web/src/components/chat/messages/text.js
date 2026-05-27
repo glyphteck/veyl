@@ -13,7 +13,7 @@ export function EmojiMessage({ text }) {
 
     return (
         <div className="min-w-0 max-w-full bg-transparent" onClick={stopClick}>
-            <span className={`block min-w-0 wrap-break-word whitespace-pre-wrap leading-none select-text ${cloaked ? 'cloaked' : ''}`} style={{ fontSize: emoji.size }}>
+            <span className={`block min-w-0 max-w-full wrap-anywhere whitespace-pre-wrap leading-none select-text ${cloaked ? 'cloaked' : ''}`} style={{ fontSize: emoji.size }}>
                 {emoji.text}
             </span>
         </div>
@@ -33,7 +33,7 @@ export function TextBubble({ msg, fromPeer = false, compact = false, singleLine 
             className={`backdrop-blur-sm min-w-0 max-w-full shadow-sm select-text ${bubbleBg(fromPeer)} ${cloaked ? 'cloaked' : ''} ${compact ? 'rounded-[20px] px-2.5 py-1.5' : 'rounded-round px-3 py-1.5'} ${muted ? 'opacity-65' : ''} ${className}`}
             onClick={onClick}
         >
-            <p className={`min-w-0 ${singleLine ? 'truncate whitespace-nowrap text-[15px]' : 'wrap-break-word whitespace-pre-wrap'}`}>
+            <p className={`min-w-0 max-w-full ${singleLine ? 'truncate whitespace-nowrap text-[15px]' : 'wrap-anywhere whitespace-pre-wrap'}`}>
                 {parts.map((part, index) =>
                     part.t === 'lnk' ? (
                         <a key={`${part.u}:${index}`} href={part.u} target="_blank" rel="noreferrer" className="underline decoration-2 underline-offset-3" onClick={stopClick}>

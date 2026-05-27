@@ -2,8 +2,8 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef } from 'react';
 import { httpsCallable } from 'firebase/functions';
+import { WEB_CHAT_WARMING } from '@glyphteck/shared/chat/warmingconfig';
 import { createChat, createChatProvider } from '@glyphteck/shared/providers/chatprovider';
-import { MSG_BATCH_SIZE } from '@glyphteck/shared/chat/utils';
 import { db, getFunctions, getStorage } from '@/lib/firebase/firebaseclient';
 import { useUser } from '@/components/providers/userprovider';
 import { useVault } from '@/components/providers/vaultprovider';
@@ -25,23 +25,11 @@ const chat = createChat({
     },
 });
 
-const chatWarming = {
-    enabled: true,
-    eagerCount: 10,
-    count: 10,
-    pageSize: MSG_BATCH_SIZE,
-    media: {
-        enabled: true,
-        startDelayMs: 80,
-        stepDelayMs: 40,
-    },
-};
-
 const { ChatProvider: SharedChatProvider, useChat } = createChatProvider({
     chat,
     useUser,
     useVault,
-    chatWarming,
+    chatWarming: WEB_CHAT_WARMING,
     preloadMessageMedia,
     adoptLocalMessageMedia(message, local) {
         if (local?.localUri) {

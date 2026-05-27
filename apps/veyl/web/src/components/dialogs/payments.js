@@ -6,29 +6,28 @@ import { useUser } from '@/components/providers/userprovider';
 import SendMoney from '@/components/sendmoney';
 import RequestMoney from '@/components/requestmoney';
 
-function pickTab(tab, hasBalance) {
-    let next = tab || (hasBalance ? 'send' : 'request');
-    if (next === 'send' && !hasBalance) next = 'request';
-    return next;
+function pickTab(tab, canSend) {
+    const requested = tab || 'send';
+    return requested === 'send' && canSend ? 'send' : 'request';
 }
 
 export default function Payments({ data, close }) {
     const { balance } = useWallet();
     const { walletPK: currentUserWalletPK } = useUser();
-    const hasBalance = balance && balance > 0;
+    const canSend = balance != null && balance > 0;
     const peer = data?.peer?.walletPK === currentUserWalletPK ? null : data?.peer;
     const amount = data?.amount;
-    const [activeTab, setActiveTab] = useState(() => pickTab(data?.tab, hasBalance));
+    const [activeTab, setActiveTab] = useState(() => pickTab(data?.tab, canSend));
 
     useEffect(() => {
-        setActiveTab(pickTab(data?.tab, hasBalance));
-    }, [data?.tab, hasBalance]);
+        setActiveTab(pickTab(data?.tab, canSend));
+    }, [data?.tab, canSend]);
 
     return (
         <div className="w-lg flex flex-col gap-2">
             <Tabs value={activeTab} onValueChange={setActiveTab}>
                 <TabsList>
-                    <TabsTrigger value="send" disabled={!hasBalance}>
+                    <TabsTrigger value="send" disabled={!canSend}>
                         <ArrowUpRight className="size-6" />
                         send
                     </TabsTrigger>

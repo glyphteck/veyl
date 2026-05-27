@@ -11,8 +11,8 @@ import { useTheme } from '../providers/themeprovider';
 import { useUser } from '../providers/userprovider';
 import { useChat } from '../providers/chatprovider';
 import { alpha } from '@/lib/colors';
+import { warmCamera } from '@/lib/camera/warming';
 import { useTap } from '@/lib/tap';
-import { warmCamera } from '@/lib/camerawarm';
 
 const ITEM_STYLE = {
     flex: 1,

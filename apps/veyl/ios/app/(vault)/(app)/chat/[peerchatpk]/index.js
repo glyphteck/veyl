@@ -19,7 +19,7 @@ import Avatar from '@/components/avatar';
 import { prepareAssetForChatUpload } from '@/lib/chatmedia';
 import { mark } from '@/lib/diagnostics';
 import { formatUserDisplay } from '@glyphteck/shared/utils';
-import { getPeerChatPKFromChatId } from '@glyphteck/shared/chat/utils';
+import { getChatId } from '@glyphteck/shared/crypto/chat';
 import { canReplyToMsg, makeReq, makeTxt, setReply, setTxt } from '@glyphteck/shared/chat/messages';
 import { useTap } from '@/lib/tap';
 import { getCommandContext, parseCommandAmountSats } from '@glyphteck/shared/commands';
@@ -36,7 +36,16 @@ const composerOverlayTiming = {
 };
 const composerOverlayLayout = LinearTransition.duration(COMPOSER_OVERLAY_MS).easing(Easing.out(Easing.cubic));
 
-export default function CurrentChatRoute() {
+function pickParam(value) {
+    return Array.isArray(value) ? value[0] : value;
+}
+
+function cleanChatPK(value) {
+    const chatPK = typeof value === 'string' ? value.trim().toLowerCase() : '';
+    return /^[0-9a-f]{64}$/.test(chatPK) ? chatPK : null;
+}
+
+export default function PeerChatRoute() {
     const { theme } = useTheme();
     const insets = useSafeAreaInsets();
     const params = useLocalSearchParams();
@@ -63,12 +72,14 @@ export default function CurrentChatRoute() {
     const composerInputPadding = useSharedValue(0);
     const composerExtraPadding = useDerivedValue(() => composerOverlayPadding.value + composerInputPadding.value);
 
-    const chatId = typeof params?.id === 'string' ? params.id : Array.isArray(params?.id) ? params.id[0] : null;
+    const ownChatPK = cleanChatPK(chatPK);
+    const peerChatPKParam = cleanChatPK(pickParam(params?.peerchatpk));
+    const chatId = useMemo(() => (ownChatPK && peerChatPKParam ? getChatId(ownChatPK, peerChatPKParam) : null), [ownChatPK, peerChatPKParam]);
     const currentChat = useMemo(() => (chatId && Array.isArray(chats) ? (chats.find((chat) => chat?.id === chatId) ?? null) : null), [chatId, chats]);
 
     const peerChatPK = useMemo(
-        () => currentChat?.participants?.find?.((participant) => participant && participant !== chatPK) ?? getPeerChatPKFromChatId(chatId, chatPK),
-        [currentChat?.participants, chatId, chatPK]
+        () => currentChat?.participants?.find?.((participant) => participant && participant !== chatPK) ?? peerChatPKParam,
+        [currentChat?.participants, chatPK, peerChatPKParam]
     );
     const peerProfile = useMemo(() => (peerChatPK && Array.isArray(peers) ? peers.find((p) => p?.chatPK === peerChatPK) : null), [peerChatPK, peers]);
     const chatTitle = useMemo(() => {
@@ -76,8 +87,19 @@ export default function CurrentChatRoute() {
         return peerProfile?.username || formatUserDisplay({ chatPK: peerChatPK });
     }, [peerChatPK, peerProfile?.username]);
     const peerAvatarSource = useMemo(() => (peerProfile?.avatar ? { uri: peerProfile.avatar } : null), [peerProfile?.avatar]);
-    const peerRoute = peerProfile?.username || '';
-    const hasCurrentChat = !!currentChat;
+    const settingsPeer = useMemo(() => {
+        if (!peerChatPK && !peerProfile) return null;
+        return {
+            username: peerProfile?.username || null,
+            uid: peerProfile?.uid || null,
+            chatPK: peerProfile?.chatPK || peerChatPK || null,
+            walletPK: peerProfile?.walletPK || null,
+            avatar: peerProfile?.avatar || null,
+            active: !!peerProfile?.active,
+            bot: !!peerProfile?.bot,
+        };
+    }, [peerChatPK, peerProfile]);
+    const hasChatRow = !!currentChat;
     const hasPeerProfile = !!peerProfile;
 
     const lockRoute = useCallback((ms = 1200) => {
@@ -93,21 +115,30 @@ export default function CurrentChatRoute() {
 
     useEffect(() => {
         if (!chatId) {
-            return;
+            return undefined;
         }
-        mark('chat.select', { chatId });
-        selectChat?.(chatId);
+        let timer = null;
+        const frame = requestAnimationFrame(() => {
+            timer = setTimeout(() => {
+                mark('chat.select', { chatId });
+                selectChat?.(chatId);
+            }, 0);
+        });
+        return () => {
+            cancelAnimationFrame(frame);
+            if (timer) clearTimeout(timer);
+        };
     }, [chatId, selectChat]);
 
     useEffect(() => {
         mark('chat.route', {
             chatId: chatId || '',
             peerChatPK: peerChatPK || '',
-            hasCurrentChat,
+            hasChatRow,
             hasPeerProfile,
             title: chatTitle,
         });
-    }, [chatId, chatTitle, hasCurrentChat, hasPeerProfile, peerChatPK]);
+    }, [chatId, chatTitle, hasChatRow, hasPeerProfile, peerChatPK]);
 
     useEffect(() => {
         return () => {
@@ -117,16 +148,22 @@ export default function CurrentChatRoute() {
 
     useEffect(() => {
         if (!peerProfile?.uid) {
-            return;
+            return undefined;
         }
-        updatePeer?.(peerProfile.uid, { refreshAvatar: true });
+        const timer = setTimeout(() => {
+            updatePeer?.(peerProfile.uid, { refreshAvatar: true });
+        }, 450);
+        return () => clearTimeout(timer);
     }, [peerProfile?.uid, updatePeer]);
 
     useEffect(() => {
         if (!peerProfile?.avatar) {
-            return;
+            return undefined;
         }
-        void ExpoImage.prefetch(peerProfile.avatar, 'memory-disk');
+        const timer = setTimeout(() => {
+            void ExpoImage.prefetch(peerProfile.avatar, 'memory-disk');
+        }, 450);
+        return () => clearTimeout(timer);
     }, [peerProfile?.avatar]);
 
     useEffect(() => {
@@ -162,18 +199,16 @@ export default function CurrentChatRoute() {
     }, [lockRoute, peerChatPK, peerProfile?.walletPK, router]);
 
     const avatarTap = useTap({
-        disabled: !peerRoute,
+        disabled: !settingsPeer,
         onPress: () => {
-            if (!peerRoute) return;
+            if (!settingsPeer) return;
             if (!lockRoute()) return;
             router.push({
-                pathname: '/[username]',
+                pathname: '/chat/[peerchatpk]/settings',
                 params: {
-                    username: peerRoute,
+                    peerchatpk: peerChatPK,
                     chatId: chatId ?? '',
-                    chatPK: peerChatPK ?? '',
-                    uid: peerProfile?.uid ?? '',
-                    walletPK: peerProfile?.walletPK ?? '',
+                    peer: JSON.stringify(settingsPeer),
                 },
             });
         },

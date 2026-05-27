@@ -23,6 +23,7 @@ Before starting feature work in this repo:
 - Prefer small, clean changes over layering more code onto a messy path.
 - Do not add backward compatibility, legacy fallbacks, compatibility shims, or migrations. Make clean cutovers to the current architecture.
 - In forced auth, vault, and onboarding flows, do not push or replace to the next concrete step after completing a required write. Update state and let route guards or protected stacks choose the next route; use explicit navigation only for user-initiated optional routes or exits from non-forced surfaces.
+- Keep root/auth shells dumb about app destinations. Last-route memory, chat-peer route memory, and any other app-state cache belong inside the unlocked vault boundary; outside the vault should only steer users toward auth, onboarding, or the vault unlock guard.
 - Do not depend on VS Code tasks for repo operations. The repo intentionally has no `.vscode/` workflow source; use the Bun scripts documented in [guidelines/commands.md](guidelines/commands.md), including `bun push` and `bun merge`.
 - Work in the current branch by default. Do not create, switch, or rename git branches unless the user explicitly asks for branch work or the concurrent-agent collision rule below applies.
 - When creating branches, never use agent prefixes or namespace prefixes like `codex/`, `codex-`, or similar. Branch names should be as short as possible; prefer a meaningful single word when one is clear, using the naming rules in [guidelines/code.md](guidelines/code.md).

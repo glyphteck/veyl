@@ -206,7 +206,7 @@ If you want the quickest path into the codebase, start here:
 - Vault boot: `shared/vaultutils.js`
 - Vaulted local cache: `shared/localdatacache.js`, `apps/veyl/ios/src/lib/localdatacache.js`, `apps/veyl/web/src/lib/localdatacache.js`
 - Seed crypto: `shared/crypto/seed.js`
-- Wallet provider factory: `shared/wallet.js`
+- Wallet provider factory: `shared/wallet/provider.js`
 - Chat provider factory: `shared/providers/chatprovider.js`
 - Chat warming: `shared/chat/warming.js`
 - Chat transport, crypto, and messages: `shared/chat/utils.js`, `shared/crypto/chat.js`, `shared/chat/messages.js`

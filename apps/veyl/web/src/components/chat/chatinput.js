@@ -2,10 +2,11 @@
 
 import { Button } from '@/components/button';
 import { cn } from '@/lib/utils';
-import { CircleArrowRight, HandCoins, Paperclip, Reply, SquarePen, X } from 'lucide-react';
+import { AudioLines, CircleArrowRight, File, Film, HandCoins, Image as ImageIcon, Paperclip, Reply, SquarePen, X } from 'lucide-react';
 import { useCloak } from '@glyphteck/shared/providers/cloakprovider';
 import { forwardRef, useEffect, useRef, useState } from 'react';
 import { completeCommandPrefix, getCommandContext, parseCommand } from '@glyphteck/shared/commands';
+import { blurActiveElement } from '@/lib/focus';
 
 const ChatTextarea = forwardRef(function ChatTextarea({ className, maxRows = Infinity, onInput, ...props }, ref) {
     const handleInput = (event) => {
@@ -41,6 +42,25 @@ const ChatTextarea = forwardRef(function ChatTextarea({ className, maxRows = Inf
     );
 });
 
+function getAttachmentDraftTitle(msg) {
+    if (typeof msg?.n === 'string' && msg.n.trim()) {
+        return msg.n.trim();
+    }
+
+    switch (msg?.t) {
+        case 'img':
+            return 'image';
+        case 'mp3':
+            return 'audio';
+        case 'mp4':
+            return 'video';
+        case 'file':
+            return 'file';
+        default:
+            return '';
+    }
+}
+
 function getDraftPreview(msg) {
     if (!msg) {
         return '';
@@ -48,19 +68,31 @@ function getDraftPreview(msg) {
     if (msg?.t === 'req') {
         return 'payment request';
     }
+    const attachmentTitle = getAttachmentDraftTitle(msg);
+    if (attachmentTitle) {
+        return attachmentTitle;
+    }
     if (typeof msg?.c === 'string' && msg.c.trim()) {
         return msg.c.trim();
     }
-    if (typeof msg?.n === 'string' && msg.n.trim()) {
-        return msg.n.trim();
-    }
-    if (msg?.t === 'img') {
-        return 'image';
-    }
-    if (msg?.t === 'file' || msg?.t === 'mp3' || msg?.t === 'mp4') {
-        return 'attachment';
-    }
     return 'message';
+}
+
+function getDraftTypeIcon(msg) {
+    switch (msg?.t) {
+        case 'img':
+            return ImageIcon;
+        case 'mp3':
+            return AudioLines;
+        case 'mp4':
+            return Film;
+        case 'file':
+            return File;
+        case 'req':
+            return HandCoins;
+        default:
+            return null;
+    }
 }
 
 function DraftBar({ draft, onClear }) {
@@ -69,14 +101,16 @@ function DraftBar({ draft, onClear }) {
     }
 
     const DraftIcon = draft.mode === 'edit' ? SquarePen : Reply;
+    const DraftTypeIcon = getDraftTypeIcon(draft.msg);
 
     return (
         <div className="pointer-events-auto mb-2 flex items-center gap-3 rounded-round bg-background/70 px-4 py-2 shadow backdrop-blur-sm">
             <DraftIcon className="size-5 shrink-0" />
+            {DraftTypeIcon ? <DraftTypeIcon className="size-4.5 shrink-0 text-muted" /> : null}
             <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-black text-foreground">{getDraftPreview(draft.msg)}</p>
             </div>
-            <Button onClick={onClear} className="grower size-4.5 text-muted">
+            <Button onClick={onClear} className="grower size-4.5 text-muted" tabbable={false}>
                 <X className="size-4.5" />
             </Button>
         </div>
@@ -120,7 +154,7 @@ function CommandBubbles({ items, onSelect, interactive = true }) {
                 }
 
                 return (
-                    <Button key={item} type="button" className="h-auto rounded-round p-0 grower" onClick={() => onSelect?.(getCommandPrefix(item))}>
+                    <Button key={item} type="button" className="h-auto rounded-round p-0 grower" onClick={() => onSelect?.(getCommandPrefix(item))} tabbable={false}>
                         {body}
                     </Button>
                 );
@@ -187,6 +221,11 @@ export function ChatInput({ onSendMessage, onEditMessage, onSendAttachment, onSe
     };
 
     const handleKeyDown = (e) => {
+        if (e.key === 'Escape') {
+            e.preventDefault();
+            blurActiveElement();
+            return;
+        }
         if (e.key === 'Tab' && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
             const next = completeCommandPrefix(msgInput, { mode: 'chat' });
             if (next) {
@@ -263,15 +302,15 @@ export function ChatInput({ onSendMessage, onEditMessage, onSendAttachment, onSe
                 />
                 <div className="flex  items-center self-center">
                     {canSend ? (
-                        <Button onClick={handleSendMsg} className="grower size-5" disabled={!canSend}>
+                        <Button onClick={handleSendMsg} className="grower size-5" disabled={!canSend} tabbable={false}>
                             <CircleArrowRight className="size-5.5" />
                         </Button>
                     ) : (
                         <div className="flex items-center gap-3 pr-1.5">
-                            <Button onClick={handlePickAttachment} className="grower size-5" disabled={disabled}>
+                            <Button onClick={handlePickAttachment} className="grower size-5" disabled={disabled} tabbable={false}>
                                 <Paperclip className="size-5" />
                             </Button>
-                            <Button onClick={onSendMoney} className="grower size-5" disabled={disabled || !onSendMoney}>
+                            <Button onClick={onSendMoney} className="grower size-5" disabled={disabled || !onSendMoney} tabbable={false}>
                                 <HandCoins className="size-5" />
                             </Button>
                         </div>

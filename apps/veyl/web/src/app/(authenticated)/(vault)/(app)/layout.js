@@ -1,23 +1,22 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
+import { usePathname } from 'next/navigation';
+import { getPeerChatPKFromChatId } from '@glyphteck/shared/chat/utils';
 import Loading from '@/components/loading';
 import Navbar from '@/components/navbar';
-import { AppDialogHost } from '@/components/providers/dialogprovider';
 import { useChat } from '@/components/providers/chatprovider';
-import { PeerProvider, usePeer } from '@/components/providers/peerprovider';
+import { AppDialogHost } from '@/components/providers/dialogprovider';
+import { PeerProvider } from '@/components/providers/peerprovider';
 import { TxDataProvider } from '@/components/providers/txdataprovider';
 import { useUser } from '@/components/providers/userprovider';
 import { useVault } from '@/components/providers/vaultprovider';
 import { WalletProvider } from '@/components/providers/walletprovider';
 import { logout } from '@/lib/useractions';
+import { writeLastAppTarget } from '@glyphteck/shared/localdatacache';
+import { lastAppTargetForPathname } from '@/lib/approute';
 
 function AppShell({ children }) {
-    const { isChatDataReady } = useChat();
-    const { isPeerDataReady } = usePeer();
-    const [hasInitiallyLoaded, setHasInitiallyLoaded] = useState(false);
-    const isDataReady = isChatDataReady && isPeerDataReady;
-
     useEffect(() => {
         const previousHtmlOverflow = document.documentElement.style.overflow;
         const previousHtmlOverscroll = document.documentElement.style.overscrollBehavior;
@@ -37,13 +36,7 @@ function AppShell({ children }) {
         };
     }, []);
 
-    useEffect(() => {
-        if (isDataReady && !hasInitiallyLoaded) setHasInitiallyLoaded(true);
-    }, [isDataReady, hasInitiallyLoaded]);
-
-    return !hasInitiallyLoaded ? (
-        <Loading />
-    ) : (
+    return (
         <div className="relative flex h-screen flex-col overscroll-none px-2 pb-2">
             <Navbar />
             <main className="min-h-0 flex-1">{children}</main>
@@ -53,7 +46,23 @@ function AppShell({ children }) {
 
 export default function AppLayout({ children }) {
     const user = useUser();
-    const { lockState } = useVault();
+    const pathname = usePathname();
+    const { localCache, lockState } = useVault();
+    const { chats, selectedChatId } = useChat();
+    const selectedChatPeer = useMemo(() => {
+        const chat = Array.isArray(chats) && selectedChatId ? chats.find((item) => item?.id === selectedChatId) : null;
+        return chat?.participants?.find?.((participant) => participant && participant !== user.chatPK) ?? getPeerChatPKFromChatId(selectedChatId, user.chatPK);
+    }, [chats, selectedChatId, user.chatPK]);
+    const pathnameRef = useRef(pathname);
+    const cacheRef = useRef(localCache);
+    const unlockedRef = useRef(lockState === 'unlocked');
+    const wasUnlockedRef = useRef(lockState === 'unlocked');
+    const selectedChatPeerRef = useRef(selectedChatPeer);
+
+    pathnameRef.current = pathname;
+    cacheRef.current = localCache;
+    unlockedRef.current = lockState === 'unlocked';
+    selectedChatPeerRef.current = selectedChatPeer;
 
     useEffect(() => {
         if (user.authReady && !user.uid) {
@@ -61,8 +70,43 @@ export default function AppLayout({ children }) {
         }
     }, [user.authReady, user.uid]);
 
-    if (!user.uid || !user.settingsReady) return <Loading />;
-    if (lockState !== 'unlocked') return null;
+    useEffect(() => {
+        function saveCurrentRoute() {
+            if (!unlockedRef.current) return;
+            const target = lastAppTargetForPathname(pathnameRef.current, selectedChatPeerRef.current);
+            if (!target) return;
+            writeLastAppTarget(cacheRef.current, target);
+            void cacheRef.current?.flush?.();
+        }
+
+        function handleVisibilityChange() {
+            if (document.visibilityState === 'hidden') {
+                saveCurrentRoute();
+            }
+        }
+
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        window.addEventListener('pagehide', saveCurrentRoute);
+        return () => {
+            saveCurrentRoute();
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+            window.removeEventListener('pagehide', saveCurrentRoute);
+        };
+    }, []);
+
+    useEffect(() => {
+        if (wasUnlockedRef.current && lockState !== 'unlocked') {
+            const target = lastAppTargetForPathname(pathnameRef.current, selectedChatPeerRef.current);
+            if (target) {
+                writeLastAppTarget(cacheRef.current, target);
+                void cacheRef.current?.flush?.();
+            }
+        }
+        wasUnlockedRef.current = lockState === 'unlocked';
+    }, [lockState]);
+
+    if (!user.uid) return <Loading />;
+    if (lockState !== 'unlocked') return <Loading />;
 
     return (
         <WalletProvider>

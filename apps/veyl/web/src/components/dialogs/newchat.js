@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Card } from '@/components/card';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/avatar';
 import { Button } from '@/components/button';
@@ -31,6 +32,7 @@ function PeerCell({ peer, onSelect, selected }) {
 }
 
 export default function NewChat({ close }) {
+    const router = useRouter();
     const { uid, chatPK, chatBanned } = useUser();
     const { chats, sendMessage, sendAttachment, selectChat } = useChat();
     const { peers, recentPeers } = usePeer();
@@ -110,6 +112,7 @@ export default function NewChat({ close }) {
         if (!file || !selectedPeer?.chatPK) return;
         close();
         selectChat(getChatId(chatPK, selectedPeer.chatPK));
+        router.push('/chat');
         try {
             await sendAttachment(selectedPeer.chatPK, await prepareChatFile(file));
             toast(`sent attachment to ${formatUserDisplay(selectedPeer, false)}`, { icon: <CircleCheck /> });
@@ -129,6 +132,7 @@ export default function NewChat({ close }) {
             const newChatId = getChatId(chatPK, selectedPeer.chatPK);
             const sendPromise = sendMessage(selectedPeer.chatPK, message);
             selectChat(newChatId);
+            router.push('/chat');
             await sendPromise;
             const truncated = messageToSend.length > 28 ? messageToSend.substring(0, 28) + '...' : messageToSend;
             toast(`sent message to ${formatUserDisplay(selectedPeer, false)}`, {

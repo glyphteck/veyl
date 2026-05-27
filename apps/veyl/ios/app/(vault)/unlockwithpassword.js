@@ -15,6 +15,7 @@ import Icon from '@/components/icon';
 import { hasQuickLoginAccount } from '@/lib/quicklogin';
 import { useTap } from '@/lib/tap';
 import { logout } from '@/lib/useractions';
+import { mark } from '@/lib/diagnostics';
 import { isPassword, MAX_PASSWORD, normalizePassword } from '@glyphteck/shared/password';
 
 export default function UnlockScreen() {
@@ -86,10 +87,14 @@ export default function UnlockScreen() {
 
     const onSubmit = async () => {
         if (!canSubmit) return;
+        const startedAt = Date.now();
+        mark('unlock.password.submit.start', { seedReady, lockState });
         try {
             await swap(() => setStatus('loading'));
-            await unlockWithPsw(normalizePassword(password), { onSeedDecrypted: animateUnlock });
+            await unlockWithPsw(normalizePassword(password), { source: 'password', onSeedDecrypted: animateUnlock });
+            mark('unlock.password.submit.done', { elapsedMs: Date.now() - startedAt });
         } catch (err) {
+            mark('unlock.password.submit.error', { elapsedMs: Date.now() - startedAt, code: err?.code || '', message: err?.message || String(err) });
             console.warn('unlock failed', err);
             await swap(() => setStatus('error'));
             setPassword('');

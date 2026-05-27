@@ -24,7 +24,6 @@ import { useUser } from '@/providers/userprovider';
 import { useVault } from '@/providers/vaultprovider';
 import { useWallet } from '@/providers/walletprovider';
 import { renderMoney } from '@glyphteck/shared/utils';
-import { minWithdrawalSats } from '@glyphteck/shared/spark';
 import { verifyVaultPassword } from '@/lib/crypto/seed';
 
 function getVaultError(error) {
@@ -54,7 +53,7 @@ export default function DeleteAccountScreen() {
     const [isVerifying, setIsVerifying] = useState(false);
     const [isVerified, setIsVerified] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
-    const showWithdraw = balance != null && balance >= minWithdrawalSats;
+    const showWithdraw = Number(balance ?? 0) > 0;
     const balanceLabel = renderMoney(balance ?? 0n, settings.moneyFormat, bitcoin.price);
     const lockPulse = useSharedValue(1);
     const lockAnimStyle = useAnimatedStyle(() => ({ opacity: lockPulse.value }));
@@ -148,7 +147,7 @@ export default function DeleteAccountScreen() {
         setIsDeleting(true);
 
         try {
-            await dropPush().catch(() => {});
+            await dropPush({ uid }).catch(() => {});
             await httpsCallable(functions, 'deleteAccount')();
             await localCache?.clear?.().catch(() => {});
             clearAvatar?.();

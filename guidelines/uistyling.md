@@ -84,7 +84,7 @@ Use the existing primitives first:
 - `Field` for react-hook-form wiring and accessibility ids.
 - `Card` for framed glass content areas.
 - `Tabs`/`ToggleGroup` for segmented choices.
-- `DropdownMenu`, `Command`, and dialogs for menus/search flows.
+- `DropdownMenu`, dialogs, and the in-house main menu for menus/search flows.
 - Lucide icons from `lucide-react`.
 
 Before making a new control, confirm whether an existing primitive or local component already covers it. Prefer reusing the repo component and its established class names over custom one-off sizing, borders, shadows, or layout wrappers.
@@ -131,13 +131,13 @@ Important explanatory, safety, and legal text should use `text-foreground`, not 
 
 Segmented controls use `ToggleGroup`: root is `shadow flex w-fit items-center rounded-full`; items are `h-9 min-w-9`, `font-black`, separated with left borders, and active state is `bg-foreground text-background`. Tabs follow the same full-pill segmented pattern.
 
-Menus and command surfaces should use the existing components. Dropdown items slide their first children on hover/focus. Command/main menu search is the app-wide navigation surface; do not replace it with ad hoc search UI.
+Menus and command surfaces should use the existing components. Dropdown items slide their first children on hover/focus. Main menu search is the app-wide navigation surface; keep it in `apps/veyl/web/src/components/dialogs/mainmenu.js` so it can stay lazy-mounted and virtualized.
 
 Web uses `160ms` as the Tailwind default transition duration in `apps/veyl/web/src/app/globals.css`. Do not add explicit `duration-[160ms]`, `duration-160`, `duration-150`, or `duration-200` classes for normal transitions; rely on `transition-*` alone. Use explicit durations only when the animation is intentionally outside the default, such as longer chart/camera transitions, toast lifetimes, custom JavaScript row animation constants, media playback, or loading spinners.
 
 For new web UI, implement in this order:
 
-1. Check whether the needed component or pattern already exists, then pick the closest existing component: `Button`, `Input`, `Card`, `ToggleGroup`, `Tabs`, `DropdownMenu`, or `Command`.
+1. Check whether the needed component or pattern already exists, then pick the closest existing component: `Button`, `Input`, `Card`, `ToggleGroup`, `Tabs`, `DropdownMenu`, or the in-house main menu.
 2. Compose Tailwind classes with `cn()` when conditional classes are needed.
 3. Use lucide icons and size them with Tailwind `size-*` only when deviating from the default.
 4. Apply `grower*` to icon route/actions and `shrinker*` to larger pill/text controls.

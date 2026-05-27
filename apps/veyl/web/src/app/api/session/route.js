@@ -32,19 +32,6 @@ export async function POST(request) {
     return response;
 }
 
-export async function DELETE(request) {
-    const session = request.cookies.get('session')?.value;
-
-    if (session) {
-        try {
-            const decoded = await admin.auth().verifySessionCookie(session, false);
-            await admin.auth().revokeRefreshTokens(decoded.uid);
-        } catch (error) {
-            if (error?.code !== 'auth/user-not-found') {
-                console.error('Failed to revoke session', error);
-            }
-        }
-    }
-
+export async function DELETE() {
     return clearSessionCookie(NextResponse.json({ status: 'logged out' }));
 }

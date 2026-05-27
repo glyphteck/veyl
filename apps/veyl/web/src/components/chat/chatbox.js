@@ -309,8 +309,6 @@ export function Chatbox() {
                 onClearDraft={handleClearDraft}
                 hidden={!selectedChatId || !currentChat}
             />
-            {/* bottom fadeout */}
-            <div className="absolute bottom-0 left-0 right-0 z-20 bg-linear-to-b from-transparent to-background h-24  pointer-events-none"></div>
         </Card>
     );
 }

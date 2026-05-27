@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useCallback, useState, useEffect } from 'react';
+import { makeUserQr, qr } from '@glyphteck/shared/qrutils';
 import Loading from '@/components/loading';
 import { useChat } from '@/components/providers/chatprovider';
 import { useVault } from '@/components/providers/vaultprovider';
@@ -38,6 +39,8 @@ export default function UnlockPage() {
     const user = useUser();
     const [status, setStatus] = useState('idle');
     const [showPassword, setShowPassword] = useState(false);
+    const [userMenuOpen, setUserMenuOpen] = useState(false);
+    const username = user?.username;
     const isUnlocked = lockState === 'unlocked';
     const isOpeningChats = isUnlocked && !isChatDataReady;
     const lockLabel = lockLabels[lockState];
@@ -56,6 +59,15 @@ export default function UnlockPage() {
     });
 
     const togglePasswordVisibility = () => setShowPassword((prev) => !prev);
+    const openUserQr = useCallback(() => {
+        const qrData = makeUserQr(username);
+        if (!qrData) return;
+        setUserMenuOpen(false);
+        openDialog('qrcode', {
+            type: qr.user,
+            value: qrData,
+        });
+    }, [openDialog, username]);
 
     useEffect(() => {
         if (user.authReady && !user.uid) {
@@ -66,6 +78,16 @@ export default function UnlockPage() {
     // Keyboard shortcuts
     useEffect(() => {
         const handleKeyDown = (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'u') {
+                e.preventDefault();
+                if (disabled) return;
+                if (e.shiftKey) {
+                    openUserQr();
+                } else {
+                    setUserMenuOpen(true);
+                }
+                return;
+            }
             if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'l' && e.shiftKey) {
                 e.preventDefault();
                 logout();
@@ -73,7 +95,7 @@ export default function UnlockPage() {
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, []);
+    }, [disabled, openUserQr]);
 
     const onSubmit = async ({ password: raw }) => {
         setStatus('loading');
@@ -92,7 +114,7 @@ export default function UnlockPage() {
         }
     };
 
-    if (!user.uid || !user.settingsReady) return <Loading />;
+    if (!user.uid) return <Loading />;
 
     return (
         <div className="pointer-events-auto inset-0 fixed items-center flex justify-center">
@@ -104,6 +126,8 @@ export default function UnlockPage() {
                     openDialog={openDialog}
                     locked
                     disabled={disabled}
+                    open={userMenuOpen}
+                    onOpenChange={setUserMenuOpen}
                     className="shrinker-fixed disabled:opacity-100"
                     avatarClassName="size-11 shadow"
                 />

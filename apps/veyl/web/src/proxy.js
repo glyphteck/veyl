@@ -15,6 +15,10 @@ export function proxy(request) {
         return NextResponse.next();
     }
 
+    if (pathname === '/') {
+        return isMobile ? NextResponse.redirect(new URL('/landing', request.url)) : NextResponse.next();
+    }
+
     if (pathname === '/download') {
         return isMobile ? NextResponse.next() : NextResponse.redirect(new URL('/', request.url));
     }

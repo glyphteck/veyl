@@ -12,6 +12,7 @@ export { setWalletPK, setChatPK } from './user/onboarding/setpks.js';
 // user action functions
 export { deleteAccount } from './user/actions/deleteaccount.js';
 export { deleteChat } from './user/actions/deletechat.js';
+export { setPush, dropPush } from './user/actions/push.js';
 export { submitReport } from './user/actions/report.js';
 
 // chat functions

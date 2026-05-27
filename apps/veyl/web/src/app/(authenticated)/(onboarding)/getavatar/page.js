@@ -51,7 +51,7 @@ export default function GetAvatar() {
 
     return (
         <div className="absolute inset-0 items-center flex justify-center">
-            <div className="flex flex-col items-center gap-4">
+            <div className="flex flex-col items-center gap-6">
                 <div className="flex items-center gap-2 text-xl font-black leading-none select-none" aria-live="polite">
                     {labelText}
                     {busy ? <Loader className="mt-0.5 animate-spin" /> : null}
@@ -73,7 +73,7 @@ export default function GetAvatar() {
                             </Button>
                         </div>
                         <div className="pop absolute inset-0 flex items-center justify-center" data-open={!!selectedImage && !busy} aria-hidden={!selectedImage || busy}>
-                            <Button type="button" className="button-outline shrinker w-full" disabled={!selectedImage || busy || avatarBanned} onClick={handleConfirm} tabIndex={selectedImage && !busy ? 0 : -1}>
+                            <Button type="button" className="button-fill shrinker w-full" disabled={!selectedImage || busy || avatarBanned} onClick={handleConfirm} tabIndex={selectedImage && !busy ? 0 : -1}>
                                 <ImageUp className="stroke-2" />
                                 confirm
                             </Button>

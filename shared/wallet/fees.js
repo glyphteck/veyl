@@ -1,7 +1,15 @@
 export const DEFAULT_EXIT_SPEED = 'MEDIUM';
 export const EXIT_SPEEDS = Object.freeze(['SLOW', 'MEDIUM', 'FAST']);
-export const FUNDING_TX_PREVIEW_VBYTES = 141;
-export const STATIC_DEPOSIT_FEE_ESTIMATE_SATS = 99;
+export const COOPERATIVE_EXIT_TX_VBYTES = 250;
+export const COOPERATIVE_EXIT_FLAT_FEE_SATS = 750;
+export const FUNDING_TX_PREVIEW_VBYTES = 200;
+export const STATIC_DEPOSIT_CLAIM_FEE_SATS = 99;
+export const UNILATERAL_EXIT_MIN_LEAF_SATS = 16348n;
+export const UNILATERAL_EXIT_PARENT_TX_FALLBACK_VBYTES = 191;
+export const UNILATERAL_EXIT_FEE_BUMP_TX_VBYTES = 151;
+export const UNILATERAL_EXIT_PACKAGES_PER_LEAF = 2;
+export const UNILATERAL_EXIT_PREVIEW_VBYTES = UNILATERAL_EXIT_PACKAGES_PER_LEAF * (UNILATERAL_EXIT_PARENT_TX_FALLBACK_VBYTES + UNILATERAL_EXIT_FEE_BUMP_TX_VBYTES);
+export const WITHDRAWAL_FEE_WARNING_RATIO = 0.25;
 const DEFAULT_FEE_RATE_SPEED = 'medium';
 
 const FEE_RATE_FALLBACKS = Object.freeze({
@@ -201,6 +209,69 @@ export function normalizeOnchainFeeEstimate({ bitcoin, feeRate, speed = DEFAULT_
         baseSats,
         source: feeRate == null ? (bitcoin?.fees?.source ?? null) : 'manual',
         updatedAtIso: bitcoin?.fees?.updatedAtIso ?? null,
+    };
+}
+
+function getPositiveCount(value, fallback = 1) {
+    const count = Number(value ?? fallback);
+    return Number.isSafeInteger(count) && count > 0 ? count : null;
+}
+
+export function estimateUnilateralExitFeeSats({ bitcoin, feeRate, speed = DEFAULT_FEE_RATE_SPEED, leaves = 1, baseSats = 0 } = {}) {
+    const leafCount = getPositiveCount(leaves);
+    if (leafCount == null) {
+        return null;
+    }
+    return estimateOnchainFeeSats({
+        bitcoin,
+        feeRate,
+        speed,
+        vbytes: UNILATERAL_EXIT_PREVIEW_VBYTES * leafCount,
+        baseSats,
+    });
+}
+
+export function normalizeUnilateralExitFeeEstimate({ bitcoin, feeRate, speed = DEFAULT_FEE_RATE_SPEED, leaves = 1, baseSats = 0 } = {}) {
+    const leafCount = getPositiveCount(leaves);
+    if (leafCount == null) {
+        return null;
+    }
+
+    const estimate = normalizeOnchainFeeEstimate({
+        bitcoin,
+        feeRate,
+        speed,
+        vbytes: UNILATERAL_EXIT_PREVIEW_VBYTES * leafCount,
+        baseSats,
+    });
+    if (!estimate) {
+        return null;
+    }
+
+    return {
+        ...estimate,
+        kind: 'unilateral_exit',
+        leaves: leafCount,
+        vbytesPerLeaf: UNILATERAL_EXIT_PREVIEW_VBYTES,
+    };
+}
+
+export function getWithdrawalFeeRisk({ amountSats, feeAmountSats, warningRatio = WITHDRAWAL_FEE_WARNING_RATIO } = {}) {
+    const amount = getOptionalSats(amountSats);
+    const fee = getOptionalSats(feeAmountSats);
+    if (amount == null || amount <= 0 || fee == null) {
+        return null;
+    }
+
+    const feeRatio = fee / amount;
+    const feeExceedsAmount = fee >= amount;
+    const feeIsLarge = feeRatio >= warningRatio;
+
+    return {
+        feeRatio,
+        feeExceedsAmount,
+        feeIsLarge,
+        high: feeExceedsAmount || feeIsLarge,
     };
 }
 

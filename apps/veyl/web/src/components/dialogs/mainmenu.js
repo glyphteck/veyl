@@ -1,6 +1,5 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Command, CommandInput, CommandList, CommandGroup, CommandItem, CommandSeparator, CommandShortcut, CommandEmpty } from '@/components/command';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/avatar';
 import {
     MessageCircle,
@@ -22,6 +21,7 @@ import {
     Box,
     Bot,
     Hammer,
+    Search,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useDialog } from '@/components/providers/dialogprovider';
@@ -33,25 +33,155 @@ import { useTxData } from '@/components/providers/txdataprovider';
 import { usePeer } from '@/components/providers/peerprovider';
 import { useCloak } from '@glyphteck/shared/providers/cloakprovider';
 import { mergeProfiles } from '@glyphteck/shared/search/merge';
-import { sortProfiles } from '@glyphteck/shared/search/sort';
 import { completeCommandPrefix, getTypingUsername, matchCommands, parseCommand, parseCommandAmountSats } from '@glyphteck/shared/commands';
 import { useChat } from '@/components/providers/chatprovider';
-import { formatUserDisplay, renderMoney, formatFullDateTime } from '@/lib/utils';
+import { cn, formatUserDisplay, renderMoney, formatFullDateTime } from '@/lib/utils';
+import {
+    MAINMENU_LIST_HEIGHT,
+    MAINMENU_ROW_HEIGHT,
+    countMainMenuRows,
+    findMainMenuRow,
+    formatCacheSize,
+    getMainMenuPeers,
+    getMainMenuWindow,
+    sortMainMenuTransactions,
+    textMatches,
+} from '@/lib/mainmenu';
 import { useSearch } from '@/lib/search/usesearch';
 import { shortcuts } from '@/lib/shortcuts';
+import { isEditableTarget, listNavigationStep } from '@/lib/focus';
 import { Bitcoin } from '@/components/bitcoin';
 import { getMsgPreview as displayLastMsg, makeReq, makeTxt } from '@glyphteck/shared/chat/messages';
 import { Dot } from '@/components/dot';
 import { qr } from '@glyphteck/shared/qrutils';
 import { getChatId } from '@glyphteck/shared/crypto/chat';
-import { minWithdrawalSats } from '@glyphteck/shared/spark';
 
-function formatCacheSize(bytes) {
-    const value = Number(bytes) || 0;
-    if (value < 1024) return `${value} B`;
-    if (value < 1024 * 1024) return `${(value / 1024).toFixed(value < 10 * 1024 ? 1 : 0)} KB`;
-    if (value < 1024 * 1024 * 1024) return `${(value / 1024 / 1024).toFixed(value < 10 * 1024 * 1024 ? 1 : 0)} MB`;
-    return `${(value / 1024 / 1024 / 1024).toFixed(1)} GB`;
+function rowsSection(key, rows) {
+    return {
+        key,
+        count: rows.length,
+        keyFor: (index) => rows[index]?.key,
+        select: (index) => rows[index]?.select?.(),
+        render: (index, active, onActive, separated) => {
+            const row = rows[index];
+            if (!row) return null;
+            return (
+                <MainMenuItem active={active} className={cn(separated && 'shadow-[inset_0_1px_0_0_var(--border)]', row.className)} onActive={onActive} onSelect={row.select}>
+                    {row.content}
+                </MainMenuItem>
+            );
+        },
+    };
+}
+
+function MainMenuInput({ inputRef, listId, activeId, value, onChange, onKeyDown }) {
+    return (
+        <div className="flex items-center gap-2 px-3 shadow-sm">
+            <Search className="text-muted" />
+            <input
+                ref={inputRef}
+                role="combobox"
+                aria-expanded="true"
+                aria-controls={listId}
+                aria-activedescendant={activeId || undefined}
+                className="w-full bg-transparent py-1.5 disabled:cursor-not-allowed disabled:opacity-50"
+                placeholder="search for anything"
+                value={value}
+                onChange={(event) => onChange(event.target.value)}
+                onKeyDown={onKeyDown}
+            />
+        </div>
+    );
+}
+
+function MainMenuItem({ active, className, children, onActive, onSelect }) {
+    return (
+        <button
+            type="button"
+            tabIndex={-1}
+            data-active={active ? 'true' : undefined}
+            className={cn(
+                'relative flex h-9 w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-base select-none outline-none data-[active=true]:bg-foreground/5 [&>*:nth-child(-n+2)]:transition-transform [&>*:nth-child(-n+2)]:ease-out hover:[&>*:nth-child(-n+2)]:translate-x-3 data-[active=true]:[&>*:nth-child(-n+2)]:translate-x-3 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&>*.avatar]:size-6',
+                className
+            )}
+            onMouseEnter={onActive}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={onSelect}
+        >
+            {children}
+        </button>
+    );
+}
+
+function MainMenuShortcut({ className, ...props }) {
+    return <span className={cn('ml-auto text-sm font-black tracking-widest text-muted', className)} {...props} />;
+}
+
+function MainMenuEmpty({ children }) {
+    return <div className="flex h-18 items-center justify-center py-1.5 text-muted">{children}</div>;
+}
+
+function MainMenuList({ id, resetKey, sections, activeIndex, setActiveIndex, empty }) {
+    const ref = useRef(null);
+    const [scrollTop, setScrollTop] = useState(0);
+    const total = countMainMenuRows(sections);
+    const { start, end } = getMainMenuWindow({ scrollTop, total });
+    const visible = [];
+
+    for (let index = start; index < end; index += 1) {
+        const row = findMainMenuRow(sections, index);
+        if (!row) continue;
+        visible.push(
+            <div
+                key={`${row.section.key}:${row.key}`}
+                id={`${id}-item-${index}`}
+                role="option"
+                aria-selected={index === activeIndex}
+                className="absolute inset-x-0"
+                style={{ top: index * MAINMENU_ROW_HEIGHT, height: MAINMENU_ROW_HEIGHT }}
+            >
+                {row.section.render(row.localIndex, index === activeIndex, () => setActiveIndex(index), index > 0 && row.localIndex === 0)}
+            </div>
+        );
+    }
+
+    useEffect(() => {
+        const node = ref.current;
+        if (!node || activeIndex < 0) return;
+        const top = activeIndex * MAINMENU_ROW_HEIGHT;
+        const bottom = top + MAINMENU_ROW_HEIGHT;
+        if (top < node.scrollTop) {
+            node.scrollTop = top;
+        } else if (bottom > node.scrollTop + node.clientHeight) {
+            node.scrollTop = bottom - node.clientHeight;
+        }
+    }, [activeIndex, total]);
+
+    useEffect(() => {
+        const node = ref.current;
+        if (node) node.scrollTop = 0;
+        setScrollTop(0);
+    }, [resetKey]);
+
+    if (!total) {
+        return <MainMenuEmpty>{empty}</MainMenuEmpty>;
+    }
+
+    return (
+        <div
+            ref={ref}
+            id={id}
+            role="listbox"
+            className="min-h-0 overflow-y-auto"
+            style={{ maxHeight: MAINMENU_LIST_HEIGHT }}
+            onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
+            onWheel={(event) => event.stopPropagation()}
+        >
+            <div className="relative" style={{ height: total * MAINMENU_ROW_HEIGHT }}>
+                {visible}
+            </div>
+        </div>
+    );
 }
 
 export default function MainMenu({ close, data, open = true }) {
@@ -67,6 +197,7 @@ export default function MainMenu({ close, data, open = true }) {
     const { cloaked, cloak } = useCloak();
     const { searching, results, query, search, clearSearch } = useSearch('mainmenu');
     const [searchValue, setSearchValue] = useState(data?.searchInput || '');
+    const [activeIndex, setActiveIndex] = useState(0);
     const [cacheSize, setCacheSize] = useState(0);
     const inputRef = useRef(null);
     const clearingCacheRef = useRef(false);
@@ -129,7 +260,7 @@ export default function MainMenu({ close, data, open = true }) {
             const formattedAmount = renderMoney(amountSats, settings?.moneyFormat || 'sats', bitcoin?.price);
             close();
             const loadingToastId = toast(`sending ${formattedAmount} to ${displayName}`, {
-                icon: <Loader className="animate-spin size-4" />,
+                icon: <Loader className="size-4 animate-spin" />,
                 duration: Infinity,
             });
             try {
@@ -199,7 +330,7 @@ export default function MainMenu({ close, data, open = true }) {
         }
     };
 
-    const handleInputKeyDown = (event) => {
+    const handleInputCompletion = (event) => {
         if (event.key !== 'Tab' || event.shiftKey || event.metaKey || event.ctrlKey || event.altKey) {
             return;
         }
@@ -217,12 +348,10 @@ export default function MainMenu({ close, data, open = true }) {
         });
     };
 
-    // if search value passed on mount
     useEffect(() => {
         if (searchValue) handleSearchChange(searchValue);
     }, []);
 
-    // focus the search input when the menu opens, and keep prefilled input at the end
     useEffect(() => {
         const timeout = window.setTimeout(() => {
             const input = inputRef.current;
@@ -244,15 +373,18 @@ export default function MainMenu({ close, data, open = true }) {
             return;
         }
 
-        localCache.estimateSize().then((size) => {
-            if (cacheRefreshRef.current === requestId) {
-                setCacheSize(Number(size) || 0);
-            }
-        }).catch(() => {
-            if (cacheRefreshRef.current === requestId) {
-                setCacheSize(0);
-            }
-        });
+        localCache
+            .estimateSize()
+            .then((size) => {
+                if (cacheRefreshRef.current === requestId) {
+                    setCacheSize(Number(size) || 0);
+                }
+            })
+            .catch(() => {
+                if (cacheRefreshRef.current === requestId) {
+                    setCacheSize(0);
+                }
+            });
     }, [localCache]);
 
     useEffect(() => {
@@ -280,13 +412,11 @@ export default function MainMenu({ close, data, open = true }) {
     const matchedPeers = useMemo(() => {
         if (!query) return [];
         if (browseUsers) {
-            return sortProfiles(
-                (peers || []).filter((peer) => peer?.uid && peer.uid !== uid),
-                query
-            );
+            return getMainMenuPeers({ peers, recentPeers, excludeUid: uid });
         }
         return mergeProfiles({ local: peers || [], remote: results || [], parsed: query, excludeUid: uid });
-    }, [browseUsers, peers, query, results, uid]);
+    }, [browseUsers, peers, query, recentPeers?.all, results, uid]);
+    const txs = useMemo(() => (showAllTx ? sortMainMenuTransactions(transactions) : []), [showAllTx, transactions]);
 
     const openRoute = (href) => {
         router.push(href);
@@ -307,347 +437,490 @@ export default function MainMenu({ close, data, open = true }) {
         }
     };
 
-    return (
-        <div className="flex flex-col items-center gap-2">
-            <Command className="w-lg max-h-105 pt-px">
-                <CommandInput ref={inputRef} placeholder="search for anything" value={searchValue} onValueChange={handleSearchChange} onKeyDown={handleInputKeyDown} />
-                <CommandList>
-                {searching && query?.value && (
-                    <CommandEmpty>
-                        <Loader className="animate-spin size-6" />
-                    </CommandEmpty>
-                )}
-                {!searching && searchValue && (
-                    <CommandEmpty>
-                        {showCommands && matchedCommands.length === 0
-                            ? 'unknown command'
-                            : showCommands && typingUsername !== null
-                              ? 'no users found'
-                              : browseUsers
-                                ? 'search users'
-                                : showAllTx
-                                  ? 'no transactions'
-                                  : 'no results'}
-                    </CommandEmpty>
-                )}
-                {/* commands */}
-                {showCommands && matchedCommands.length > 0 && (
+    const focusInput = () => {
+        window.setTimeout(() => inputRef.current?.focus({ preventScroll: true }), 0);
+    };
+
+    const userSection = (key, list, select) => ({
+        key,
+        count: list.length,
+        keyFor: (index) => list[index]?.uid || `${key}-${index}`,
+        select: (index) => select(list[index]),
+        render: (index, active, onActive, separated) => {
+            const peer = list[index];
+            if (!peer) return null;
+            return (
+                <MainMenuItem active={active} className={separated && 'shadow-[inset_0_1px_0_0_var(--border)]'} onActive={onActive} onSelect={() => select(peer)}>
+                    <Avatar active={peer?.active} bot={!!peer?.bot}>
+                        <AvatarImage src={peer.avatar} alt={peer.username || 'user'} />
+                        <AvatarFallback />
+                    </Avatar>
+                    <span>{formatUserDisplay(peer, true)}</span>
+                </MainMenuItem>
+            );
+        },
+    });
+
+    const menuSections = [];
+
+    if (showCommands && matchedCommands.length > 0) {
+        if (parsedCommand?.complete) {
+            const { username: targetUsername, amount, message } = parsedCommand.args;
+            const label = parsedCommand.name === 'msg' ? `msg @${targetUsername}: ${message}` : `${parsedCommand.name} ${amount} sats to @${targetUsername}`;
+            menuSections.push(
+                rowsSection('commands', [
+                    {
+                        key: 'cmd-execute',
+                        label: `/${label}`,
+                        value: searchValue,
+                        keywords: [searchValue.trim()],
+                        select: () => executeCommand(parsedCommand),
+                        content: <span>/{label}</span>,
+                    },
+                ])
+            );
+        } else if (typingUsername !== null && matchedPeers.length > 0) {
+            menuSections.push(
+                userSection('command-users', matchedPeers, (peer) => {
+                    const cmd = matchedCommands[0];
+                    if (!cmd || !peer?.username) return;
+                    handleSearchChange(`/${cmd.name} @${peer.username} `);
+                    focusInput();
+                })
+            );
+        } else if (parsedCommand?.args?.username) {
+            const { username: targetUsername } = parsedCommand.args;
+            const hintLabel =
+                parsedCommand.name === 'msg'
+                    ? `send a message to @${targetUsername}`
+                    : parsedCommand.name === 'send'
+                      ? `send money to @${targetUsername}`
+                      : parsedCommand.name === 'request'
+                        ? `request money from @${targetUsername}`
+                        : null;
+            if (hintLabel) {
+                menuSections.push(
+                    rowsSection('commands', [
+                        {
+                            key: 'cmd-hint',
+                            label: hintLabel,
+                            value: searchValue,
+                            keywords: [searchValue.trim(), `/${parsedCommand.name} ${targetUsername}`, `/${parsedCommand.name} ${targetUsername} `],
+                            select: () => executeCommand(parsedCommand),
+                            content: <span>{hintLabel}</span>,
+                        },
+                    ])
+                );
+            }
+        } else {
+            menuSections.push(
+                rowsSection(
+                    'commands',
+                    matchedCommands.map((cmd) => ({
+                        key: cmd.name,
+                        label: cmd.name,
+                        value: `/${cmd.name}`,
+                        keywords: ['/', 'command', cmd.name, searchValue],
+                        select: () => {
+                            handleSearchChange(`/${cmd.name} @`);
+                            focusInput();
+                        },
+                        content: <span className="font-mono">{cmd.syntax}</span>,
+                    }))
+                )
+            );
+        }
+    }
+
+    if (!searchValue && topPeers.length > 0) {
+        menuSections.push(userSection('top-users', topPeers, openUser));
+    }
+
+    if (!showCommands && !showUserSearch && !showAllTx) {
+        const staticFilter = searchValue;
+        const moneyRows = [
+            !chatBanned && {
+                key: 'newchat',
+                label: 'new chat',
+                keywords: ['message', 'chat', 'dm', 'conversation'],
+                select: () => openDialog('newchat'),
+                content: (
                     <>
-                        <CommandGroup heading="commands">
-                            {parsedCommand?.complete
-                                ? (() => {
-                                      const { username, amount, message } = parsedCommand.args;
-                                      const label = parsedCommand.name === 'msg' ? `msg @${username}: ${message}` : `${parsedCommand.name} ${amount} sats to @${username}`;
-                                      return (
-                                          <CommandItem key="cmd-execute" value={`/${label}`} keywords={[searchValue, searchValue.trim()]} onSelect={() => executeCommand(parsedCommand)}>
-                                              <span>/{label}</span>
-                                          </CommandItem>
-                                      );
-                                  })()
-                                : typingUsername !== null
-                                  ? matchedPeers.map((peer) => (
-                                        <CommandItem
-                                            key={peer.uid}
-                                            value={`@${peer.username}`}
-                                            keywords={[searchValue]}
-                                            onSelect={() => {
-                                                const cmd = matchedCommands[0];
-                                                const next = `/${cmd.name} @${peer.username} `;
-                                                setSearchValue(next);
-                                                handleSearchChange(next);
-                                                setTimeout(() => inputRef.current?.focus(), 0);
-                                            }}
-                                        >
-                                            <Avatar active={peer?.active} bot={!!peer?.bot}>
-                                                <AvatarImage src={peer.avatar} alt={peer.username || 'user'} />
-                                                <AvatarFallback />
-                                            </Avatar>
-                                            <span>{formatUserDisplay(peer, true)}</span>
-                                        </CommandItem>
-                                    ))
-                                  : parsedCommand?.args?.username
-                                    ? (() => {
-                                          const { username } = parsedCommand.args;
-                                          const hintLabel =
-                                              parsedCommand.name === 'msg'
-                                                  ? `send a message to @${username}`
-                                                  : parsedCommand.name === 'send'
-                                                    ? `send money to @${username}`
-                                                    : parsedCommand.name === 'request'
-                                                      ? `request money from @${username}`
-                                                      : null;
-                                          return hintLabel ? (
-                                              <CommandItem
-                                                  key="cmd-hint"
-                                                  value={hintLabel}
-                                                  keywords={[searchValue, searchValue.trim(), `/${parsedCommand.name} ${username}`, `/${parsedCommand.name} ${username} `]}
-                                                  onSelect={() => executeCommand(parsedCommand)}
-                                              >
-                                                  <span>{hintLabel}</span>
-                                              </CommandItem>
-                                          ) : null;
-                                      })()
-                                    : matchedCommands.map((cmd) => (
-                                          <CommandItem
-                                              key={cmd.name}
-                                              value={`/${cmd.name}`}
-                                              keywords={['/', 'command', cmd.name, searchValue]}
-                                              onSelect={() => {
-                                                  const next = `/${cmd.name} @`;
-                                                  setSearchValue(next);
-                                                  handleSearchChange(next);
-                                                  setTimeout(() => inputRef.current?.focus(), 0);
-                                              }}
-                                          >
-                                              <span className="font-mono">{cmd.syntax}</span>
-                                          </CommandItem>
-                                      ))}
-                        </CommandGroup>
-                        <CommandSeparator />
+                        <MessageCirclePlus />
+                        <span>new chat</span>
+                        <MainMenuShortcut>{shortcuts.newchat}</MainMenuShortcut>
                     </>
-                )}
-                {/* top peers */}
-                {!searchValue && topPeers.length > 0 && (
+                ),
+            },
+            hasBalance && {
+                key: 'sendmoney',
+                label: 'send money',
+                select: () => openDialog('payments', { tab: 'send' }),
+                content: (
                     <>
-                        <CommandGroup heading="users">
-                            {topPeers.map((peer) => (
-                                <CommandItem key={peer.uid} value={`@${peer.username}`} onSelect={() => openUser(peer)} keywords={['']}>
-                                    <Avatar active={peer?.active} bot={!!peer?.bot}>
-                                        <AvatarImage src={peer.avatar} alt={peer.username || 'user'} />
-                                        <AvatarFallback />
-                                    </Avatar>
-                                    <span>{formatUserDisplay(peer, true)}</span>
-                                </CommandItem>
-                            ))}
-                        </CommandGroup>
-                        <CommandSeparator />
+                        <ArrowUpRight />
+                        <span>send money</span>
+                        <MainMenuShortcut>{shortcuts.sendmoney}</MainMenuShortcut>
                     </>
-                )}
-                <CommandGroup heading="money actions">
-                    {!chatBanned && (
-                        <CommandItem onSelect={() => openDialog('newchat')} keywords={['message', 'chat', 'dm', 'conversation']}>
-                            <MessageCirclePlus />
-                            <span>new chat</span>
-                            <CommandShortcut>{shortcuts.newchat}</CommandShortcut>
-                        </CommandItem>
-                    )}
-                    {hasBalance ? (
-                        <CommandItem onSelect={() => openDialog('payments', { tab: 'send' })}>
-                            <ArrowUpRight />
-                            <span>send money</span>
-                            <CommandShortcut>{shortcuts.sendmoney}</CommandShortcut>
-                        </CommandItem>
-                    ) : null}
-                    <CommandItem onSelect={() => openDialog('payments', { tab: 'request' })}>
+                ),
+            },
+            {
+                key: 'requestmoney',
+                label: 'request money',
+                select: () => openDialog('payments', { tab: 'request' }),
+                content: (
+                    <>
                         <ArrowDownLeft />
                         <span>request money</span>
-                        <CommandShortcut>{shortcuts.requestmoney}</CommandShortcut>
-                    </CommandItem>
-                </CommandGroup>
-                <CommandSeparator />
-                <CommandGroup heading="views">
-                    {!chatBanned && (
-                        <CommandItem onSelect={() => openRoute('/chat')}>
-                            <Dot show={hasUnseenChats && !cloaked} compact>
-                                <MessageCircle />
-                            </Dot>
-                            <span className="flex items-center gap-2">
-                                <span>chat</span>
-                                {lastChat && !cloaked && (
-                                    <span className="text-muted ">
-                                        {(() => {
-                                            const profile = peers?.find((peer) => peer.chatPK === lastChat.peerChatPK) ?? null;
-                                            const displayName = formatUserDisplay(
-                                                {
-                                                    username: profile?.username,
-                                                    chatPK: lastChat.peerChatPK,
-                                                },
-                                                true
-                                            );
-                                            const lastMessage = displayLastMsg(lastChat.lastMsg, chatPK, settings, bitcoin.price);
-                                            const truncatedMessage = lastMessage.length > 24 ? `${lastMessage.slice(0, 24)}...` : lastMessage;
-                                            return `${displayName}: ${truncatedMessage}`;
-                                        })()}
-                                    </span>
-                                )}
-                            </span>
-                            <CommandShortcut>{shortcuts.chat}</CommandShortcut>
-                        </CommandItem>
-                    )}
-                    <CommandItem onSelect={() => openRoute('/camera')} keywords={['camera', 'scan', 'qr']}>
+                        <MainMenuShortcut>{shortcuts.requestmoney}</MainMenuShortcut>
+                    </>
+                ),
+            },
+        ].filter(Boolean);
+        const filteredMoneyRows = moneyRows.filter((row) => textMatches(row, staticFilter));
+        if (filteredMoneyRows.length) menuSections.push(rowsSection('money', filteredMoneyRows));
+
+        const viewRows = [
+            !chatBanned && {
+                key: 'chat',
+                label: 'chat',
+                select: () => openRoute('/chat'),
+                content: (
+                    <>
+                        <Dot show={hasUnseenChats && !cloaked} compact>
+                            <MessageCircle />
+                        </Dot>
+                        <span className="flex min-w-0 items-center gap-2">
+                            <span>chat</span>
+                            {lastChat && !cloaked && (
+                                <span className="truncate text-muted">
+                                    {(() => {
+                                        const profile = peers?.find((peer) => peer.chatPK === lastChat.peerChatPK) ?? null;
+                                        const displayName = formatUserDisplay(
+                                            {
+                                                username: profile?.username,
+                                                chatPK: lastChat.peerChatPK,
+                                            },
+                                            true
+                                        );
+                                        const lastMessage = displayLastMsg(lastChat.lastMsg, chatPK, settings, bitcoin.price);
+                                        const truncatedMessage = lastMessage.length > 24 ? `${lastMessage.slice(0, 24)}...` : lastMessage;
+                                        return `${displayName}: ${truncatedMessage}`;
+                                    })()}
+                                </span>
+                            )}
+                        </span>
+                        <MainMenuShortcut>{shortcuts.chat}</MainMenuShortcut>
+                    </>
+                ),
+            },
+            {
+                key: 'camera',
+                label: 'camera',
+                keywords: ['scan', 'qr'],
+                select: () => openRoute('/camera'),
+                content: (
+                    <>
                         <Camera />
                         <span>camera</span>
-                        <CommandShortcut>{shortcuts.camera}</CommandShortcut>
-                    </CommandItem>
-                    <CommandItem onSelect={() => openRoute('/wallet')} keywords={['dashboard', 'overview', 'home', 'wallet']}>
+                        <MainMenuShortcut>{shortcuts.camera}</MainMenuShortcut>
+                    </>
+                ),
+            },
+            {
+                key: 'wallet',
+                label: 'dashboard',
+                keywords: ['dashboard', 'overview', 'home', 'wallet'],
+                select: () => openRoute('/wallet'),
+                content: (
+                    <>
                         <Dot show={showWalletDot && !cloaked} compact>
                             <Wallet />
                         </Dot>
-                        <span className="flex items-center gap-2">
+                        <span className="flex min-w-0 items-center gap-2">
                             <span>dashboard</span>
-                            {balance !== null && balance > 0 && !cloaked && <span className="text-muted">{renderMoney(balance, settings?.moneyFormat, bitcoin.price)}</span>}
+                            {balance !== null && balance > 0 && !cloaked && <span className="truncate text-muted">{renderMoney(balance, settings?.moneyFormat, bitcoin.price)}</span>}
                         </span>
-                        <CommandShortcut>{shortcuts.wallet}</CommandShortcut>
-                    </CommandItem>
-                    {hasTx ? (
-                        <CommandItem onSelect={() => openRoute('/transactions')}>
-                            <History />
-                            <span>transaction history</span>
-                            <CommandShortcut>{shortcuts.transactions}</CommandShortcut>
-                        </CommandItem>
-                    ) : null}
-                    {isAdmin ? (
-                        <>
-                            <CommandItem onSelect={() => openRoute('/admin/reports')} keywords={['admin', 'reports', 'moderation']}>
-                                <Hammer />
-                                <span>admin</span>
-                                <CommandShortcut>{shortcuts.admin}</CommandShortcut>
-                            </CommandItem>
-                            <CommandItem onSelect={() => openRoute('/admin/bots')} keywords={['bot', 'automation', 'reviewer', 'mirror']}>
-                                <Bot />
-                                <span>bot</span>
-                                <CommandShortcut>{shortcuts.bot}</CommandShortcut>
-                            </CommandItem>
-                        </>
-                    ) : null}
-                </CommandGroup>
-                <CommandSeparator />
-                <CommandGroup heading="wallet actions">
-                    <CommandItem onSelect={openFundingQr}>
+                        <MainMenuShortcut>{shortcuts.wallet}</MainMenuShortcut>
+                    </>
+                ),
+            },
+            hasTx && {
+                key: 'transactions',
+                label: 'transaction history',
+                keywords: ['transactions', 'history'],
+                select: () => openRoute('/transactions'),
+                content: (
+                    <>
+                        <History />
+                        <span>transaction history</span>
+                        <MainMenuShortcut>{shortcuts.transactions}</MainMenuShortcut>
+                    </>
+                ),
+            },
+            isAdmin && {
+                key: 'admin',
+                label: 'admin',
+                keywords: ['admin', 'reports', 'moderation'],
+                select: () => openRoute('/admin/reports'),
+                content: (
+                    <>
+                        <Hammer />
+                        <span>admin</span>
+                        <MainMenuShortcut>{shortcuts.admin}</MainMenuShortcut>
+                    </>
+                ),
+            },
+            isAdmin && {
+                key: 'bot',
+                label: 'bot',
+                keywords: ['bot', 'automation', 'reviewer', 'mirror'],
+                select: () => openRoute('/admin/bots'),
+                content: (
+                    <>
+                        <Bot />
+                        <span>bot</span>
+                        <MainMenuShortcut>{shortcuts.bot}</MainMenuShortcut>
+                    </>
+                ),
+            },
+        ].filter(Boolean);
+        const filteredViewRows = viewRows.filter((row) => textMatches(row, staticFilter));
+        if (filteredViewRows.length) menuSections.push(rowsSection('views', filteredViewRows));
+
+        const walletRows = [
+            {
+                key: 'fund',
+                label: 'fund wallet',
+                select: openFundingQr,
+                content: (
+                    <>
                         <BanknoteArrowDown />
                         <span>fund wallet</span>
-                    </CommandItem>
-                    {balance != null && balance >= minWithdrawalSats && (
-                        <CommandItem onSelect={() => openDialog('withdraw')}>
+                    </>
+                ),
+            },
+            Number(balance ?? 0) > 0 && {
+                    key: 'withdraw',
+                    label: 'withdraw funds',
+                    select: () => openDialog('withdraw'),
+                    content: (
+                        <>
                             <BanknoteArrowUp />
                             <span>withdraw funds</span>
-                        </CommandItem>
-                    )}
-                </CommandGroup>
-                <CommandSeparator />
-                <CommandGroup heading="app">
-                    <CommandItem keywords={['change', 'currency', 'lock', 'profile', 'preferences', 'avatar']} onSelect={() => openDialog('settings')}>
+                        </>
+                    ),
+                },
+        ].filter(Boolean);
+        const filteredWalletRows = walletRows.filter((row) => textMatches(row, staticFilter));
+        if (filteredWalletRows.length) menuSections.push(rowsSection('wallet', filteredWalletRows));
+
+        const appRows = [
+            {
+                key: 'settings',
+                label: 'settings',
+                keywords: ['change', 'currency', 'lock', 'profile', 'preferences', 'avatar'],
+                select: () => openDialog('settings'),
+                content: (
+                    <>
                         <Settings2 />
                         <span>settings</span>
-                        <CommandShortcut>{shortcuts.settings}</CommandShortcut>
-                    </CommandItem>
-                    {(hasChats || hasTx) && (
-                        <CommandItem
-                            onSelect={() => {
-                                close();
-                                cloak();
-                            }}
-                            keywords={['cloak', 'uncloak', 'hide', 'vision', 'privacy', 'view', 'show']}
-                        >
-                            {cloaked ? <EyeOff /> : <Eye />}
-                            <span>{cloaked ? 'uncloak' : 'cloak'}</span>
-                            <CommandShortcut>{shortcuts.cloak}</CommandShortcut>
-                        </CommandItem>
-                    )}
-                    <CommandItem onSelect={clearCache} keywords={['cache', 'clear', 'delete', 'storage']}>
+                        <MainMenuShortcut>{shortcuts.settings}</MainMenuShortcut>
+                    </>
+                ),
+            },
+            (hasChats || hasTx) && {
+                key: 'cloak',
+                label: cloaked ? 'uncloak' : 'cloak',
+                keywords: ['cloak', 'uncloak', 'hide', 'vision', 'privacy', 'view', 'show'],
+                select: () => {
+                    close();
+                    cloak();
+                },
+                content: (
+                    <>
+                        {cloaked ? <EyeOff /> : <Eye />}
+                        <span>{cloaked ? 'uncloak' : 'cloak'}</span>
+                        <MainMenuShortcut>{shortcuts.cloak}</MainMenuShortcut>
+                    </>
+                ),
+            },
+            {
+                key: 'clear-cache',
+                label: 'clear cache',
+                keywords: ['cache', 'clear', 'delete', 'storage'],
+                select: clearCache,
+                content: (
+                    <>
                         <Trash2 />
                         <span>clear cache</span>
                         <span className="ml-auto text-sm text-muted">{formatCacheSize(cacheSize)}</span>
-                    </CommandItem>
-                </CommandGroup>
-                <CommandSeparator />
-                <CommandGroup heading="session">
-                    <CommandItem onSelect={() => lock()}>
+                    </>
+                ),
+            },
+        ].filter(Boolean);
+        const filteredAppRows = appRows.filter((row) => textMatches(row, staticFilter));
+        if (filteredAppRows.length) menuSections.push(rowsSection('app', filteredAppRows));
+
+        const sessionRows = [
+            {
+                key: 'lock',
+                label: 'lock vault',
+                select: () => lock(),
+                content: (
+                    <>
                         <Lock />
                         <span>lock vault</span>
-                        <CommandShortcut>{shortcuts.lock}</CommandShortcut>
-                    </CommandItem>
-                    <CommandItem onSelect={() => openDialog('rememberaccount', { user: { uid, username, avatar } })}>
+                        <MainMenuShortcut>{shortcuts.lock}</MainMenuShortcut>
+                    </>
+                ),
+            },
+            {
+                key: 'logout',
+                label: 'logout',
+                select: () => openDialog('rememberaccount', { user: { uid, username, avatar } }),
+                content: (
+                    <>
                         <LogOut />
                         <span>logout</span>
-                        <CommandShortcut>{shortcuts.logout}</CommandShortcut>
-                    </CommandItem>
-                </CommandGroup>
-                <CommandSeparator />
-                <CommandGroup heading="account">
-                    <CommandItem className="text-destructive" onSelect={() => openDialog('deleteaccount')}>
+                        <MainMenuShortcut>{shortcuts.logout}</MainMenuShortcut>
+                    </>
+                ),
+            },
+        ];
+        const filteredSessionRows = sessionRows.filter((row) => textMatches(row, staticFilter));
+        if (filteredSessionRows.length) menuSections.push(rowsSection('session', filteredSessionRows));
+
+        const accountRows = [
+            {
+                key: 'delete-account',
+                label: 'delete account',
+                className: 'text-destructive',
+                select: () => openDialog('deleteaccount'),
+                content: (
+                    <>
                         <Trash2 />
                         <span>delete account</span>
-                    </CommandItem>
-                </CommandGroup>
-                {/* peers */}
-                {showUserSearch && matchedPeers.length > 0 && (
-                    <>
-                        <CommandGroup heading="users">
-                            {matchedPeers.map((peer) => (
-                                <CommandItem
-                                    key={peer.uid}
-                                    value={`@${peer.username}`}
-                                    onSelect={() => openUser(peer)}
-                                    keywords={query?.kind === 'role' ? [query.role] : ['']}
-                                >
-                                    <Avatar active={peer?.active} bot={!!peer?.bot}>
-                                        <AvatarImage src={peer.avatar} alt={peer.username || 'User'} />
-                                        <AvatarFallback />
-                                    </Avatar>
-                                    <span>{formatUserDisplay(peer, true)}</span>
-                                </CommandItem>
-                            ))}
-                        </CommandGroup>
                     </>
-                )}
-                {/* transactions */}
-                {showAllTx && transactions.length > 0 && (
+                ),
+            },
+        ];
+        const filteredAccountRows = accountRows.filter((row) => textMatches(row, staticFilter));
+        if (filteredAccountRows.length) menuSections.push(rowsSection('account', filteredAccountRows));
+
+        if (searchValue && bitcoin) {
+            const bitcoinRow = {
+                key: 'bitcoin',
+                label: 'bitcoin',
+                keywords: ['btc', 'price', 'mempool', 'block'],
+                select: () => {
+                    close();
+                    window.open('https://mempool.space/', '_blank');
+                },
+                content: (
                     <>
-                        <CommandGroup heading="transactions">
-                            {transactions.map((tx) => {
-                                const peer = peerMap.get(tx.peerPK);
-                                const peerDisplayName = tx.funding ? 'Funded' : tx.withdrawal ? 'Withdrawn' : formatUserDisplay(peer || { walletPK: tx.peerPK }, true);
-                                return (
-                                    <CommandItem
-                                        key={tx.id}
-                                        value={`# ${tx.id} ${renderMoney(tx.totalValue, settings?.moneyFormat, bitcoin.price)} ${tx.incoming ? 'received' : 'sent'} ${
-                                            tx.pending ? 'pending' : 'completed'
-                                        } ${peerDisplayName}`}
-                                        onSelect={() => openDialog('txdetails', { tx })}
-                                        keywords={['transactions', '#']}
-                                    >
-                                        <Avatar active={tx.funding || tx.withdrawal ? false : peer?.active} bot={!!peer?.bot}>
-                                            <AvatarImage src={tx.funding || tx.withdrawal ? avatar : peer?.avatar} alt={peerDisplayName} />
-                                            <AvatarFallback />
-                                        </Avatar>
-                                        <span className="flex items-center gap-2">
-                                            <span className={`font-black ${tx.incoming ? 'text-inflow' : 'text-outflow'} ${tx.pending ? 'opacity-50' : ''} ${cloaked ? 'cloaked' : ''}`}>
-                                                {renderMoney(tx.totalValue, settings?.moneyFormat, bitcoin.price, tx.incoming ? '+' : '-')}
-                                            </span>
-                                            {peerDisplayName && <span className="text-muted">{peerDisplayName}</span>}
-                                        </span>
-                                        <div className="ml-auto text-sm text-muted">{formatFullDateTime(tx.createdTime)}</div>
-                                    </CommandItem>
-                                );
-                            })}
-                        </CommandGroup>
+                        <Bitcoin className="size-5 grower" />
+                        <span>${bitcoin.price?.toLocaleString()}</span>
+                        <div className="ml-auto flex items-center gap-1 text-sm text-muted">
+                            <Box />
+                            <span>{bitcoin.block?.toLocaleString()}</span>
+                        </div>
                     </>
-                )}
-                {/* bitcoin data */}
-                {searchValue && bitcoin && (
-                    <>
-                        <CommandGroup heading="bitcoin">
-                            <CommandItem
-                                value="bitcoin"
-                                keywords={['btc', 'price', 'mempool', 'block']}
-                                onSelect={() => {
-                                    close();
-                                    window.open('https://mempool.space/', '_blank');
-                                }}
-                            >
-                                <Bitcoin className="size-5 grower" />
-                                <span>${bitcoin.price?.toLocaleString()}</span>
-                                <div className="ml-auto flex items-center gap-1 text-sm text-muted">
-                                    <Box />
-                                    <span>{bitcoin.block?.toLocaleString()}</span>
-                                </div>
-                            </CommandItem>
-                        </CommandGroup>
-                    </>
-                )}
-                </CommandList>
-            </Command>
+                ),
+            };
+            if (textMatches(bitcoinRow, staticFilter)) menuSections.push(rowsSection('bitcoin', [bitcoinRow]));
+        }
+    }
+
+    if (showUserSearch && matchedPeers.length > 0) {
+        menuSections.push(userSection('users', matchedPeers, openUser));
+    }
+
+    if (showAllTx && txs.length > 0) {
+        menuSections.push({
+            key: 'transactions',
+            count: txs.length,
+            keyFor: (index) => txs[index]?.id || `tx-${index}`,
+            select: (index) => {
+                const tx = txs[index];
+                if (tx) openDialog('txdetails', { tx });
+            },
+            render: (index, active, onActive, separated) => {
+                const tx = txs[index];
+                if (!tx) return null;
+                const peer = peerMap.get(tx.peerPK);
+                const peerDisplayName = tx.funding ? 'Funded' : tx.withdrawal ? 'Withdrawn' : formatUserDisplay(peer || { walletPK: tx.peerPK }, true);
+                return (
+                    <MainMenuItem active={active} className={separated && 'shadow-[inset_0_1px_0_0_var(--border)]'} onActive={onActive} onSelect={() => openDialog('txdetails', { tx })}>
+                        <Avatar active={tx.funding || tx.withdrawal ? false : peer?.active} bot={!!peer?.bot}>
+                            <AvatarImage src={tx.funding || tx.withdrawal ? avatar : peer?.avatar} alt={peerDisplayName} />
+                            <AvatarFallback />
+                        </Avatar>
+                        <span className="flex min-w-0 items-center gap-2">
+                            <span className={`font-black ${tx.incoming ? 'text-inflow' : 'text-outflow'} ${tx.pending ? 'opacity-50' : ''} ${cloaked ? 'cloaked' : ''}`}>
+                                {renderMoney(tx.totalValue, settings?.moneyFormat, bitcoin.price, tx.incoming ? '+' : '-')}
+                            </span>
+                            {peerDisplayName && <span className="truncate text-muted">{peerDisplayName}</span>}
+                        </span>
+                        <div className="ml-auto text-sm text-muted">{formatFullDateTime(tx.createdTime)}</div>
+                    </MainMenuItem>
+                );
+            },
+        });
+    }
+
+    const menuTotal = countMainMenuRows(menuSections);
+    const menuSignature = menuSections.map((section) => `${section.key}:${section.count}`).join('|');
+    const listId = 'mainmenu-list';
+    const activeId = menuTotal > 0 && activeIndex >= 0 ? `${listId}-item-${activeIndex}` : '';
+    const emptyMessage =
+        searching && query?.value ? (
+            <Loader className="size-6 animate-spin" />
+        ) : showCommands && matchedCommands.length === 0 ? (
+            'unknown command'
+        ) : showCommands && typingUsername !== null ? (
+            'no users found'
+        ) : browseUsers ? (
+            'search users'
+        ) : showAllTx ? (
+            'no transactions'
+        ) : (
+            'no results'
+        );
+
+    useEffect(() => {
+        setActiveIndex(menuTotal > 0 ? 0 : -1);
+    }, [menuSignature, searchValue, menuTotal]);
+
+    const handleMenuKeyDown = (event) => {
+        if (event.defaultPrevented || event.nativeEvent?.isComposing) return;
+        const textEntry = isEditableTarget(event.target);
+        const step = listNavigationStep(event, {
+            ignoreEditable: false,
+            includeJk: !textEntry,
+            includeHorizontal: !textEntry,
+        });
+        if (step) {
+            event.preventDefault();
+            setActiveIndex((index) => {
+                if (!menuTotal) return -1;
+                if (step > 0) return index < 0 ? 0 : (index + 1) % menuTotal;
+                return index <= 0 ? menuTotal - 1 : index - 1;
+            });
+        } else if (event.key === 'Enter') {
+            const row = findMainMenuRow(menuSections, activeIndex);
+            if (!row) return;
+            event.preventDefault();
+            row.section.select?.(row.localIndex);
+        }
+    };
+
+    return (
+        <div className="flex flex-col items-center gap-2" onKeyDown={handleMenuKeyDown}>
+            <div className="flex max-h-105 w-lg flex-col overflow-hidden rounded-round bg-background/70 pt-px shadow backdrop-blur-sm">
+                <MainMenuInput inputRef={inputRef} listId={listId} activeId={activeId} value={searchValue} onChange={handleSearchChange} onKeyDown={handleInputCompletion} />
+                <MainMenuList id={listId} resetKey={menuSignature} sections={menuSections} activeIndex={activeIndex} setActiveIndex={setActiveIndex} empty={emptyMessage} />
+            </div>
             {appVersion ? <div className="text-sm font-black text-muted">v{appVersion}</div> : null}
         </div>
     );

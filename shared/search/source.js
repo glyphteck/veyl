@@ -21,6 +21,7 @@ export function createProfileSource({ remote, mode = 'profiles' }) {
             parse: (input) => parseQuery(input, { mode }),
             local: (parsed) => {
                 if (!parsed) return [];
+                if (mode === 'mainmenu' && parsed.kind === 'username' && !parsed.value) return [];
                 const localPeers = [...(Array.isArray(peers) ? peers : []), ...(Array.isArray(recentPeers?.all) ? recentPeers.all : [])];
                 return mergeProfiles({
                     local: localPeers,

@@ -23,6 +23,6 @@ export async function logout({ remember = null, account = null, lock = null } = 
     const uid = auth.currentUser?.uid;
     await saveRememberChoice(uid, remember, account);
     lock?.();
-    await dropPush().catch(() => {});
+    await dropPush({ uid }).catch(() => {});
     await signOut(auth);
 }

@@ -8,6 +8,7 @@ import { formatUserDisplay } from '@/lib/utils';
 import { useSearch } from '@/lib/search/usesearch';
 import { useUser } from '@/components/providers/userprovider';
 import { usePeer } from '@/components/providers/peerprovider';
+import { isEditableTarget, listNavigationStep } from '@/lib/focus';
 
 export default function PeerSelector({ selectedPeer, onPeerChange, disabled = false, active = false, openOnActive = false, filterPeers, label = 'user', className = '' }) {
     const [popoverOpen, setPopoverOpen] = useState(false);
@@ -165,12 +166,35 @@ export default function PeerSelector({ selectedPeer, onPeerChange, disabled = fa
         if (e.key === 'Enter' && !searchValue) {
             e.preventDefault();
             closePopover({ focus: true });
+            return;
         }
+
+        const textEntry = isEditableTarget(e.target);
+        const step = listNavigationStep(e, {
+            ignoreEditable: false,
+            includeJk: !textEntry,
+            includeHorizontal: !textEntry,
+        });
+        if (!step || !contentRef.current) {
+            return;
+        }
+
+        const buttons = Array.from(contentRef.current.querySelectorAll('[data-peer-selector-item]:not(:disabled)'));
+        if (!buttons.length) {
+            return;
+        }
+
+        const currentIndex = buttons.indexOf(document.activeElement);
+        const startIndex = currentIndex < 0 ? (step > 0 ? -1 : buttons.length) : currentIndex;
+        const nextIndex = (startIndex + step + buttons.length) % buttons.length;
+        e.preventDefault();
+        buttons[nextIndex]?.focus({ preventScroll: true });
+        buttons[nextIndex]?.scrollIntoView({ block: 'nearest' });
     };
 
     const handleTriggerKeyDown = (event) => {
         if (disabled) return;
-        if (event.key === 'Enter' || event.key === ' ' || event.key === 'ArrowDown') {
+        if (event.key === 'Enter' || event.key === ' ' || listNavigationStep(event, { ignoreEditable: false }) > 0) {
             event.preventDefault();
             handlePopoverOpenChange(true);
         }
@@ -188,6 +212,7 @@ export default function PeerSelector({ selectedPeer, onPeerChange, disabled = fa
                           width: position?.width ?? 0,
                           visibility: position ? 'visible' : 'hidden',
                       }}
+                      onKeyDown={handleKeyDown}
                   >
                       <div className="flex h-full max-h-71 w-full flex-col rounded-round bg-background/70 shadow backdrop-blur-sm">
                           <div className="flex items-center gap-2 border-b px-3">
@@ -196,7 +221,6 @@ export default function PeerSelector({ selectedPeer, onPeerChange, disabled = fa
                                   ref={searchInputRef}
                                   value={searchValue}
                                   onChange={(event) => handleSearchChange(event.target.value)}
-                                  onKeyDown={handleKeyDown}
                                   className="flex w-full bg-transparent py-1.5 outline-none disabled:cursor-not-allowed disabled:opacity-50"
                                   autoFocus
                               />
@@ -218,6 +242,7 @@ export default function PeerSelector({ selectedPeer, onPeerChange, disabled = fa
                                           <Button
                                               key={peer.uid}
                                               type="button"
+                                              data-peer-selector-item=""
                                               className="relative h-auto w-full justify-start rounded-none px-3 py-1.5 text-left text-base select-none [&>*:nth-child(-n+2)]:transition-transform [&>*:nth-child(-n+2)]:ease-out hover:[&>*:nth-child(-n+2)]:translate-x-3 focus:[&>*:nth-child(-n+2)]:translate-x-3 [&>*.avatar]:size-6"
                                               onClick={() => handlePeerSelect(peer)}
                                           >

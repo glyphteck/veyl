@@ -1,7 +1,6 @@
 'use client';
 
 import { makeUserQr, qr } from '@glyphteck/shared/qrutils';
-import { minWithdrawalSats } from '@glyphteck/shared/spark';
 import { formatUserDisplay } from '@/lib/utils';
 import { shortcuts } from '@/lib/shortcuts';
 import { Button } from '@/components/button';
@@ -18,6 +17,8 @@ export default function UserMenu({
     lock,
     openDialog,
     locked = false,
+    open,
+    onOpenChange,
     className = 'shrinker-fixed hidden md:flex',
     disabled = false,
     avatarClassName = 'size-11 shadow',
@@ -39,9 +40,9 @@ export default function UserMenu({
     };
 
     return (
-        <DropdownMenu>
+        <DropdownMenu open={open} onOpenChange={onOpenChange}>
             <DropdownMenuTrigger asChild>
-                <Button className={className} disabled={disabled}>
+                <Button className={className} disabled={disabled} title="user menu">
                     <Avatar active={user?.active} className={avatarClassName}>
                         <AvatarImage src={user?.avatar} alt={user?.username || 'User'} />
                         <AvatarFallback />
@@ -67,7 +68,7 @@ export default function UserMenu({
                             <BanknoteArrowDown />
                             <span className="pr-4">fund wallet</span>
                         </DropdownMenuItem>
-                        {balance != null && balance >= minWithdrawalSats && (
+                        {Number(balance ?? 0) > 0 && (
                             <DropdownMenuItem onSelect={() => openDialog('withdraw')}>
                                 <BanknoteArrowUp />
                                 <span className="pr-4">withdraw funds</span>

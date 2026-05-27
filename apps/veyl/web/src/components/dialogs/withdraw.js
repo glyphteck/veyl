@@ -10,18 +10,47 @@ import { Field } from '@/components/field';
 import { Input } from '@/components/input';
 import { Button } from '@/components/button';
 import { ToggleGroup, ToggleGroupItem } from '@/components/togglegroup';
-import { Rabbit, Turtle, Snail, Loader, PiggyBank, CircleCheck, ScanQrCode } from 'lucide-react';
+import { Rabbit, Turtle, Snail, Loader, PiggyBank, CircleCheck, ScanQrCode, CircleQuestionMark } from 'lucide-react';
 import { useBitcoin } from '@/components/providers/bitcoinprovider';
 import { useWallet } from '@/components/providers/walletprovider';
 import { useUser } from '@/components/providers/userprovider';
 import { useCloak } from '@glyphteck/shared/providers/cloakprovider';
 import { toSats, toDisplay, truncateAddress, renderMoney } from '@/lib/utils';
-import { minWithdrawalSats } from '@glyphteck/shared/spark';
+import { COOPERATIVE_EXIT_FLAT_FEE_SATS, COOPERATIVE_EXIT_TX_VBYTES, getWithdrawalFeeRisk } from '@glyphteck/shared/wallet/fees';
 import { isAddressOnNetwork, isMainnet } from '@glyphteck/shared/network';
 import { toast } from 'sonner';
 
+function balanceToSats(balance) {
+    const value = Number(balance ?? 0);
+    return Number.isFinite(value) && value > 0 ? BigInt(Math.floor(value)) : 0n;
+}
+
+function formatWholeNumber(value) {
+    return String(value).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+
+function formatSats(value) {
+    const amount = Number(value);
+    if (!Number.isSafeInteger(amount) || amount < 0) return 'updating';
+    return `${formatWholeNumber(amount)} ${amount === 1 ? 'sat' : 'sats'}`;
+}
+
+function formatFeeAmount(value, moneyFormat, price) {
+    const amount = Number(value);
+    if (!Number.isFinite(amount)) return 'updating';
+    return renderMoney(Math.max(0, Math.ceil(amount)), moneyFormat || 'sats', price);
+}
+
+function formatFeeRate(value) {
+    const rate = Number(value);
+    if (!Number.isFinite(rate)) return 'updating';
+    const rounded = Math.round(rate * 1000) / 1000;
+    return `${rounded >= 10 ? formatWholeNumber(Math.round(rounded)) : String(rounded)} sat/vB`;
+}
+
 export default function Withdraw({ data, close }) {
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [showFeeInfo, setShowFeeInfo] = useState(false);
     const router = useRouter();
     const bitcoin = useBitcoin();
     const { balance, withdrawFunds, network } = useWallet();
@@ -43,18 +72,30 @@ export default function Withdraw({ data, close }) {
                 exitSpeed: z.enum(['FAST', 'MEDIUM', 'SLOW']),
             })
             .superRefine((data, ctx) => {
-                const sats = toSats(data.amount, data.inputUnit, price);
-                if (sats <= 0n || sats < minWithdrawalSats) {
+                const maxSats = balanceToSats(max);
+                let sats;
+                try {
+                    sats = toSats(data.amount, data.inputUnit, price);
+                } catch {
                     ctx.addIssue({
                         path: ['amount'],
                         code: 'custom',
-                        message: `minimum withdrawal ${minWithdrawalSats.toString()} sats`,
+                        message: 'invalid amount',
                     });
-                } else if (sats > max) {
+                    return;
+                }
+
+                if (sats <= 0n) {
                     ctx.addIssue({
                         path: ['amount'],
                         code: 'custom',
-                        message: `amount 1-${max.toString()} sats`,
+                        message: 'amount must be more than 0 sats',
+                    });
+                } else if (sats > maxSats) {
+                    ctx.addIssue({
+                        path: ['amount'],
+                        code: 'custom',
+                        message: `amount 1-${maxSats.toString()} sats`,
                     });
                 } else {
                     data.amount = sats;
@@ -73,6 +114,37 @@ export default function Withdraw({ data, close }) {
             exitSpeed: 'MEDIUM',
         },
     });
+    const watchedAmount = form.watch('amount');
+    const watchedInputUnit = form.watch('inputUnit');
+    const watchedAddress = form.watch('receivingAddress');
+    const balanceSats = useMemo(() => balanceToSats(balance), [balance]);
+    const addressOnNetwork = watchedAddress && isAddressOnNetwork(watchedAddress, network);
+    const enteredSats = useMemo(() => {
+        if (!watchedAmount) return 0n;
+        try {
+            return toSats(watchedAmount, watchedInputUnit, bitcoin.price);
+        } catch {
+            return 0n;
+        }
+    }, [watchedAmount, watchedInputUnit, bitcoin.price]);
+    const amountAboveBalance = enteredSats > balanceSats;
+    const feeEstimate = useMemo(() => {
+        const estimate = bitcoin.estimateTransactionFees({
+            speed: 'medium',
+            vbytes: COOPERATIVE_EXIT_TX_VBYTES,
+            baseSats: COOPERATIVE_EXIT_FLAT_FEE_SATS,
+        });
+        return estimate?.success ? estimate.onchainEstimate : null;
+    }, [bitcoin]);
+    const feeAmountSats = feeEstimate?.feeAmountSats ?? null;
+    const withdrawalFeeRisk = useMemo(
+        () => getWithdrawalFeeRisk({ amountSats: enteredSats > 0n ? enteredSats : balanceSats, feeAmountSats }),
+        [balanceSats, enteredSats, feeAmountSats]
+    );
+    const feeWarning = withdrawalFeeRisk?.high;
+    const feeText = feeAmountSats != null ? formatFeeAmount(feeAmountSats, settings?.moneyFormat, bitcoin.price) : 'updating';
+    const buttonFeedback = amountAboveBalance ? 'amount is above your balance' : '';
+    const feeFormula = `${feeEstimate?.vbytes ?? COOPERATIVE_EXIT_TX_VBYTES} vB x ${formatFeeRate(feeEstimate?.feeRateSatsPerVbyte)} + ${formatSats(COOPERATIVE_EXIT_FLAT_FEE_SATS)} = ${formatSats(feeAmountSats)}`;
 
     const setUnit = useCallback(
         (u) => {
@@ -101,7 +173,7 @@ export default function Withdraw({ data, close }) {
     const setAmount = useCallback(
         (raw) => {
             const unit = form.getValues('inputUnit');
-            const max = balance;
+            const max = balanceToSats(balance);
             const accept = (regex, ok) => {
                 if (regex.test(raw) && ok()) form.setValue('amount', raw);
             };
@@ -127,8 +199,8 @@ export default function Withdraw({ data, close }) {
 
     const setMax = useCallback(() => {
         const unit = form.getValues('inputUnit');
-        form.setValue('amount', toDisplay(balance, unit, bitcoin.price));
-    }, [form, balance, bitcoin.price]);
+        form.setValue('amount', toDisplay(balanceSats, unit, bitcoin.price));
+    }, [form, balanceSats, bitcoin.price]);
 
     useEffect(() => {
         form.clearErrors();
@@ -163,7 +235,7 @@ export default function Withdraw({ data, close }) {
             }
             setIsSubmitting(false);
         },
-        [withdrawFunds, close, form, settings.moneyFormat, bitcoin.price]
+        [bitcoin.price, close, form, settings.moneyFormat, withdrawFunds]
     );
 
     return (
@@ -200,6 +272,28 @@ export default function Withdraw({ data, close }) {
                 </div>
                 <div className="px-4 py-6">
                     <form id="withdraw-funds-form" onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-3">
+                        <div className="flex items-end justify-between gap-3 px-1">
+                            <div className={`min-w-0 truncate text-sm font-black ${feeWarning ? 'text-destructive' : 'text-foreground'}`}>estimated fee: ~{feeText}</div>
+                            <Button
+                                tabIndex={-1}
+                                className="grower-lg text-foreground"
+                                type="button"
+                                onClick={() => setShowFeeInfo((current) => !current)}
+                                disabled={isSubmitting}
+                                title="withdrawal fee info"
+                            >
+                                <CircleQuestionMark className="size-6" />
+                            </Button>
+                        </div>
+                        {showFeeInfo ? (
+                            <div className="rounded-round bg-background/70 px-4 py-3 text-sm leading-6 font-bold text-muted shadow backdrop-blur-sm">
+                                <div>you can withdraw your funds back to any bitcoin address. bitcoin transactions are not free. validators need to get paid.</div>
+                                <div className="pt-2 font-black text-foreground tabular-nums">{feeFormula}</div>
+                                <div className="pt-2">
+                                    the transaction fee is an estimate on how expensive it is to send bitcoin over the network at the moment, with an additional flat fee to export bitcoin off the spark network.
+                                </div>
+                            </div>
+                        ) : null}
                         <Field
                             control={form.control}
                             name="receivingAddress"
@@ -234,16 +328,16 @@ export default function Withdraw({ data, close }) {
                                             amountInputRef.current = el;
                                         }}
                                         className={`w-54 ${cloaked ? 'cloaked' : ''}`}
-                                        placeholder={form.watch('inputUnit') === 'sats' ? '0000' : '0.00'}
+                                        placeholder={watchedInputUnit === 'sats' ? '0000' : '0.00'}
                                         onChange={handleAmountChange}
                                         inputMode="numeric"
-                                        pattern={form.watch('inputUnit') === 'sats' ? '[0-9]*' : '[0-9.]*'}
+                                        pattern={watchedInputUnit === 'sats' ? '[0-9]*' : '[0-9.]*'}
                                         disabled={isSubmitting}
                                     />
                                     <Button tabIndex={-1} className="grower-lg hidden sm:block" type="button" onClick={setMax} disabled={isSubmitting}>
                                         <PiggyBank className="size-6 stroke-2" />
                                     </Button>
-                                    <ToggleGroup tabIndex={-1} className="ml-auto" type="single" value={form.watch('inputUnit')} onValueChange={setUnit} disabled={isSubmitting}>
+                                    <ToggleGroup tabIndex={-1} className="ml-auto" type="single" value={watchedInputUnit} onValueChange={setUnit} disabled={isSubmitting}>
                                         <ToggleGroupItem value="btc">₿</ToggleGroupItem>
                                         <ToggleGroupItem value="sats">sats</ToggleGroupItem>
                                         <ToggleGroupItem value="usd">$</ToggleGroupItem>
@@ -257,18 +351,17 @@ export default function Withdraw({ data, close }) {
             <Button
                 type="submit"
                 form="withdraw-funds-form"
-                className="button-outline shrinker"
+                className={`${buttonFeedback ? 'button-destructive' : 'button-outline'} shrinker`}
                 disabled={
                     isSubmitting ||
-                    !form.watch('receivingAddress') ||
-                    !isAddressOnNetwork(form.watch('receivingAddress'), network) ||
-                    !form.watch('amount') ||
-                    form.watch('amount') === '0' ||
-                    toSats(form.watch('amount'), form.watch('inputUnit'), bitcoin.price) === 0n ||
-                    toSats(form.watch('amount'), form.watch('inputUnit'), bitcoin.price) < minWithdrawalSats
+                    !watchedAddress ||
+                    !addressOnNetwork ||
+                    !watchedAmount ||
+                    enteredSats <= 0n ||
+                    enteredSats > balanceSats
                 }
             >
-                {isSubmitting ? <Loader className="animate-spin" /> : 'withdraw'}
+                {isSubmitting ? <Loader className="animate-spin" /> : buttonFeedback || 'withdraw'}
             </Button>
         </div>
     );

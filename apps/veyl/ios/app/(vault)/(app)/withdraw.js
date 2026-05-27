@@ -2,9 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Keyboard, Pressable, Text, TextInput, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
-import { ScanQrCode } from 'lucide-react-native';
-import { toSats, toDisplay } from '@glyphteck/shared/utils';
-import { minWithdrawalSats } from '@glyphteck/shared/spark';
+import { CircleQuestionMark, ScanQrCode } from 'lucide-react-native';
+import { toSats, toDisplay, renderMoney } from '@glyphteck/shared/utils';
+import { COOPERATIVE_EXIT_FLAT_FEE_SATS, COOPERATIVE_EXIT_TX_VBYTES, getWithdrawalFeeRisk } from '@glyphteck/shared/wallet/fees';
 import { isAddressOnNetwork, isMainnet } from '@glyphteck/shared/network';
 
 import { useBitcoin } from '@/providers/bitcoinprovider';
@@ -14,10 +14,22 @@ import { useWallet } from '@/providers/walletprovider';
 import GlassButton from '@/components/glass/glassbutton';
 import GlassField from '@/components/glass/glassfield';
 import Icon from '@/components/icon';
-import { warmCamera } from '@/lib/camerawarm';
+import { warmCamera } from '@/lib/camera/warming';
 import { tap } from '@/lib/tap';
 
 const UNITS = ['sats', 'btc', 'usd'];
+
+function balanceToSats(balance) {
+    if (balance == null) return null;
+    const value = Number(balance);
+    if (!Number.isFinite(value) || value < 0) return 0n;
+    return BigInt(Math.floor(value));
+}
+
+function formatSatsLabel(value, moneyFormat, price) {
+    return renderMoney(String(value), moneyFormat || 'sats', price);
+}
+
 export default function Withdraw() {
     const { theme, isDark } = useTheme();
     const { settings } = useUser();
@@ -50,6 +62,7 @@ export default function Withdraw() {
 
     const cycleScale = useSharedValue(1);
     const scanScale = useSharedValue(1);
+    const feeHelpScale = useSharedValue(1);
 
     const cycleUnit = useCallback(() => {
         const price = bitcoin?.price ?? 100000;
@@ -62,24 +75,42 @@ export default function Withdraw() {
         setInputUnit(next);
     }, [amount, inputUnit, bitcoin?.price]);
 
-    const validSats = useMemo(() => {
-        if (!amount) return 0n;
+    const balanceSats = useMemo(() => balanceToSats(balance), [balance]);
+    const enteredSats = useMemo(() => {
+        if (!amount) return null;
         const price = bitcoin?.price ?? 100000;
-        const max = balance != null ? BigInt(Math.floor(Number(balance))) : 0n;
         try {
-            const sats = toSats(amount, inputUnit, price);
-            if (sats < minWithdrawalSats || sats > max) return 0n;
-            return sats;
+            return toSats(amount, inputUnit, price);
         } catch {
-            return 0n;
+            return null;
         }
-    }, [amount, inputUnit, bitcoin?.price, balance]);
+    }, [amount, inputUnit, bitcoin?.price]);
+    const amountAboveBalance = enteredSats != null && balanceSats != null && enteredSats > balanceSats;
+    const validSats = enteredSats != null && enteredSats > 0n && !amountAboveBalance ? enteredSats : 0n;
 
     const trimmedAddress = receivingAddress.trim();
     const hasAddress = trimmedAddress.length > 0;
     const addressOnNetwork = hasAddress && isAddressOnNetwork(trimmedAddress, network);
     const addressError = hasAddress && !addressOnNetwork ? (isMainnet(network) ? 'not a mainnet address' : 'not a regtest address') : '';
+    const feeEstimate = useMemo(() => {
+        const estimate = bitcoin.estimateTransactionFees({
+            speed: 'medium',
+            vbytes: COOPERATIVE_EXIT_TX_VBYTES,
+            baseSats: COOPERATIVE_EXIT_FLAT_FEE_SATS,
+        });
+        return estimate?.success ? estimate.onchainEstimate : null;
+    }, [bitcoin]);
+    const feeAmountSats = feeEstimate?.feeAmountSats ?? null;
+    const withdrawalFeeRisk = useMemo(
+        () => getWithdrawalFeeRisk({ amountSats: validSats > 0n ? validSats : balanceSats, feeAmountSats }),
+        [balanceSats, feeAmountSats, validSats]
+    );
+    const buttonFeedback = amountAboveBalance ? 'amount is above your balance' : '';
     const canSubmit = validSats > 0n && addressOnNetwork && !isSubmitting;
+    const hasFeeEstimate = feeAmountSats != null;
+    const feeText = hasFeeEstimate ? formatSatsLabel(feeAmountSats, settings?.moneyFormat, bitcoin.price) : 'updating';
+    const feeColor = withdrawalFeeRisk?.high ? theme.destructive : theme.foreground;
+    const buttonLabel = isSubmitting ? 'withdrawing...' : buttonFeedback || 'withdraw';
     const lockRoute = useCallback((ms = 1200) => {
         if (routeLockRef.current) return false;
         routeLockRef.current = true;
@@ -131,14 +162,31 @@ export default function Withdraw() {
         router.navigate('/camera');
     }, [lockRoute]);
 
+    const handleFeeHelpPress = useCallback(() => {
+        if (!lockRoute()) return;
+        router.push('/withdrawalinfo');
+    }, [lockRoute]);
+
     const scanPress = tap({ value: scanScale, disabled: isSubmitting, onPress: handleScanPress });
     const cyclePress = tap({ value: cycleScale, disabled: isSubmitting, onPress: cycleUnit });
+    const feeHelpPress = tap({ value: feeHelpScale, disabled: isSubmitting, onPress: handleFeeHelpPress });
 
     const cycleStyle = useAnimatedStyle(() => ({ transform: [{ scale: cycleScale.value }] }));
     const scanStyle = useAnimatedStyle(() => ({ transform: [{ scale: scanScale.value }] }));
+    const feeHelpStyle = useAnimatedStyle(() => ({ transform: [{ scale: feeHelpScale.value }] }));
 
     return (
         <View style={{ flex: 1, paddingHorizontal: 16, paddingTop: 32, gap: 12 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 12, paddingHorizontal: 4 }}>
+                <Text numberOfLines={1} style={{ flex: 1, color: feeColor, fontSize: 16, fontWeight: '900' }}>
+                    estimated fee: {`${hasFeeEstimate ? '~' : ''}${feeText}`}
+                </Text>
+                <Pressable {...feeHelpPress} accessibilityRole="button" accessibilityLabel="withdrawal fee info" hitSlop={8} disabled={isSubmitting}>
+                    <Animated.View style={feeHelpStyle}>
+                        <Icon icon={CircleQuestionMark} size={28} color={theme.foreground} />
+                    </Animated.View>
+                </Pressable>
+            </View>
             {/* receiving address */}
             <GlassField disabled={isSubmitting} style={{ gap: 6, paddingRight: 12, paddingLeft: 14, paddingVertical: 8 }}>
                 <TextInput
@@ -180,7 +228,7 @@ export default function Withdraw() {
                 </Pressable>
             </GlassField>
             {/* withdraw button */}
-            <GlassButton onPress={handleWithdraw} label={isSubmitting ? 'withdrawing...' : 'withdraw'} accent disabled={!canSubmit} />
+            <GlassButton onPress={handleWithdraw} label={buttonLabel} accent disabled={!canSubmit} tintColor={buttonFeedback ? theme.destructive : undefined} color={buttonFeedback ? theme.background : undefined} />
         </View>
     );
 }

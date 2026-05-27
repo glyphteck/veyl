@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { makeUserQr, qr } from '@glyphteck/shared/qrutils';
 import { useUser } from '@/components/providers/userprovider';
 import { useWallet } from '@/components/providers/walletprovider';
 import { useVault } from '@/components/providers/vaultprovider';
@@ -39,8 +40,9 @@ export default function Navbar() {
     const { hasTx } = useTxData();
     const { hasChats, chats } = useChat();
     const { cloaked, cloak } = useCloak();
+    const [userMenuOpen, setUserMenuOpen] = useState(false);
+    const username = user?.username;
     const isAdmin = !!user?.isAdmin;
-    const hasBalance = balance && balance > 0;
     const hasUnseenChats = !!chats?.some((c) => c?.unseen);
     const showWalletDot = false;
     const showChatDot = !user?.chatBanned && hasUnseenChats && !pathname?.startsWith('/chat');
@@ -51,6 +53,18 @@ export default function Navbar() {
         }
         openDialog('newchat');
     };
+    const openUserMenu = useCallback(() => {
+        setUserMenuOpen(true);
+    }, []);
+    const openUserQr = useCallback(() => {
+        const qrData = makeUserQr(username);
+        if (!qrData) return;
+        setUserMenuOpen(false);
+        openDialog('qrcode', {
+            type: qr.user,
+            value: qrData,
+        });
+    }, [openDialog, username]);
 
     // Keyboard shortcuts
     useEffect(() => {
@@ -62,7 +76,8 @@ export default function Navbar() {
                 lock,
                 logout,
                 cloak,
-                hasBalance,
+                openUserMenu,
+                openUserQr,
                 hasTx,
                 isAdmin,
                 chatBanned: user?.chatBanned,
@@ -70,7 +85,7 @@ export default function Navbar() {
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [cloak, hasBalance, hasTx, isAdmin, lock, openDialog, pathname, router.push, user?.chatBanned]);
+    }, [cloak, hasTx, isAdmin, lock, openDialog, openUserMenu, openUserQr, pathname, router.push, user?.chatBanned]);
 
     return (
         <nav className="py-2.25 w-full flex items-center z-30 sticky top-0">
@@ -154,7 +169,17 @@ export default function Navbar() {
                 {/* profile menu */}
                 <div className="flex items-center gap-2">
                     <RegtestTag />
-                    <UserMenu user={user} balance={balance} copyFundingAddress={copyFundingAddress} fundingAddress={fundingAddress} getFundingAddress={getFundingAddress} lock={lock} openDialog={openDialog} />
+                    <UserMenu
+                        user={user}
+                        balance={balance}
+                        copyFundingAddress={copyFundingAddress}
+                        fundingAddress={fundingAddress}
+                        getFundingAddress={getFundingAddress}
+                        lock={lock}
+                        openDialog={openDialog}
+                        open={userMenuOpen}
+                        onOpenChange={setUserMenuOpen}
+                    />
                 </div>
             </div>
         </nav>

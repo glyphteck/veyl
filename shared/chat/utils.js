@@ -1,4 +1,4 @@
-import { collection, query, where, orderBy, onSnapshot, doc, serverTimestamp, updateDoc, writeBatch, endAt, endBefore, getDocs, getDocsFromServer, getDoc, getDocFromServer, limitToLast, limit, deleteField, Timestamp } from 'firebase/firestore';
+import { collection, query, where, orderBy, onSnapshot, doc, serverTimestamp, updateDoc, writeBatch, endAt, endBefore, getDocs, getDocsFromServer, getDoc, getDocFromServer, limitToLast, limit, startAfter, deleteField, Timestamp } from 'firebase/firestore';
 import { closeChatPair, getChatId, hasMsgData, openChatPair, openMsg, resealMsgBody, sealMsg } from '../crypto/chat.js';
 import { orderChatKeys } from '../crypto/pair.js';
 import { putAttachment, putFile, putImg, putMp3, putMp4, readMsgFile } from './media.js';
@@ -830,31 +830,109 @@ export async function readMsgAttachment(storage, userChatPK, userPrivKey, peerCh
     return readMsgFile(storage, pair, msg);
 }
 
-export function listenToChats(db, userChatPK, userPrivKey, onUpdate, onError) {
-    const q = query(collection(db, 'chats'), where('participants', 'array-contains', userChatPK));
+function cleanPositiveInt(value, fallback) {
+    const next = Number(value);
+    return Number.isFinite(next) && next > 0 ? Math.floor(next) : fallback;
+}
+
+function chatListQuery(db, userChatPK, count, cursor) {
+    const base = [where('participants', 'array-contains', userChatPK), orderBy('ts', 'desc')];
+    if (cursor) {
+        base.push(startAfter(cursor));
+    }
+    base.push(limit(cleanPositiveInt(count, 20)));
+    return query(collection(db, 'chats'), ...base);
+}
+
+function chatParticipantQuery(db, userChatPK) {
+    return query(collection(db, 'chats'), where('participants', 'array-contains', userChatPK));
+}
+
+function isIndexUnavailableError(error) {
+    const code = String(error?.code || '').toLowerCase();
+    const message = String(error?.message || '').toLowerCase();
+    return code.includes('failed-precondition') && message.includes('index');
+}
+
+export function listenToChats(db, userChatPK, userPrivKey, onUpdate, onError, options = {}) {
+    const pageSize = cleanPositiveInt(options?.limitCount ?? options?.pageSize ?? options?.count, 20);
     const cache = new Map();
     let run = 0;
-    return onSnapshot(
-        q,
-        (snap) => {
-            if (snap.metadata?.hasPendingWrites) {
-                return;
+    let unsub = null;
+    let usingFallback = false;
+
+    const listen = (q, fallback = false) =>
+        onSnapshot(
+            q,
+            (snap) => {
+                if (snap.metadata?.hasPendingWrites) {
+                    return;
+                }
+                const runId = ++run;
+                void handleChats(db, snap.docs, userChatPK, userPrivKey, cache)
+                    .then(({ chats, peers, deletingChatIds }) => {
+                        if (runId === run) {
+                            onUpdate(chats, peers, {
+                                deletingChatIds,
+                                cursor: fallback ? null : (snap.docs[snap.docs.length - 1] ?? null),
+                                hasMore: fallback ? false : snap.docs.length >= pageSize,
+                                fallback,
+                            });
+                        }
+                    })
+                    .catch((error) => {
+                        if (runId === run) {
+                            onError?.(error);
+                        }
+                    });
+            },
+            (error) => {
+                if (!fallback && !usingFallback && isIndexUnavailableError(error)) {
+                    usingFallback = true;
+                    run += 1;
+                    cache.clear();
+                    unsub?.();
+                    unsub = listen(chatParticipantQuery(db, userChatPK), true);
+                    return;
+                }
+                onError?.(error);
             }
-            const runId = ++run;
-            void handleChats(db, snap.docs, userChatPK, userPrivKey, cache)
-                .then(({ chats, peers, deletingChatIds }) => {
-                    if (runId === run) {
-                        onUpdate(chats, peers, { deletingChatIds });
-                    }
-                })
-                .catch((error) => {
-                    if (runId === run) {
-                        onError?.(error);
-                    }
-                });
-        },
-        onError
-    );
+        );
+
+    unsub = listen(chatListQuery(db, userChatPK, pageSize));
+    return () => unsub?.();
+}
+
+export async function loadMoreChats(db, userChatPK, userPrivKey, cursor, pageSize) {
+    if (!db || !userChatPK || !userPrivKey || !cursor) {
+        return {
+            chats: [],
+            peers: [],
+            deletingChatIds: [],
+            cursor: null,
+            hasMore: false,
+        };
+    }
+
+    const count = cleanPositiveInt(pageSize, 20);
+    const snap = await getDocsFromServer(chatListQuery(db, userChatPK, count, cursor));
+    const result = await handleChats(db, snap.docs, userChatPK, userPrivKey, new Map(), { prune: false });
+    return {
+        ...result,
+        cursor: snap.docs[snap.docs.length - 1] ?? cursor,
+        hasMore: snap.docs.length >= count,
+    };
+}
+
+export async function getChatRow(db, chatId, userChatPK, userPrivKey) {
+    if (!db || !chatId || !userChatPK || !userPrivKey) {
+        return null;
+    }
+    const snap = await getDocFromServer(doc(db, 'chats', chatId)).catch(() => null);
+    if (!snap?.exists?.()) {
+        return null;
+    }
+    return decryptChatDoc(db, snap, userChatPK, userPrivKey);
 }
 
 async function decryptChatDoc(db, docSnap, userChatPK, userPrivKey) {
@@ -900,8 +978,8 @@ async function chatRowFromDoc(db, docSnap, userChatPK, userPrivKey, cache) {
     return chat;
 }
 
-async function handleChats(db, docs, userChatPK, userPrivKey, cache) {
-    if (cache?.size) {
+async function handleChats(db, docs, userChatPK, userPrivKey, cache, options = {}) {
+    if (cache?.size && options?.prune !== false) {
         const keep = new Set(docs.map((docSnap) => docSnap.id));
         for (const id of cache.keys()) {
             if (!keep.has(id)) {
@@ -974,6 +1052,7 @@ export function listenToLatestMsgs(db, chatId, userChatPK, userPrivKey, peerChat
     const decryptedCache = new Map();
     let lastVisibleDocs = [];
     let lastExpiredKeys = '';
+    let lastDeletedKeys = '';
     let run = 0;
 
     return onSnapshot(
@@ -996,9 +1075,12 @@ export function listenToLatestMsgs(db, chatId, userChatPK, userPrivKey, peerChat
             const runId = ++run;
             const changeTypeById = new Map(snap.docChanges().map((change) => [change.doc.id, change.type]));
             const expiredKeys = new Set();
+            const removedDocs = [];
             for (const change of snap.docChanges()) {
                 if (change.type === 'removed' && messageDataExpired(change.doc.data())) {
                     addMessageDocKeys(expiredKeys, change.doc);
+                } else if (change.type === 'removed' && !change.doc.metadata.hasPendingWrites) {
+                    removedDocs.push(change.doc);
                 }
             }
             const docs = snap.docs.filter((docSnap) => {
@@ -1023,14 +1105,25 @@ export function listenToLatestMsgs(db, chatId, userChatPK, userPrivKey, peerChat
             const visibleDocs = entries.map((entry) => entry.doc);
             const visibleStart = docIndexById(docs, visibleDocs[0]?.id);
             const carry = visibleStart > 0 ? docs[visibleStart - 1] : null;
+            const queryFilled = snap.docs.length >= queryLimit;
+            const queryStartMs = toMillis(docs[0]?.data?.()?.ts, null);
+            const deletedKeys = new Set();
+            for (const docSnap of removedDocs) {
+                const removedMs = toMillis(docSnap.data()?.ts, null);
+                if (!queryFilled || queryStartMs == null || removedMs == null || removedMs >= queryStartMs) {
+                    addMessageDocKeys(deletedKeys, docSnap);
+                }
+            }
             const expiredKeysKey = [...expiredKeys].sort().join('|');
-            if (messageDocsEqual(lastVisibleDocs, visibleDocs) && expiredKeysKey === lastExpiredKeys) {
+            const deletedKeysKey = [...deletedKeys].sort().join('|');
+            if (messageDocsEqual(lastVisibleDocs, visibleDocs) && expiredKeysKey === lastExpiredKeys && deletedKeysKey === lastDeletedKeys) {
                 return;
             }
             pruneMessageCache(decryptedCache, visibleDocs);
             const messages = entries.map((entry) => entry.message);
             lastVisibleDocs = visibleDocs.map((docSnap) => ({ id: docSnap.id, data: docSnap.data() }));
             lastExpiredKeys = expiredKeysKey;
+            lastDeletedKeys = deletedKeysKey;
             onUpdate({
                 messages,
                 cursor: visibleDocs[0] ?? docs[0] ?? null,
@@ -1040,32 +1133,8 @@ export function listenToLatestMsgs(db, chatId, userChatPK, userPrivKey, peerChat
                 exists: true,
                 fromCache: !!snap.metadata?.fromCache,
                 expiredKeys: [...expiredKeys],
+                deletedKeys: [...deletedKeys],
             });
-        },
-        onError
-    );
-}
-
-export function listenToMsgDeletes(db, chatId, onUpdate, onError) {
-    const q = query(collection(db, 'chats', chatId, 'messages'), orderBy('ts', 'asc'));
-
-    return onSnapshot(
-        q,
-        { includeMetadataChanges: true },
-        (snap) => {
-            if (snap.metadata?.fromCache) {
-                return;
-            }
-
-            const removed = snap
-                .docChanges()
-                .filter((change) => change.type === 'removed' && !change.doc.metadata.hasPendingWrites && !messageDataExpired(change.doc.data()))
-                .map((change) => change.doc.id)
-                .filter(Boolean);
-
-            if (removed.length) {
-                onUpdate(removed);
-            }
         },
         onError
     );

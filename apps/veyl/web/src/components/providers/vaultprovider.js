@@ -34,6 +34,35 @@ export function VaultProvider({ children }) {
     const walletRef = useRef(null);
     const chatPrivateKeyRef = useRef(null);
     const localCacheRef = useRef(null);
+    const encSeedRef = useRef(null);
+    const seedLoadErrorRef = useRef(null);
+    const seedWaitersRef = useRef(new Set());
+
+    const updateEncSeed = useCallback((nextSeed) => {
+        encSeedRef.current = nextSeed;
+        seedLoadErrorRef.current = null;
+        setEncSeed(nextSeed);
+        if (!nextSeed) return;
+        for (const waiter of seedWaitersRef.current) {
+            waiter.resolve(nextSeed);
+        }
+        seedWaitersRef.current.clear();
+    }, []);
+
+    const rejectSeedWaiters = useCallback((error) => {
+        for (const waiter of seedWaitersRef.current) {
+            waiter.reject(error);
+        }
+        seedWaitersRef.current.clear();
+    }, []);
+
+    const waitForEncSeed = useCallback(() => {
+        if (encSeedRef.current) return Promise.resolve(encSeedRef.current);
+        if (seedLoadErrorRef.current) return Promise.reject(seedLoadErrorRef.current);
+        return new Promise((resolve, reject) => {
+            seedWaitersRef.current.add({ resolve, reject });
+        });
+    }, []);
 
     useEffect(() => {
         walletRef.current = wallet;
@@ -55,6 +84,7 @@ export function VaultProvider({ children }) {
         seedUidRef.current = uid;
 
         if (uidChanged) {
+            rejectSeedWaiters(new Error('account changed during seed load'));
             const liveWallet = walletRef.current;
             const liveChatPrivateKey = chatPrivateKeyRef.current;
             const liveLocalCache = localCacheRef.current;
@@ -71,7 +101,7 @@ export function VaultProvider({ children }) {
             setWallet(null);
             setChatPrivateKey(null);
             setLocalCache(null);
-            setEncSeed(null);
+            updateEncSeed(null);
             setLockState('locked');
 
             if (previousUid) {
@@ -85,25 +115,32 @@ export function VaultProvider({ children }) {
             try {
                 const snap = await getDoc(doc(db, 'seeds', uid));
                 if (!cancelled && seedUidRef.current === uid) {
-                    setEncSeed(snap.data()?.es ?? null);
+                    const nextSeed = snap.data()?.es ?? null;
+                    updateEncSeed(nextSeed);
+                    if (!nextSeed) {
+                        const error = new Error('seed not available');
+                        seedLoadErrorRef.current = error;
+                        rejectSeedWaiters(error);
+                    }
                 }
             } catch (error) {
                 console.warn('failed to fetch encrypted seed', error);
                 if (!cancelled && seedUidRef.current === uid) {
-                    setEncSeed(null);
+                    updateEncSeed(null);
+                    seedLoadErrorRef.current = error;
+                    rejectSeedWaiters(error);
                 }
             }
         })();
         return () => {
             cancelled = true;
         };
-    }, [user.uid]);
+    }, [rejectSeedWaiters, updateEncSeed, user.uid]);
 
     //boot features from master seed
     const unlock = useCallback(
         async (password) => {
             //decrypt seed
-            if (!encSeed) throw new Error('seed not ready');
             if (UNLOCK_STATES.has(lockState)) throw new Error('unlock in progress');
             const unlockUid = user.uid || auth.currentUser?.uid || null;
             if (!unlockUid) throw new Error('account not ready');
@@ -116,7 +153,11 @@ export function VaultProvider({ children }) {
             let cacheKey = null;
             let nextCache = null;
             try {
-                const { salt, iv, ct, kdf } = unpackSeedData(encSeed);
+                const seedData = await waitForEncSeed();
+                if (!isCurrentUnlock()) {
+                    throw new Error('account changed during unlock');
+                }
+                const { salt, iv, ct, kdf } = unpackSeedData(seedData);
                 masterSeed = await decryptSeed(ct, salt, iv, normalizePassword(password), kdf);
 
                 // Derive feature-specific seeds
@@ -199,7 +240,7 @@ export function VaultProvider({ children }) {
                 throw error;
             }
         },
-        [encSeed, lockState, user]
+        [lockState, user, waitForEncSeed]
     );
 
     //lock the app

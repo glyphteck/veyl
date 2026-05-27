@@ -6,7 +6,7 @@ import { resolveRole } from './roles.js';
 //
 // Modes:
 //   'mainmenu' — only `@`-prefixed input engages profile search; bare text is
-//                ignored so other uses of the command palette aren't disrupted.
+//                ignored so the main menu can filter local actions itself.
 //   'profiles' — the field is profile-only; bare text is treated as a username
 //                and `@<role>` triggers a role search.
 //

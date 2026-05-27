@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, FlatList, Pressable, Text, View } from 'react-native';
+import { ActivityIndicator, Animated, FlatList, Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
@@ -196,7 +196,7 @@ export default function ChatList() {
     const { theme } = useTheme();
     const router = useRouter();
     const insets = useSafeAreaInsets();
-    const { chats, isChatDataReady, selectChat, startDeleteChat, restoreDeletedChat } = useChat();
+    const { chats, isChatDataReady, hasMoreChats, loadingMoreChats, loadMoreChats, startDeleteChat, restoreDeletedChat } = useChat();
     const { chatPK, blockedSet, chatBanned } = useUser();
     const { peers, isBlockedChatPK, isPeerDataReady } = usePeer() || {};
     const { searching, results, query, search: runSearch, clearSearch } = useSearch('profiles');
@@ -257,11 +257,18 @@ export default function ChatList() {
         });
         return merged.map((peer) => {
             const key = peer.uid || peer.chatPK || peer.walletPK;
-            return { id: `peer:${key}`, peer, chatId: getChatId(chatPK, peer.chatPK), type: 'peer' };
+            return { id: `peer:${key}`, peer, chatId: getChatId(chatPK, peer.chatPK), peerChatPK: peer.chatPK, type: 'peer' };
         });
     }, [chatIds, chatPK, peers, query, results]);
 
     const items = useMemo(() => [...filteredChats.map((chat) => ({ id: chat.id, chat, type: 'chat' })), ...searchPeers], [filteredChats, searchPeers]);
+
+    const handleLoadMoreChats = useCallback(() => {
+        if (chatQuery || !hasMoreChats || loadingMoreChats) {
+            return;
+        }
+        void loadMoreChats?.();
+    }, [chatQuery, hasMoreChats, loadingMoreChats, loadMoreChats]);
 
     const handleSearchChange = useCallback(
         (value) => {
@@ -310,13 +317,12 @@ export default function ChatList() {
     }, [clearSearch]);
 
     const openChat = useCallback(
-        (chatId) => {
-            if (!chatId) return;
+        (peerChatPK) => {
+            if (!peerChatPK) return;
             if (!lockRoute()) return;
-            selectChat?.(chatId);
-            router.push({ pathname: '/currentchat', params: { id: chatId } });
+            router.push({ pathname: '/chat/[peerchatpk]', params: { peerchatpk: peerChatPK } });
         },
-        [lockRoute, router, selectChat]
+        [lockRoute, router]
     );
 
     const renderItem = useCallback(
@@ -335,7 +341,7 @@ export default function ChatList() {
                         avatarSource={avatarSource}
                         isActive={!!profile?.active}
                         isBot={!!profile?.bot}
-                        onPress={() => openChat(item.chatId)}
+                        onPress={() => openChat(item.peerChatPK)}
                     />
                 );
             }
@@ -359,7 +365,7 @@ export default function ChatList() {
                     avatarSource={avatarSource}
                     isActive={isActive}
                     isBot={!!profile?.bot}
-                    onPress={() => openChat(chat.id)}
+                    onPress={() => openChat(peerChatPK)}
                     onDelete={() => handleDeleteChat(chat.id)}
                 />
             );
@@ -393,6 +399,15 @@ export default function ChatList() {
                 renderItem={renderItem}
                 directionalLockEnabled
                 alwaysBounceHorizontal={false}
+                onEndReached={handleLoadMoreChats}
+                onEndReachedThreshold={0.65}
+                ListFooterComponent={() =>
+                    !chatQuery && loadingMoreChats && items.length ? (
+                        <View style={{ paddingVertical: 14, alignItems: 'center', justifyContent: 'center' }}>
+                            <ActivityIndicator color={theme.muted} />
+                        </View>
+                    ) : null
+                }
                 ListEmptyComponent={() => {
                     if (chatQuery) {
                         return searching ? <EmptyState busy title="searching..." /> : <EmptyState icon={Search} title="no matches" detail="Try another username." />;

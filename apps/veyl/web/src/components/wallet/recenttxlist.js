@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import Link from 'next/link';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/avatar';
 import { Button } from '@/components/button';
@@ -14,6 +14,7 @@ import { useTxData } from '@/components/providers/txdataprovider';
 import { useDialog } from '@/components/providers/dialogprovider';
 import { usePeer } from '@/components/providers/peerprovider';
 import { useCloak } from '@glyphteck/shared/providers/cloakprovider';
+import { listNavigationStep, loopListIndex } from '@/lib/focus';
 
 export function RecentTxList() {
     const { openDialog } = useDialog();
@@ -25,6 +26,7 @@ export function RecentTxList() {
     const { transactions } = useTxData();
     const { peers } = usePeer();
     const { cloaked } = useCloak();
+    const rowRefs = useRef([]);
     const txsInRange = transactions || [];
     const sorted = [...txsInRange].sort((a, b) => new Date(b.createdTime) - new Date(a.createdTime));
     const maxTxs = 50;
@@ -41,6 +43,51 @@ export function RecentTxList() {
     }, [peers]);
 
     const hasMoreThanMax = recentTxs.length == maxTxs;
+    const itemCount = recentTxs.length + (hasMoreThanMax ? 1 : 0);
+
+    const focusTxAtIndex = useCallback(
+        (index) => {
+            if (index < 0 || index >= itemCount) {
+                return false;
+            }
+            const row = rowRefs.current[index];
+            if (!row?.focus) {
+                return false;
+            }
+            row.focus({ preventScroll: true });
+            row.scrollIntoView?.({ block: 'nearest' });
+            return true;
+        },
+        [itemCount]
+    );
+
+    const stepTx = useCallback(
+        (step) => {
+            if (!itemCount) {
+                return false;
+            }
+            const active = typeof document === 'undefined' ? null : document.activeElement;
+            const focusedIndex = rowRefs.current.slice(0, itemCount).findIndex((row) => row && active && (row === active || row.contains(active)));
+            const nextIndex = loopListIndex(itemCount, focusedIndex, step);
+            if (nextIndex === focusedIndex) {
+                return true;
+            }
+            return focusTxAtIndex(nextIndex);
+        },
+        [focusTxAtIndex, itemCount]
+    );
+
+    const handleListKeyDown = useCallback(
+        (event) => {
+            const step = listNavigationStep(event, { ignoreEditable: false });
+            if (!step) return;
+            if (stepTx(step)) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
+        },
+        [stepTx]
+    );
 
     if (!txReady || recentTxs.length === 0) {
         return (
@@ -53,9 +100,9 @@ export function RecentTxList() {
     }
     return (
         <Card>
-            <div className="overflow-y-auto">
+            <div className="overflow-y-auto" onKeyDown={handleListKeyDown}>
                 <div className={`divide-y ${recentTxs.length < 12 ? 'border-b' : ''}`}>
-                    {recentTxs.map((tx) => {
+                    {recentTxs.map((tx, index) => {
                         const label = formatFullDateTime(tx.createdTime);
                         const isInflow = tx.amount > 0;
                         const formattedAmount = renderMoney(tx.totalValue, moneyFormat, bitcoin.price, isInflow ? '+' : '-');
@@ -70,9 +117,18 @@ export function RecentTxList() {
                                 });
 
                         return (
-                            <Button key={tx.id} type="button" className="group h-auto grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-none px-3 py-2 text-left" onClick={() => openDialog('txdetails', { tx })}>
+                            <Button
+                                key={tx.id}
+                                ref={(node) => {
+                                    rowRefs.current[index] = node;
+                                }}
+                                type="button"
+                                tabIndex={index === 0 ? 0 : -1}
+                                className="group h-auto grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-none px-3 py-2 text-left"
+                                onClick={() => openDialog('txdetails', { tx })}
+                            >
                                 <div className="flex min-w-0 items-center gap-2.5 pr-4">
-                                    <Avatar active={tx.funding || tx.withdrawal ? false : profile?.active} bot={!!profile?.bot} className="grower">
+                                    <Avatar active={tx.funding || tx.withdrawal ? false : profile?.active} bot={!!profile?.bot} className="grower group-focus-visible:scale-120">
                                         <AvatarImage src={tx.funding || tx.withdrawal ? user?.avatar : profile?.avatar} alt={displayName} />
                                         <AvatarFallback />
                                     </Avatar>
@@ -86,9 +142,16 @@ export function RecentTxList() {
                         );
                     })}
                     {hasMoreThanMax && (
-                        <Button asChild className="group h-auto w-full justify-start rounded-none px-3 py-2 text-left">
+                        <Button
+                            asChild
+                            ref={(node) => {
+                                rowRefs.current[recentTxs.length] = node;
+                            }}
+                            tabIndex={-1}
+                            className="group h-auto w-full justify-start rounded-none px-3 py-2 text-left"
+                        >
                             <Link href="/transactions">
-                                <History className="size-10 shrink-0 transition-transform group-hover:scale-120 group-active:scale-85" />
+                                <History className="size-10 shrink-0 transition-transform group-hover:scale-120 group-focus-visible:scale-120 group-active:scale-85" />
                                 <span className="text-xl">see all</span>
                             </Link>
                         </Button>

@@ -8,6 +8,7 @@ import { useUser } from '@/providers/userprovider';
 import { useVault } from '@/providers/vaultprovider';
 import Icon from '@/components/icon';
 import { getFaceIdPassword } from '@/lib/faceid';
+import { mark } from '@/lib/diagnostics';
 
 let faceIdPromptInFlight = false;
 
@@ -25,18 +26,37 @@ export default function FaceIdUnlockScreen() {
     const seedReady = !!encSeed;
 
     const attemptFaceId = useCallback(async () => {
-        if (!seedReady) return;
-        if (lockState !== 'locked') return;
-        if (AppState.currentState !== 'active') return;
-        if (faceIdPromptInFlight) return;
+        if (!seedReady) {
+            mark('faceid.unlock.skip', { reason: 'seed-not-ready', lockState });
+            return;
+        }
+        if (lockState !== 'locked') {
+            mark('faceid.unlock.skip', { reason: 'vault-busy', lockState });
+            return;
+        }
+        if (AppState.currentState !== 'active') {
+            mark('faceid.unlock.skip', { reason: 'app-inactive', lockState });
+            return;
+        }
+        if (faceIdPromptInFlight) {
+            mark('faceid.unlock.skip', { reason: 'prompt-in-flight', lockState });
+            return;
+        }
         faceIdPromptInFlight = true;
+        const startedAt = Date.now();
+        mark('faceid.unlock.start', { lockState });
         try {
+            const passwordStartedAt = Date.now();
+            mark('faceid.password.start', {});
             const password = await getFaceIdPassword(user?.uid);
+            mark('faceid.password.done', { elapsedMs: Date.now() - passwordStartedAt, found: !!password });
             if (!password) {
+                mark('faceid.unlock.done', { elapsedMs: Date.now() - startedAt, reason: 'missing-password' });
                 setFaceIdFailed(true);
                 return;
             }
             await unlockWithPsw(password, {
+                source: 'faceid',
                 stageFaceId: false,
                 onSeedDecrypted: () =>
                     new Promise((resolve) => {
@@ -46,7 +66,9 @@ export default function FaceIdUnlockScreen() {
                         ]).start(resolve);
                     }),
             });
-        } catch {
+            mark('faceid.unlock.done', { elapsedMs: Date.now() - startedAt });
+        } catch (error) {
+            mark('faceid.unlock.error', { elapsedMs: Date.now() - startedAt, code: error?.code || '', message: error?.message || String(error) });
             setFaceIdFailed(true);
         } finally {
             faceIdPromptInFlight = false;

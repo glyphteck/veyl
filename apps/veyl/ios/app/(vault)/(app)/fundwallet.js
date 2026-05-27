@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Pressable, Text, View } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { useRouter } from 'expo-router';
@@ -6,7 +6,7 @@ import { useIsFocused } from 'expo-router/react-navigation';
 import { Check, CircleQuestionMark } from 'lucide-react-native';
 import QRCode from 'react-native-qrcode-svg';
 import { makeQr, qr } from '@glyphteck/shared/qrutils';
-import { FUNDING_TX_PREVIEW_VBYTES, STATIC_DEPOSIT_FEE_ESTIMATE_SATS } from '@glyphteck/shared/walletfees';
+import { FUNDING_TX_PREVIEW_VBYTES, STATIC_DEPOSIT_CLAIM_FEE_SATS } from '@glyphteck/shared/wallet/fees';
 import { renderMoney } from '@glyphteck/shared/utils';
 
 import Icon from '@/components/icon';
@@ -34,6 +34,8 @@ export default function FundWalletScreen() {
     const [loading, setLoading] = useState(!fundingAddress);
     const [copied, setCopied] = useState(false);
     const [qrSize, setQrSize] = useState(0);
+    const routeLockRef = useRef(false);
+    const routeLockTimerRef = useRef(null);
 
     useEffect(() => {
         if (isFocused) {
@@ -87,7 +89,7 @@ export default function FundWalletScreen() {
         const estimate = bitcoin.estimateTransactionFees({
             speed: 'medium',
             vbytes: FUNDING_TX_PREVIEW_VBYTES,
-            baseSats: STATIC_DEPOSIT_FEE_ESTIMATE_SATS,
+            baseSats: STATIC_DEPOSIT_CLAIM_FEE_SATS,
         });
         return estimate?.success ? estimate.onchainEstimate : null;
     }, [bitcoin]);
@@ -98,8 +100,22 @@ export default function FundWalletScreen() {
             .then(() => setCopied(true))
             .catch(() => {});
     };
+    const lockRoute = useCallback((ms = 1200) => {
+        if (routeLockRef.current) return false;
+        routeLockRef.current = true;
+        if (routeLockTimerRef.current) clearTimeout(routeLockTimerRef.current);
+        routeLockTimerRef.current = setTimeout(() => {
+            routeLockRef.current = false;
+            routeLockTimerRef.current = null;
+        }, ms);
+        return true;
+    }, []);
+    const openFundingInfo = useCallback(() => {
+        if (!lockRoute()) return;
+        router.push('/fundinginfo');
+    }, [lockRoute, router]);
     const qrCopyTap = useTap({ scale: 0.96, onPress: copyAddress });
-    const feeHelpTap = useTap({ onPress: () => router.push('/fundinginfo') });
+    const feeHelpTap = useTap({ onPress: openFundingInfo });
     const copiedPop = usePop({ show: copied });
     const updateQrSize = (event) => {
         const width = Math.floor(event.nativeEvent.layout.width);
@@ -108,18 +124,29 @@ export default function FundWalletScreen() {
         }
     };
 
+    useEffect(
+        () => () => {
+            if (routeLockTimerRef.current) {
+                clearTimeout(routeLockTimerRef.current);
+            }
+        },
+        []
+    );
+
     if (loading || !qrValue) return null;
 
     return (
         <View style={{ position: 'relative', alignItems: 'center', paddingHorizontal: 48, paddingTop: 24 }}>
-            <Pressable {...feeHelpTap.props} accessibilityRole="button" accessibilityLabel="funding fee info" hitSlop={8} style={{ position: 'absolute', top: 24, right: 48, zIndex: 2 }}>
-                <Animated.View style={{ transform: [{ scale: feeHelpTap.scale }] }}>
-                    <Icon icon={CircleQuestionMark} size={28} color={theme.foreground} />
-                </Animated.View>
-            </Pressable>
-            <Text numberOfLines={1} style={{ alignSelf: 'stretch', paddingRight: 40, paddingBottom: 16, color: theme.foreground, fontSize: 16, fontWeight: '900' }}>
-                estimated fee: ~{formatFeeAmount(fundingFeePreview?.feeAmountSats, settings?.moneyFormat, bitcoin.price)}
-            </Text>
+            <View style={{ alignSelf: 'stretch', flexDirection: 'row', alignItems: 'flex-end', gap: 12, paddingBottom: 6 }}>
+                <Text numberOfLines={1} style={{ flex: 1, color: theme.foreground, fontSize: 16, fontWeight: '900' }}>
+                    estimated fee: ~{formatFeeAmount(fundingFeePreview?.feeAmountSats, settings?.moneyFormat, bitcoin.price)}
+                </Text>
+                <Pressable {...feeHelpTap.props} accessibilityRole="button" accessibilityLabel="funding fee info" hitSlop={8}>
+                    <Animated.View style={{ transform: [{ scale: feeHelpTap.scale }] }}>
+                        <Icon icon={CircleQuestionMark} size={28} color={theme.foreground} />
+                    </Animated.View>
+                </Pressable>
+            </View>
             <View style={{ alignSelf: 'stretch', alignItems: 'center' }} onLayout={updateQrSize}>
                 <Pressable accessibilityRole="button" accessibilityLabel="copy funding address" {...qrCopyTap.props}>
                     <Animated.View style={{ transform: [{ scale: qrCopyTap.scale }] }}>

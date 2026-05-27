@@ -41,6 +41,10 @@ const recentDiagnosticLines = new Map();
 const runningBots = new Set();
 const CONNECTION_LOG_COOLDOWN_MS = 60000;
 const DIAGNOSTIC_LOG_COOLDOWN_MS = 60000;
+const SLEEP_RESUME_IDLE_MS = 10 * 60 * 1000;
+const SLEEP_RESUME_CONNECTION_QUIET_MS = 2 * 60 * 1000;
+let lastRuntimeOutputAt = Date.now();
+let resumeConnectionQuietUntil = 0;
 let shuttingDown = false;
 
 function paint(text, color) {
@@ -149,6 +153,13 @@ function getConnectionLossSource(line) {
     if (line.includes('WebChannelConnection RPC') && line.includes('transport errored')) {
         return 'backend';
     }
+    if (
+        line.includes('Error in periodic token output optimization')
+        && line.includes('query_token_outputs')
+        && /(?:Transport error|socket connection was closed unexpectedly|Received HTTP 0 response|UNAVAILABLE|UNKNOWN)/i.test(line)
+    ) {
+        return 'wallet';
+    }
     if (line.includes('bot runtime heartbeat lost connection')) {
         return 'backend';
     }
@@ -167,15 +178,22 @@ function getConnectionLossSource(line) {
     return null;
 }
 
-function shouldSkipConnectionLog(name, source) {
+function shouldSkipConnectionLog(name, source, now = Date.now()) {
     const key = `${name}:${source}`;
-    const now = Date.now();
     const last = lastConnectionLog.get(key) || 0;
     if (now - last < CONNECTION_LOG_COOLDOWN_MS) {
         return true;
     }
     lastConnectionLog.set(key, now);
     return false;
+}
+
+function shouldSkipResumeConnectionLog(idleMs, now) {
+    if (idleMs > SLEEP_RESUME_IDLE_MS) {
+        resumeConnectionQuietUntil = now + SLEEP_RESUME_CONNECTION_QUIET_MS;
+        return true;
+    }
+    return now < resumeConnectionQuietUntil;
 }
 
 function duplicateProneDiagnosticKey(name, line) {
@@ -223,6 +241,9 @@ function shouldSkipDuplicateDiagnostic(name, line) {
 
 function format(name, rawLine) {
     const line = rawLine.replace(/\r/g, '');
+    const now = Date.now();
+    const idleMs = now - lastRuntimeOutputAt;
+    lastRuntimeOutputAt = now;
 
     if (shuttingDown) {
         return null;
@@ -299,7 +320,10 @@ function format(name, rawLine) {
     const connectionSource = getConnectionLossSource(line);
     if (connectionSource) {
         lineState.set(name, 'connection');
-        if (shouldSkipConnectionLog(name, connectionSource)) {
+        if (
+            shouldSkipResumeConnectionLog(idleMs, now)
+            || shouldSkipConnectionLog(name, connectionSource, now)
+        ) {
             return null;
         }
         return explicit(name, paint(`[${connectionSource}] lost connection`, ansi.yellow));

@@ -73,8 +73,38 @@ function loadDialog(type) {
     return promise;
 }
 
-function preloadDialogs(types) {
-    return Promise.all((types || []).map(loadDialog));
+function usePreloadDialogs(types) {
+    useEffect(() => {
+        if (!types?.length) return undefined;
+
+        let cancelled = false;
+        let frame = null;
+        let timer = null;
+        let idle = null;
+
+        const preload = () => {
+            for (const type of types) {
+                loadDialog(type).catch((error) => {
+                    if (!cancelled) console.error(`failed to preload ${type} dialog:`, error);
+                });
+            }
+        };
+
+        frame = window.requestAnimationFrame(() => {
+            if ('requestIdleCallback' in window) {
+                idle = window.requestIdleCallback(preload, { timeout: 2000 });
+                return;
+            }
+            timer = window.setTimeout(preload, 0);
+        });
+
+        return () => {
+            cancelled = true;
+            window.cancelAnimationFrame(frame);
+            window.clearTimeout(timer);
+            if (idle != null) window.cancelIdleCallback?.(idle);
+        };
+    }, [types]);
 }
 
 export function DialogProvider({ children }) {
@@ -163,14 +193,7 @@ export function DialogHost({ allow }) {
 }
 
 export function DialogScope({ allow, children }) {
-    const preloadRef = useRef(null);
-    if (!preloadRef.current) {
-        preloadRef.current = preloadDialogs(allow);
-    }
-
-    useEffect(() => {
-        preloadRef.current.catch(() => {});
-    }, []);
+    usePreloadDialogs(allow);
 
     return (
         <>

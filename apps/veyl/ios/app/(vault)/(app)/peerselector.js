@@ -357,7 +357,7 @@ export default function PeerSelectorScreen() {
         if (!lockRoute()) return;
         const chatId = getChatId(chatPK, selectedPeer.chatPK);
         selectChat?.(chatId);
-        router.replace({ pathname: '/currentchat', params: { id: chatId } });
+        router.replace({ pathname: '/chat/[peerchatpk]', params: { peerchatpk: selectedPeer.chatPK } });
     }, [chatBanned, chatPK, lockRoute, router, selectChat, selectedPeer]);
 
     const toggleMode = useCallback(() => {

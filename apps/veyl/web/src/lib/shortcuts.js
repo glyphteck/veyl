@@ -10,6 +10,8 @@ export const shortcuts = {
     settings: '⌘,',
     lock: '⌘L',
     logout: '⌘⇧L',
+    user: '⌘U',
+    userqr: '⌘⇧U',
     sendmoney: '⌘S',
     requestmoney: '⌘D',
     cloak: '⌘H',
@@ -25,7 +27,11 @@ export function handleAppShortcut(event, options) {
     }
 
     const key = event.key.toLowerCase();
-    const { pathname, openDialog, push, lock, logout, cloak, hasBalance, hasTx, isAdmin, chatBanned } = options;
+    const { pathname, openDialog, push, lock, logout, cloak, openUserMenu, openUserQr, hasTx, isAdmin, chatBanned } = options;
+
+    if (event.shiftKey && /^Digit[0-9]$/.test(event.code || '')) {
+        return false;
+    }
 
     if (key === 'k') {
         event.preventDefault();
@@ -108,11 +114,19 @@ export function handleAppShortcut(event, options) {
         return true;
     }
 
+    if (key === 'u') {
+        event.preventDefault();
+        if (event.shiftKey) {
+            openUserQr?.();
+        } else {
+            openUserMenu?.();
+        }
+        return true;
+    }
+
     if (key === 's') {
         event.preventDefault();
-        if (hasBalance) {
-            openDialog('payments', { tab: 'send' });
-        }
+        openDialog('payments', { tab: 'send' });
         return true;
     }
 

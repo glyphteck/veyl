@@ -30,7 +30,8 @@ Forced auth, vault, and onboarding flows are route-guard owned. After a required
 
 ## Wallet
 
-- Shared wallet provider factory: `shared/wallet.js`
+- Shared wallet provider factory: `shared/wallet/provider.js`
+- Shared wallet primitives: `shared/wallet/fees.js`, `shared/wallet/keys.js`, `shared/wallet/spark.js`
 - Web wallet provider wrapper: `apps/veyl/web/src/components/providers/walletprovider.js`
 - iOS wallet provider wrapper: `apps/veyl/ios/src/providers/walletprovider.js`
 - Shared Bitcoin provider factory: `shared/providers/bitcoinprovider.js`
@@ -99,7 +100,7 @@ Conventions:
 
 - `@` is the only profile-search prefix.
 - Reserve `/` for future commands.
-- `useSearch('mainmenu')` requires `@` to engage so cmdk keeps filtering on bare text.
+- `useSearch('mainmenu')` requires `@` to engage so the in-house main menu keeps filtering local actions on bare text.
 - Everywhere else uses `useSearch('profiles')`, where bare text is a username and `@<role>` triggers a role lookup.
 - The hook returns `query` as a parsed object `{ kind, value, role?, raw }` or `null`. Consumers should not parse the raw input themselves.
 

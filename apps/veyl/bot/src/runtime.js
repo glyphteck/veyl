@@ -6,7 +6,7 @@ import { isControlMsg, isSystemMsg, makeReadReceipt, makeReq, makeTxt, setReqTx 
 import { makeCid } from '@glyphteck/shared/chat/state';
 import { CHAT_RETENTION_24H, CHAT_RETENTION_SEEN, getMessageRetention, onSeenMessageTtlMs, seenMessageTtlMs, shouldShortenTtl } from '@glyphteck/shared/chat/ttl';
 import { resolveNetwork } from '@glyphteck/shared/network';
-import { resolveWalletPK } from '@glyphteck/shared/walletkeys';
+import { resolveWalletPK } from '@glyphteck/shared/wallet/keys';
 import { SparkWallet, SparkWalletEvent } from '@buildonspark/spark-sdk';
 import { randomUUID } from 'node:crypto';
 import { hostname } from 'node:os';

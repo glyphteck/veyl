@@ -14,8 +14,8 @@ function useSearchContext() {
 export const useSearch = createSearch({
     useSearchContext,
     sources: {
-        // Web command palette: only `@<token>` engages a profile search so
-        // free-text typing keeps driving the cmdk filter.
+        // Main menu: only `@<token>` engages profile search so free text keeps
+        // filtering local menu actions.
         mainmenu: createProfileSource({ remote: profileQueries, mode: 'mainmenu' }),
         // Profile-only fields: bare text = username, `@<role>` = role.
         profiles: createProfileSource({ remote: profileQueries, mode: 'profiles' }),

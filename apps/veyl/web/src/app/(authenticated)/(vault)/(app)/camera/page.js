@@ -13,6 +13,7 @@ import { toast } from 'sonner';
 import { Loader, Coins, ArrowUpRight, X, Download } from 'lucide-react';
 import { qr, readQr } from '@glyphteck/shared/qrutils';
 import { isAddressOnNetwork } from '@glyphteck/shared/network';
+import { randomBytes, toHex } from '@glyphteck/shared/crypto/core';
 
 const SCAN_INTERVAL = 200;
 const VIDEO_HOLD_MS = 220;
@@ -30,7 +31,12 @@ function videoFileType(mimeType) {
 
 function videoFileName(mimeType) {
     const ext = videoFileType(mimeType) === 'video/mp4' ? 'mp4' : 'webm';
-    return `veyl-video.${ext}`;
+    return makeCaptureName(ext);
+}
+
+function makeCaptureName(ext) {
+    const cleanExt = String(ext || '').replace(/^\./, '').toLowerCase() || 'bin';
+    return `${toHex(randomBytes(8))}.${cleanExt}`;
 }
 
 function makeRecordingStream(video) {
@@ -256,11 +262,12 @@ export default function CameraPage() {
     const takePhoto = useCallback(async () => {
         const src = webcamRef.current?.getScreenshot();
         if (!src) return;
+        const name = makeCaptureName('jpg');
         try {
-            setCapture({ kind: 'photo', uri: await mirrorPhotoDataUri(src) });
+            setCapture({ kind: 'photo', uri: await mirrorPhotoDataUri(src), name });
         } catch (error) {
             console.error('photo mirror failed:', error);
-            setCapture({ kind: 'photo', uri: src });
+            setCapture({ kind: 'photo', uri: src, name });
         }
     }, []);
 
@@ -363,7 +370,7 @@ export default function CameraPage() {
         if (!capture) return;
         const a = document.createElement('a');
         a.href = capture.uri;
-        a.download = capture.kind === 'video' ? capture.file?.name || videoFileName(capture.file?.type) : 'veyl-photo.jpg';
+        a.download = capture.kind === 'video' ? capture.file?.name || videoFileName(capture.file?.type) : capture.name || makeCaptureName('jpg');
         a.click();
     }, [capture]);
 

@@ -36,27 +36,27 @@
 
 @layer components {
     .grower-sm {
-        @apply transition-transform hover:scale-105 active:scale-90 aria-expanded:scale-90;
+        @apply transition-transform hover:scale-105 focus-visible:scale-105 active:scale-90 aria-expanded:scale-90;
     }
 
     .grower {
-        @apply transition-transform hover:scale-120 active:scale-85 aria-expanded:scale-80 group-hover:scale-120 group-active:scale-85;
+        @apply transition-transform hover:scale-120 focus-visible:scale-120 active:scale-85 aria-expanded:scale-80 group-hover:scale-120 group-active:scale-85;
     }
 
     .grower-lg {
-        @apply transition-transform hover:scale-135 active:scale-85 aria-expanded:scale-85;
+        @apply transition-transform hover:scale-135 focus-visible:scale-135 active:scale-85 aria-expanded:scale-85;
     }
 
     .shrinker {
-        @apply transition-transform hover:scale-95 active:scale-85 aria-expanded:scale-85;
+        @apply transition-transform hover:scale-95 focus-visible:scale-95 active:scale-85 aria-expanded:scale-85;
     }
 
     .shrinker-fixed {
-        @apply transition-transform hover:scale-80 aria-expanded:scale-80;
+        @apply transition-transform hover:scale-80 focus-visible:scale-80 aria-expanded:scale-80;
     }
 
     .shrinker-fixed-sm {
-        @apply transition-transform hover:scale-90 aria-expanded:scale-90;
+        @apply transition-transform hover:scale-90 focus-visible:scale-90 aria-expanded:scale-90;
     }
 
     .pop {
@@ -79,7 +79,7 @@
     }
 
     .mainmenu {
-        @apply flex h-10 w-full items-center justify-start px-3 py-1.5 shadow transition-transform hover:scale-95 active:scale-90;
+        @apply flex h-10 w-full items-center justify-start px-3 py-1.5 shadow transition-transform hover:scale-95 focus-visible:scale-95 active:scale-90;
     }
 
     .button-outline {

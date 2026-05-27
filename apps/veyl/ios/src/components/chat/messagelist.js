@@ -1,35 +1,34 @@
-import { ActivityIndicator, Alert, Text, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, Alert, View, useWindowDimensions } from 'react-native';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import * as Haptics from 'expo-haptics';
 import { httpsCallable } from 'firebase/functions';
 import { ArrowDown, Bookmark, Copy, Download, Flag, History, Reply, RotateCcw, Share2, SquarePen, Trash2 } from 'lucide-react-native';
-import Animated, { Easing, LinearTransition, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
+import Animated, { Easing, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import { scheduleOnRN } from 'react-native-worklets';
 import { useChat } from '@/providers/chatprovider';
 import { useTheme } from '@/providers/themeprovider';
 import { useMenu } from '@/providers/menuprovider';
 import { useMediaViewer } from '@/providers/mediaviewerprovider';
 import { useUser } from '@/providers/userprovider';
 import { useWallet } from '@/providers/walletprovider';
-import GlassView from '@/components/glass/glassview';
 import GlassIcon from '@/components/glass/glassicon';
-import { KeyboardChatScrollView, KeyboardStickyView } from '@/components/keyboardscroll';
-import { ChatMessageType, TextBubble } from '@/components/chat/messages';
+import { KeyboardStickyView, useReanimatedKeyboardAnimation } from '@/components/keyboardscroll';
+import { ChatMessageType } from '@/components/chat/messages';
 import ReceiptMark, { RECEIPT_MARK_RESERVE } from '@/components/chat/receiptmark';
 import { REACTION_SPACE } from '@/components/chat/messages/reactiontray';
-import { MessageGestureProvider } from '@/components/chat/messagegesturecontext';
-import Icon from '@/components/icon';
+import MsgDot from '@/components/chat/msgdot';
+import { MessageRow, ReportedBubble, SystemMessageRow } from '@/components/chat/messagerow';
+import { MESSAGE_ROW_ENTER_STATE_MS, MESSAGE_ROW_LAYOUT, MESSAGE_ROW_LEAVE_MS, REPLY_SPRING, STAMP_TRAY, positivePx, rubberBand } from '@/components/chat/rowmotion';
 import { mark } from '@/lib/diagnostics';
 import { useChatMessages } from '@/lib/usechatmessages';
 import { uploadStorageBytesNative } from '@/lib/chatmedia';
 import { getMediaViewerKey, isMediaViewerMsg } from '@/lib/chatmediaitems';
 import { copyMessageImage, copyMessageText, saveMessageFile, saveMessageImage } from '@/lib/chatdownloads';
+import { cancelPendingMsgFileLoads } from '@/lib/msgimagecache';
 import { stageShareMedia } from '@/lib/sharemedia';
 import { functions, storage } from '@/lib/firebase';
-import { canReplyToMsg, canShareAttachmentMsg, canShowMsg, collapseSystemMessages, getLatestReadOutgoingReceipt, getSystemMsgText, isPeerMsg, isReadReceiptMsg, isSystemMsg, setReqTx } from '@glyphteck/shared/chat/messages';
+import { canReplyToMsg, canShareAttachmentMsg, canShowMsg, collapseSystemMessages, getLatestReadOutgoingReceipt, isPeerMsg, isReadReceiptMsg, isSystemMsg, setReqTx } from '@glyphteck/shared/chat/messages';
 import { useOptimisticMessageReactions } from '@glyphteck/shared/chat/usereactions';
 import { makeFileId, reportEvidencePath } from '@glyphteck/shared/files';
 import { buildReportFields, getReportAttachmentMeta } from '@glyphteck/shared/report';
@@ -37,71 +36,15 @@ import { formatTimeHHMM } from '@glyphteck/shared/utils';
 import { getMessageOrderMs } from '@glyphteck/shared/chat/state';
 import { CHAT_RETENTION_SEEN, getMessageRetention, onSeenMessageTtlMs, seenMessageTtlMs } from '@glyphteck/shared/chat/ttl';
 
-const STAMP_W = 108;
-const STAMP_WAIT = 12;
-const STAMP_TRAY = STAMP_W + STAMP_WAIT;
-const REPLY_DRAG = 24;
-const REPLY_HINT_W = 44;
-const REPLY_TRIGGER = 64;
-const REPLY_ICON_DELAY = 24;
 const NEWEST_MESSAGE_GAP = 8;
 const SCROLL_BOTTOM_SHOW_MIN_DISTANCE = 360;
 const SCROLL_BOTTOM_SHOW_PAGE_FRACTION = 1.25;
 const SCROLL_BOTTOM_HIDE_PAGE_FRACTION = 1;
 const SCROLL_BOTTOM_ANIMATION_MS = 160;
 const SCROLL_BOTTOM_START_SCALE = 0.001;
-const MESSAGE_ROW_ANIMATION_MS = 160;
-const MESSAGE_ROW_ENTER_ANIMATION_MS = MESSAGE_ROW_ANIMATION_MS;
-const MESSAGE_ROW_EXIT_ANIMATION_MS = 160;
-const MESSAGE_ROW_SHRINK_ANIMATION_MS = MESSAGE_ROW_ANIMATION_MS;
-const MESSAGE_ROW_LEAVE_MS = MESSAGE_ROW_EXIT_ANIMATION_MS + MESSAGE_ROW_SHRINK_ANIMATION_MS;
-const MESSAGE_ROW_ENTER_STATE_MS = MESSAGE_ROW_ENTER_ANIMATION_MS + 120;
-const MESSAGE_ROW_EASING = Easing.out(Easing.cubic);
-const MESSAGE_ROW_EXIT_EASING = Easing.linear;
-const MESSAGE_ROW_EXIT_CLEARANCE_PX = 1;
-const MESSAGE_ROW_ENTER_SCALE = 0.2;
-const MESSAGE_ROW_ENTER_OFFSET_Y = 10;
-const MESSAGE_ROW_EXIT_SCALE = 0.01;
 const LIKE_PREVIEW_INSET = 22;
-const LIKE_BLOCK_MS = 320;
-const MESSAGE_ROW_PADDING_TOP = 4;
-const MESSAGE_ROW_PADDING_BOTTOM = 8;
-const RECEIPT_STAMP_BOTTOM = 7;
-const REPLY_SPRING = {
-    mass: 0.16,
-    stiffness: 200,
-    damping: 4.5,
-};
-const MESSAGE_ROW_ENTER_TIMING = { duration: MESSAGE_ROW_ENTER_ANIMATION_MS, easing: MESSAGE_ROW_EASING };
-const MESSAGE_ROW_LAYOUT = LinearTransition.duration(MESSAGE_ROW_ENTER_ANIMATION_MS).easing(MESSAGE_ROW_EASING);
 const KEYBOARD_DISMISS_MODE = 'interactive';
 const CHAT_KEYBOARD_GAP = 8;
-
-function roundPx(value) {
-    return Math.round(Number.isFinite(value) ? value : 0);
-}
-
-function positivePx(value) {
-    return Math.max(0, roundPx(value));
-}
-
-function clamp(value, min, max) {
-    'worklet';
-    return Math.min(Math.max(value, min), max);
-}
-
-function rubberBand(value, dimension) {
-    'worklet';
-    if (value <= 0 || dimension <= 0) return 0;
-    return (1 - 1 / (value / dimension + 1)) * dimension;
-}
-
-function revealReply(value) {
-    'worklet';
-    if (value <= 0) return 0;
-    if (value <= REPLY_DRAG) return value;
-    return REPLY_DRAG + rubberBand(value - REPLY_DRAG, REPLY_HINT_W);
-}
 
 function getMsgKey(msg) {
     return msg?.cid || msg?.id;
@@ -384,11 +327,6 @@ function getUnsaveTtlMs(msg, messages, chatPK, peerChatPK, now = Date.now()) {
     return getSavedTtlMs(msg);
 }
 
-function getMsgStamp(msg) {
-    const ms = getMessageOrderMs(msg);
-    return Number.isFinite(ms) && ms !== Infinity ? formatTimeHHMM(ms, true) : '';
-}
-
 function hasMsgText(msg) {
     return typeof msg?.c === 'string' && msg.c.trim().length > 0;
 }
@@ -397,492 +335,9 @@ function hasMsgFile(msg) {
     return (typeof msg?.localUri === 'string' && msg.localUri.trim().length > 0) || (typeof msg?.p === 'string' && !!msg.p && typeof msg?.k === 'string' && !!msg.k);
 }
 
-function useLeavingRowCollapse(leaving) {
-    const rowHeight = useSharedValue(0);
-    const collapse = useSharedValue(0);
-    const shrinkTimerRef = useRef(null);
-
-    const clearShrinkTimer = useCallback(() => {
-        if (shrinkTimerRef.current) {
-            clearTimeout(shrinkTimerRef.current);
-            shrinkTimerRef.current = null;
-        }
-    }, []);
-
-    const handleRowLayout = useCallback(
-        (event) => {
-            if (leaving) {
-                return;
-            }
-            const height = roundPx(event?.nativeEvent?.layout?.height);
-            if (height > 0) {
-                rowHeight.value = height;
-            }
-        },
-        [leaving, rowHeight]
-    );
-
-    useEffect(() => {
-        clearShrinkTimer();
-        if (!leaving) {
-            collapse.value = 0;
-            return undefined;
-        }
-
-        collapse.value = 0;
-        shrinkTimerRef.current = setTimeout(() => {
-            shrinkTimerRef.current = null;
-            collapse.value = withTiming(1, {
-                duration: MESSAGE_ROW_SHRINK_ANIMATION_MS,
-                easing: MESSAGE_ROW_EASING,
-            });
-        }, MESSAGE_ROW_EXIT_ANIMATION_MS);
-
-        return clearShrinkTimer;
-    }, [clearShrinkTimer, collapse, leaving]);
-
-    const rowCollapseStyle = useAnimatedStyle(() => {
-        if (!leaving || rowHeight.value <= 0) {
-            return {};
-        }
-        return {
-            height: Math.max(0, rowHeight.value * (1 - collapse.value)),
-        };
-    });
-
-    return { handleRowLayout, rowCollapseStyle };
-}
-
-function MsgDot({ show, failed, saved = false, side = 'right', bottomInset = 0, exitToken = 0, theme }) {
-    const progress = useSharedValue(exitToken ? 1 : 0);
-    const bottomOffset = useSharedValue(bottomInset);
-    const [visualSaved, setVisualSaved] = useState(saved);
-    const bottomOffsetTimerRef = useRef(null);
-
-    const clearBottomOffsetTimer = useCallback(() => {
-        if (bottomOffsetTimerRef.current) {
-            clearTimeout(bottomOffsetTimerRef.current);
-            bottomOffsetTimerRef.current = null;
-        }
-    }, []);
-
-    useEffect(() => {
-        progress.value = withTiming(show ? 1 : 0, { duration: MESSAGE_ROW_ANIMATION_MS, easing: MESSAGE_ROW_EASING });
-    }, [progress, show]);
-
-    useEffect(() => {
-        clearBottomOffsetTimer();
-        const nextInset = positivePx(bottomInset);
-        const timing = { duration: MESSAGE_ROW_ANIMATION_MS, easing: MESSAGE_ROW_EASING };
-        if (nextInset < bottomOffset.value) {
-            bottomOffsetTimerRef.current = setTimeout(() => {
-                bottomOffsetTimerRef.current = null;
-                bottomOffset.value = withTiming(nextInset, timing);
-            }, MESSAGE_ROW_ANIMATION_MS);
-            return undefined;
-        }
-
-        bottomOffset.value = withTiming(nextInset, timing);
-        return undefined;
-    }, [bottomInset, bottomOffset, clearBottomOffsetTimer]);
-
-    useEffect(() => {
-        if (show || saved) {
-            setVisualSaved(saved);
-            return undefined;
-        }
-
-        const timeout = setTimeout(() => setVisualSaved(false), MESSAGE_ROW_ANIMATION_MS);
-        return () => clearTimeout(timeout);
-    }, [saved, show]);
-
-    useEffect(() => clearBottomOffsetTimer, [clearBottomOffsetTimer]);
-
-    const dotSpaceStyle = useAnimatedStyle(() => ({
-        marginLeft: side === 'right' ? 8 * progress.value : 0,
-        marginRight: side === 'left' ? 8 * progress.value : 0,
-        marginBottom: bottomOffset.value,
-        width: 8 * progress.value,
-    }));
-    const dotVisualStyle = useAnimatedStyle(() => ({
-        transform: [{ scale: 0.01 + 0.99 * progress.value }],
-    }));
-
-    const tintColor = failed ? theme.destructive : saved || visualSaved ? theme.foreground : theme.active;
-
-    return (
-        <Animated.View
-            pointerEvents="none"
-            style={[
-                {
-                    width: 0,
-                    height: 8,
-                    alignSelf: 'center',
-                    overflow: 'visible',
-                },
-                dotSpaceStyle,
-            ]}
-        >
-            <Animated.View
-                style={[
-                    {
-                        position: 'absolute',
-                        top: 0,
-                        left: side === 'right' ? 0 : undefined,
-                        right: side === 'left' ? 0 : undefined,
-                        width: 8,
-                        height: 8,
-                        borderRadius: 4,
-                        overflow: 'hidden',
-                    },
-                    dotVisualStyle,
-                ]}
-            >
-                <GlassView glassEffectStyle="regular" tintColor={tintColor} style={{ width: 8, height: 8, minWidth: 8, minHeight: 8, borderRadius: 4, overflow: 'hidden' }} />
-            </Animated.View>
-        </Animated.View>
-    );
-}
-
-function ReportedBubble({ fromPeer = false }) {
-    return <TextBubble msg={{ c: 'reported message hidden' }} fromPeer={fromPeer} />;
-}
-
-function MessageRow({ chatPad, msg, rowState = 'present', fromPeer = false, theme, timeGesture, screenW, receiptStamp, stampBottomInset = 0, onReply, onLike, children }) {
-    const reply = useSharedValue(0);
-    const appear = useSharedValue(rowState === 'entering' ? 0 : 1);
-    const exit = useSharedValue(0);
-    const exitDistance = useSharedValue(0);
-    const [swipeBlocked, setSwipeBlocked] = useState(false);
-    const exitContentLayoutRef = useRef(null);
-    const exitTargetLayoutRef = useRef(null);
-    const likeBlockedRef = useRef(false);
-    const likeBlockTimerRef = useRef(null);
-    const stamp = useMemo(() => getMsgStamp(msg), [msg?.cid, msg?.id, msg?.ts]);
-    const leaving = rowState === 'leaving';
-    const entering = rowState === 'entering';
-    const instant = rowState === 'instant';
-    const canReply = !leaving && typeof onReply === 'function';
-    const canLike = !leaving && typeof onLike === 'function';
-    const hasPan = canReply;
-    const replyIconLeft = fromPeer;
-    const { handleRowLayout, rowCollapseStyle } = useLeavingRowCollapse(leaving);
-    const triggerReply = useCallback(() => {
-        Haptics.selectionAsync().catch(() => {});
-        onReply?.(msg);
-    }, [msg, onReply]);
-    const triggerLike = useCallback(() => {
-        Haptics.selectionAsync().catch(() => {});
-        onLike?.(msg);
-    }, [msg, onLike]);
-    const blockLike = useCallback((duration = LIKE_BLOCK_MS) => {
-        if (likeBlockTimerRef.current) {
-            clearTimeout(likeBlockTimerRef.current);
-            likeBlockTimerRef.current = null;
-        }
-        likeBlockedRef.current = true;
-        likeBlockTimerRef.current = setTimeout(() => {
-            likeBlockTimerRef.current = null;
-            likeBlockedRef.current = false;
-        }, duration);
-    }, []);
-
-    useEffect(
-        () => () => {
-            if (likeBlockTimerRef.current) {
-                clearTimeout(likeBlockTimerRef.current);
-                likeBlockTimerRef.current = null;
-            }
-            likeBlockedRef.current = false;
-        },
-        []
-    );
-
-    const replyStyle = useAnimatedStyle(() => {
-        const reveal = clamp((Math.abs(reply.value) - REPLY_ICON_DELAY) / 42, 0, 1);
-        return {
-            opacity: reveal,
-            transform: [{ scale: 0.84 + reveal * 0.24 }],
-        };
-    });
-
-    const contentStyle = useAnimatedStyle(() => {
-        const exitTranslate = exitDistance.value * exit.value;
-        const exitScale = 1 - exit.value * (1 - MESSAGE_ROW_EXIT_SCALE);
-        const enterScale = MESSAGE_ROW_ENTER_SCALE + appear.value * (1 - MESSAGE_ROW_ENTER_SCALE);
-        const enterOffsetY = (1 - appear.value) * MESSAGE_ROW_ENTER_OFFSET_Y;
-        return {
-            transform: [{ translateX: reply.value + exitTranslate }, { translateY: exit.value > 0 ? 0 : enterOffsetY }, { scale: exit.value > 0 ? exitScale : enterScale }],
-        };
-    });
-
-    const handleExitContentLayout = useCallback((event) => {
-        exitContentLayoutRef.current = event.nativeEvent.layout;
-    }, []);
-
-    const handleExitTargetLayout = useCallback((event) => {
-        exitTargetLayoutRef.current = event.nativeEvent.layout;
-    }, []);
-
-    const measureExitTranslate = useCallback(() => {
-        const contentLayout = exitContentLayoutRef.current;
-        const targetLayout = exitTargetLayoutRef.current || contentLayout;
-        if (!contentLayout || !targetLayout || !Number.isFinite(contentLayout.x) || !Number.isFinite(targetLayout.x) || !Number.isFinite(targetLayout.width) || targetLayout.width <= 0) {
-            return (screenW + MESSAGE_ROW_EXIT_CLEARANCE_PX) * (fromPeer ? -1 : 1);
-        }
-
-        const targetLeft = contentLayout.x + targetLayout.x;
-        const targetRight = targetLeft + targetLayout.width;
-        const exitsRight = !fromPeer;
-        const distance = exitsRight ? screenW - targetLeft : targetRight;
-        return Math.ceil(Math.max(0, distance + MESSAGE_ROW_EXIT_CLEARANCE_PX)) * (exitsRight ? 1 : -1);
-    }, [fromPeer, screenW]);
-
-    useEffect(() => {
-        if (leaving) {
-            appear.value = 1;
-            exitDistance.value = measureExitTranslate();
-            exit.value = withTiming(1, { duration: MESSAGE_ROW_EXIT_ANIMATION_MS, easing: MESSAGE_ROW_EXIT_EASING });
-            return undefined;
-        }
-
-        exit.value = 0;
-        exitDistance.value = 0;
-        if (instant) {
-            appear.value = 1;
-            return undefined;
-        }
-        if (!entering) {
-            appear.value = 1;
-            return undefined;
-        }
-
-        appear.value = 0;
-        appear.value = withTiming(1, MESSAGE_ROW_ENTER_TIMING);
-        return undefined;
-    }, [appear, entering, exit, exitDistance, instant, leaving, measureExitTranslate]);
-
-    const replyGesture = useMemo(() => {
-        const gesture = Gesture.Pan()
-            .enabled(canReply && !swipeBlocked)
-            .activeOffsetX(fromPeer ? 4 : -4)
-            .failOffsetY([-10, 10])
-            .failOffsetX(fromPeer ? -4 : 4);
-        if (!fromPeer && timeGesture) {
-            gesture.blocksExternalGesture(timeGesture);
-        }
-        return gesture
-            .onUpdate((event) => {
-                'worklet';
-                const drag = fromPeer ? Math.max(event.translationX, 0) : Math.max(-event.translationX, 0);
-                reply.value = fromPeer ? revealReply(drag) : -revealReply(drag);
-            })
-            .onEnd((event) => {
-                'worklet';
-                const drag = fromPeer ? event.translationX : -event.translationX;
-                if (drag >= REPLY_TRIGGER && canReply) {
-                    scheduleOnRN(triggerReply);
-                }
-            })
-            .onFinalize(() => {
-                'worklet';
-                reply.value = withSpring(0, REPLY_SPRING);
-            });
-    }, [canReply, fromPeer, reply, swipeBlocked, timeGesture, triggerReply]);
-
-    const likeGesture = useMemo(
-        () =>
-            Gesture.Tap()
-                .enabled(canLike)
-                .numberOfTaps(2)
-                .maxDelay(280)
-                .maxDistance(18)
-                .runOnJS(true)
-                .onEnd((_event, success) => {
-                    if (success && !likeBlockedRef.current) {
-                        triggerLike();
-                    }
-                }),
-        [canLike, triggerLike]
-    );
-
-    const tapGesture = useMemo(() => (canLike ? likeGesture : null), [canLike, likeGesture]);
-
-    const rowGesture = useMemo(() => {
-        if (hasPan && tapGesture) {
-            return Gesture.Simultaneous(replyGesture, tapGesture);
-        }
-        if (hasPan) {
-            return replyGesture;
-        }
-        return tapGesture;
-    }, [hasPan, replyGesture, tapGesture]);
-
-    const gestureValue = useMemo(() => ({ blockLike, setSwipeBlocked }), [blockLike, setSwipeBlocked]);
-    const renderedChildren = typeof children === 'function' ? children({ onExitTargetLayout: handleExitTargetLayout }) : children;
-    const content = <MessageGestureProvider value={gestureValue}>{renderedChildren}</MessageGestureProvider>;
-    const contentOriginStyle = useMemo(() => ({ transformOrigin: fromPeer ? 'left bottom' : 'right bottom' }), [fromPeer]);
-    const contentNode = (
-        <Animated.View collapsable={false} onLayout={handleExitContentLayout} style={[contentOriginStyle, contentStyle]}>
-            {content}
-        </Animated.View>
-    );
-    const rowBody = (
-        <View
-            collapsable={false}
-            style={{
-                position: 'relative',
-                width: screenW + STAMP_TRAY,
-                paddingTop: MESSAGE_ROW_PADDING_TOP,
-                paddingBottom: MESSAGE_ROW_PADDING_BOTTOM,
-            }}
-        >
-            {stamp ? (
-                <View
-                    pointerEvents="none"
-                    style={{
-                        position: 'absolute',
-                        left: screenW + STAMP_WAIT,
-                        top: MESSAGE_ROW_PADDING_TOP,
-                        bottom: MESSAGE_ROW_PADDING_BOTTOM + stampBottomInset,
-                        width: STAMP_W,
-                        justifyContent: 'center',
-                        alignItems: 'flex-start',
-                    }}
-                >
-                    <Text style={{ color: theme.muted, fontSize: 11, fontWeight: '800' }}>{stamp}</Text>
-                </View>
-            ) : null}
-            {receiptStamp ? (
-                <View
-                    pointerEvents="none"
-                    style={{
-                        position: 'absolute',
-                        left: screenW + STAMP_WAIT,
-                        bottom: RECEIPT_STAMP_BOTTOM,
-                        width: STAMP_W,
-                        justifyContent: 'center',
-                        alignItems: 'flex-start',
-                    }}
-                >
-                    <Text style={{ color: theme.muted, fontSize: 11, fontWeight: '800' }}>{receiptStamp}</Text>
-                </View>
-            ) : null}
-            {canReply ? (
-                <Animated.View
-                    pointerEvents="none"
-                    style={[
-                        {
-                            position: 'absolute',
-                            left: replyIconLeft ? 12 : undefined,
-                            right: replyIconLeft ? undefined : STAMP_TRAY + Math.max(chatPad - 4, 12),
-                            top: 0,
-                            bottom: 0,
-                            width: REPLY_HINT_W,
-                            justifyContent: 'center',
-                            alignItems: 'center',
-                        },
-                        replyStyle,
-                    ]}
-                >
-                    <Icon icon={Reply} color={theme.foreground} />
-                </Animated.View>
-            ) : null}
-            <View style={{ width: screenW, paddingHorizontal: chatPad, flexDirection: 'row', justifyContent: fromPeer ? 'flex-start' : 'flex-end' }}>
-                {rowGesture ? (
-                    <GestureDetector gesture={rowGesture}>{contentNode}</GestureDetector>
-                ) : (
-                    contentNode
-                )}
-            </View>
-        </View>
-    );
-
-    return (
-        <Animated.View
-            collapsable={false}
-            onLayout={handleRowLayout}
-            pointerEvents={leaving ? 'none' : 'auto'}
-            style={[
-                {
-                    width: screenW + STAMP_TRAY,
-                    overflow: 'hidden',
-                },
-                rowCollapseStyle,
-            ]}
-        >
-            {rowBody}
-        </Animated.View>
-    );
-}
-
-function SystemMessageRow({ chatPad, msg, rowState = 'present', screenW, theme }) {
-    const appear = useSharedValue(rowState === 'entering' ? 0 : 1);
-    const exit = useSharedValue(0);
-    const leaving = rowState === 'leaving';
-    const entering = rowState === 'entering';
-    const instant = rowState === 'instant';
-    const { handleRowLayout, rowCollapseStyle } = useLeavingRowCollapse(leaving);
-    const visualStyle = useAnimatedStyle(() => ({
-        opacity: 1 - exit.value,
-        transform: [
-            { translateY: exit.value > 0 ? 0 : (1 - appear.value) * MESSAGE_ROW_ENTER_OFFSET_Y },
-            { scale: exit.value > 0 ? 1 - exit.value * (1 - MESSAGE_ROW_EXIT_SCALE) : MESSAGE_ROW_ENTER_SCALE + appear.value * (1 - MESSAGE_ROW_ENTER_SCALE) },
-        ],
-    }));
-
-    useEffect(() => {
-        if (leaving) {
-            appear.value = 1;
-            exit.value = withTiming(1, { duration: MESSAGE_ROW_EXIT_ANIMATION_MS, easing: MESSAGE_ROW_EXIT_EASING });
-            return undefined;
-        }
-
-        exit.value = 0;
-        if (instant) {
-            appear.value = 1;
-            return undefined;
-        }
-        if (!entering) {
-            appear.value = 1;
-            return undefined;
-        }
-
-        appear.value = 0;
-        appear.value = withTiming(1, MESSAGE_ROW_ENTER_TIMING);
-        return undefined;
-    }, [appear, entering, exit, instant, leaving]);
-
-    const rowBody = (
-        <View
-            collapsable={false}
-            style={{
-                width: screenW + STAMP_TRAY,
-                paddingTop: 2,
-                paddingBottom: 4,
-            }}
-        >
-            <Animated.View collapsable={false} style={[{ width: screenW, paddingHorizontal: chatPad, alignItems: 'center', transformOrigin: 'center bottom' }, visualStyle]}>
-                <Text style={{ maxWidth: '76%', color: theme.muted, fontSize: 11, fontWeight: '800', lineHeight: 14, textAlign: 'center' }}>{getSystemMsgText(msg)}</Text>
-            </Animated.View>
-        </View>
-    );
-
-    return (
-        <Animated.View
-            onLayout={handleRowLayout}
-            pointerEvents={leaving ? 'none' : 'auto'}
-            style={[
-                {
-                    width: screenW + STAMP_TRAY,
-                    overflow: 'hidden',
-                },
-                rowCollapseStyle,
-            ]}
-        >
-            {rowBody}
-        </Animated.View>
-    );
+function getMsgStamp(msg) {
+    const ms = getMessageOrderMs(msg);
+    return Number.isFinite(ms) && ms !== Infinity ? formatTimeHHMM(ms, true) : '';
 }
 
 export default function MessageList({
@@ -909,6 +364,7 @@ export default function MessageList({
     const { updateMessage, deleteMessage, retryMessage, makeMessagePermanent, makeMessageTemporary, readMessageFile, sendReaction } = useChat();
     const { sendMoneyWithSpark } = useWallet();
     const insets = useSafeAreaInsets();
+    const { height: keyboardHeight } = useReanimatedKeyboardAnimation();
     const { width: screenW } = useWindowDimensions();
     const { messages: messagesAsc, ready, hasOlder, loadingOlder, loadOlder, patchMessage, removeMessage } = useChatMessages(chatId);
     const submitReport = useMemo(() => httpsCallable(functions, 'submitReport'), []);
@@ -1036,12 +492,12 @@ export default function MessageList({
     const listRef = useRef(null);
     const loadingOlderRef = useRef(false);
     const stickyOffset = useMemo(() => ({ closed: 0, opened: insets.bottom - CHAT_KEYBOARD_GAP }), [insets.bottom]);
-    const renderScrollComponent = useCallback((props) => <KeyboardChatScrollView {...props} inverted />, []);
     const scrollBottomBase = positivePx(insets.bottom + inputH + 20);
     const composerReserveStyle = useAnimatedStyle(() => {
         const extra = extraContentPadding ? extraContentPadding.value : 0;
-        return { height: Math.max(0, Math.round(extra)) };
-    }, [extraContentPadding]);
+        const keyboard = Math.max(0, Math.round(-keyboardHeight.value - insets.bottom));
+        return { height: keyboard + Math.max(0, Math.round(extra)) };
+    }, [extraContentPadding, insets.bottom, keyboardHeight]);
     const scrollBottomStyle = useAnimatedStyle(() => ({
         transform: [
             {
@@ -1080,6 +536,7 @@ export default function MessageList({
         setShowScrollBottom(false);
         mark('chat.list.mount', { chatId: chatId || '' });
         return () => {
+            cancelPendingMsgFileLoads();
             mark('chat.list.unmount', { chatId: chatId || '' });
         };
     }, [chatId, setMediaItems]);
@@ -1619,7 +1076,6 @@ export default function MessageList({
                                 itemLayoutAnimation={rowLayoutAnimation}
                                 style={{ flex: 1, width: screenW + STAMP_TRAY, zIndex: 0 }}
                                 inverted
-                                renderScrollComponent={renderScrollComponent}
                                 contentContainerStyle={{
                                     paddingTop: positivePx(insets.bottom + inputH + NEWEST_MESSAGE_GAP),
                                     paddingBottom: insets.top + 42 + 24,

@@ -1,13 +1,19 @@
 import { createNavigatorFactory, TabRouter, useNavigationBuilder } from 'expo-router/react-navigation';
 import { withLayoutContext } from 'expo-router';
 import PagerView from 'react-native-pager-view';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { View } from 'react-native';
 
 const WARM_OFFSET = 0.08;
 const WARM_THROTTLE = 250;
+const PagerRouteActiveContext = createContext(null);
 
-function PagerNavigator({ initialRouteName, children, screenOptions, tabBar, onWarmRoute }) {
+export function usePagerRouteActive(fallback = false) {
+    const active = useContext(PagerRouteActiveContext);
+    return active == null ? fallback : active;
+}
+
+function PagerNavigator({ initialRouteName, children, screenOptions, tabBar, onRouteChange, onWarmRoute }) {
     const { state, navigation, descriptors, NavigationContent } = useNavigationBuilder(TabRouter, {
         children,
         screenOptions,
@@ -15,12 +21,38 @@ function PagerNavigator({ initialRouteName, children, screenOptions, tabBar, onW
     });
 
     const pagerRef = useRef(null);
+    const routesRef = useRef(state.routes);
+    const stateIndexRef = useRef(state.index);
+    const activeIndexRef = useRef(state.index);
+    const ownedNavRef = useRef(new Set());
     const warmRef = useRef({ index: -1, time: 0 });
     const [blocking, setBlocking] = useState(false);
+    const [pageIndex, setPageIndex] = useState(state.index);
+    routesRef.current = state.routes;
+    stateIndexRef.current = state.index;
+
+    const setActiveIndex = useCallback((index) => {
+        if (!Number.isInteger(index) || !routesRef.current[index]) return false;
+        activeIndexRef.current = index;
+        setPageIndex((current) => (current === index ? current : index));
+        return true;
+    }, []);
+
+    const requestNav = useCallback(
+        (index) => {
+            const route = routesRef.current[index];
+            if (!route || ownedNavRef.current.has(index)) return;
+            if (index === stateIndexRef.current && ownedNavRef.current.size === 0) return;
+
+            ownedNavRef.current.add(index);
+            navigation.navigate(route.name);
+        },
+        [navigation]
+    );
 
     const warmRoute = useCallback(
         (index) => {
-            const route = state.routes[index];
+            const route = routesRef.current[index];
             if (!route || !onWarmRoute) return;
 
             const now = Date.now();
@@ -28,7 +60,7 @@ function PagerNavigator({ initialRouteName, children, screenOptions, tabBar, onW
             warmRef.current = { index, time: now };
             onWarmRoute(route.name);
         },
-        [onWarmRoute, state.routes]
+        [onWarmRoute]
     );
 
     const onPageScrollStateChanged = (e) => {
@@ -46,18 +78,61 @@ function PagerNavigator({ initialRouteName, children, screenOptions, tabBar, onW
             const { position, offset } = e.nativeEvent;
             if (!Number.isFinite(position) || !Number.isFinite(offset) || offset < WARM_OFFSET) return;
 
-            const targetIndex = position < state.index ? position : position === state.index ? position + 1 : -1;
+            const index = activeIndexRef.current;
+            const targetIndex = position < index ? position : position === index ? position + 1 : -1;
             warmRoute(targetIndex);
         },
-        [state.index, warmRoute]
+        [warmRoute]
     );
 
-    // sync programmatic navigation (e.g. router.navigate) → PagerView position
+    const onPageSelected = useCallback(
+        (e) => {
+            const index = e.nativeEvent.position;
+            if (!setActiveIndex(index)) return;
+            requestNav(index);
+        },
+        [requestNav, setActiveIndex]
+    );
+
+    const navigateFromMenu = useCallback(
+        (name) => {
+            const index = routesRef.current.findIndex((route) => route.name === name);
+            if (index === -1) {
+                navigation.navigate(name);
+                return;
+            }
+
+            if (!setActiveIndex(index)) return;
+            pagerRef.current?.setPageWithoutAnimation(index);
+            requestNav(index);
+        },
+        [navigation, requestNav, setActiveIndex]
+    );
+
     useEffect(() => {
-        pagerRef.current?.setPageWithoutAnimation(state.index);
-    }, [state.index]);
+        const route = routesRef.current[pageIndex];
+        if (route) onRouteChange?.(route.name);
+    }, [onRouteChange, pageIndex]);
+
+    useEffect(() => {
+        const index = state.index;
+        const owned = ownedNavRef.current;
+        if (owned.delete(index)) {
+            const activeIndex = activeIndexRef.current;
+            if (activeIndex !== index && owned.has(activeIndex)) {
+                navigation.navigate(routesRef.current[activeIndex].name);
+            }
+            return;
+        }
+
+        if (index !== activeIndexRef.current && setActiveIndex(index)) {
+            pagerRef.current?.setPageWithoutAnimation(index);
+        }
+    }, [navigation, setActiveIndex, state.index]);
 
     const TabBar = tabBar;
+    const tabState = pageIndex === state.index ? state : { ...state, index: pageIndex };
+    const tabNavigation = { navigate: navigateFromMenu };
 
     return (
         <NavigationContent>
@@ -69,20 +144,17 @@ function PagerNavigator({ initialRouteName, children, screenOptions, tabBar, onW
                     offscreenPageLimit={state.routes.length}
                     onPageScroll={onPageScroll}
                     onPageScrollStateChanged={onPageScrollStateChanged}
-                    onPageSelected={(e) => {
-                        const route = state.routes[e.nativeEvent.position];
-                        navigation.navigate(route.name);
-                    }}
+                    onPageSelected={onPageSelected}
                 >
-                    {state.routes.map((route) => (
+                    {state.routes.map((route, index) => (
                         <View key={route.key} style={{ flex: 1 }} pointerEvents={blocking ? 'none' : 'auto'}>
-                            {descriptors[route.key].render()}
+                            <PagerRouteActiveContext.Provider value={pageIndex === index}>{descriptors[route.key].render()}</PagerRouteActiveContext.Provider>
                         </View>
                     ))}
                 </PagerView>
                 {TabBar && (
                     <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0 }}>
-                        <TabBar state={state} navigation={navigation} />
+                        <TabBar state={tabState} navigation={tabNavigation} />
                     </View>
                 )}
             </View>

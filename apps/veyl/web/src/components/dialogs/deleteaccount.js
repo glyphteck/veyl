@@ -13,7 +13,6 @@ import { useDialog } from '@/components/providers/dialogprovider';
 import { useBitcoin } from '@/components/providers/bitcoinprovider';
 import { useWallet } from '@/components/providers/walletprovider';
 import { useUser } from '@/components/providers/userprovider';
-import { minWithdrawalSats } from '@glyphteck/shared/spark';
 import { verifyVaultPassword } from '@/lib/crypto/seed';
 import { renderMoney } from '@/lib/utils';
 
@@ -29,7 +28,7 @@ export default function DeleteAccount({ close }) {
     const { balance } = useWallet();
     const { settings, clearAvatar } = useUser();
     const { encSeed, localCache, lock } = useVault();
-    const showWithdraw = balance != null && balance >= minWithdrawalSats;
+    const showWithdraw = Number(balance ?? 0) > 0;
     const balanceLabel = renderMoney(balance ?? 0n, settings.moneyFormat, bitcoin.price);
 
     const verifyPassword = useCallback(

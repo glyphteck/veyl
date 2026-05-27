@@ -24,6 +24,30 @@ function pick(value) {
     return '';
 }
 
+function clean(value) {
+    return typeof value === 'string' ? value.trim() : '';
+}
+
+function parsePeer(value) {
+    const raw = pick(value).trim();
+    if (!raw) return null;
+    try {
+        const peer = JSON.parse(raw);
+        if (!peer || typeof peer !== 'object') return null;
+        return {
+            username: clean(peer.username) || null,
+            uid: clean(peer.uid) || null,
+            chatPK: clean(peer.chatPK) || null,
+            walletPK: clean(peer.walletPK) || null,
+            avatar: clean(peer.avatar) || null,
+            active: !!peer.active,
+            bot: !!peer.bot,
+        };
+    } catch {
+        return null;
+    }
+}
+
 function SectionDivider() {
     const { theme } = useTheme();
 
@@ -54,7 +78,7 @@ function SettingRow({ icon, label, description, onPress, right, disabled = false
     );
 }
 
-export default function PeerRoute() {
+export default function ChatSettingsRoute() {
     const { theme } = useTheme();
     const params = useLocalSearchParams();
     const navigation = useNavigation();
@@ -69,11 +93,12 @@ export default function PeerRoute() {
     const [fetchedPeer, setFetchedPeer] = useState(null);
     const [headerHeight, setHeaderHeight] = useState(0);
 
-    const username = pick(params?.username).trim();
+    const routePeer = useMemo(() => parsePeer(params?.peer), [params?.peer]);
     const chatId = pick(params?.chatId).trim();
-    const peerChatPKParam = pick(params?.chatPK).trim();
-    const uid = pick(params?.uid).trim();
-    const walletPK = pick(params?.walletPK).trim();
+    const username = routePeer?.username || '';
+    const peerChatPKParam = routePeer?.chatPK || pick(params?.peerchatpk).trim() || pick(params?.chatPK).trim();
+    const uid = routePeer?.uid || pick(params?.uid).trim();
+    const walletPK = routePeer?.walletPK || pick(params?.walletPK).trim();
 
     const knownPeer = useMemo(() => {
         if (!Array.isArray(peers)) return null;
@@ -92,6 +117,7 @@ export default function PeerRoute() {
         () =>
             knownPeer ??
             fetchedPeer ??
+            routePeer ??
             (username || uid || peerChatPKParam || walletPK
                 ? {
                       username: username || null,
@@ -100,7 +126,7 @@ export default function PeerRoute() {
                       walletPK: walletPK || null,
                   }
                 : null),
-        [fetchedPeer, knownPeer, peerChatPKParam, uid, username, walletPK]
+        [fetchedPeer, knownPeer, peerChatPKParam, routePeer, uid, username, walletPK]
     );
 
     const title = useMemo(() => formatUserDisplay(peer || { username }), [peer, username]);

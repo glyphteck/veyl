@@ -6,7 +6,7 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { avatarPath, getFileUrl, readFile } from '../files.js';
 import { COMMUNITY_RULES_DATE, COMMUNITY_RULES_VERSION } from '../community.js';
 import { defaultSettings, writeUserSettings } from '../settings.js';
-import { resolveWalletPK } from '../walletkeys.js';
+import { resolveWalletPK } from '../wallet/keys.js';
 
 export const defaultUser = {
     uid: null,
@@ -86,7 +86,21 @@ function avatarUrlWithVersion(url, version) {
     return version == null ? url : `${url}${url.includes('?') ? '&' : '?'}v=${encodeURIComponent(String(version))}`;
 }
 
-export function createUserProvider({ auth, db, storage, getStorage, network, avatarCache = null }) {
+function markDiag(diag, label, data) {
+    try {
+        diag?.(label, data);
+    } catch {}
+}
+
+function markDone(diag, label, startedAt, data = {}) {
+    markDiag(diag, `${label}.done`, { ...data, elapsedMs: Date.now() - startedAt });
+}
+
+function markError(diag, label, startedAt, error, data = {}) {
+    markDiag(diag, `${label}.error`, { ...data, elapsedMs: Date.now() - startedAt, code: error?.code || '', message: error?.message || String(error) });
+}
+
+export function createUserProvider({ auth, db, storage, getStorage, network, avatarCache = null, diag = null }) {
     if (!auth || !db) {
         throw new Error('createUserProvider requires { auth, db }');
     }
@@ -189,24 +203,30 @@ export function createUserProvider({ auth, db, storage, getStorage, network, ava
         const fetchAvatar = useCallback(
             async (uid, { version = null, force = false, clear = false, persist = true } = {}) => {
                 if (!uid) return;
+                const avatarVersion = readAvatarVersion(version);
+                const startedAt = Date.now();
                 if (clear) {
+                    markDiag(diag, 'user.avatar.clear.start', {});
                     avatarFetchRef.current = { uid: null, key: null, promise: null };
                     removeCachedAvatar(uid);
                     setUser((prevUser) => (prevUser.avatar == null && prevUser.avatarVersion == null ? prevUser : { ...prevUser, avatar: null, avatarVersion: null }));
+                    markDone(diag, 'user.avatar.clear', startedAt);
                     return null;
                 }
 
-                const avatarVersion = readAvatarVersion(version);
                 const key = avatarVersion == null ? 'unknown' : String(avatarVersion);
                 const cached = avatarFetchRef.current;
                 if (!force && cached.uid === uid && cached.key === key && cached.promise) {
+                    markDiag(diag, 'user.avatar.fetch.reuse', { hasVersion: avatarVersion != null });
                     return cached.promise;
                 }
 
+                markDiag(diag, 'user.avatar.fetch.start', { force: !!force, persist: !!persist, hasVersion: avatarVersion != null });
                 try {
                     const promise = (async () => {
                         const cachedAvatar = avatarVersion == null ? null : await readCachedAvatar(uid, avatarVersion);
                         if (cachedAvatar) {
+                            markDiag(diag, 'user.avatar.cache.hit', { elapsedMs: Date.now() - startedAt });
                             return cachedAvatar.url;
                         }
 
@@ -223,6 +243,7 @@ export function createUserProvider({ auth, db, storage, getStorage, network, ava
                         const avatarUrl = await getFileUrl(storage, avatarPath(uid));
                         return avatarUrlWithVersion(avatarUrl, avatarVersion);
                     })().then((nextAvatar) => {
+                        markDone(diag, 'user.avatar.fetch', startedAt, { found: !!nextAvatar, hasVersion: avatarVersion != null });
                         if (!nextAvatar) {
                             return null;
                         }
@@ -241,6 +262,7 @@ export function createUserProvider({ auth, db, storage, getStorage, network, ava
                     avatarFetchRef.current = { uid, key, promise };
                     return await promise;
                 } catch (error) {
+                    markError(diag, 'user.avatar.fetch', startedAt, error, { hasVersion: avatarVersion != null });
                     const isCurrentFetch = avatarFetchRef.current.uid === uid && avatarFetchRef.current.key === key;
                     if (isCurrentFetch) {
                         avatarFetchRef.current = { uid: null, key: null, promise: null };
@@ -257,7 +279,7 @@ export function createUserProvider({ auth, db, storage, getStorage, network, ava
                     return null;
                 }
             },
-            [getStorage, storage]
+            [diag, getStorage, storage]
         );
 
         const clearAvatar = useCallback(() => {
@@ -279,6 +301,7 @@ export function createUserProvider({ auth, db, storage, getStorage, network, ava
             let unsubscribeBlocked = () => {};
 
             const unsubscribeAuth = onAuthStateChanged(auth, (authUser) => {
+                const authStartedAt = Date.now();
                 const authSession = authSessionRef.current + 1;
                 authSessionRef.current = authSession;
                 unsubscribePrivate();
@@ -286,6 +309,7 @@ export function createUserProvider({ auth, db, storage, getStorage, network, ava
                 unsubscribeModeration();
                 unsubscribeProfile();
                 unsubscribeBlocked();
+                markDiag(diag, 'user.auth.state', { signedIn: !!authUser });
 
                 if (!authUser) {
                     keepOnlyCachedAvatar(null, avatarCacheUidRef.current);
@@ -341,6 +365,12 @@ export function createUserProvider({ auth, db, storage, getStorage, network, ava
                     doc(db, 'users', authUser.uid),
                     { includeMetadataChanges: true },
                     (privateSnap) => {
+                        markDiag(diag, 'user.settings.snapshot', {
+                            elapsedMs: Date.now() - authStartedAt,
+                            exists: privateSnap.exists(),
+                            fromCache: privateSnap.metadata.fromCache,
+                            pending: privateSnap.metadata.hasPendingWrites,
+                        });
                         const privateData = privateSnap.exists() ? privateSnap.data() : {};
                         const { autolock: rawAutolock, ...rawSettings } = privateData.settings || {};
                         setUser((prevUser) => ({
@@ -361,6 +391,7 @@ export function createUserProvider({ auth, db, storage, getStorage, network, ava
                         }));
                     },
                     (error) => {
+                        markError(diag, 'user.settings.snapshot', authStartedAt, error);
                         console.warn('failed to subscribe user settings', error);
                         setUser((prevUser) => ({
                             ...prevUser,
@@ -418,6 +449,10 @@ export function createUserProvider({ auth, db, storage, getStorage, network, ava
                 unsubscribeProfile = onSnapshot(
                     doc(db, 'profiles', authUser.uid),
                     (profileSnap) => {
+                        markDiag(diag, 'user.profile.snapshot', {
+                            elapsedMs: Date.now() - authStartedAt,
+                            exists: profileSnap.exists(),
+                        });
                         const profileData = profileSnap.exists() ? profileSnap.data() : {};
                         setUser((prevUser) => {
                             const username = profileData.username || null;
@@ -452,6 +487,7 @@ export function createUserProvider({ auth, db, storage, getStorage, network, ava
                         }
                     },
                     (error) => {
+                        markError(diag, 'user.profile.snapshot', authStartedAt, error);
                         console.warn('failed to subscribe profile', error);
                         avatarFetchRef.current = { uid: null, key: null, promise: null };
                         setUser((prevUser) => ({
@@ -479,7 +515,7 @@ export function createUserProvider({ auth, db, storage, getStorage, network, ava
                 unsubscribeBlocked();
                 unsubscribeAuth();
             };
-        }, [auth, db, fetchAvatar, network]);
+        }, [auth, db, diag, fetchAvatar, network]);
 
         useEffect(() => {
             const untilMs = [getBanUntilMs(user?.banned?.full), getBanUntilMs(user?.banned?.chat)].filter((value) => Number.isFinite(value) && value > Date.now()).sort((a, b) => a - b)[0];

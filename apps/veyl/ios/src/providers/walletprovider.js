@@ -4,6 +4,7 @@ import { createWalletProvider } from '@glyphteck/shared/wallet';
 import { resolveNetwork } from '@glyphteck/shared/network';
 import { useVault } from '@/providers/vaultprovider';
 import { useUser } from '@/providers/userprovider';
+import { mark } from '@/lib/diagnostics';
 
 function useWalletSettings() {
     const { settings } = useUser();
@@ -15,6 +16,7 @@ const { WalletProvider: BaseWalletProvider, useWallet } = createWalletProvider({
     network: resolveNetwork(globalThis?.process?.env ?? {}),
     appState: AppState,
     useWalletSettings,
+    diag: mark,
 });
 
 function isSparkClaimTransportError(error) {

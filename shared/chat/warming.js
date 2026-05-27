@@ -7,80 +7,8 @@ import { hasStoredFileRef, isExpiredAttachmentMsg, isExpiredMsg } from './messag
 import { makeMessagePreviewMedia, MESSAGE_PREVIEW_MIME } from './previews.js';
 import { getMessageKey } from './state.js';
 import { ttlMillis } from './ttl.js';
-import { filterChatMessages, getChatPeerPK, getChatRowLastMsgKey, getPeerChatPKFromChatId, MSG_BATCH_SIZE } from './utils.js';
-
-const DEFAULT_MEDIA_WARMING = Object.freeze({
-    enabled: false,
-    chatCount: 10,
-    messagesPerChat: 20,
-    startDelayMs: 600,
-    stepDelayMs: 120,
-    types: ['img', 'mp4'],
-    maxBytes: 0,
-});
-
-export const DEFAULT_CHAT_WARMING = Object.freeze({
-    enabled: false,
-    eagerCount: 10,
-    count: 10,
-    delayMs: 900,
-    pageSize: MSG_BATCH_SIZE,
-    media: DEFAULT_MEDIA_WARMING,
-});
-
-function count(value, fallback) {
-    const next = Number(value);
-    return Number.isFinite(next) && next >= 0 ? next : fallback;
-}
-
-function positive(value, fallback) {
-    const next = Number(value);
-    return Number.isFinite(next) && next > 0 ? next : fallback;
-}
-
-function normalizeMediaWarming(media, chatCount) {
-    if (!media) {
-        return DEFAULT_MEDIA_WARMING;
-    }
-    if (media === true) {
-        return { ...DEFAULT_MEDIA_WARMING, enabled: true, chatCount };
-    }
-    const types = Array.isArray(media.types) && media.types.length ? media.types.map((type) => String(type || '').trim()).filter(Boolean) : DEFAULT_MEDIA_WARMING.types;
-    return {
-        ...DEFAULT_MEDIA_WARMING,
-        ...media,
-        enabled: media.enabled !== false,
-        chatCount: count(media.chatCount, chatCount),
-        messagesPerChat: positive(media.messagesPerChat, DEFAULT_MEDIA_WARMING.messagesPerChat),
-        startDelayMs: count(media.startDelayMs, DEFAULT_MEDIA_WARMING.startDelayMs),
-        stepDelayMs: count(media.stepDelayMs, DEFAULT_MEDIA_WARMING.stepDelayMs),
-        types,
-    };
-}
-
-export function normalizeChatWarming(warming) {
-    if (!warming) {
-        return DEFAULT_CHAT_WARMING;
-    }
-    const config =
-        warming === true
-            ? { ...DEFAULT_CHAT_WARMING, enabled: true }
-            : {
-                  ...DEFAULT_CHAT_WARMING,
-                  ...warming,
-                  enabled: warming.enabled !== false,
-              };
-    const warmCount = count(config.count, DEFAULT_CHAT_WARMING.count);
-    const eagerCount = Math.min(count(config.eagerCount, DEFAULT_CHAT_WARMING.eagerCount), warmCount);
-    return {
-        ...config,
-        count: warmCount,
-        eagerCount,
-        delayMs: count(config.delayMs, DEFAULT_CHAT_WARMING.delayMs),
-        pageSize: positive(config.pageSize, DEFAULT_CHAT_WARMING.pageSize),
-        media: normalizeMediaWarming(config.media, warmCount),
-    };
-}
+import { filterChatMessages, getChatPeerPK, getChatRowLastMsgKey, getPeerChatPKFromChatId } from './utils.js';
+import { DEFAULT_CHAT_WARMING, normalizeChatWarming, positive } from './warmingconfig.js';
 
 function getBatchLastMsgKey(messages) {
     const last = messages?.length ? messages[messages.length - 1] : null;
@@ -109,6 +37,7 @@ function makeSnapshot(entry) {
         rowLastMsgKey: entry.rowLastMsgKey ?? null,
         batchLastMsgKey: entry.batchLastMsgKey ?? null,
         expiredKeys: new Set(entry.expiredKeys || []),
+        deletedKeys: new Set(entry.deletedKeys || []),
         generation: entry.generation,
         adoptable: !!entry.ready && isBatchFresh(entry),
     };
@@ -267,7 +196,21 @@ function nextTrimMs(entries, now = Date.now()) {
     return Number.isFinite(next) ? next : null;
 }
 
-export function useChatWarming({ chat, chatPK, chatPrivateKey, chatBanned, isActive, localCache, rowsRef, pendingDeleteIdsRef, config, preloadMessageMedia, onRead, onExpire }) {
+function markDiag(diag, label, data) {
+    try {
+        diag?.(label, data);
+    } catch {}
+}
+
+function markDone(diag, label, startedAt, data = {}) {
+    markDiag(diag, `${label}.done`, { ...data, elapsedMs: Date.now() - startedAt });
+}
+
+function markError(diag, label, startedAt, error, data = {}) {
+    markDiag(diag, `${label}.error`, { ...data, elapsedMs: Date.now() - startedAt, code: error?.code || '', message: error?.message || String(error) });
+}
+
+export function useChatWarming({ chat, chatPK, chatPrivateKey, chatBanned, isActive, localCache, rowsRef, pendingDeleteIdsRef, config, preloadMessageMedia, onRead, onExpire, diag = null }) {
     const batchesRef = useRef(new Map());
     const generationRef = useRef(0);
     const warmTimerRef = useRef(null);
@@ -562,6 +505,7 @@ export function useChatWarming({ chat, chatPK, chatPrivateKey, chatBanned, isAct
                 batchLastMsgKey: null,
                 batchKeys: new Set(),
                 expiredKeys: new Set(),
+                deletedKeys: new Set(),
                 generation,
                 route,
                 warm,
@@ -575,7 +519,7 @@ export function useChatWarming({ chat, chatPK, chatPrivateKey, chatBanned, isAct
                 chatPrivateKey,
                 peerChatPK,
                 pageSize,
-                ({ messages, cursor, carry, hasOlder, hasMore, fromCache, expiredKeys }) => {
+                ({ messages, cursor, carry, hasOlder, hasMore, fromCache, expiredKeys, deletedKeys }) => {
                     if (fromCache || batchesRef.current.get(chatId) !== entry || entry.generation !== generationRef.current) {
                         return;
                     }
@@ -593,6 +537,7 @@ export function useChatWarming({ chat, chatPK, chatPrivateKey, chatBanned, isAct
                     entry.batchKeys = new Set(chatMessages.map(getMessageKey).filter(Boolean));
                     entry.batchLastMsgKey = getBatchLastMsgKey(chatMessages);
                     entry.expiredKeys = new Set(entry.expiredKeys || []);
+                    entry.deletedKeys = new Set(deletedKeys || []);
                     for (const key of expiredKeys || []) {
                         if (key) {
                             entry.expiredKeys.add(key);
@@ -630,6 +575,7 @@ export function useChatWarming({ chat, chatPK, chatPrivateKey, chatBanned, isAct
                     entry.batchKeys = new Set();
                     entry.batchLastMsgKey = null;
                     entry.expiredKeys = new Set();
+                    entry.deletedKeys = new Set();
                     if (error?.code !== 'permission-denied') {
                         console.warn('Latest messages listener error', chatId, error);
                     }
@@ -657,6 +603,7 @@ export function useChatWarming({ chat, chatPK, chatPrivateKey, chatBanned, isAct
                 entry.warm = false;
             } else {
                 entry.route = false;
+                mediaRunRef.current += 1;
             }
             if (!entry.route && entry.expiredKeys?.size) {
                 onExpire?.(chatId, entry.expiredKeys);
@@ -713,15 +660,26 @@ export function useChatWarming({ chat, chatPK, chatPrivateKey, chatBanned, isAct
     const waitForWarmTask = useCallback(
         (task) =>
             new Promise((resolve) => {
+                const startedAt = Date.now();
+                const taskData = { kind: task?.kind || '', pageSize: task?.pageSize || 0 };
+                const finishTask = (result) => {
+                    markDone(diag, 'chat.warm.task', startedAt, { ...taskData, ready: !!result });
+                    resolve(result);
+                };
+                const failTask = (error) => {
+                    markError(diag, 'chat.warm.task', startedAt, error, taskData);
+                    resolve(false);
+                };
+                markDiag(diag, 'chat.warm.task.start', taskData);
                 if (typeof task?.run === 'function') {
                     void Promise.resolve()
                         .then(() => task.run())
-                        .then((result) => resolve(!!result))
-                        .catch(() => resolve(false));
+                        .then((result) => finishTask(!!result))
+                        .catch(failTask);
                     return;
                 }
                 if (!task?.chatId) {
-                    resolve(false);
+                    finishTask(false);
                     return;
                 }
 
@@ -732,33 +690,33 @@ export function useChatWarming({ chat, chatPK, chatPrivateKey, chatBanned, isAct
                     pageSize: task.pageSize,
                 });
                 if (!snapshot || snapshot.ready || snapshot.exists === false) {
-                    resolve(!!snapshot);
+                    finishTask(!!snapshot);
                     return;
                 }
 
                 let done = false;
                 let shouldUnsubscribe = false;
                 let unsubscribe = () => {};
-                const finish = (result) => {
+                const finishWait = (result) => {
                     if (done) {
                         return;
                     }
                     done = true;
                     shouldUnsubscribe = true;
                     unsubscribe();
-                    resolve(result);
+                    finishTask(result);
                 };
 
                 unsubscribe = subscribeMessageBatch(task.chatId, (next) => {
                     if (!next || next.ready || next.exists === false) {
-                        finish(!!next);
+                        finishWait(!!next);
                     }
                 });
                 if (shouldUnsubscribe) {
                     unsubscribe();
                 }
             }),
-        [ensureMessageBatch, subscribeMessageBatch]
+        [diag, ensureMessageBatch, subscribeMessageBatch]
     );
 
     const pumpWarmQueue = useCallback(
@@ -845,6 +803,7 @@ export function useChatWarming({ chat, chatPK, chatPrivateKey, chatBanned, isAct
                     tasks.push(task);
                 }
             }
+            markDiag(diag, 'chat.warm.queue', { candidateCount: candidates.length, taskCount: tasks.length, limit, pageSize: warming.pageSize });
             const preserved = warmQueueRef.current.filter((task) => task?.kind !== 'latest');
             warmQueueRef.current = [...preserved, ...tasks];
             pumpWarmQueue();
@@ -855,7 +814,7 @@ export function useChatWarming({ chat, chatPK, chatPrivateKey, chatBanned, isAct
                 }
             }
         },
-        [chatBanned, chatPK, chatPrivateKey, isActive, pendingDeleteIdsRef, pumpWarmQueue, releaseMessageBatch, warming.enabled, warming.pageSize]
+        [chatBanned, chatPK, chatPrivateKey, diag, isActive, pendingDeleteIdsRef, pumpWarmQueue, releaseMessageBatch, warming.enabled, warming.pageSize]
     );
 
     const warm = useCallback(
@@ -869,6 +828,7 @@ export function useChatWarming({ chat, chatPK, chatPrivateKey, chatBanned, isAct
             }
 
             const list = Array.isArray(rows) ? rows : rowsRef.current || [];
+            markDiag(diag, 'chat.warm.start', { rowCount: list.length, eagerCount: warming.eagerCount, count: warming.count, delayMs: warming.delayMs });
             warmRows(list, warming.eagerCount);
             scheduleMedia();
             if (warming.count > warming.eagerCount) {
@@ -879,7 +839,7 @@ export function useChatWarming({ chat, chatPK, chatPrivateKey, chatBanned, isAct
                 }, warming.delayMs);
             }
         },
-        [rowsRef, scheduleMedia, warmRows, warming.count, warming.delayMs, warming.eagerCount, warming.enabled]
+        [diag, rowsRef, scheduleMedia, warmRows, warming.count, warming.delayMs, warming.eagerCount, warming.enabled]
     );
 
     return {
