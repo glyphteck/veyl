@@ -23,8 +23,13 @@ export default function TabsLayout() {
     const { theme, isDark } = useTheme();
     const { localCache } = useVault();
     const initialRouteNameRef = useRef(tabForLastAppRoute(readLastAppRoute(localCache)));
+    const savedInitialRouteRef = useRef(false);
     const saveHomeRoute = useCallback(
         (name) => {
+            if (!savedInitialRouteRef.current) {
+                savedInitialRouteRef.current = true;
+                return;
+            }
             const target = targetForHomeRoute(name);
             if (target) writeLastAppTarget(localCache, target);
         },

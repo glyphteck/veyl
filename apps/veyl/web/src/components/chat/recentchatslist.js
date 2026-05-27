@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/avatar';
 import { Button } from '@/components/button';
 import { Card } from '@/components/card';
@@ -28,11 +28,12 @@ function chatShortcutIndex(event) {
 export function RecentChatsList() {
     const { chatPK, settings } = useUser();
     const { chats, isChatDataReady, hasMoreChats, loadingMoreChats, loadMoreChats, selectChat, selectedChatId } = useChat();
-    const { focusChatInput } = useChatInput();
+    const { focusChatInput, focusNavbar, selectedChatButtonRef } = useChatInput();
     const { peers, updatePeer, isBlockedChatPK } = usePeer();
     const bitcoin = useBitcoin();
     const { cloaked } = useCloak();
     const rowRefs = useRef([]);
+    const focusedInitialChatRef = useRef(false);
 
     const visibleChats = useMemo(() => {
         const list = Array.isArray(chats) ? chats : [];
@@ -102,9 +103,25 @@ export function RecentChatsList() {
         [focusChatAtIndex, selectedChatId, visibleChats]
     );
 
+    useEffect(() => {
+        if (focusedInitialChatRef.current || !isChatDataReady || selectedChatId || !visibleChats.length) {
+            return;
+        }
+        const active = document.activeElement;
+        if (active && active !== document.body && active !== document.documentElement) {
+            return;
+        }
+        focusedInitialChatRef.current = focusChatAtIndex(0);
+    }, [focusChatAtIndex, isChatDataReady, selectedChatId, visibleChats.length]);
+
     const handleListKeyDown = useCallback(
         (event) => {
             if (!isChatDataReady) return;
+            if (event.key === 'Tab' && !event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey && focusNavbar()) {
+                event.preventDefault();
+                event.stopPropagation();
+                return;
+            }
             const index = chatShortcutIndex(event);
             if (index != null) {
                 if (focusChatAtIndex(index)) {
@@ -120,7 +137,7 @@ export function RecentChatsList() {
                 event.stopPropagation();
             }
         },
-        [focusChatAtIndex, isChatDataReady, stepChat]
+        [focusChatAtIndex, focusNavbar, isChatDataReady, stepChat]
     );
 
     if (!isChatDataReady) return;
@@ -141,6 +158,11 @@ export function RecentChatsList() {
                                 key={chat.id}
                                 ref={(node) => {
                                     rowRefs.current[index] = node;
+                                    if (chat.id === selectedChatId) {
+                                        selectedChatButtonRef.current = node;
+                                    } else if (selectedChatButtonRef.current === node) {
+                                        selectedChatButtonRef.current = null;
+                                    }
                                 }}
                                 type="button"
                                 tabIndex={index === 0 ? 0 : -1}
@@ -152,15 +174,15 @@ export function RecentChatsList() {
                                     handleChatClick(chat.id);
                                 }}
                             >
-                                <div className="flex items-start gap-2.5">
+                                <div className="flex w-full items-start gap-2.5">
                                     <Avatar active={profile?.active} bot={!!profile?.bot} className="grower group-focus-visible:scale-120">
                                         <AvatarImage src={profile?.avatar} alt={displayName} />
                                         <AvatarFallback />
                                     </Avatar>
                                     <div className="hidden min-w-0 flex-1 md:block">
-                                        <div className="flex items-center justify-between">
-                                            <span className="truncate font-black">{displayName}</span>
-                                            <span className="ml-2 whitespace-nowrap text-sm text-muted">{chat.ts ? formatFullDateTime(chat.ts) : ''}</span>
+                                        <div className="flex items-baseline justify-between gap-3">
+                                            <span className="min-w-0 flex-1 truncate font-black">{displayName}</span>
+                                            <span className="shrink-0 whitespace-nowrap text-sm text-muted">{chat.ts ? formatFullDateTime(chat.ts) : ''}</span>
                                         </div>
                                         <div className={`truncate text-sm ${chat.unseen ? 'text-foreground' : 'text-muted'} ${cloaked ? 'cloaked' : ''}`}>
                                             {displayLastMsg(chat.lastMsg, chatPK, settings, bitcoin.price)}

@@ -303,12 +303,11 @@ export function useChatList({
                 clearChatPreviewsByHiddenKeys(
                     trimExpiredChatPreviews(readCachedChats(localCache).filter((chatItem) => Array.isArray(chatItem?.participants) && chatItem.participants.includes(chatPK))),
                     hiddenChatPreviewKeysRef.current
-                ).filter((chatItem) => chatItem?.lastMsg || !!chatItem?.ts)
-            ).slice(0, CHAT_LIST_LIVE_COUNT);
+                ).filter((chatItem) => !!chatItem?.ts)
+            );
 
             if (cachedChats.length) {
-                const shownChats = commitServerChats(cachedChats, { writeCache: false });
-                setSelectedChat((currentId) => currentId || shownChats?.[0]?.id || null);
+                commitServerChats(cachedChats, { writeCache: false });
             }
 
             if (cachedChats.length || hasSavedChatSnapshot) {
@@ -356,9 +355,9 @@ export function useChatList({
                 const shownChats = commitServerChats(sortedUniqueChatRows(nextChatsWithRead, preservedChats));
                 setSelectedChat((currentId) => {
                     if (currentId && pendingDeleteIdsRef.current.has(currentId) && !keepSelectedDeletedChatIdsRef.current.has(currentId)) {
-                        return shownChats?.[0]?.id || null;
+                        return null;
                     }
-                    return currentId || shownChats?.[0]?.id || null;
+                    return currentId;
                 });
                 const nextLastChat = getLastChat(shownChats, chatPK);
                 setLastChat((prev) => (sameLastChat(prev, nextLastChat) ? prev : nextLastChat));
@@ -434,13 +433,12 @@ export function useChatList({
                 hiddenChatPreviewKeysRef.current
             ).filter((chatItem) => chatItem?.id && !hiddenIds.has(chatItem.id));
             const nextServerChats = sortedUniqueChatRows(pageChats, lastServerChatsRef.current).filter((chatItem) => chatItem?.id && !hiddenIds.has(chatItem.id));
-            const shownChats = commitServerChats(nextServerChats);
+            commitServerChats(nextServerChats);
 
             chatPageLockedRef.current = true;
             chatPageCursorRef.current = page?.cursor ?? chatPageCursorRef.current;
             chatHasMoreRef.current = !!page?.hasMore;
             setHasMoreChats((prev) => (prev === chatHasMoreRef.current ? prev : chatHasMoreRef.current));
-            setSelectedChat((currentId) => currentId || shownChats?.[0]?.id || null);
 
             return pageChats.length > 0;
         } catch (error) {
@@ -469,7 +467,6 @@ export function useChatList({
         pendingDeleteIdsRef,
         readCacheRef,
         selectedChatIdRef,
-        setSelectedChat,
     ]);
 
     useEffect(() => {
@@ -570,8 +567,7 @@ export function useChatList({
                 if (!row?.id || pendingDeleteIdsRef.current.has(row.id) || deletingChatIdsRef.current.has(row.id)) {
                     return false;
                 }
-                const shownChats = commitServerChats(sortedUniqueChatRows([row], lastServerChatsRef.current));
-                setSelectedChat((currentId) => currentId || shownChats?.[0]?.id || null);
+                commitServerChats(sortedUniqueChatRows([row], lastServerChatsRef.current));
                 return true;
             } catch (error) {
                 console.warn('Chat row load error', error);
@@ -581,7 +577,7 @@ export function useChatList({
                 setChatRowLoadVersion((prev) => prev + 1);
             }
         },
-        [chat, chatBanned, chatPK, chatPrivateKey, chatRowLoadsRef, commitServerChats, deletingChatIdsRef, lastServerChatsRef, pendingDeleteIdsRef, serverChatIdsRef, setSelectedChat]
+        [chat, chatBanned, chatPK, chatPrivateKey, chatRowLoadsRef, commitServerChats, deletingChatIdsRef, lastServerChatsRef, pendingDeleteIdsRef, serverChatIdsRef]
     );
 
     const serverChatIdsSet = useMemo(() => new Set(serverChatIds), [serverChatIds]);

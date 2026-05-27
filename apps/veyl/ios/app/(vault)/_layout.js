@@ -1,7 +1,7 @@
-import { useEffect, useRef } from 'react';
-import { Stack, useNavigationContainerRef, useRouter } from 'expo-router';
+import { useEffect, useLayoutEffect, useRef } from 'react';
+import { Stack, useRouter } from 'expo-router';
 import { readLastAppTarget } from '@glyphteck/shared/localdatacache';
-import { hrefForLastAppTarget, lastAppTargetForNavigationState, routeNameForNavigationState } from '@/lib/approute';
+import { hrefForLastAppTarget } from '@/lib/approute';
 
 import { WalletProvider } from '@/providers/walletprovider';
 import { TxDataProvider } from '@/providers/txdataprovider';
@@ -16,7 +16,6 @@ import { mark } from '@/lib/diagnostics';
 function VaultContent() {
     const { theme } = useTheme();
     const router = useRouter();
-    const navigationRef = useNavigationContainerRef();
     const { lockState, faceIdFailed, localCache } = useVault();
     const user = useUser();
     const previousLockStateRef = useRef(lockState);
@@ -42,7 +41,7 @@ function VaultContent() {
         });
     }, [faceIDConfigured, faceIDEnabled, faceIdFailed, lockState, shouldShowApp, shouldShowFaceIdSetup, shouldShowFaceIdUnlock, shouldShowPasswordUnlock]);
 
-    useEffect(() => {
+    useLayoutEffect(() => {
         const wasUnlocked = previousLockStateRef.current === 'unlocked';
         previousLockStateRef.current = lockState;
 
@@ -50,17 +49,11 @@ function VaultContent() {
             return;
         }
 
-        const target = hrefForLastAppTarget(readLastAppTarget(localCache));
-        const state = navigationRef.getRootState?.() || navigationRef.getState?.();
-        const routeName = routeNameForNavigationState(state);
-        const currentTarget = lastAppTargetForNavigationState(state);
-        const isCurrentPeerChat = currentTarget?.route === '/chat' && !!currentTarget.chatPeer;
-        const shouldReplace = !isCurrentPeerChat && (!routeName || routeName === 'index' || routeName === 'unlockwithfaceid' || routeName === 'unlockwithpassword' || routeName === 'chat' || routeName === 'camera' || routeName === 'wallet');
-        const targetName = typeof target === 'string' ? target.slice(1) : 'chat/[peerchatpk]';
-        if (shouldReplace && routeName !== targetName) {
-            router.replace(target);
-        }
-    }, [faceIDConfigured, localCache, lockState, navigationRef, router]);
+        const target = readLastAppTarget(localCache);
+        const href = hrefForLastAppTarget(target);
+        mark('route.cache.read', { route: target?.route || '' });
+        router.replace(href, { withAnchor: true });
+    }, [faceIDConfigured, localCache, lockState, router]);
 
     return (
         <Stack
@@ -75,7 +68,7 @@ function VaultContent() {
                 <Stack.Screen name="faceid" />
             </Stack.Protected>
             <Stack.Protected guard={shouldShowApp}>
-                <Stack.Screen name="(app)" />
+                <Stack.Screen name="(app)" options={{ animation: 'none' }} />
                 <Stack.Screen name="qr" />
             </Stack.Protected>
             <Stack.Protected guard={shouldShowFaceIdUnlock}>

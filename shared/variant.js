@@ -14,10 +14,5 @@ export function normalizeVeylVariant(value, fallback = 'dev') {
 
 export function resolveVeylVariant(env = {}, fallback = 'dev') {
     const explicit = env.NEXT_PUBLIC_VEYL_VARIANT || env.EXPO_PUBLIC_VEYL_VARIANT || env.VEYL_IOS_VARIANT || env.VEYL_VARIANT;
-    if (explicit) {
-        return normalizeVeylVariant(explicit, fallback);
-    }
-
-    const network = String(env.NEXT_PUBLIC_NETWORK || env.EXPO_PUBLIC_NETWORK || env.NETWORK || '').trim().toUpperCase();
-    return network === 'MAINNET' ? 'prod' : fallback;
+    return normalizeVeylVariant(explicit, fallback);
 }

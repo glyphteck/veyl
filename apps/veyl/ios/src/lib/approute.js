@@ -1,10 +1,5 @@
 export const DEFAULT_APP_HREF = '/chat';
 
-function cleanChatPeer(peer) {
-    const value = typeof peer === 'string' ? peer.trim().toLowerCase() : '';
-    return /^[0-9a-f]{64}$/.test(value) ? value : null;
-}
-
 export function hrefForLastAppRoute(route) {
     if (route === '/camera') return '/camera';
     if (route === '/wallet') return '/wallet';
@@ -43,14 +38,24 @@ export function lastAppRouteForNavigationState(state) {
     return lastAppTargetForNavigationState(state)?.route ?? null;
 }
 
+export function lastAppTargetForPathname(pathname) {
+    const path = typeof pathname === 'string' ? pathname.trim().split('?')[0].split('#')[0] : '';
+    const parts = path.split('/').filter(Boolean);
+    const root = parts[0] ? `/${parts[0]}` : '';
+
+    if (root === '/camera') return { route: '/camera' };
+    if (root === '/wallet') return { route: '/wallet' };
+    if (root === '/chat') return { route: '/chat' };
+    return null;
+}
+
 export function lastAppTargetForNavigationState(state) {
     const { route, names, params } = focusedRoutePathForNavigationState(state);
     const name = typeof route?.name === 'string' ? route.name : null;
-    const chatPeer = cleanChatPeer(params?.peerchatpk);
-    if (chatPeer) return { route: '/chat', chatPeer };
+    if (params?.peerchatpk) return { route: '/chat' };
     if (name === 'chat') return { route: '/chat' };
     if (names.includes('chat/[peerchatpk]') || names.includes('chat/[peerchatpk]/index') || names.includes('chat/[peerchatpk]/settings')) {
-        return { route: '/chat', chatPeer: null };
+        return { route: '/chat' };
     }
     if (name === 'camera') return { route: '/camera' };
     if (name === 'wallet') return { route: '/wallet' };
@@ -59,11 +64,7 @@ export function lastAppTargetForNavigationState(state) {
 
 export function hrefForLastAppTarget(target) {
     const route = target?.route || target;
-    const chatPeer = typeof target?.chatPeer === 'string' ? target.chatPeer.trim().toLowerCase() : '';
     if (route === '/camera') return '/camera';
     if (route === '/wallet') return '/wallet';
-    if (route === '/chat' && cleanChatPeer(chatPeer)) {
-        return { pathname: '/chat/[peerchatpk]', params: { peerchatpk: chatPeer } };
-    }
     return DEFAULT_APP_HREF;
 }

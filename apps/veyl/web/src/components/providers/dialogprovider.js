@@ -228,3 +228,4 @@ export function AppDialogHost({ children }) {
 }
 
 export const useDialog = () => useContext(DialogContext);
+export const useDialogState = () => useContext(DialogStateContext);

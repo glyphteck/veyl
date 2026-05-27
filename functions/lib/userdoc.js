@@ -3,7 +3,7 @@ import { db } from './admin.js';
 const defaultSettings = {
     glass: true,
     moneyFormat: 'usd',
-    ghostWallet: false,
+    ghostWallet: true,
     sendOnScan: false,
     confirmSend: false,
     faceID: null,

@@ -229,7 +229,7 @@ if (network === 'mainnet') {
     env.NEXT_PUBLIC_NETWORK = 'REGTEST';
 }
 if (!env.NEXT_PUBLIC_VEYL_VARIANT) {
-    env.NEXT_PUBLIC_VEYL_VARIANT = network === 'mainnet' ? 'prod' : 'dev';
+    env.NEXT_PUBLIC_VEYL_VARIANT = 'dev';
 }
 
 const config = resolveWebApp(app);

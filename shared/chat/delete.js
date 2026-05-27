@@ -197,8 +197,8 @@ export function useChatDelete({
                 keepSelectedDeletedChatIdsRef.current.delete(chatId);
             }
             const localForRender = clearDeletedChatState([chatId]);
-            const nextVisibleChats = renderVisibleChats(localForRender);
-            setSelectedChat((current) => (current === chatId && !options?.keepSelected ? nextVisibleChats?.[0]?.id || null : current));
+            renderVisibleChats(localForRender);
+            setSelectedChat((current) => (current === chatId && !options?.keepSelected ? null : current));
         },
         [clearDeletedChatState, renderVisibleChats, setSelectedChat]
     );
@@ -215,10 +215,9 @@ export function useChatDelete({
             hiddenChatPreviewKeysRef.current.delete(chatId);
             releaseChatWriteWait(chatId);
 
-            const nextVisibleChats = renderVisibleChats(localByChatRef.current);
-            setSelectedChat((current) => current || nextVisibleChats?.[0]?.id || null);
+            renderVisibleChats(localByChatRef.current);
         },
-        [hiddenChatPreviewKeysRef, localByChatRef, releaseChatWriteWait, renderVisibleChats, setSelectedChat]
+        [hiddenChatPreviewKeysRef, localByChatRef, releaseChatWriteWait, renderVisibleChats]
     );
 
     const finishDeleteChat = useCallback(
@@ -247,8 +246,8 @@ export function useChatDelete({
             finishPendingDeleteWait(chatId);
 
             const nextServerChats = lastServerChatsRef.current.filter((chatItem) => chatItem?.id !== chatId);
-            const shownChats = listActionsRef.current?.commitServerChats?.(nextServerChats, { warm: false });
-            setSelectedChat((current) => (current === chatId ? shownChats?.[0]?.id || null : current));
+            listActionsRef.current?.commitServerChats?.(nextServerChats, { warm: false });
+            setSelectedChat((current) => (current === chatId ? null : current));
         },
         [clearDeletedChatState, finishPendingDeleteWait, lastServerChatsRef, listActionsRef, setSelectedChat]
     );

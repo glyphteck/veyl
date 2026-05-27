@@ -1,5 +1,5 @@
 {
     "$schema": "https://openapi.vercel.sh/vercel.json",
     "installCommand": "curl -fsSL https://bun.sh/install | bash -s \"bun-v1.3.14\" && \"$HOME/.bun/bin/bun\" install --frozen-lockfile --no-progress",
-    "buildCommand": "\"$HOME/.bun/bin/bun\" --filter @glyphteck/veyl-web build"
+    "buildCommand": "if [ -z \"$NEXT_PUBLIC_VEYL_VARIANT\" ]; then if [ \"$VERCEL_GIT_COMMIT_REF\" = \"regtest\" ]; then export NEXT_PUBLIC_VEYL_VARIANT=test; else export NEXT_PUBLIC_VEYL_VARIANT=prod; fi; fi; \"$HOME/.bun/bin/bun\" --filter @glyphteck/veyl-web build"
 }

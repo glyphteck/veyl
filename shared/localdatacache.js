@@ -29,7 +29,6 @@ function emptyPayload() {
         profilesByUid: {},
         mediaByKey: {},
         lastRoute: null,
-        lastChatPeer: null,
         lastCameraFacing: null,
     };
 }
@@ -129,7 +128,6 @@ function normalizePayload(value) {
         profilesByUid: isObject(input.profilesByUid) ? input.profilesByUid : {},
         mediaByKey: isObject(input.mediaByKey) ? input.mediaByKey : {},
         lastRoute: cleanAppRoute(input.lastRoute),
-        lastChatPeer: cleanChatPeer(input.lastChatPeer),
         lastCameraFacing: cleanCameraFacing(input.lastCameraFacing),
     };
 }
@@ -139,11 +137,6 @@ function cleanAppRoute(route) {
     const path = value.split('?')[0].split('#')[0];
     const first = path === '/' ? '' : `/${path.split('/').filter(Boolean)[0] || ''}`;
     return APP_ROUTES.has(first) ? first : null;
-}
-
-function cleanChatPeer(peer) {
-    const value = typeof peer === 'string' ? peer.trim().toLowerCase() : '';
-    return /^[0-9a-f]{64}$/.test(value) ? value : null;
 }
 
 function cleanCameraFacing(facing) {
@@ -668,7 +661,7 @@ export function writeCachedChats(cache, chats) {
         const next = {};
         for (const chat of chats) {
             const item = serializeChat(chat);
-            if (item?.id && item.lastMsg) {
+            if (item?.id && item.ts) {
                 next[item.id] = item;
             }
         }
@@ -708,10 +701,12 @@ export function readLastAppTarget(cache) {
         return null;
     }
 
-    return {
-        route,
-        chatPeer: route === '/chat' ? cleanChatPeer(payload?.lastChatPeer) : null,
-    };
+    return { route };
+}
+
+function hasLastChatPeer(cache) {
+    const payload = cache?.read?.();
+    return isObject(payload) && Object.prototype.hasOwnProperty.call(payload, 'lastChatPeer');
 }
 
 export function writeLastAppRoute(cache, route) {
@@ -720,32 +715,31 @@ export function writeLastAppRoute(cache, route) {
         return;
     }
     const current = readLastAppTarget(cache);
-    if (current?.route === nextRoute && current?.chatPeer == null) {
+    if (current?.route === nextRoute && !hasLastChatPeer(cache)) {
         return;
     }
 
     void cache.patch((payload) => {
         payload.lastRoute = nextRoute;
-        payload.lastChatPeer = null;
+        delete payload.lastChatPeer;
         return payload;
     });
 }
 
 export function writeLastAppTarget(cache, target) {
     const nextRoute = cleanAppRoute(target?.route ?? target);
-    const nextChatPeer = nextRoute === '/chat' ? cleanChatPeer(target?.chatPeer) : null;
     if (!cache?.patch || !nextRoute) {
         return;
     }
 
     const current = readLastAppTarget(cache);
-    if (current?.route === nextRoute && current?.chatPeer === nextChatPeer) {
+    if (current?.route === nextRoute && !hasLastChatPeer(cache)) {
         return;
     }
 
     void cache.patch((payload) => {
         payload.lastRoute = nextRoute;
-        payload.lastChatPeer = nextChatPeer;
+        delete payload.lastChatPeer;
         return payload;
     });
 }

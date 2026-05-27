@@ -24,9 +24,30 @@ function formatMaxSize(bytes) {
     return Number.isInteger(mb) ? `${mb}MB` : `${mb.toFixed(1)}MB`;
 }
 
+function canFocusControl(element) {
+    return !!element && typeof element.focus === 'function' && !element.disabled;
+}
+
+function focusControl(element) {
+    if (!canFocusControl(element)) {
+        return false;
+    }
+    try {
+        element.focus({ preventScroll: true });
+        return true;
+    } catch {
+        try {
+            element.focus();
+            return true;
+        } catch {
+            return false;
+        }
+    }
+}
+
 export function Chatbox() {
     const { chats, selectedChatId, sendMessage, sendAttachment, updateMessage } = useChat();
-    const { focusChatInput, chatInputRef } = useChatInput();
+    const { attachmentButtonRef, chatInputRef, focusChatInput, focusSelectedChat, moneyButtonRef, peerHeaderRef } = useChatInput();
     const { chatPK, chatBanned, settings } = useUser();
     const bitcoin = useBitcoin();
     const { sendMoneyWithSpark } = useWallet();
@@ -192,6 +213,43 @@ export function Chatbox() {
         setDraft(null);
     }, []);
 
+    const handleChatKeyDown = useCallback(
+        (event) => {
+            if (event.metaKey || event.ctrlKey || event.altKey) {
+                return;
+            }
+
+            if (event.key === 'Escape') {
+                if (focusSelectedChat()) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                }
+                return;
+            }
+
+            if (event.key !== 'Tab') {
+                return;
+            }
+
+            const controls = [chatInputRef.current, attachmentButtonRef.current, moneyButtonRef.current, peerHeaderRef.current].filter(canFocusControl);
+            if (!controls.length || typeof document === 'undefined') {
+                return;
+            }
+
+            const activeIndex = controls.findIndex((control) => control === document.activeElement);
+            if (activeIndex < 0) {
+                return;
+            }
+
+            event.preventDefault();
+            event.stopPropagation();
+            const step = event.shiftKey ? -1 : 1;
+            const next = controls[(activeIndex + step + controls.length) % controls.length];
+            focusControl(next);
+        },
+        [attachmentButtonRef, chatInputRef, focusSelectedChat, moneyButtonRef, peerHeaderRef]
+    );
+
     const hasDraggedFiles = (event) => {
         const types = event?.dataTransfer?.types;
         return Array.isArray(types) ? types.includes('Files') : types?.contains?.('Files');
@@ -262,7 +320,7 @@ export function Chatbox() {
     }
 
     return (
-        <Card className="h-full flex flex-col relative" onClick={() => focusChatInput()} onDragEnter={handleDragEnter} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}>
+        <Card className="h-full flex flex-col relative" onClick={() => focusChatInput()} onKeyDown={handleChatKeyDown} onDragEnter={handleDragEnter} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}>
             {/* top fadeout */}
             <div className="absolute left-0 right-0 z-20 bg-linear-to-t from-transparent to-background h-24 pointer-events-none" />
             {isDragOver ? (
@@ -277,6 +335,7 @@ export function Chatbox() {
                 <div className="flex items-center gap-2 px-3">
                     <div className="flex min-w-0 flex-1 justify-center">
                         <Button
+                            ref={peerHeaderRef}
                             className="group min-w-0"
                             onClick={() => {
                                 if (peerProfile) {
@@ -284,7 +343,7 @@ export function Chatbox() {
                                 }
                             }}
                         >
-                            <Avatar active={peerProfile?.active} bot={!!peerProfile?.bot} className="pointer-events-auto grower size-11 ">
+                            <Avatar active={peerProfile?.active} bot={!!peerProfile?.bot} className="pointer-events-auto grower size-11 group-focus-visible:scale-120">
                                 <AvatarImage src={peerProfile?.avatar} alt={peerDisplayName} />
                                 <AvatarFallback />
                             </Avatar>
@@ -299,6 +358,8 @@ export function Chatbox() {
             </div>
             <ChatInput
                 inputRef={chatInputRef}
+                attachmentButtonRef={attachmentButtonRef}
+                moneyButtonRef={moneyButtonRef}
                 onSendMessage={handleSendMessage}
                 onEditMessage={handleEditMessage}
                 onSendAttachment={handleSendAttachment}
@@ -307,6 +368,7 @@ export function Chatbox() {
                 onHeightChange={setInputH}
                 draft={draft}
                 onClearDraft={handleClearDraft}
+                onEscape={focusSelectedChat}
                 hidden={!selectedChatId || !currentChat}
             />
         </Card>

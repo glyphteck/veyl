@@ -1,12 +1,11 @@
 'use client';
 
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { usePathname } from 'next/navigation';
-import { getPeerChatPKFromChatId } from '@glyphteck/shared/chat/utils';
 import Loading from '@/components/loading';
 import Navbar from '@/components/navbar';
-import { useChat } from '@/components/providers/chatprovider';
-import { AppDialogHost } from '@/components/providers/dialogprovider';
+import { useChatInput } from '@/components/providers/chatprovider';
+import { AppDialogHost, useDialogState } from '@/components/providers/dialogprovider';
 import { PeerProvider } from '@/components/providers/peerprovider';
 import { TxDataProvider } from '@/components/providers/txdataprovider';
 import { useUser } from '@/components/providers/userprovider';
@@ -15,6 +14,28 @@ import { WalletProvider } from '@/components/providers/walletprovider';
 import { logout } from '@/lib/useractions';
 import { writeLastAppTarget } from '@glyphteck/shared/localdatacache';
 import { lastAppTargetForPathname } from '@/lib/approute';
+
+function ChatDialogFocusRestore() {
+    const pathname = usePathname();
+    const dialog = useDialogState();
+    const { focusChatInput } = useChatInput();
+    const hadDialogRef = useRef(false);
+
+    useEffect(() => {
+        const hasDialog = !!dialog?.type;
+        if (hadDialogRef.current && !hasDialog && pathname === '/chat') {
+            const frame = window.requestAnimationFrame(() => {
+                focusChatInput();
+            });
+            hadDialogRef.current = hasDialog;
+            return () => window.cancelAnimationFrame(frame);
+        }
+        hadDialogRef.current = hasDialog;
+        return undefined;
+    }, [dialog?.type, focusChatInput, pathname]);
+
+    return null;
+}
 
 function AppShell({ children }) {
     useEffect(() => {
@@ -38,6 +59,7 @@ function AppShell({ children }) {
 
     return (
         <div className="relative flex h-screen flex-col overscroll-none px-2 pb-2">
+            <ChatDialogFocusRestore />
             <Navbar />
             <main className="min-h-0 flex-1">{children}</main>
         </div>
@@ -48,21 +70,14 @@ export default function AppLayout({ children }) {
     const user = useUser();
     const pathname = usePathname();
     const { localCache, lockState } = useVault();
-    const { chats, selectedChatId } = useChat();
-    const selectedChatPeer = useMemo(() => {
-        const chat = Array.isArray(chats) && selectedChatId ? chats.find((item) => item?.id === selectedChatId) : null;
-        return chat?.participants?.find?.((participant) => participant && participant !== user.chatPK) ?? getPeerChatPKFromChatId(selectedChatId, user.chatPK);
-    }, [chats, selectedChatId, user.chatPK]);
     const pathnameRef = useRef(pathname);
     const cacheRef = useRef(localCache);
     const unlockedRef = useRef(lockState === 'unlocked');
     const wasUnlockedRef = useRef(lockState === 'unlocked');
-    const selectedChatPeerRef = useRef(selectedChatPeer);
 
     pathnameRef.current = pathname;
     cacheRef.current = localCache;
     unlockedRef.current = lockState === 'unlocked';
-    selectedChatPeerRef.current = selectedChatPeer;
 
     useEffect(() => {
         if (user.authReady && !user.uid) {
@@ -73,7 +88,7 @@ export default function AppLayout({ children }) {
     useEffect(() => {
         function saveCurrentRoute() {
             if (!unlockedRef.current) return;
-            const target = lastAppTargetForPathname(pathnameRef.current, selectedChatPeerRef.current);
+            const target = lastAppTargetForPathname(pathnameRef.current);
             if (!target) return;
             writeLastAppTarget(cacheRef.current, target);
             void cacheRef.current?.flush?.();
@@ -96,7 +111,7 @@ export default function AppLayout({ children }) {
 
     useEffect(() => {
         if (wasUnlockedRef.current && lockState !== 'unlocked') {
-            const target = lastAppTargetForPathname(pathnameRef.current, selectedChatPeerRef.current);
+            const target = lastAppTargetForPathname(pathnameRef.current);
             if (target) {
                 writeLastAppTarget(cacheRef.current, target);
                 void cacheRef.current?.flush?.();

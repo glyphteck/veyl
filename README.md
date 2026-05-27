@@ -151,7 +151,7 @@ The wrapper URL is intentional for veyl-specific actions. On iOS, the veyl web h
 - Wallet behavior is built around `@buildonspark/spark-sdk`.
 - Peer payments use the other user’s stored wallet key for the active wallet network.
 - The app also tracks funding addresses, claims on-chain deposits, withdrawals, balance, and transfer history.
-- The `ghost wallet` setting enables Spark Bitcoin privacy mode for the unlocked wallet, hiding Bitcoin activity from public read-only Spark lookups while keeping the owner wallet fully usable in veyl. Spark privacy mode does not currently hide token transactions.
+- Spark Bitcoin privacy mode is enabled by default for unlocked wallets, hiding Bitcoin activity from public read-only Spark lookups while keeping the owner wallet fully usable in veyl. The dormant `ghostWallet` setting remains in private user settings for now, but it is not exposed in the app UI. Spark privacy mode does not currently hide token transactions.
 - Wallet push notifications and Spark webhook registration are not active. Veyl does not store static funding addresses by default, and static Bitcoin deposit APNs are paused unless they become an explicit opt-in feature because reliable offline deposit alerts require server-side address watching. The client remains the only deposit-claim executor.
 - Withdrawal flows must reject addresses that do not match the active wallet network. That check exists in scanner/QR entry points, form disabled states, and the shared wallet withdraw function.
 - Transaction history hydrates from the vaulted local cache on unlock, then Spark pagination fetches recent pages until it reaches a stable cached transfer boundary. Balance remains live-only.
@@ -327,7 +327,7 @@ Important environment and config points:
 
 - `GOOGLE_SERVICE_ACCOUNT`: Firebase Admin service account JSON for server-side web auth, bot runtime, and backend helpers. Local development can use this env var or Google Application Default Credentials.
 - `NEXT_PUBLIC_NETWORK`: web wallet network selection, typically `MAINNET` or `REGTEST`
-- `NEXT_PUBLIC_VEYL_VARIANT`: web branding variant, one of `dev`, `test`, or `prod`; local web runs default to `dev` on `REGTEST` and `prod` on `MAINNET`
+- `NEXT_PUBLIC_VEYL_VARIANT`: web app variant for branding, one of `dev`, `test`, or `prod`; local web runs default to `dev` regardless of wallet network
 - `EXPO_PUBLIC_EAS_PROJECT_ID` or `EXPO_PROJECT_ID`: optional iOS EAS project override
 
 Veyl has separate environment artwork: `dev` uses `shared/logos/walletdev.png` and `shared/logos/dev.icon`, `test` uses `shared/logos/wallettest.png` and `shared/logos/test.icon`, and `prod` uses `shared/logos/wallet.png` and `shared/logos/veyl.icon`.

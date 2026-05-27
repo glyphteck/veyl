@@ -54,7 +54,7 @@ export default function PeerChatRoute() {
     const { chatPK, chatBanned } = useUser();
     const { sendMoneyWithSpark } = useWallet();
     const { peers, updatePeer } = usePeer() || {};
-    const backTap = useTap({ onPress: router.back });
+    const backTap = useTap({ onPress: () => router.dismissTo('/chat') });
     const inputH = useRef(0);
     const routeLockRef = useRef(false);
     const routeLockTimerRef = useRef(null);

@@ -3,7 +3,7 @@ import { Alert, Animated as RNAnimated, DeviceEventEmitter, Linking, Pressable, 
 import * as MediaLibrary from 'expo-media-library';
 import { Image } from 'expo-image';
 import { useIsFocused } from 'expo-router/react-navigation';
-import { router } from 'expo-router';
+import { router, usePathname } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { Camera as VCamera, CommonResolutions, useCameraDevice, useCameraPermission, useOrientation, usePhotoOutput, useVideoOutput } from 'react-native-vision-camera';
@@ -13,6 +13,7 @@ import Avatar from '@/components/avatar';
 import GlassHeader from '@/components/glass/glassheader';
 import GlassView from '@/components/glass/glassview';
 import GlassIcon from '@/components/glass/glassicon';
+import GlassButton from '@/components/glass/glassbutton';
 import { MENU_LONG_PRESS_MS } from '@/components/menu';
 import Reanimated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -30,14 +31,13 @@ import { useUser } from '@/providers/userprovider';
 import { useVault } from '@/providers/vaultprovider';
 import { useWallet } from '@/providers/walletprovider';
 import { usePop } from '@/lib/pop';
-import { useTap } from '@/lib/tap';
 import { mark } from '@/lib/diagnostics';
 import { useCameraWarming } from '@/lib/camera/warming';
 import { usePagerRouteActive } from '@/lib/pagernav';
 import { alpha } from '@/lib/colors';
 
 const BACK_REGULAR_LENS = { physicalDevices: ['wide-angle'] };
-const BACK_ULTRA_WIDE_LENS = { physicalDevices: ['ultra-wide-angle'] };
+const BACK_WIDEST_LENS = { physicalDevices: ['ultra-wide-angle', 'wide-angle', 'telephoto'] };
 const QR_BARCODE_FORMATS = ['qr-code'];
 const NORMAL_ZOOM = 1;
 const MAX_CAMERA_ZOOM = 6;
@@ -91,8 +91,7 @@ function clampZoom(value, min, max) {
 function getInitialZoom(device) {
     const min = Number.isFinite(device?.minZoom) ? device.minZoom : NORMAL_ZOOM;
     const max = Number.isFinite(device?.maxZoom) ? device.maxZoom : NORMAL_ZOOM;
-    const normalLensZoom = device?.zoomLensSwitchFactors?.find?.((value) => Number.isFinite(value) && value > min && value <= max);
-    return clampZoom(normalLensZoom || NORMAL_ZOOM, min, max);
+    return clampZoom(min, min, max);
 }
 
 function getCaptureRotate(orientation) {
@@ -305,12 +304,13 @@ function CameraContent({ cameraActive, pageOpen, warming }) {
     const { selectChat } = useChat();
     const insets = useSafeAreaInsets();
     const { hasPermission, requestPermission } = useCameraPermission();
+    const pathname = usePathname();
     const captureOrientation = useOrientation('device');
     const [facing, setFacing] = useState(() => readLastCameraFacing(localCache));
     const facingRef = useRef(facing);
-    const [backLensMode, setBackLensMode] = useState('regular');
+    const [backLensMode, setBackLensMode] = useState('ultra-wide');
     const backRegularDevice = useCameraDevice('back', BACK_REGULAR_LENS);
-    const backUltraWideDevice = useCameraDevice('back', BACK_ULTRA_WIDE_LENS);
+    const backUltraWideDevice = useCameraDevice('back', BACK_WIDEST_LENS);
     const frontDevice = useCameraDevice('front');
     const backDevice = backLensMode === 'ultra-wide' ? backUltraWideDevice || backRegularDevice : backRegularDevice || backUltraWideDevice;
     const device = facing === 'back' ? backDevice : frontDevice;
@@ -353,6 +353,7 @@ function CameraContent({ cameraActive, pageOpen, warming }) {
     const [routeState, setRouteState] = useState(INITIAL_ROUTE_STATE);
     const { taking, recording, recordingLocked, stagedMedia } = routeState;
     const active = cameraActive && !stagedMedia;
+    const scanOpen = pageOpen && pathname === '/camera';
     const activeRef = useRef(active);
     const pageOpenRef = useRef(pageOpen);
     const cameraReadyRef = useRef(cameraReady);
@@ -364,7 +365,6 @@ function CameraContent({ cameraActive, pageOpen, warming }) {
     const lockStartX = useSharedValue(0);
     const lockStartY = useSharedValue(0);
     const shutterScale = useRef(new RNAnimated.Value(1)).current;
-    const settingsFeedback = useTap();
 
     const updateRouteState = useCallback((patch) => {
         if (!mountedRef.current) return;
@@ -473,10 +473,9 @@ function CameraContent({ cameraActive, pageOpen, warming }) {
     }, [pageOpen]);
 
     useEffect(() => {
-        if (backLensMode !== 'ultra-wide' || backUltraWideDevice) return;
-        backLensModeRef.current = 'regular';
-        setBackLensMode('regular');
-    }, [backLensMode, backUltraWideDevice]);
+        if (scanOpen) return;
+        scanRef.current.busy = false;
+    }, [scanOpen]);
 
     const previewStyle = useAnimatedStyle(() => ({ opacity: previewOpacity.value }));
 
@@ -543,9 +542,9 @@ function CameraContent({ cameraActive, pageOpen, warming }) {
         holdSideSwitchBusy();
         cameraReadyRef.current = false;
         setCameraReady(false);
-        if (backLensModeRef.current !== 'regular') {
-            backLensModeRef.current = 'regular';
-            setBackLensMode('regular');
+        if (backLensModeRef.current !== 'ultra-wide') {
+            backLensModeRef.current = 'ultra-wide';
+            setBackLensMode('ultra-wide');
         }
         facingRef.current = nextFacing;
         setFacing(nextFacing);
@@ -1024,7 +1023,7 @@ function CameraContent({ cameraActive, pageOpen, warming }) {
 
     const handleScanResult = useCallback(
         async (data) => {
-            if (!pageOpen || recordingRef.current || !data) return;
+            if (!scanOpen || recordingRef.current || !data) return;
             const raw = data.trim();
             if (!raw) return;
 
@@ -1120,7 +1119,7 @@ function CameraContent({ cameraActive, pageOpen, warming }) {
                 scanRef.current.busy = false;
             }
         },
-        [addPeer, hidePreview, lockRoute, network, ownWalletPK, pageOpen, settings?.sendOnScan, showUserPreview]
+        [addPeer, hidePreview, lockRoute, network, ownWalletPK, scanOpen, settings?.sendOnScan, showUserPreview]
     );
 
     const barcodeOutput = useBarcodeScannerOutput({
@@ -1276,20 +1275,7 @@ function CameraContent({ cameraActive, pageOpen, warming }) {
         return (
             <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 24, paddingBottom: insets.bottom }}>
                 <Text style={{ fontSize: 16, fontWeight: '600', color: theme.muted, textAlign: 'center', paddingHorizontal: 32 }}>allow veyl to access your camera</Text>
-                <Pressable {...settingsFeedback.props} onPress={() => Linking.openSettings()}>
-                    <RNAnimated.View
-                        style={{
-                            paddingVertical: 16,
-                            paddingHorizontal: 28,
-                            borderRadius: 999,
-                            alignItems: 'center',
-                            backgroundColor: theme.foreground,
-                            transform: [{ scale: settingsFeedback.scale }],
-                        }}
-                    >
-                        <Text style={{ color: theme.background, fontSize: 18, fontWeight: '900' }}>open settings</Text>
-                    </RNAnimated.View>
-                </Pressable>
+                <GlassButton onPress={() => Linking.openSettings()} label="open settings" glassEffectStyle="clear" />
             </View>
         );
     }

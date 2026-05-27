@@ -5,7 +5,6 @@ import { resolveVeylVariant } from '@glyphteck/shared/variant';
 
 const variant = resolveVeylVariant({
     NEXT_PUBLIC_VEYL_VARIANT: process.env.NEXT_PUBLIC_VEYL_VARIANT,
-    NEXT_PUBLIC_NETWORK: process.env.NEXT_PUBLIC_NETWORK,
 });
 const logos = {
     dev: walletDevLogo,

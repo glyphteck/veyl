@@ -383,6 +383,7 @@ export function createUserProvider({ auth, db, storage, getStorage, network, ava
                             settings: {
                                 ...defaultUser.settings,
                                 ...rawSettings,
+                                ghostWallet: defaultUser.settings.ghostWallet,
                                 autolock: {
                                     ...defaultUser.settings.autolock,
                                     ...(rawAutolock || {}),

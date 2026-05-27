@@ -3,7 +3,7 @@ import { doc, getDoc, setDoc } from 'firebase/firestore';
 export const defaultSettings = {
     glass: true,
     moneyFormat: 'usd',
-    ghostWallet: false,
+    ghostWallet: true,
     sendOnScan: false,
     confirmSend: false,
     faceID: null,
@@ -59,6 +59,7 @@ export function normalizeSettings(settings, base = defaultSettings) {
     const next = {
         ...current,
         ...settings,
+        ghostWallet: defaultSettings.ghostWallet,
     };
 
     next.autolock = normalizeAutolock(settings.autolock, current.autolock);

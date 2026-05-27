@@ -127,6 +127,7 @@ export default function PeerSelectorScreen() {
     const routeLockTimerRef = useRef(null);
 
     const [selectedPeer, setSelectedPeer] = useState(null);
+    const [footerPeer, setFooterPeer] = useState(null);
     const [amount, setAmount] = useState('');
     const [inputUnit, setInputUnit] = useState(settings?.moneyFormat || 'sats');
     const [overlayVisible, setOverlayVisible] = useState(false);
@@ -183,6 +184,7 @@ export default function PeerSelectorScreen() {
     const resetOverlay = useCallback(() => {
         setOverlayVisible(false);
         pickPeer(null);
+        setFooterPeer(null);
         setAmount('');
         setInputUnit(settings?.moneyFormat || 'sats');
     }, [pickPeer, settings?.moneyFormat]);
@@ -276,6 +278,7 @@ export default function PeerSelectorScreen() {
 
             searchInputRef.current?.blur();
             const isFirst = !current;
+            setFooterPeer(nextPeer);
             pickPeer(nextPeer);
             setAmount('');
             setInputUnit(settings?.moneyFormat || 'sats');
@@ -457,19 +460,21 @@ export default function PeerSelectorScreen() {
     const listBottomPadding = insets.bottom + LIST_DEFAULT_BOTTOM_GAP;
     const cyclePress = tap({ value: cycleScale, disabled: isSending, onPress: cycleUnit });
     const modeIcon = mode === 'request' ? ArrowDownLeft : ArrowUpRight;
+    const displayPeer = selectedPeer || footerPeer;
+    const footerInteractive = overlayVisible && !!selectedPeer && !isSending;
     const sendLabel =
         mode === 'request'
             ? isSending
                 ? 'requesting...'
-                : selectedPeer
-                  ? `request from ${formatUserDisplay(selectedPeer, false)}`
+                : displayPeer
+                  ? `request from ${formatUserDisplay(displayPeer, false)}`
                   : 'request'
             : isSending
               ? 'sending...'
-              : selectedPeer
-                ? `send to ${formatUserDisplay(selectedPeer, false)}`
+              : displayPeer
+                ? `send to ${formatUserDisplay(displayPeer, false)}`
                 : 'send';
-    const sendDisabled = !validSats || isSending || (mode === 'request' ? chatBanned || !selectedPeer?.chatPK : !selectedPeer?.walletPK);
+    const sendDisabled = !validSats || isSending || (mode === 'request' ? chatBanned || !displayPeer?.chatPK : !displayPeer?.walletPK);
     const amountPlaceholder = inputUnit === 'sats' ? '0000' : '0.00';
 
     return (
@@ -532,9 +537,9 @@ export default function PeerSelectorScreen() {
                 <KeyboardStickyView offset={stickyOffset} style={{ position: 'absolute', left: 0, right: 0, bottom: footerBottom, zIndex: 2 }} pointerEvents="box-none">
                     <Animated.View
                         onLayout={handleFooterLayout}
-                        pointerEvents={isSending || !overlayVisible ? 'none' : 'box-none'}
-                        accessibilityElementsHidden={!overlayVisible}
-                        importantForAccessibility={overlayVisible ? 'auto' : 'no-hide-descendants'}
+                        pointerEvents={footerInteractive ? 'box-none' : 'none'}
+                        accessibilityElementsHidden={!footerInteractive}
+                        importantForAccessibility={footerInteractive ? 'auto' : 'no-hide-descendants'}
                         style={[{ paddingHorizontal: 14, gap: 12 }, slideStyle]}
                     >
                         <GlassField disabled={isSending} style={{ flex: 1, paddingHorizontal: 16 }}>
@@ -557,7 +562,7 @@ export default function PeerSelectorScreen() {
                             </Pressable>
                         </GlassField>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                            <GlassIcon icon={MessageCircle} onPress={handleOpenChat} disabled={!selectedPeer?.chatPK || isSending || chatBanned} />
+                            <GlassIcon icon={MessageCircle} onPress={handleOpenChat} disabled={!displayPeer?.chatPK || isSending || chatBanned} />
                             <GlassButton onPress={handleSend} label={sendLabel} accent disabled={sendDisabled} pressableStyle={{ flex: 1 }} />
                             <GlassIcon icon={modeIcon} iconSize={32} onPress={toggleMode} disabled={isSending || chatBanned} />
                         </View>

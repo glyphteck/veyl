@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { makeUserQr, qr } from '@glyphteck/shared/qrutils';
@@ -10,7 +10,7 @@ import { useVault } from '@/components/providers/vaultprovider';
 import { useTxData } from '@/components/providers/txdataprovider';
 import { useDialog } from '@/components/providers/dialogprovider';
 import { useCloak } from '@glyphteck/shared/providers/cloakprovider';
-import { useChat } from '@/components/providers/chatprovider';
+import { useChat, useChatInput } from '@/components/providers/chatprovider';
 import { handleAppShortcut, shortcuts } from '@/lib/shortcuts';
 import { logout } from '@/lib/useractions';
 import { Button } from '@/components/button';
@@ -30,6 +30,12 @@ import {
     Hammer,
 } from 'lucide-react';
 
+const FOCUSABLE_SELECTOR = 'button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])';
+
+function visibleFocusable(element) {
+    return !!element && element.tabIndex >= 0 && !element.disabled && element.getClientRects().length > 0;
+}
+
 export default function Navbar() {
     const router = useRouter();
     const pathname = usePathname();
@@ -39,6 +45,8 @@ export default function Navbar() {
     const { lock } = useVault();
     const { hasTx } = useTxData();
     const { hasChats, chats } = useChat();
+    const { focusChatInput, navbarRef } = useChatInput();
+    const navRef = useRef(null);
     const { cloaked, cloak } = useCloak();
     const [userMenuOpen, setUserMenuOpen] = useState(false);
     const username = user?.username;
@@ -65,6 +73,23 @@ export default function Navbar() {
             value: qrData,
         });
     }, [openDialog, username]);
+    const handleNavKeyDown = useCallback(
+        (event) => {
+            if (pathname !== '/chat' || event.key !== 'Tab' || event.shiftKey || event.metaKey || event.ctrlKey || event.altKey) {
+                return;
+            }
+            const focusables = [...(navRef.current?.querySelectorAll?.(FOCUSABLE_SELECTOR) || [])].filter(visibleFocusable);
+            if (document.activeElement !== focusables[focusables.length - 1]) {
+                return;
+            }
+            if (!focusChatInput()) {
+                return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+        },
+        [focusChatInput, pathname]
+    );
 
     // Keyboard shortcuts
     useEffect(() => {
@@ -88,7 +113,7 @@ export default function Navbar() {
     }, [cloak, hasTx, isAdmin, lock, openDialog, openUserMenu, openUserQr, pathname, router.push, user?.chatBanned]);
 
     return (
-        <nav className="py-2.25 w-full flex items-center z-30 sticky top-0">
+        <nav ref={navRef} className="py-2.25 w-full flex items-center z-30 sticky top-0" onKeyDown={handleNavKeyDown}>
             {/* icon buttons */}
             <div className="items-center flex-1 hidden md:flex justify-between pl-1 pr-3 [&_svg:not([class*='size-'])]:size-6">
                 {/* nav */}
@@ -98,7 +123,7 @@ export default function Navbar() {
                             <MessageCircle />
                         </Button>
                     ) : pathname === '/chat' ? (
-                        <Button className="grower-lg" onClick={handleNewChat} title="new chat">
+                        <Button ref={navbarRef} className="grower-lg" onClick={handleNewChat} title="new chat">
                             <Dot show={showChatDot} compact>
                                 <MessageCirclePlus />
                             </Dot>

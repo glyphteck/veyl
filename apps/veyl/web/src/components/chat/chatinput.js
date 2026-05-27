@@ -5,8 +5,7 @@ import { cn } from '@/lib/utils';
 import { AudioLines, CircleArrowRight, File, Film, HandCoins, Image as ImageIcon, Paperclip, Reply, SquarePen, X } from 'lucide-react';
 import { useCloak } from '@glyphteck/shared/providers/cloakprovider';
 import { forwardRef, useEffect, useRef, useState } from 'react';
-import { completeCommandPrefix, getCommandContext, parseCommand } from '@glyphteck/shared/commands';
-import { blurActiveElement } from '@/lib/focus';
+import { getCommandContext, parseCommand } from '@glyphteck/shared/commands';
 
 const ChatTextarea = forwardRef(function ChatTextarea({ className, maxRows = Infinity, onInput, ...props }, ref) {
     const handleInput = (event) => {
@@ -163,7 +162,21 @@ function CommandBubbles({ items, onSelect, interactive = true }) {
     );
 }
 
-export function ChatInput({ onSendMessage, onEditMessage, onSendAttachment, onSendMoney, onCommand, onHeightChange, disabled = false, inputRef, draft, onClearDraft }) {
+export function ChatInput({
+    onSendMessage,
+    onEditMessage,
+    onSendAttachment,
+    onSendMoney,
+    onCommand,
+    onHeightChange,
+    disabled = false,
+    inputRef,
+    attachmentButtonRef,
+    moneyButtonRef,
+    draft,
+    onClearDraft,
+    onEscape,
+}) {
     const { cloaked } = useCloak();
     const [msgInput, setMsgInput] = useState('');
     const textareaRef = inputRef;
@@ -223,16 +236,9 @@ export function ChatInput({ onSendMessage, onEditMessage, onSendAttachment, onSe
     const handleKeyDown = (e) => {
         if (e.key === 'Escape') {
             e.preventDefault();
-            blurActiveElement();
+            e.stopPropagation();
+            onEscape?.();
             return;
-        }
-        if (e.key === 'Tab' && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
-            const next = completeCommandPrefix(msgInput, { mode: 'chat' });
-            if (next) {
-                e.preventDefault();
-                applyCommandPrefix(next);
-                return;
-            }
         }
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
@@ -307,10 +313,10 @@ export function ChatInput({ onSendMessage, onEditMessage, onSendAttachment, onSe
                         </Button>
                     ) : (
                         <div className="flex items-center gap-3 pr-1.5">
-                            <Button onClick={handlePickAttachment} className="grower size-5" disabled={disabled} tabbable={false}>
+                            <Button ref={attachmentButtonRef} onClick={handlePickAttachment} className="grower size-5" disabled={disabled} tabbable={false}>
                                 <Paperclip className="size-5" />
                             </Button>
-                            <Button onClick={onSendMoney} className="grower size-5" disabled={disabled || !onSendMoney} tabbable={false}>
+                            <Button ref={moneyButtonRef} onClick={onSendMoney} className="grower size-5" disabled={disabled || !onSendMoney} tabbable={false}>
                                 <HandCoins className="size-5" />
                             </Button>
                         </div>

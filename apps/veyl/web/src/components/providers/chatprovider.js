@@ -57,27 +57,62 @@ function ChatMediaCacheCleaner() {
 
 function ChatInputProvider({ children }) {
     const chatInputRef = useRef(null);
+    const attachmentButtonRef = useRef(null);
+    const moneyButtonRef = useRef(null);
+    const peerHeaderRef = useRef(null);
+    const selectedChatButtonRef = useRef(null);
+    const navbarRef = useRef(null);
+
+    const focusElement = useCallback((element) => {
+        if (!element?.focus) {
+            return false;
+        }
+
+        try {
+            element.focus({ preventScroll: true });
+            return true;
+        } catch {
+            try {
+                element.focus();
+                return true;
+            } catch {
+                return false;
+            }
+        }
+    }, []);
 
     const focusChatInput = useCallback(() => {
         const input = chatInputRef.current;
         if (!input?.focus) {
-            return;
+            return false;
         }
 
         try {
             if (typeof document !== 'undefined' && document.activeElement === input) {
-                return;
+                return true;
             }
-            input.focus();
-        } catch {}
-    }, []);
+            return focusElement(input);
+        } catch {
+            return false;
+        }
+    }, [focusElement]);
+
+    const focusSelectedChat = useCallback(() => focusElement(selectedChatButtonRef.current), [focusElement]);
+    const focusNavbar = useCallback(() => focusElement(navbarRef.current), [focusElement]);
 
     const value = useMemo(
         () => ({
             chatInputRef,
+            attachmentButtonRef,
+            moneyButtonRef,
+            peerHeaderRef,
+            selectedChatButtonRef,
+            navbarRef,
             focusChatInput,
+            focusSelectedChat,
+            focusNavbar,
         }),
-        [focusChatInput]
+        [focusChatInput, focusNavbar, focusSelectedChat]
     );
 
     return <ChatInputContext.Provider value={value}>{children}</ChatInputContext.Provider>;

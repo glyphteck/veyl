@@ -43,7 +43,7 @@ export {
 } from './fees.js';
 
 const EMPTY_EXTRAS = Object.freeze({});
-const EMPTY_WALLET_SETTINGS = Object.freeze({});
+const EMPTY_WALLET_SETTINGS = Object.freeze({ ghostWallet: true });
 
 export function createWalletProvider({ useVault, network, appState, useWalletExtras = () => EMPTY_EXTRAS, useWalletSettings = () => EMPTY_WALLET_SETTINGS, diag = null }) {
     if (typeof useVault !== 'function') {
@@ -54,7 +54,7 @@ export function createWalletProvider({ useVault, network, appState, useWalletExt
 
     function WalletProvider({ children }) {
         const { wallet, localCache } = useVault();
-        const walletSettings = useWalletSettings();
+        const walletSettings = useWalletSettings() || EMPTY_WALLET_SETTINGS;
         const ghostWallet = walletSettings?.ghostWallet === true;
 
         useWalletPrivacy({ wallet, ghostWallet, diag });
