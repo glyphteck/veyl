@@ -99,7 +99,7 @@ function FeatureMark({ icon: Icon, icon2: Icon2, logos }) {
 
     if (logos) {
         return (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
                 <div className="flex size-12 items-center justify-center rounded-full bg-foreground text-background shadow">
                     <Icon className="size-6" />
                 </div>
@@ -114,7 +114,7 @@ function FeatureMark({ icon: Icon, icon2: Icon2, logos }) {
 
     if (Icon2) {
         return (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
                 <div className="flex size-12 items-center justify-center rounded-full bg-foreground text-background shadow">
                     <Icon className="size-6" />
                 </div>
