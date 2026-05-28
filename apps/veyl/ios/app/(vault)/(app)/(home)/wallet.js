@@ -20,6 +20,7 @@ import { getChatId } from '@glyphteck/shared/crypto/chat';
 import { formatFullDateTime, formatUserDisplay, renderBalance, renderMoney } from '@glyphteck/shared/utils';
 
 const BALANCE_HEIGHT = 42;
+const LIST_BOTTOM_GAP = 44;
 const ACTIONS_HEIGHT = 72;
 const ACTION_ICON_SIZE = 56;
 const ACTION_GAP = 24;
@@ -67,7 +68,7 @@ function TxRow({ tx, profile, theme, moneyFormat, btcPrice, isLast, openRoute, s
             disabled={!canOpen}
             delayPressIn={80}
             style={{
-                paddingVertical: 10,
+                paddingVertical: 9,
                 paddingHorizontal: 16,
                 flexDirection: 'row',
                 alignItems: 'center',
@@ -81,7 +82,7 @@ function TxRow({ tx, profile, theme, moneyFormat, btcPrice, isLast, openRoute, s
                 <Animated.View style={{ transform: [{ scale: pressFeedback.scale }] }} pointerEvents="none">
                     <Avatar pointerEvents="none" source={avatarSource} active={isActive} bot={!tx?.funding && !tx?.withdrawal && !!profile?.bot} />
                 </Animated.View>
-                <Text numberOfLines={1} style={{ flex: 1, fontSize: 16, fontWeight: nameWeight, color: nameColor }}>
+                <Text numberOfLines={1} style={{ flex: 1, fontSize: 17, fontWeight: nameWeight, color: nameColor }}>
                     {displayName}
                 </Text>
             </View>
@@ -92,8 +93,8 @@ function TxRow({ tx, profile, theme, moneyFormat, btcPrice, isLast, openRoute, s
                 <Text
                     numberOfLines={1}
                     style={{
-                        marginTop: 2,
-                        fontSize: 14,
+                        marginTop: 7,
+                        fontSize: 20,
                         fontWeight: '900',
                         color: isInflow ? theme.inflow : theme.outflow,
                         opacity: tx?.pending ? 0.5 : 1,
@@ -277,7 +278,7 @@ export default function Wallet() {
                     )}
                     ListHeaderComponent={<View style={{ height: listTopSpace }} />}
                     ListEmptyComponent={() => (txReady ? <WalletEmpty /> : <WalletLoading />)}
-                    contentContainerStyle={{ flexGrow: 1, paddingBottom: insets.bottom + 56 + BALANCE_HEIGHT }}
+                    contentContainerStyle={{ flexGrow: 1, paddingBottom: insets.bottom + LIST_BOTTOM_GAP + BALANCE_HEIGHT }}
                     style={{ flex: 1 }}
                     showsVerticalScrollIndicator={false}
                     bounces

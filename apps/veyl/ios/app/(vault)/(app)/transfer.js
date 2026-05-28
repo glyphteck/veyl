@@ -16,6 +16,7 @@ import { useUser } from '@/providers/userprovider';
 import { useWallet } from '@/providers/walletprovider';
 import { tap } from '@/lib/tap';
 import { makeReq } from '@glyphteck/shared/chat/messages';
+import { SEND_ON_SCAN_ENABLED } from '@glyphteck/shared/settings';
 import { formatUserDisplay, renderMoney, satsInABitcoin, toDisplay, toSats } from '@glyphteck/shared/utils';
 
 const UNITS = ['sats', 'btc', 'usd'];
@@ -46,7 +47,7 @@ export default function TransferScreen() {
     const rawAmount = pick(params?.amount).trim();
     const presetMode = pick(params?.mode).trim().toLowerCase();
     const forceSend = flag(params?.send);
-    const autoSend = flag(params?.auto);
+    const autoSend = SEND_ON_SCAN_ENABLED && flag(params?.auto);
     const price = bitcoin?.price ?? 100000;
     const preset = rawAmount.length > 0;
 

@@ -14,8 +14,19 @@ import { alpha } from '@/lib/colors';
 import { warmCamera } from '@/lib/camera/warming';
 import { useTap } from '@/lib/tap';
 
+export const MAIN_MENU_ICON_SIZE = 32;
+export const MAIN_MENU_AVATAR_SIZE = 34;
+export const MAIN_MENU_TOP_PADDING = 8;
+export const MAIN_MENU_ITEM_HEIGHT = Math.max(MAIN_MENU_ICON_SIZE, MAIN_MENU_AVATAR_SIZE);
+export const MAIN_MENU_HEIGHT = MAIN_MENU_TOP_PADDING + MAIN_MENU_ITEM_HEIGHT;
+
+export function getMainMenuHeight(bottomInset = 0) {
+    return MAIN_MENU_HEIGHT + Math.max(0, Number(bottomInset) || 0);
+}
+
 const ITEM_STYLE = {
     flex: 1,
+    height: MAIN_MENU_ITEM_HEIGHT,
     alignItems: 'center',
     justifyContent: 'center',
 };
@@ -56,8 +67,6 @@ export default function MainMenu({ state, navigation }) {
     const { avatar, chatBanned } = useUser();
     const { chats } = useChat();
     const pageIndex = state?.index ?? 0;
-    const iconSize = 32;
-    const avatarSize = 34;
     const hasUnseenChats = !!chats?.some((chat) => chat?.unseen);
     const showWalletDot = false;
 
@@ -77,20 +86,21 @@ export default function MainMenu({ state, navigation }) {
                     alignItems: 'flex-start',
                     justifyContent: 'space-between',
                     gap: 12,
+                    paddingTop: MAIN_MENU_TOP_PADDING,
                 }}
             >
                 <MenuItem active={pageIndex === 0} onPress={() => onSelect(0)} disabled={chatBanned}>
-                    <DotIcon iconNode={DOT_ICONS.messageCircle} show={!chatBanned && hasUnseenChats} color={chatBanned ? theme.muted : theme.foreground} size={iconSize} />
+                    <DotIcon iconNode={DOT_ICONS.messageCircle} show={!chatBanned && hasUnseenChats} color={chatBanned ? theme.muted : theme.foreground} size={MAIN_MENU_ICON_SIZE} />
                 </MenuItem>
                 <MenuItem active={pageIndex === 1} onPress={() => onSelect(1)} onPressIn={warmCamera}>
-                    <Icon icon={Camera} color={theme.foreground} size={iconSize} />
+                    <Icon icon={Camera} color={theme.foreground} size={MAIN_MENU_ICON_SIZE} />
                 </MenuItem>
                 <MenuItem active={pageIndex === 2} onPress={() => onSelect(2)}>
-                    <DotIcon iconNode={DOT_ICONS.wallet} show={showWalletDot} color={theme.foreground} size={iconSize} />
+                    <DotIcon iconNode={DOT_ICONS.wallet} show={showWalletDot} color={theme.foreground} size={MAIN_MENU_ICON_SIZE} />
                 </MenuItem>
                 <MenuItem active={pageIndex === 3} onPress={() => onSelect(3)}>
                     <View pointerEvents="none">
-                        <Avatar size={avatarSize} source={avatar ? { uri: avatar } : null} />
+                        <Avatar size={MAIN_MENU_AVATAR_SIZE} source={avatar ? { uri: avatar } : null} />
                     </View>
                 </MenuItem>
             </GlassFooter>

@@ -5,6 +5,7 @@ export { default as TxDetails } from './txdetails';
 export { default as Payments } from './payments';
 export { default as Settings } from './settings';
 export { default as Withdraw } from './withdraw';
+export { default as WithdrawalInfo } from './withdrawalinfo';
 export { default as MainMenu } from './mainmenu';
 export { default as QRCode } from './qrcode';
 export { default as DeleteAccount } from './deleteaccount';

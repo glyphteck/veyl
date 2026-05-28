@@ -21,7 +21,7 @@ export async function getSessionUid() {
 
 export async function requireSession() {
     const user = await getRequestUser();
-    if (!user?.uid) redirect('/login');
+    if (!user?.uid) redirect('/');
     return user.uid;
 }
 
@@ -34,7 +34,7 @@ export async function requireAdmin() {
     return uid;
 }
 
-export async function redirectIfSession(path = '/unlock') {
+export async function redirectIfSession(path = '/') {
     if (await getSessionUid()) redirect(path);
 }
 

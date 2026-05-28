@@ -14,6 +14,8 @@ import { useCloak } from '@glyphteck/shared/providers/cloakprovider';
 import { formatToUSD } from '@glyphteck/shared/formatmoney';
 import { formatUserDisplay, renderBalance, renderMoney, renderNet } from '@/lib/utils';
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 const TIME_RANGE_OPTIONS = [
     { value: 'today', label: 'today' },
     { value: '24h', label: '24h', title: '24 hours' },
@@ -32,6 +34,12 @@ function renderBalanceDescription(amount, moneyFormat, price) {
     return renderMoney(amount, 'sats', price);
 }
 
+function pickTimeRange(preferred, available) {
+    if (available.includes(preferred)) return preferred;
+    if (available.includes('24h')) return '24h';
+    return available[0] ?? 'today';
+}
+
 export function WalletDashboard() {
     const bitcoin = useBitcoin();
     const { balance } = useWallet();
@@ -43,11 +51,39 @@ export function WalletDashboard() {
     const moneyFormat = settings.moneyFormat;
     const defaultTimeRange = getDefaultTimeRange?.() ?? 'today';
     const [timeRange, setTimeRange] = useState(null);
-    const activeTimeRange = timeRange ?? defaultTimeRange;
     const balanceDescription = renderBalanceDescription(balance, moneyFormat, bitcoin.price);
     const openUser = (peer) => {
         openDialog(peer?.uid && peer.uid === uid ? 'settings' : 'userdetails', peer?.uid && peer.uid === uid ? null : { user: peer });
     };
+
+    const availableTimeRanges = useMemo(() => {
+        if (!transactions?.length || !first) return ['today'];
+
+        const nowMs = Date.now();
+        const firstTxMs = new Date(first).getTime();
+        if (!Number.isFinite(firstTxMs)) return ['today'];
+
+        const today = new Date(nowMs);
+        today.setHours(0, 0, 0, 0);
+        const firstTxDay = new Date(firstTxMs);
+        firstTxDay.setHours(0, 0, 0, 0);
+
+        const txAgeMs = Math.max(0, nowMs - firstTxMs);
+        const daysSinceFirst = Math.floor((today.getTime() - firstTxDay.getTime()) / DAY_MS);
+        const spansBeforeToday = firstTxMs < today.getTime();
+        const ranges = ['today'];
+
+        if (txAgeMs >= DAY_MS || spansBeforeToday || !txHistoryComplete) ranges.push('24h');
+        if (daysSinceFirst >= 7 || !txHistoryComplete) ranges.push(7);
+        if (daysSinceFirst >= 30 || !txHistoryComplete) ranges.push(30);
+        if (daysSinceFirst >= 90 || !txHistoryComplete) ranges.push(90);
+        if (daysSinceFirst >= 180 || !txHistoryComplete) ranges.push(180);
+        if (daysSinceFirst >= 365 || !txHistoryComplete) ranges.push(365);
+        if (!txHistoryComplete || txAgeMs > DAY_MS) ranges.push('all-time');
+        return ranges;
+    }, [first, transactions, txHistoryComplete]);
+
+    const activeTimeRange = pickTimeRange(timeRange ?? defaultTimeRange, availableTimeRanges);
 
     const { chartData, filteredTxs, percentChange } = useMemo(() => {
         if (!getSeries || !getHourlySeries || !getTxsInRange) return { chartData: [], filteredTxs: [], percentChange: 0 };
@@ -115,25 +151,6 @@ export function WalletDashboard() {
         }));
         return { netTotal, txCount, volume, avgDailyVolume, topPeers };
     }, [activeTimeRange, filteredTxs, first, peerByWalletPK]);
-
-    // get avaialble time ranges
-    const availableTimeRanges = useMemo(() => {
-        if (!transactions || !first) return ['today'];
-        const now = new Date();
-        const firstTxDate = new Date(first);
-        const daysSinceFirst = Math.floor((now.setHours(0, 0, 0, 0) - firstTxDate.setHours(0, 0, 0, 0)) / (1000 * 60 * 60 * 24));
-        const hoursSinceFirst = Math.floor((Date.now() - new Date(first).getTime()) / (1000 * 60 * 60));
-        const ranges = [];
-        if (transactions.length > 0) ranges.push('today');
-        if (hoursSinceFirst >= 24 || !txHistoryComplete) ranges.push('24h');
-        if (daysSinceFirst >= 7 || !txHistoryComplete) ranges.push(7);
-        if (daysSinceFirst >= 30 || !txHistoryComplete) ranges.push(30);
-        if (daysSinceFirst >= 90 || !txHistoryComplete) ranges.push(90);
-        if (daysSinceFirst >= 180 || !txHistoryComplete) ranges.push(180);
-        if (daysSinceFirst >= 365 || !txHistoryComplete) ranges.push(365);
-        if (transactions.length > 0) ranges.push('all-time');
-        return ranges.length ? ranges : ['today'];
-    }, [first, transactions, txHistoryComplete]);
 
     useEffect(() => {
         if (timeRange !== null && availableTimeRanges.length > 0 && !availableTimeRanges.includes(timeRange)) {

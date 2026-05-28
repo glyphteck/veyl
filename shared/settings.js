@@ -1,5 +1,7 @@
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 
+export const SEND_ON_SCAN_ENABLED = false;
+
 export const defaultSettings = {
     glass: true,
     moneyFormat: 'usd',
@@ -14,6 +16,10 @@ export const defaultSettings = {
         onBackground: false,
     },
 };
+
+export function canSendOnScan(settings) {
+    return SEND_ON_SCAN_ENABLED && settings?.sendOnScan === true;
+}
 
 export function normalizeAutolock(autolock, base = defaultSettings.autolock) {
     if (autolock !== undefined && (!autolock || typeof autolock !== 'object' || Array.isArray(autolock))) {
@@ -75,6 +81,9 @@ export function normalizeSettings(settings, base = defaultSettings) {
     }
     if (typeof next.sendOnScan !== 'boolean') {
         throw new Error('sendOnScan must be boolean');
+    }
+    if (!SEND_ON_SCAN_ENABLED) {
+        next.sendOnScan = false;
     }
     if (typeof next.confirmSend !== 'boolean') {
         throw new Error('confirmSend must be boolean');

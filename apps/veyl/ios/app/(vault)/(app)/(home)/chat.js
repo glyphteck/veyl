@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, FlatList, Pressable, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Animated, FlatList, Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { Search, Trash2 } from 'lucide-react-native';
 import { httpsCallable } from 'firebase/functions';
-import ReAnimated, { useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
+import ReAnimated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { scheduleOnRN } from 'react-native-worklets';
 import { mergeProfiles } from '@glyphteck/shared/search/merge';
@@ -18,6 +18,7 @@ import Avatar from '@/components/avatar';
 import EmptyState from '@/components/emptystate';
 import GlassHeader from '@/components/glass/glassheader';
 import Icon from '@/components/icon';
+import { getMainMenuHeight } from '@/components/mainmenu';
 import SearchInput from '@/components/search';
 import { useTap } from '@/lib/tap';
 import { functions } from '@/lib/firebase';
@@ -27,7 +28,7 @@ import { getPeerChatPKFromChatId } from '@glyphteck/shared/chat/ids';
 import { getMsgPreview } from '@glyphteck/shared/chat/messages';
 
 const SEARCH_BAR_HEIGHT = 42;
-
+const HEADER_BOTTOM_PADDING = 8;
 const DELETE_DRAG = 24;
 const DELETE_HINT_W = 60;
 const DELETE_TRIGGER = 80;
@@ -60,10 +61,11 @@ function getPeerChatPK(chat, myChatPK) {
     return chat?.participants?.find?.((participant) => participant && participant !== myChatPK) ?? getPeerChatPKFromChatId(chat?.id, myChatPK);
 }
 
-function ChatRow({ onPress, onDelete, title, subtitle, rightLabel, isUnseen, avatarSource, isActive, isBot }) {
+function ChatRow({ onPress, onDelete, title, subtitle, rightLabel, isUnseen, avatarSource, isActive, isBot, isLast = false }) {
     const { theme } = useTheme();
     const swipe = useSharedValue(0);
     const deleteFired = useSharedValue(false);
+    const hasSubtitle = !!String(subtitle ?? '').trim();
 
     const fireHaptic = useCallback(() => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {});
@@ -132,7 +134,7 @@ function ChatRow({ onPress, onDelete, title, subtitle, rightLabel, isUnseen, ava
             {...pressFeedback.props}
             delayPressIn={80}
             style={{
-                paddingVertical: 10,
+                paddingVertical: 9,
                 paddingHorizontal: 16,
                 flexDirection: 'row',
                 alignItems: 'center',
@@ -142,9 +144,9 @@ function ChatRow({ onPress, onDelete, title, subtitle, rightLabel, isUnseen, ava
             <Animated.View style={{ transform: [{ scale: pressFeedback.scale }] }}>
                 <Avatar source={avatarSource} active={isActive} bot={isBot} />
             </Animated.View>
-            <View style={{ flex: 1 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
-                    <Text style={{ fontSize: 16, fontWeight: isUnseen ? '900' : '700', color: theme.foreground }} numberOfLines={1}>
+            <View style={{ flex: 1, justifyContent: hasSubtitle ? 'flex-start' : 'center' }}>
+                <View style={{ flexDirection: 'row', alignItems: hasSubtitle ? 'baseline' : 'center', justifyContent: 'space-between', gap: 12 }}>
+                    <Text style={{ flex: 1, fontSize: 17, fontWeight: isUnseen ? '900' : '700', color: theme.foreground }} numberOfLines={1}>
                         {title}
                     </Text>
                     {!!rightLabel && (
@@ -153,15 +155,22 @@ function ChatRow({ onPress, onDelete, title, subtitle, rightLabel, isUnseen, ava
                         </Text>
                     )}
                 </View>
-                <Text style={{ marginTop: 2, fontSize: 14, color: isUnseen ? theme.foreground : theme.muted }} numberOfLines={1}>
-                    {subtitle}
-                </Text>
+                {hasSubtitle ? (
+                    <Text style={{ marginTop: 7, fontSize: 14, color: isUnseen ? theme.foreground : theme.muted }} numberOfLines={1}>
+                        {subtitle}
+                    </Text>
+                ) : null}
             </View>
         </Pressable>
     );
 
     if (typeof onDelete !== 'function') {
-        return rowContent;
+        return (
+            <View style={{ overflow: 'hidden' }}>
+                {rowContent}
+                {!isLast ? <View pointerEvents="none" style={{ height: 1, backgroundColor: theme.border }} /> : null}
+            </View>
+        );
     }
 
     return (
@@ -188,6 +197,7 @@ function ChatRow({ onPress, onDelete, title, subtitle, rightLabel, isUnseen, ava
                     {rowContent}
                 </ReAnimated.View>
             </GestureDetector>
+            {!isLast ? <View pointerEvents="none" style={{ height: 1, backgroundColor: theme.border }} /> : null}
         </View>
     );
 }
@@ -204,7 +214,8 @@ export default function ChatList() {
     const routeLockTimerRef = useRef(null);
     const searchInputRef = useRef(null);
     const [search, setSearch] = useState('');
-    const [headerHeight, setHeaderHeight] = useState(0);
+    const headerHeight = insets.top + SEARCH_BAR_HEIGHT + HEADER_BOTTOM_PADDING;
+    const mainMenuHeight = getMainMenuHeight(insets.bottom);
 
     const chatQuery = useMemo(() => search.trim().toLowerCase(), [search]);
 
@@ -277,14 +288,23 @@ export default function ChatList() {
     const handleDeleteChat = useCallback(
         (chatId) => {
             if (!chatId) return;
-            startDeleteChat?.(chatId);
-            httpsCallable(
-                functions,
-                'deleteChat'
-            )({ chatId }).catch((err) => {
-                restoreDeletedChat?.(chatId);
-                console.warn('deleteChat failed', err);
-            });
+            Alert.alert('delete chat?', 'This removes the chat from your list.', [
+                { text: 'cancel', style: 'cancel' },
+                {
+                    text: 'delete',
+                    style: 'destructive',
+                    onPress: () => {
+                        startDeleteChat?.(chatId);
+                        httpsCallable(
+                            functions,
+                            'deleteChat'
+                        )({ chatId }).catch((err) => {
+                            restoreDeletedChat?.(chatId);
+                            console.warn('deleteChat failed', err);
+                        });
+                    },
+                },
+            ]);
         },
         [restoreDeletedChat, startDeleteChat]
     );
@@ -317,7 +337,8 @@ export default function ChatList() {
     );
 
     const renderItem = useCallback(
-        ({ item }) => {
+        ({ item, index }) => {
+            const isLast = index === items.length - 1;
             if (item.type === 'peer') {
                 const profile = item.peer;
                 const title = formatUserDisplay({ username: profile?.username, chatPK: profile?.chatPK, walletPK: profile?.walletPK });
@@ -332,6 +353,7 @@ export default function ChatList() {
                         avatarSource={avatarSource}
                         isActive={!!profile?.active}
                         isBot={!!profile?.bot}
+                        isLast={isLast}
                         onPress={() => openChat(item.peerChatPK)}
                     />
                 );
@@ -342,7 +364,7 @@ export default function ChatList() {
             const profile = peerChatPK ? peerByChatPK?.get(peerChatPK) : null;
             const title = formatUserDisplay({ username: profile?.username, chatPK: peerChatPK });
             const avatarSource = profile?.avatar ? { uri: profile.avatar } : null;
-            const subtitle = getMsgPreview(chat?.lastMsg, chatPK, null, null) || ' ';
+            const subtitle = getMsgPreview(chat?.lastMsg, chatPK, null, null);
             const lastMs = chat?.ts || null;
             const rightLabel = lastMs ? formatFullDateTime(lastMs) : '';
             const isActive = !!profile?.active;
@@ -356,12 +378,13 @@ export default function ChatList() {
                     avatarSource={avatarSource}
                     isActive={isActive}
                     isBot={!!profile?.bot}
+                    isLast={isLast}
                     onPress={() => openChat(peerChatPK)}
                     onDelete={() => handleDeleteChat(chat.id)}
                 />
             );
         },
-        [chatPK, handleDeleteChat, openChat, peerByChatPK]
+        [chatPK, handleDeleteChat, items.length, openChat, peerByChatPK]
     );
 
     if (chatBanned) {
@@ -385,8 +408,7 @@ export default function ChatList() {
                 alwaysBounceVertical
                 keyboardDismissMode="interactive"
                 keyboardShouldPersistTaps="handled"
-                ItemSeparatorComponent={() => <View style={{ height: 1, backgroundColor: theme.border }} />}
-                contentContainerStyle={{ flexGrow: 1, paddingTop: headerHeight, paddingBottom: insets.bottom + 56 }}
+                contentContainerStyle={{ flexGrow: 1, paddingTop: headerHeight, paddingBottom: mainMenuHeight }}
                 renderItem={renderItem}
                 directionalLockEnabled
                 alwaysBounceHorizontal={false}
@@ -411,7 +433,7 @@ export default function ChatList() {
                     return <EmptyState title="no chats yet" detail="Use the search bar above to find people and start chatting." />;
                 }}
             />
-            <GlassHeader onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}>
+            <GlassHeader>
                 <SearchInput
                     ref={searchInputRef}
                     value={search}

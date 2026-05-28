@@ -156,6 +156,25 @@ function rememberedRecord(record) {
     };
 }
 
+function hasRememberedRecord(store) {
+    return new Promise((resolve, reject) => {
+        const request = store.openCursor();
+        request.onsuccess = () => {
+            const cursor = request.result;
+            if (!cursor) {
+                resolve(false);
+                return;
+            }
+            if (isRemembered(cursor.value)) {
+                resolve(true);
+                return;
+            }
+            cursor.continue();
+        };
+        request.onerror = () => reject(request.error);
+    });
+}
+
 export const userAvatarCache = {
     async read(uid) {
         if (!uid) return null;
@@ -211,6 +230,13 @@ export const userAvatarCache = {
 
         const tx = db.transaction(STORE_NAME, 'readonly');
         return isRemembered(await requestToPromise(tx.objectStore(STORE_NAME).get(uid)));
+    },
+    async hasRememberedAccount() {
+        const db = await openDb();
+        if (!db) return false;
+
+        const tx = db.transaction(STORE_NAME, 'readonly');
+        return hasRememberedRecord(tx.objectStore(STORE_NAME));
     },
     async touchLogin(uid) {
         if (!uid) return;

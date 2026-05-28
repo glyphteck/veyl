@@ -41,7 +41,8 @@ const variant = variants[requestedVariant] ? requestedVariant : 'dev';
 const appVariant = variants[variant];
 const appleTeamId = 'HHTM355M49';
 const isLocalIosBuild = process.env.VEYL_LOCAL_IOS_BUILD === '1';
-const splashBackground = '#000000';
+const splashBackground = '#fefefe';
+const splashDarkBackground = '#000000';
 
 module.exports = {
     expo: {
@@ -95,7 +96,7 @@ module.exports = {
                         backgroundColor: splashBackground,
                         dark: {
                             image: appVariant.logo,
-                            backgroundColor: splashBackground,
+                            backgroundColor: splashDarkBackground,
                         },
                     },
                 },

@@ -3,6 +3,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { qr, readQr } from '@glyphteck/shared/qrutils';
 import { isAddressOnNetwork } from '@glyphteck/shared/network';
 import { getChatId } from '@glyphteck/shared/crypto/chat';
+import { canSendOnScan } from '@glyphteck/shared/settings';
 
 import { useChat } from '@/providers/chatprovider';
 import { usePeer } from '@/providers/peerprovider';
@@ -41,7 +42,7 @@ export default function QRRoute() {
 
             if (data?.kind === qr.request && data.to) {
                 if (data.to !== ownWalletPK) {
-                    const auto = settings?.sendOnScan === true && !!data.amount;
+                    const auto = canSendOnScan(settings) && !!data.amount;
                     let peer = null;
                     try {
                         peer = await addPeer?.({ walletPK: data.to });

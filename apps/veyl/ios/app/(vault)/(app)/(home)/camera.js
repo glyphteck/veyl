@@ -24,6 +24,7 @@ import { isAddressOnNetwork } from '@glyphteck/shared/network';
 import { getChatId } from '@glyphteck/shared/crypto/chat';
 import { randomBytes, toHex } from '@glyphteck/shared/crypto/core';
 import { readLastCameraFacing, writeLastCameraFacing } from '@glyphteck/shared/localdatacache';
+import { canSendOnScan } from '@glyphteck/shared/settings';
 import { useTheme } from '@/providers/themeprovider';
 import { useChat } from '@/providers/chatprovider';
 import { usePeer } from '@/providers/peerprovider';
@@ -1074,7 +1075,7 @@ function CameraContent({ cameraActive, pageOpen, warming }) {
                     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
                     if (!lockRoute()) return;
 
-                    const auto = settings?.sendOnScan === true && !!qrData.amount;
+                    const auto = canSendOnScan(settings) && !!qrData.amount;
                     if (qrData.amount) {
                         router.navigate({
                             pathname: '/transfer',

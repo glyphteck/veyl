@@ -562,9 +562,9 @@ export default function PeerSelectorScreen() {
                             </Pressable>
                         </GlassField>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                            <GlassIcon icon={MessageCircle} onPress={handleOpenChat} disabled={!displayPeer?.chatPK || isSending || chatBanned} />
-                            <GlassButton onPress={handleSend} label={sendLabel} accent disabled={sendDisabled} pressableStyle={{ flex: 1 }} />
                             <GlassIcon icon={modeIcon} iconSize={32} onPress={toggleMode} disabled={isSending || chatBanned} />
+                            <GlassButton onPress={handleSend} label={sendLabel} accent disabled={sendDisabled} pressableStyle={{ flex: 1 }} />
+                            <GlassIcon icon={MessageCircle} onPress={handleOpenChat} disabled={!displayPeer?.chatPK || isSending || chatBanned} />
                         </View>
                     </Animated.View>
                 </KeyboardStickyView>

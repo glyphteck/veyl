@@ -9,6 +9,7 @@ import AvatarPicker from '@/components/avatarpicker';
 import GlassHeader from '@/components/glass/glassheader';
 import GlassView from '@/components/glass/glassview';
 import Icon from '@/components/icon';
+import { getMainMenuHeight } from '@/components/mainmenu';
 import SearchInput from '@/components/search';
 import { deleteAvatar, uploadAvatar } from '@/lib/avatarupload';
 import { clearFaceIdPassword, FaceIdIcon } from '@/lib/faceid';
@@ -20,7 +21,7 @@ import { logout } from '@/lib/useractions';
 import { useTheme } from '@/providers/themeprovider';
 import { useUser } from '@/providers/userprovider';
 import { useVault } from '@/providers/vaultprovider';
-import { defaultSettings } from '@glyphteck/shared/settings';
+import { defaultSettings, SEND_ON_SCAN_ENABLED } from '@glyphteck/shared/settings';
 import Constants from 'expo-constants';
 
 const MONEY_FORMATS = ['btc', 'sats', 'usd'];
@@ -33,7 +34,7 @@ const AUTOLOCK_VALUES = [1, 5, 10, 15, 30, 60, 'never'];
 const SEARCH_BAR_HEIGHT = 42;
 
 function cloneSettings(settings) {
-    return {
+    const next = {
         ...defaultSettings,
         ...(settings || {}),
         autolock: {
@@ -41,6 +42,10 @@ function cloneSettings(settings) {
             ...(settings?.autolock || {}),
         },
     };
+    if (!SEND_ON_SCAN_ENABLED) {
+        next.sendOnScan = false;
+    }
+    return next;
 }
 
 function buildPatch(next, prev) {
@@ -317,7 +322,7 @@ function AccountBlock({ disabled = false }) {
     }, [canRemoveAvatar, clearAvatar, disabled, effectiveUid, isAvatarBusy]);
 
     return (
-        <View style={{ alignItems: 'center', paddingHorizontal: 16, paddingTop: 26, paddingBottom: 52, gap: 12 }}>
+        <View style={{ alignItems: 'center', paddingHorizontal: 16, paddingTop: 26, paddingBottom: 68, gap: 14 }}>
             <AvatarPicker
                 size={140}
                 disabled={disabled || isAvatarBusy || avatarBanned}
@@ -327,7 +332,7 @@ function AccountBlock({ disabled = false }) {
                 showRemove={canRemoveAvatar}
                 source={avatarSource}
             />
-            <Text numberOfLines={1} adjustsFontSizeToFit style={{ maxWidth: '100%', color: theme.foreground, fontSize: 28, fontWeight: '900' }}>
+            <Text numberOfLines={1} adjustsFontSizeToFit style={{ maxWidth: '100%', color: theme.foreground, fontSize: 34, lineHeight: 40, fontWeight: '900' }}>
                 {username ? `@${username}` : '@'}
             </Text>
         </View>
@@ -345,6 +350,7 @@ export default function SettingsScreen() {
     const [headerHeight, setHeaderHeight] = useState(0);
     const [settingSearch, setSettingSearch] = useState('');
     const [isLoggingOut, setIsLoggingOut] = useState(false);
+    const mainMenuHeight = getMainMenuHeight(insets.bottom);
 
     const serverSettings = useMemo(() => cloneSettings(user.settings), [user.settings]);
     const [settings, setSettings] = useState(serverSettings);
@@ -382,7 +388,7 @@ export default function SettingsScreen() {
     }, []);
 
     const moneyFormat = settings.moneyFormat;
-    const sendOnScan = settings.sendOnScan === true;
+    const sendOnScan = SEND_ON_SCAN_ENABLED && settings.sendOnScan === true;
     const faceIDEnabled = settings.faceID === true;
     const autolock = settings.autolock;
     const lockOnBackground = autolock.onBackground === true;
@@ -406,6 +412,7 @@ export default function SettingsScreen() {
 
     const handleSendOnScan = useCallback(
         (value) => {
+            if (!SEND_ON_SCAN_ENABLED) return;
             applySettings((current) => ({ ...current, sendOnScan: typeof value === 'boolean' ? value : !current.sendOnScan }));
         },
         [applySettings]
@@ -560,7 +567,7 @@ export default function SettingsScreen() {
     );
     const match = (...terms) => !search || terms.some((term) => String(term || '').toLowerCase().includes(search));
     const showMoney = match('display currency', 'money format', 'btc sats usd');
-    const showAutoSend = match('auto send on scan', 'qr payment behaviour', 'send immediately');
+    const showAutoSend = SEND_ON_SCAN_ENABLED && match('auto send on scan', 'qr payment behaviour', 'send immediately');
     const showLockTimer = match('lock timeout', 'autolock timer');
     const showLockBackground = match('lock on app background', 'background lock');
     const showFaceID = match('use face id', 'biometric unlock');
@@ -586,7 +593,7 @@ export default function SettingsScreen() {
             <ScrollView
                 contentContainerStyle={{
                     paddingTop: headerHeight,
-                    paddingBottom: insets.bottom + 56,
+                    paddingBottom: mainMenuHeight,
                 }}
                 style={{ flex: 1 }}
                 showsVerticalScrollIndicator={false}

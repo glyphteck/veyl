@@ -1,11 +1,12 @@
 import { redirect } from 'next/navigation';
+import RootRedirect from './rootredirect';
 import { getOnboardingState, getRequestUser } from '@/lib/routeguards';
 
 export const dynamic = 'force-dynamic';
 
 export default async function Root() {
     const user = await getRequestUser();
-    if (!user?.uid) redirect('/login');
+    if (!user?.uid) return <RootRedirect />;
 
     const state = await getOnboardingState(user.uid);
     if (!state.hasUsername) redirect('/getusername');

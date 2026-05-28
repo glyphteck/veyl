@@ -68,7 +68,7 @@ export default function GetAvatar() {
                 <div className="flex flex-col gap-1">
                     <div className="relative h-10 w-3xs">
                         <div className="pop absolute inset-0 flex items-center justify-center" data-open={!selectedImage && !busy} aria-hidden={!!selectedImage || busy}>
-                            <Button type="button" className="grower w-full text-muted hover:text-foreground" disabled={busy} onClick={handleSkip} tabIndex={!selectedImage && !busy ? 0 : -1}>
+                            <Button type="button" className="grower p-0 text-muted hover:text-foreground" disabled={busy} onClick={handleSkip} tabIndex={!selectedImage && !busy ? 0 : -1}>
                                 skip for now
                             </Button>
                         </div>

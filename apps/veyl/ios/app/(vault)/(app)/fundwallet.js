@@ -3,7 +3,7 @@ import { Animated, Pressable, Text, View } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { useRouter } from 'expo-router';
 import { useIsFocused } from 'expo-router/react-navigation';
-import { Check, CircleQuestionMark } from 'lucide-react-native';
+import { Check } from 'lucide-react-native';
 import QRCode from 'react-native-qrcode-svg';
 import { makeQr, qr } from '@glyphteck/shared/qrutils';
 import { FUNDING_TX_PREVIEW_VBYTES, STATIC_DEPOSIT_CLAIM_FEE_SATS } from '@glyphteck/shared/wallet/fees';
@@ -137,16 +137,13 @@ export default function FundWalletScreen() {
 
     return (
         <View style={{ position: 'relative', alignItems: 'center', paddingHorizontal: 48, paddingTop: 24 }}>
-            <View style={{ alignSelf: 'stretch', flexDirection: 'row', alignItems: 'flex-end', gap: 12, paddingBottom: 6 }}>
-                <Text numberOfLines={1} style={{ flex: 1, color: theme.foreground, fontSize: 16, fontWeight: '900' }}>
-                    estimated fee: ~{formatFeeAmount(fundingFeePreview?.feeAmountSats, settings?.moneyFormat, bitcoin.price)}
-                </Text>
-                <Pressable {...feeHelpTap.props} accessibilityRole="button" accessibilityLabel="funding fee info" hitSlop={8}>
-                    <Animated.View style={{ transform: [{ scale: feeHelpTap.scale }] }}>
-                        <Icon icon={CircleQuestionMark} size={28} color={theme.foreground} />
-                    </Animated.View>
-                </Pressable>
-            </View>
+            <Pressable {...feeHelpTap.props} accessibilityRole="button" accessibilityLabel="funding fee info" hitSlop={8} style={{ alignSelf: 'stretch', paddingBottom: 4 }}>
+                <Animated.View style={{ alignSelf: 'flex-start', maxWidth: '100%', transform: [{ scale: feeHelpTap.scale }] }}>
+                    <Text numberOfLines={1} style={{ color: theme.foreground, fontSize: 17, fontWeight: '900' }}>
+                        estimated fee: ~{formatFeeAmount(fundingFeePreview?.feeAmountSats, settings?.moneyFormat, bitcoin.price)}
+                    </Text>
+                </Animated.View>
+            </Pressable>
             <View style={{ alignSelf: 'stretch', alignItems: 'center' }} onLayout={updateQrSize}>
                 <Pressable accessibilityRole="button" accessibilityLabel="copy funding address" {...qrCopyTap.props}>
                     <Animated.View style={{ transform: [{ scale: qrCopyTap.scale }] }}>

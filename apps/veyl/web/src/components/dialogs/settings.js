@@ -12,6 +12,7 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/togglegroup';
 import { useUser } from '@/components/providers/userprovider';
 import UpdateAvatar from '@/components/updateavatar';
 import { deleteAvatar, uploadAvatar } from '@/lib/useractions';
+import { SEND_ON_SCAN_ENABLED } from '@glyphteck/shared/settings';
 
 const settingsSchema = z.object({
     moneyFormat: z.enum(['btc', 'usd', 'sats']),
@@ -44,7 +45,7 @@ export default function Settings({ data, close }) {
         resolver: zodResolver(settingsSchema),
         defaultValues: {
             moneyFormat: settings.moneyFormat,
-            sendOnScan: settings.sendOnScan,
+            sendOnScan: SEND_ON_SCAN_ENABLED && settings.sendOnScan,
             confirmSend: settings.confirmSend,
             autolock: {
                 timer: settings.autolock.timer,
@@ -57,7 +58,7 @@ export default function Settings({ data, close }) {
     useEffect(() => {
         form.reset({
             moneyFormat: settings.moneyFormat,
-            sendOnScan: settings.sendOnScan,
+            sendOnScan: SEND_ON_SCAN_ENABLED && settings.sendOnScan,
             confirmSend: settings.confirmSend,
             autolock: {
                 timer: settings.autolock.timer,
@@ -118,7 +119,7 @@ export default function Settings({ data, close }) {
         const values = form.getValues();
         await updateSettings({
             moneyFormat: values.moneyFormat,
-            sendOnScan: values.sendOnScan,
+            sendOnScan: SEND_ON_SCAN_ENABLED && values.sendOnScan,
             confirmSend: values.confirmSend,
             autolock: {
                 timer: values.autolock.timer,
@@ -219,23 +220,25 @@ export default function Settings({ data, close }) {
                                     type="multiple"
                                     value={(() => {
                                         const values = [];
-                                        if (form.watch('sendOnScan')) values.push('sendOnScan');
+                                        if (SEND_ON_SCAN_ENABLED && form.watch('sendOnScan')) values.push('sendOnScan');
                                         if (form.watch('confirmSend')) values.push('confirmSend');
                                         return values;
                                     })()}
                                     onValueChange={(vals) => {
-                                        form.setValue('sendOnScan', vals.includes('sendOnScan'));
+                                        form.setValue('sendOnScan', SEND_ON_SCAN_ENABLED && vals.includes('sendOnScan'));
                                         form.setValue('confirmSend', vals.includes('confirmSend'));
                                     }}
                                 >
-                                    <ToggleGroupItem
-                                        value="sendOnScan"
-                                        className="data-[state=on]:bg-destructive data-[state=on]:text-background"
-                                        onMouseEnter={() => setTooltip('send immediately when the qr already includes an amount')}
-                                        onMouseLeave={() => setTooltip('save')}
-                                    >
-                                        <ScanQrCode />
-                                    </ToggleGroupItem>
+                                    {SEND_ON_SCAN_ENABLED ? (
+                                        <ToggleGroupItem
+                                            value="sendOnScan"
+                                            className="data-[state=on]:bg-destructive data-[state=on]:text-background"
+                                            onMouseEnter={() => setTooltip('send immediately when the qr already includes an amount')}
+                                            onMouseLeave={() => setTooltip('save')}
+                                        >
+                                            <ScanQrCode />
+                                        </ToggleGroupItem>
+                                    ) : null}
                                     <ToggleGroupItem value="confirmSend" onMouseEnter={() => setTooltip('confirm before sending money')} onMouseLeave={() => setTooltip('save')}>
                                         <ShieldCheck />
                                     </ToggleGroupItem>

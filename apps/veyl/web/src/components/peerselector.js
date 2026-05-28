@@ -292,8 +292,10 @@ export default function PeerSelector({ selectedPeer, onPeerChange, disabled = fa
                         <span className="truncate text-lg font-bold">{formatUserDisplay(selectedPeer, true)}</span>
                     </span>
                 ) : (
-                    <span className="flex min-w-0 items-center gap-3 text-muted">
-                        <UsersRound className={`size-7 text-foreground transition-opacity ease-out ${popoverOpen ? 'opacity-100' : 'opacity-45 group-hover:opacity-100 group-focus-visible:opacity-100'}`} />
+                    <span className="flex min-w-0 items-center gap-3.5 text-muted">
+                        <span className="flex size-9 shrink-0 items-center justify-center">
+                            <UsersRound className={`size-7 text-foreground transition-opacity ease-out ${popoverOpen ? 'opacity-100' : 'opacity-45 group-hover:opacity-100 group-focus-visible:opacity-100'}`} />
+                        </span>
                         {label}
                     </span>
                 )}

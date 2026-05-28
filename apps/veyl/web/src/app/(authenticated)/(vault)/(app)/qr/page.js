@@ -14,6 +14,7 @@ import { useCloak } from '@glyphteck/shared/providers/cloakprovider';
 import { formatUserDisplay, renderMoney } from '@/lib/utils';
 import { qr, readQr } from '@glyphteck/shared/qrutils';
 import { isAddressOnNetwork } from '@glyphteck/shared/network';
+import { canSendOnScan } from '@glyphteck/shared/settings';
 
 export default function QRPage() {
     const router = useRouter();
@@ -46,7 +47,7 @@ export default function QRPage() {
                 if (data.to !== ownWalletPK) {
                     const peer = await addPeer({ walletPK: data.to });
                     if (peer) {
-                        if (settings.sendOnScan && data.amount) {
+                        if (canSendOnScan(settings) && data.amount) {
                             const displayName = formatUserDisplay(peer, false);
                             const formattedAmount = renderMoney(data.amount.toString(), settings.moneyFormat, bitcoin.price);
                             const loadingToastId = toast(cloaked ? `sending money to ${displayName}` : `sending ${formattedAmount} to ${displayName}`, {

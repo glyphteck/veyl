@@ -20,7 +20,7 @@ export default function PasswordRulesScreen() {
             <Text style={{ fontSize: 18, fontWeight: '500', color: theme.foreground }}>• Most visible letters, numbers, symbols, and emoji are allowed.</Text>
             <Text style={{ fontSize: 18, fontWeight: '500', color: theme.foreground }}>• Spaces are allowed, but tabs, newlines, and other invisible or control characters are not.</Text>
 
-            <GlassButton onPress={() => router.back()} label="ok" accent style={{ paddingTop: 24 }} />
+            <GlassButton onPress={() => router.back()} label="back" accent style={{ paddingTop: 24 }} />
         </View>
     );
 }

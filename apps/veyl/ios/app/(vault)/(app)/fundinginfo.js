@@ -53,7 +53,7 @@ export default function FundingInfoScreen() {
             <Text style={{ fontSize: 15, lineHeight: 23, fontWeight: '700', color: theme.muted }}>
                 the transaction fee is an estimate on how expensive it is to send bitcoin over the network at the moment, with an additional flat fee to import bitcoin onto the spark network.
             </Text>
-            <GlassButton onPress={() => router.back()} label="ok" accent />
+            <GlassButton onPress={() => router.back()} label="back" accent />
         </View>
     );
 }

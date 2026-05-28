@@ -5,13 +5,12 @@ import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Card } from '@/components/card';
 import { Field } from '@/components/field';
 import { Input } from '@/components/input';
 import { Button } from '@/components/button';
-import { ToggleGroup, ToggleGroupItem } from '@/components/togglegroup';
-import { Rabbit, Turtle, Snail, Loader, PiggyBank, CircleCheck, ScanQrCode, CircleQuestionMark } from 'lucide-react';
+import { Loader, PiggyBank, CircleCheck, ScanQrCode } from 'lucide-react';
 import { useBitcoin } from '@/components/providers/bitcoinprovider';
+import { useDialog } from '@/components/providers/dialogprovider';
 import { useWallet } from '@/components/providers/walletprovider';
 import { useUser } from '@/components/providers/userprovider';
 import { useCloak } from '@glyphteck/shared/providers/cloakprovider';
@@ -25,34 +24,25 @@ function balanceToSats(balance) {
     return Number.isFinite(value) && value > 0 ? BigInt(Math.floor(value)) : 0n;
 }
 
-function formatWholeNumber(value) {
-    return String(value).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-}
-
-function formatSats(value) {
-    const amount = Number(value);
-    if (!Number.isSafeInteger(amount) || amount < 0) return 'updating';
-    return `${formatWholeNumber(amount)} ${amount === 1 ? 'sat' : 'sats'}`;
-}
-
 function formatFeeAmount(value, moneyFormat, price) {
     const amount = Number(value);
     if (!Number.isFinite(amount)) return 'updating';
     return renderMoney(Math.max(0, Math.ceil(amount)), moneyFormat || 'sats', price);
 }
 
-function formatFeeRate(value) {
-    const rate = Number(value);
-    if (!Number.isFinite(rate)) return 'updating';
-    const rounded = Math.round(rate * 1000) / 1000;
-    return `${rounded >= 10 ? formatWholeNumber(Math.round(rounded)) : String(rounded)} sat/vB`;
+const MONEY_UNITS = ['sats', 'btc', 'usd'];
+
+function unitLabel(unit) {
+    if (unit === 'btc') return '₿';
+    if (unit === 'usd') return '$';
+    return 'sats';
 }
 
 export default function Withdraw({ data, close }) {
     const [isSubmitting, setIsSubmitting] = useState(false);
-    const [showFeeInfo, setShowFeeInfo] = useState(false);
     const router = useRouter();
     const bitcoin = useBitcoin();
+    const { openDialog } = useDialog();
     const { balance, withdrawFunds, network } = useWallet();
     const { settings } = useUser();
     const { cloaked } = useCloak();
@@ -69,7 +59,6 @@ export default function Withdraw({ data, close }) {
                     }),
                 inputUnit: z.enum(['sats', 'btc', 'usd']),
                 amount: z.string().regex(/^\d+(\.\d{0,8})?$/, 'invalid number'),
-                exitSpeed: z.enum(['FAST', 'MEDIUM', 'SLOW']),
             })
             .superRefine((data, ctx) => {
                 const maxSats = balanceToSats(max);
@@ -108,10 +97,9 @@ export default function Withdraw({ data, close }) {
     const form = useForm({
         resolver,
         defaultValues: {
-            receivingAddress: data?.address || '',
-            amount: '',
-            inputUnit: settings.moneyFormat,
-            exitSpeed: 'MEDIUM',
+            receivingAddress: data?.receivingAddress || data?.address || '',
+            amount: data?.amount || '',
+            inputUnit: data?.inputUnit || settings.moneyFormat,
         },
     });
     const watchedAmount = form.watch('amount');
@@ -144,7 +132,6 @@ export default function Withdraw({ data, close }) {
     const feeWarning = withdrawalFeeRisk?.high;
     const feeText = feeAmountSats != null ? formatFeeAmount(feeAmountSats, settings?.moneyFormat, bitcoin.price) : 'updating';
     const buttonFeedback = amountAboveBalance ? 'amount is above your balance' : '';
-    const feeFormula = `${feeEstimate?.vbytes ?? COOPERATIVE_EXIT_TX_VBYTES} vB x ${formatFeeRate(feeEstimate?.feeRateSatsPerVbyte)} + ${formatSats(COOPERATIVE_EXIT_FLAT_FEE_SATS)} = ${formatSats(feeAmountSats)}`;
 
     const setUnit = useCallback(
         (u) => {
@@ -169,6 +156,12 @@ export default function Withdraw({ data, close }) {
         },
         [form, bitcoin.price]
     );
+
+    const cycleUnit = useCallback(() => {
+        const currentUnit = form.getValues('inputUnit');
+        const index = MONEY_UNITS.indexOf(currentUnit);
+        setUnit(MONEY_UNITS[(index + 1) % MONEY_UNITS.length]);
+    }, [form, setUnit]);
 
     const setAmount = useCallback(
         (raw) => {
@@ -202,6 +195,17 @@ export default function Withdraw({ data, close }) {
         form.setValue('amount', toDisplay(balanceSats, unit, bitcoin.price));
     }, [form, balanceSats, bitcoin.price]);
 
+    const openWithdrawalInfo = useCallback(() => {
+        const values = form.getValues();
+        openDialog('withdrawalinfo', {
+            withdraw: {
+                receivingAddress: values.receivingAddress || '',
+                amount: values.amount || '',
+                inputUnit: values.inputUnit || settings.moneyFormat,
+            },
+        });
+    }, [form, openDialog, settings.moneyFormat]);
+
     useEffect(() => {
         form.clearErrors();
     }, [balance, form]);
@@ -225,7 +229,7 @@ export default function Withdraw({ data, close }) {
             const result = await withdrawFunds({
                 onchainAddress: data.receivingAddress,
                 amountSats: Number(data.amount),
-                exitSpeed: data.exitSpeed,
+                exitSpeed: 'MEDIUM',
             });
             if (result.success) {
                 toast(`Withdrew ${displayAmount} to ${addressDisplay}`, {
@@ -239,115 +243,79 @@ export default function Withdraw({ data, close }) {
     );
 
     return (
-        <div className="w-lg flex flex-col gap-2">
-            <Card>
-                <div hidden className="flex items-start justify-between px-4 pt-4 pb-10">
-                    <div className="text-2xl leading-none font-black">withdraw funds</div>
+        <div className="w-md max-w-full flex flex-col gap-2">
+            <form id="withdraw-funds-form" onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-1">
+                <div className="flex justify-start">
+                    <Button
+                        tabIndex={-1}
+                        className={`grower-sm min-w-0 max-w-full justify-start p-0 text-base font-black ${feeWarning ? 'text-destructive' : 'text-foreground'}`}
+                        type="button"
+                        onClick={openWithdrawalInfo}
+                        disabled={isSubmitting}
+                        title="withdrawal fee info"
+                    >
+                        <span className="min-w-0 truncate whitespace-nowrap">estimated fee: ~{feeText}</span>
+                    </Button>
+                </div>
+                <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2.5">
                     <Field
                         control={form.control}
-                        name="exitSpeed"
-                        render={({ field, controlProps }) => (
-                            <ToggleGroup
-                                {...controlProps}
-                                tabIndex={-1}
-                                type="single"
-                                value={field.value}
-                                onValueChange={(val) => {
-                                    if (val) field.onChange(val);
-                                }}
-                                disabled={isSubmitting}
-                            >
-                                <ToggleGroupItem value="SLOW" title="slow">
-                                    <Snail className="stroke-2" />
-                                </ToggleGroupItem>
-                                <ToggleGroupItem value="MEDIUM" title="medium">
-                                    <Turtle className="stroke-2" />
-                                </ToggleGroupItem>
-                                <ToggleGroupItem value="FAST" title="fast">
-                                    <Rabbit className="stroke-2" />
-                                </ToggleGroupItem>
-                            </ToggleGroup>
+                        name="receivingAddress"
+                        render={({ field, inputProps }) => (
+                            <Input {...field} {...inputProps} className="h-12 min-w-0 pl-4 pr-4 text-lg font-black" placeholder="receiving address" disabled={isSubmitting} />
                         )}
                     />
-                </div>
-                <div className="px-4 py-6">
-                    <form id="withdraw-funds-form" onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-3">
-                        <div className="flex items-end justify-between gap-3 px-1">
-                            <div className={`min-w-0 truncate text-sm font-black ${feeWarning ? 'text-destructive' : 'text-foreground'}`}>estimated fee: ~{feeText}</div>
-                            <Button
-                                tabIndex={-1}
-                                className="grower-lg text-foreground"
-                                type="button"
-                                onClick={() => setShowFeeInfo((current) => !current)}
-                                disabled={isSubmitting}
-                                title="withdrawal fee info"
-                            >
-                                <CircleQuestionMark className="size-6" />
-                            </Button>
-                        </div>
-                        {showFeeInfo ? (
-                            <div className="rounded-round bg-background/70 px-4 py-3 text-sm leading-6 font-bold text-muted shadow backdrop-blur-sm">
-                                <div>you can withdraw your funds back to any bitcoin address. bitcoin transactions are not free. validators need to get paid.</div>
-                                <div className="pt-2 font-black text-foreground tabular-nums">{feeFormula}</div>
-                                <div className="pt-2">
-                                    the transaction fee is an estimate on how expensive it is to send bitcoin over the network at the moment, with an additional flat fee to export bitcoin off the spark network.
-                                </div>
+                    <Button
+                        tabIndex={-1}
+                        className="grower-lg h-12 w-14"
+                        type="button"
+                        onClick={() => {
+                            close();
+                            router.push('/camera');
+                        }}
+                        disabled={isSubmitting}
+                        title="scan"
+                    >
+                        <ScanQrCode className="size-8" />
+                    </Button>
+                    <Field
+                        control={form.control}
+                        name="amount"
+                        render={({ field, inputProps }) => (
+                            <div className="relative w-full">
+                                <Input
+                                    {...field}
+                                    {...inputProps}
+                                    ref={(el) => {
+                                        field.ref(el);
+                                        amountInputRef.current = el;
+                                    }}
+                                    className={`h-12 min-w-0 pl-4 pr-20 text-2xl font-black ${cloaked ? 'cloaked' : ''}`}
+                                    placeholder={watchedInputUnit === 'sats' ? '0000' : '0.00'}
+                                    onChange={handleAmountChange}
+                                    inputMode="numeric"
+                                    pattern={watchedInputUnit === 'sats' ? '[0-9]*' : '[0-9.]*'}
+                                    disabled={isSubmitting}
+                                />
+                                <Button
+                                    type="button"
+                                    aria-label={`change currency, current ${watchedInputUnit}`}
+                                    title="change currency"
+                                    className="grower-lg absolute top-1/2 right-3 h-9 min-w-12 -translate-y-1/2 justify-end px-2.5 text-2xl font-black text-muted"
+                                    onMouseDown={(event) => event.preventDefault()}
+                                    onClick={cycleUnit}
+                                    disabled={isSubmitting}
+                                >
+                                    {unitLabel(watchedInputUnit)}
+                                </Button>
                             </div>
-                        ) : null}
-                        <Field
-                            control={form.control}
-                            name="receivingAddress"
-                            render={({ field, inputProps }) => (
-                                <div className="flex gap-2.5">
-                                    <Input {...field} {...inputProps} className="flex-1" placeholder="receiving address" disabled={isSubmitting} />
-                                    <Button
-                                        tabIndex={-1}
-                                        className="grower-lg"
-                                        type="button"
-                                        onClick={() => {
-                                            close();
-                                            router.push('/camera');
-                                        }}
-                                        disabled={isSubmitting}
-                                    >
-                                        <ScanQrCode className="size-6" />
-                                    </Button>
-                                </div>
-                            )}
-                        />
-                        <Field
-                            control={form.control}
-                            name="amount"
-                            render={({ field, inputProps }) => (
-                                <div className="flex items-center gap-2.5">
-                                    <Input
-                                        {...field}
-                                        {...inputProps}
-                                        ref={(el) => {
-                                            field.ref(el);
-                                            amountInputRef.current = el;
-                                        }}
-                                        className={`w-54 ${cloaked ? 'cloaked' : ''}`}
-                                        placeholder={watchedInputUnit === 'sats' ? '0000' : '0.00'}
-                                        onChange={handleAmountChange}
-                                        inputMode="numeric"
-                                        pattern={watchedInputUnit === 'sats' ? '[0-9]*' : '[0-9.]*'}
-                                        disabled={isSubmitting}
-                                    />
-                                    <Button tabIndex={-1} className="grower-lg hidden sm:block" type="button" onClick={setMax} disabled={isSubmitting}>
-                                        <PiggyBank className="size-6 stroke-2" />
-                                    </Button>
-                                    <ToggleGroup tabIndex={-1} className="ml-auto" type="single" value={watchedInputUnit} onValueChange={setUnit} disabled={isSubmitting}>
-                                        <ToggleGroupItem value="btc">₿</ToggleGroupItem>
-                                        <ToggleGroupItem value="sats">sats</ToggleGroupItem>
-                                        <ToggleGroupItem value="usd">$</ToggleGroupItem>
-                                    </ToggleGroup>
-                                </div>
-                            )}
-                        />
-                    </form>
+                        )}
+                    />
+                    <Button tabIndex={-1} className="grower-lg h-12 w-14" type="button" onClick={setMax} disabled={isSubmitting} title="max">
+                        <PiggyBank className="size-8 stroke-2" />
+                    </Button>
                 </div>
-            </Card>
+            </form>
             <Button
                 type="submit"
                 form="withdraw-funds-form"

@@ -108,6 +108,6 @@ export async function logout({ remember = null, account = null } = {}) {
     await saveRememberChoice(uid, remember, account);
     await Promise.allSettled([fetch('/api/session', { method: 'DELETE' }), signOut(auth)]);
     if (typeof window !== 'undefined') {
-        window.location.replace('/login');
+        window.location.replace('/');
     }
 }

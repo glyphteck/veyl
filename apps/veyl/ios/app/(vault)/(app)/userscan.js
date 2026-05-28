@@ -43,9 +43,6 @@ export default function UserScanScreen() {
             <View style={{ alignSelf: 'stretch', alignItems: 'center' }} onLayout={updateQrSize}>
                 {qrSize > 0 ? <QRCode value={qrValue} size={qrSize} backgroundColor="transparent" color={theme.foreground} /> : null}
             </View>
-            <Text style={{ color: theme.foreground, marginTop: 16, fontSize: 16, fontWeight: '900', textAlign: 'center' }}>
-                share your account to receive money or connect with people faster.
-            </Text>
         </View>
     );
 }

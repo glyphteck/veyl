@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Keyboard, Pressable, Text, TextInput, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
-import { CircleQuestionMark, PiggyBank, ScanQrCode } from 'lucide-react-native';
+import { PiggyBank, ScanQrCode } from 'lucide-react-native';
 import { toSats, toDisplay, renderMoney } from '@glyphteck/shared/utils';
 import { COOPERATIVE_EXIT_FLAT_FEE_SATS, COOPERATIVE_EXIT_TX_VBYTES, getWithdrawalFeeRisk } from '@glyphteck/shared/wallet/fees';
 import { isAddressOnNetwork, isMainnet } from '@glyphteck/shared/network';
@@ -184,62 +184,66 @@ export default function Withdraw() {
     const feeHelpStyle = useAnimatedStyle(() => ({ transform: [{ scale: feeHelpScale.value }] }));
 
     return (
-        <View style={{ flex: 1, paddingHorizontal: 16, paddingTop: 32, gap: 12 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 12, paddingHorizontal: 4 }}>
-                <Text numberOfLines={1} style={{ flex: 1, color: feeColor, fontSize: 16, fontWeight: '900' }}>
+        <View style={{ flex: 1, paddingHorizontal: 16, paddingTop: 32 }}>
+            <Pressable
+                {...feeHelpPress}
+                accessibilityRole="button"
+                accessibilityLabel="withdrawal fee info"
+                hitSlop={8}
+                disabled={isSubmitting}
+                style={{ alignSelf: 'flex-start', maxWidth: '100%', paddingHorizontal: 4, marginBottom: 4 }}
+            >
+                <Animated.Text numberOfLines={1} style={[{ color: feeColor, fontSize: 17, fontWeight: '900' }, feeHelpStyle]}>
                     estimated fee: {`${hasFeeEstimate ? '~' : ''}${feeText}`}
-                </Text>
-                <Pressable {...feeHelpPress} accessibilityRole="button" accessibilityLabel="withdrawal fee info" hitSlop={8} disabled={isSubmitting}>
-                    <Animated.View style={feeHelpStyle}>
-                        <Icon icon={CircleQuestionMark} size={28} color={theme.foreground} />
-                    </Animated.View>
-                </Pressable>
-            </View>
-            {/* receiving address */}
-            <GlassField disabled={isSubmitting} style={{ gap: 6, paddingRight: 12, paddingLeft: 14, paddingVertical: 8 }}>
-                <TextInput
-                    value={receivingAddress}
-                    placeholder="receiving address"
-                    placeholderTextColor={theme.muted}
-                    style={{ flex: 1, color: theme.foreground, fontSize: 18, paddingVertical: 4 }}
-                    onChangeText={setReceivingAddress}
-                    keyboardAppearance={isDark ? 'dark' : 'light'}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    editable={!isSubmitting}
-                />
-                <Pressable {...scanPress} hitSlop={8} disabled={isSubmitting}>
-                    <Animated.View style={[{ padding: 6 }, scanStyle]}>
-                        <Icon icon={ScanQrCode} size={22} color={theme.muted} />
-                    </Animated.View>
-                </Pressable>
-            </GlassField>
-            {addressError ? <Text style={{ color: theme.destructive, fontSize: 13, paddingHorizontal: 4 }}>{addressError}</Text> : null}
-            {/* amount input */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                <GlassField disabled={isSubmitting} style={{ flex: 1, paddingHorizontal: 16 }}>
+                </Animated.Text>
+            </Pressable>
+            <View style={{ gap: 12 }}>
+                {/* receiving address */}
+                <GlassField disabled={isSubmitting} style={{ gap: 6, paddingRight: 12, paddingLeft: 14, paddingVertical: 8 }}>
                     <TextInput
-                        ref={amountInputRef}
-                        value={amount}
-                        placeholder={inputUnit === 'sats' ? '0000' : '0.00'}
+                        value={receivingAddress}
+                        placeholder="receiving address"
                         placeholderTextColor={theme.muted}
-                        keyboardType="numeric"
-                        onChangeText={setAmount}
+                        style={{ flex: 1, color: theme.foreground, fontSize: 18, paddingVertical: 4 }}
+                        onChangeText={setReceivingAddress}
+                        keyboardAppearance={isDark ? 'dark' : 'light'}
+                        autoCapitalize="none"
+                        autoCorrect={false}
                         editable={!isSubmitting}
-                        style={{ flex: 1, fontSize: 24, fontWeight: '900', color: theme.foreground, paddingVertical: 10 }}
                     />
-                    <Pressable {...cyclePress} hitSlop={8} disabled={isSubmitting}>
-                        <Animated.View style={[{ paddingLeft: 12, alignItems: 'center', justifyContent: 'center' }, cycleStyle]}>
-                            {inputUnit === 'btc' && <Text style={{ fontSize: 24, fontWeight: '900', color: theme.muted }}>₿</Text>}
-                            {inputUnit === 'usd' && <Text style={{ fontSize: 24, fontWeight: '900', color: theme.muted }}>$</Text>}
-                            {inputUnit === 'sats' && <Text style={{ marginBottom: 2, fontSize: 24, fontWeight: '900', color: theme.muted }}>sats</Text>}
+                    <Pressable {...scanPress} hitSlop={8} disabled={isSubmitting}>
+                        <Animated.View style={[{ padding: 6 }, scanStyle]}>
+                            <Icon icon={ScanQrCode} size={22} color={theme.muted} />
                         </Animated.View>
                     </Pressable>
                 </GlassField>
-                <GlassIcon icon={PiggyBank} onPress={setMaxAmount} disabled={!canSetMax} size={54} iconSize={26} />
+                {addressError ? <Text style={{ color: theme.destructive, fontSize: 13, paddingHorizontal: 4 }}>{addressError}</Text> : null}
+                {/* amount input */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    <GlassField disabled={isSubmitting} style={{ flex: 1, paddingHorizontal: 16 }}>
+                        <TextInput
+                            ref={amountInputRef}
+                            value={amount}
+                            placeholder={inputUnit === 'sats' ? '0000' : '0.00'}
+                            placeholderTextColor={theme.muted}
+                            keyboardType="numeric"
+                            onChangeText={setAmount}
+                            editable={!isSubmitting}
+                            style={{ flex: 1, fontSize: 24, fontWeight: '900', color: theme.foreground, paddingVertical: 10 }}
+                        />
+                        <Pressable {...cyclePress} hitSlop={8} disabled={isSubmitting}>
+                            <Animated.View style={[{ paddingLeft: 12, alignItems: 'center', justifyContent: 'center' }, cycleStyle]}>
+                                {inputUnit === 'btc' && <Text style={{ fontSize: 24, fontWeight: '900', color: theme.muted }}>₿</Text>}
+                                {inputUnit === 'usd' && <Text style={{ fontSize: 24, fontWeight: '900', color: theme.muted }}>$</Text>}
+                                {inputUnit === 'sats' && <Text style={{ marginBottom: 2, fontSize: 24, fontWeight: '900', color: theme.muted }}>sats</Text>}
+                            </Animated.View>
+                        </Pressable>
+                    </GlassField>
+                    <GlassIcon icon={PiggyBank} onPress={setMaxAmount} disabled={!canSetMax} size={54} iconSize={26} />
+                </View>
+                {/* withdraw button */}
+                <GlassButton onPress={handleWithdraw} label={buttonLabel} accent disabled={!canSubmit} tintColor={buttonFeedback ? theme.destructive : undefined} color={buttonFeedback ? theme.background : undefined} />
             </View>
-            {/* withdraw button */}
-            <GlassButton onPress={handleWithdraw} label={buttonLabel} accent disabled={!canSubmit} tintColor={buttonFeedback ? theme.destructive : undefined} color={buttonFeedback ? theme.background : undefined} />
         </View>
     );
 }

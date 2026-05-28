@@ -14,6 +14,7 @@ import { Loader, Coins, ArrowUpRight, X, Download, Lock } from 'lucide-react';
 import { qr, readQr } from '@glyphteck/shared/qrutils';
 import { isAddressOnNetwork } from '@glyphteck/shared/network';
 import { randomBytes, toHex } from '@glyphteck/shared/crypto/core';
+import { canSendOnScan } from '@glyphteck/shared/settings';
 
 const SCAN_INTERVAL = 200;
 const VIDEO_HOLD_MS = 220;
@@ -244,7 +245,7 @@ export default function CameraPage() {
                         return;
                     }
 
-                    if (settings.sendOnScan && qrData.amount) {
+                    if (canSendOnScan(settings) && qrData.amount) {
                         const displayName = formatUserDisplay(peer, false);
                         const formattedAmount = renderMoney(qrData.amount.toString(), settings.moneyFormat, bitcoin.price);
                         const loadingToastId = toast(cloaked ? `sending money to ${displayName}` : `sending ${formattedAmount} to ${displayName}`, {
