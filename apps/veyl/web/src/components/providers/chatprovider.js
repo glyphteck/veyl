@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef } from 'react';
 import { httpsCallable } from 'firebase/functions';
-import { WEB_CHAT_WARMING } from '@glyphteck/shared/chat/warmingconfig';
+import { WEB_CHAT_WARMING } from '@glyphteck/shared/chat/messages/session/config';
 import { createChat, createChatProvider } from '@glyphteck/shared/providers/chatprovider';
 import { db, getFunctions, getStorage } from '@/lib/firebase/firebaseclient';
 import { useUser } from '@/components/providers/userprovider';

@@ -10,7 +10,7 @@ import { useDialog } from '@/components/providers/dialogprovider';
 import { canShareAttachmentMsg, canShowMsg, collapseSystemMessages, getLatestReadOutgoingReceipt, isPeerMsg, isReadReceiptMsg, isSystemMsg, setReqTx } from '@glyphteck/shared/chat/messages';
 import { useOptimisticMessageReactions } from '@glyphteck/shared/chat/usereactions';
 import { formatUserDisplay, formatFullDateTime } from '@/lib/utils';
-import { getPeerChatPKFromChatId } from '@glyphteck/shared/chat/utils';
+import { getPeerChatPKFromChatId } from '@glyphteck/shared/chat/ids';
 import { getMessageOrderMs } from '@glyphteck/shared/chat/state';
 import { CHAT_RETENTION_SEEN, getMessageRetention, onSeenMessageTtlMs, seenMessageTtlMs } from '@glyphteck/shared/chat/ttl';
 import { useChatMessages } from './usechatmessages';
@@ -319,7 +319,7 @@ function useAnimatedMessageRows(messages, scopeKey, hiddenKeys = EMPTY_MESSAGE_K
 export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
     const { selectedChatId, updateMessage, deleteMessage, retryMessage, makeMessagePermanent, makeMessageTemporary, readMessageFile, sendReaction } = useChat();
     const { avatar, chatPK } = useUser();
-    const { peers } = usePeer();
+    const { peerByChatPK } = usePeer();
     const { sendMoneyWithSpark } = useWallet();
     const { openDialog } = useDialog();
     const [payingMessages, setPayingMessages] = useState(new Set());
@@ -543,7 +543,7 @@ export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
     }, [handleLoadOlder, hasOlder, selectedChatId]);
 
     const peerChatPK = useMemo(() => getPeerChatPKFromChatId(selectedChatId, chatPK), [chatPK, selectedChatId]);
-    const peerProfile = useMemo(() => peers?.find((peer) => peer.chatPK === peerChatPK) ?? null, [peerChatPK, peers]);
+    const peerProfile = useMemo(() => peerByChatPK.get(peerChatPK) ?? null, [peerByChatPK, peerChatPK]);
     const peerDisplayName = useMemo(
         () =>
             formatUserDisplay({

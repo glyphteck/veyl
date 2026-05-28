@@ -38,7 +38,7 @@ export default function TransferScreen() {
     const bitcoin = useBitcoin();
     const { sendMoneyWithSpark, balance } = useWallet();
     const { sendMessage } = useChat() || {};
-    const { peers, addPeer } = usePeer() || {};
+    const { peerByUid, peerByWalletPK, addPeer } = usePeer() || {};
     const params = useLocalSearchParams();
 
     const uid = pick(params?.uid).trim();
@@ -80,14 +80,13 @@ export default function TransferScreen() {
     }, [balance]);
 
     const knownPeer = useMemo(() => {
-        if (!Array.isArray(peers)) return null;
         if (uid) {
-            const byUid = peers.find((peer) => peer?.uid === uid);
+            const byUid = peerByUid?.get(uid);
             if (byUid) return byUid;
         }
         if (!walletPK) return null;
-        return peers.find((peer) => peer?.walletPK === walletPK) ?? null;
-    }, [peers, uid, walletPK]);
+        return peerByWalletPK?.get(walletPK) ?? null;
+    }, [peerByUid, peerByWalletPK, uid, walletPK]);
 
     const peer = useMemo(() => knownPeer ?? fetchedPeer ?? (uid || walletPK ? { uid: uid || null, walletPK: walletPK || null } : null), [fetchedPeer, knownPeer, uid, walletPK]);
     const peerWalletPK = peer?.walletPK || walletPK;

@@ -14,7 +14,7 @@ const grid = {
     left: 32,
     right: 32,
     top: 12,
-    bottom: 26,
+    bottom: 30,
 };
 
 function getKey(point, hourly) {
@@ -33,6 +33,13 @@ export function BalanceChart({ data = [], timeRange, moneyFormat, bitcoin, showA
     const colors = useMemo(() => getChartColors(), [resolvedTheme]);
     const values = useMemo(() => data.map((point) => Number(point.balance)), [data]);
     const [min, max] = useMemo(() => getChartDomain(values), [values]);
+    const axisLabels = useMemo(() => {
+        if (!showAxis || !data.length) return null;
+        const first = formatLabel(getKey(data[0], hourly), hourly);
+        const lastPoint = data[data.length - 1];
+        const last = data.length > 1 ? formatLabel(getKey(lastPoint, hourly), hourly) : '';
+        return { first, last };
+    }, [data, hourly, showAxis]);
 
     const hideTip = useCallback(() => {
         setTip(null);
@@ -123,19 +130,7 @@ export function BalanceChart({ data = [], timeRange, moneyFormat, bitcoin, showA
                 axisTick: { show: false },
                 splitLine: { show: false },
                 axisPointer: { show: false },
-                axisLabel: {
-                    show: showAxis,
-                    color: colors.muted,
-                    margin: 12,
-                    showMinLabel: true,
-                    showMaxLabel: true,
-                    formatter(value, index) {
-                        if (index !== 0 && index !== labels.length - 1) {
-                            return '';
-                        }
-                        return formatLabel(value, hourly);
-                    },
-                },
+                axisLabel: { show: false },
             },
             yAxis: {
                 type: 'value',
@@ -154,7 +149,7 @@ export function BalanceChart({ data = [], timeRange, moneyFormat, bitcoin, showA
                     smooth: false,
                     showSymbol: true,
                     symbol: 'circle',
-                    symbolSize: 12,
+                    symbolSize: 14,
                     lineStyle: {
                         color: colors.foreground,
                         width: 2.5,
@@ -182,12 +177,18 @@ export function BalanceChart({ data = [], timeRange, moneyFormat, bitcoin, showA
                 },
             ],
         };
-    }, [colors, data, hourly, showAxis]);
+    }, [colors, data, hourly]);
 
     return (
         <div className={cn('relative h-full w-full min-h-24', className)} onMouseMove={showTip} onMouseLeave={hideTip}>
             <ChartTooltip tip={tip} />
             <ReactECharts option={option} notMerge lazyUpdate onChartReady={handleChartReady} style={{ height: '100%', width: '100%' }} />
+            {axisLabels ? (
+                <div className="pointer-events-none absolute right-2 bottom-2 left-2 flex items-end justify-between text-[13px] leading-none font-black text-muted">
+                    <span>{axisLabels.first}</span>
+                    {axisLabels.last ? <span>{axisLabels.last}</span> : null}
+                </div>
+            ) : null}
         </div>
     );
 }

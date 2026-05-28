@@ -5,6 +5,7 @@ import { markDiag, markDone } from './diag.js';
 const RATE_LIMIT = 5 * 1000;
 const POLL_TXS_RATE = 10 * 1000;
 const ACTIVE_CLAIM_RATE = 20 * 1000;
+const MIN_BOOT_TX_COVERAGE_MS = 24 * 60 * 60 * 1000;
 const WALLET_EVENTS = Object.freeze({
     balance: 'balance:update',
     tokenBalance: 'token-balance:update',
@@ -162,7 +163,7 @@ export function useWalletPolling({ wallet, appState, hasPendingTxs, updateWallet
     return stopPoll;
 }
 
-export function useWalletBoot({ wallet, getFundingAddress, getBalance, getRecentTxs, getAllTxs, stopPoll, diag }) {
+export function useWalletBoot({ wallet, getFundingAddress, getBalance, getRecentTxs, ensureTxCoverage, stopPoll, diag }) {
     useEffect(() => {
         if (!wallet) {
             return;
@@ -186,7 +187,7 @@ export function useWalletBoot({ wallet, getFundingAddress, getBalance, getRecent
             }
 
             if (!cancelled) {
-                void getAllTxs(firstTxPage);
+                void ensureTxCoverage(Date.now() - MIN_BOOT_TX_COVERAGE_MS);
             }
         };
 
@@ -197,7 +198,7 @@ export function useWalletBoot({ wallet, getFundingAddress, getBalance, getRecent
             markDiag(diag, 'wallet.provider.boot.stop', {});
             stopPoll();
         };
-    }, [diag, wallet, getAllTxs, getBalance, getFundingAddress, getRecentTxs, stopPoll]);
+    }, [diag, wallet, ensureTxCoverage, getBalance, getFundingAddress, getRecentTxs, stopPoll]);
 }
 
 export function useWalletReadyDiag({ wallet, balance, balanceReady, txReady, transferCount, diag }) {

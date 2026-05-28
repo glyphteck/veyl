@@ -29,12 +29,11 @@ export function RecentChatsList() {
     const { chatPK, settings } = useUser();
     const { chats, isChatDataReady, hasMoreChats, loadingMoreChats, loadMoreChats, selectChat, selectedChatId } = useChat();
     const { focusChatInput, focusNavbar, selectedChatButtonRef } = useChatInput();
-    const { peers, updatePeer, isBlockedChatPK } = usePeer();
+    const { peers, peerByChatPK, updatePeer, isBlockedChatPK } = usePeer();
     const bitcoin = useBitcoin();
     const { cloaked } = useCloak();
     const rowRefs = useRef([]);
     const focusedInitialChatRef = useRef(false);
-
     const visibleChats = useMemo(() => {
         const list = Array.isArray(chats) ? chats : [];
         return list.filter((chat) => {
@@ -147,7 +146,7 @@ export function RecentChatsList() {
                 <div className={`divide-y ${visibleChats.length < 12 ? 'border-b' : ''}`}>
                     {visibleChats.map((chat, index) => {
                         const peerChatPK = chat.participants.find((p) => p !== chatPK);
-                        const profile = peers?.find((peer) => peer.chatPK === peerChatPK) ?? null;
+                        const profile = peerByChatPK.get(peerChatPK) ?? null;
                         const displayName = formatUserDisplay({
                             username: profile?.username,
                             chatPK: peerChatPK,
@@ -166,7 +165,7 @@ export function RecentChatsList() {
                                 }}
                                 type="button"
                                 tabIndex={index === 0 ? 0 : -1}
-                                className={`group h-auto w-full justify-start rounded-none px-3 py-2 text-left ${chat.id === selectedChatId ? 'bg-foreground/5' : ''}`}
+                                className={`group h-15 w-full justify-start rounded-none px-3 text-left first:pt-px last:pb-px ${chat.id === selectedChatId ? 'bg-foreground/5' : ''}`}
                                 onClick={() => {
                                     if (selectedChatId !== chat.id && profile?.uid) {
                                         updatePeer(profile.uid, { refreshAvatar: true });
@@ -174,17 +173,17 @@ export function RecentChatsList() {
                                     handleChatClick(chat.id);
                                 }}
                             >
-                                <div className="flex w-full items-start gap-2.5">
+                                <div className="flex w-full items-center gap-2.5">
                                     <Avatar active={profile?.active} bot={!!profile?.bot} className="grower group-focus-visible:scale-120">
                                         <AvatarImage src={profile?.avatar} alt={displayName} />
                                         <AvatarFallback />
                                     </Avatar>
                                     <div className="hidden min-w-0 flex-1 md:block">
                                         <div className="flex items-baseline justify-between gap-3">
-                                            <span className="min-w-0 flex-1 truncate font-black">{displayName}</span>
-                                            <span className="shrink-0 whitespace-nowrap text-sm text-muted">{chat.ts ? formatFullDateTime(chat.ts) : ''}</span>
+                                            <span className="min-w-0 flex-1 truncate font-black leading-5">{displayName}</span>
+                                            <span className="shrink-0 whitespace-nowrap text-sm leading-4 font-black text-muted">{chat.ts ? formatFullDateTime(chat.ts) : ''}</span>
                                         </div>
-                                        <div className={`truncate text-sm ${chat.unseen ? 'text-foreground' : 'text-muted'} ${cloaked ? 'cloaked' : ''}`}>
+                                        <div className={`mt-0.5 truncate text-sm leading-4 ${chat.unseen ? 'text-foreground' : 'text-muted'} ${cloaked ? 'cloaked' : ''}`}>
                                             {displayLastMsg(chat.lastMsg, chatPK, settings, bitcoin.price)}
                                         </div>
                                     </div>

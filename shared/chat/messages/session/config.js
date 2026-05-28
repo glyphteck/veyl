@@ -1,14 +1,10 @@
 'use client';
 
-import { MSG_BATCH_SIZE } from './utils.js';
-
-export const TOP_CHAT_WARM_COUNT = 5;
-export const EAGER_CHAT_WARM_COUNT = 3;
-export const CHAT_LIST_LIVE_COUNT = 20;
-export const CHAT_LIST_PAGE_SIZE = 20;
+export const TOP_CHAT_WARM_COUNT = 2;
+export const EAGER_CHAT_WARM_COUNT = 1;
 export const CHAT_WARM_COUNT = TOP_CHAT_WARM_COUNT;
 export const CHAT_WARM_DELAY_MS = 900;
-export const CHAT_WARM_BATCH_SIZE = MSG_BATCH_SIZE;
+export const CHAT_WARM_BATCH_SIZE = 25;
 export const MESSAGE_VIEW_CACHE_SIZE = 30;
 export const VISITED_CHAT_PREFETCH_OLDER_BATCHES = 1;
 
@@ -53,9 +49,7 @@ export const IOS_CHAT_WARMING = Object.freeze({
 export const WEB_CHAT_WARMING = Object.freeze({
     ...IOS_CHAT_WARMING,
     media: Object.freeze({
-        enabled: true,
-        startDelayMs: 80,
-        stepDelayMs: 40,
+        enabled: false,
     }),
 });
 

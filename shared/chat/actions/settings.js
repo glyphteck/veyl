@@ -1,11 +1,11 @@
 'use client';
 
 import { useCallback } from 'react';
-import { writeCachedChats } from '../localdatacache.js';
-import { makeChatUnavailableError } from './attachments.js';
-import { filterPendingDeleteChats, sameChats } from './chats.js';
-import { cleanChatRetention, normalizeChatSettings } from './ttl.js';
-import { getPeerChatPKFromChatId } from './utils.js';
+import { writeCachedChats } from '../../localdatacache.js';
+import { makeChatUnavailableError } from '../attachments.js';
+import { filterPendingDeleteChats, sameChats } from '../chats.js';
+import { getPeerChatPKFromChatId } from '../ids.js';
+import { cleanChatRetention, normalizeChatSettings } from '../ttl.js';
 
 export function useChatSettings({ chat, chatBanned, chatPK, chatPrivateKey, localCache, lastServerChatsRef, pendingDeleteIdsRef, chatsRef, setChats }) {
     const setChatTtl = useCallback(

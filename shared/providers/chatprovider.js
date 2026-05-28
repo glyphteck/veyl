@@ -6,23 +6,28 @@ import {
     getAttachmentType,
     makeChatUnavailableError,
 } from '../chat/attachments.js';
-import { useChatDelete } from '../chat/delete.js';
-import { useChatReact } from '../chat/react.js';
+import { useChatDelete } from '../chat/actions/delete.js';
+import { useChatReact } from '../chat/actions/react.js';
 import { clearReadWrites } from '../chat/read.js';
-import { useChatSave } from '../chat/save.js';
-import { useChatSeen } from '../chat/seen.js';
-import { useChatSend } from '../chat/send.js';
-import { useChatSettings } from '../chat/usesettings.js';
-import { useChatWarming } from '../chat/warming.js';
+import { useChatSave } from '../chat/actions/save.js';
+import { useChatSeen } from '../chat/actions/seen.js';
+import { useChatSend } from '../chat/actions/send.js';
+import { useChatSettings } from '../chat/actions/settings.js';
+import { useChatMessageSessions } from '../chat/messages/session/index.js';
 import { useChatList } from '../chat/usechatlist.js';
 import {
-    deleteMsg as deleteMessageShared,
-    getChatRow as getChatRowShared,
     listenToLatestMsgs as listenToLatestMessagesShared,
-    makeMsgPermanent as makeMessagePermanentShared,
-    makeMsgTemporary as makeMessageTemporaryShared,
+    MSG_BATCH_SIZE,
+} from '../chat/messages/query.js';
+import {
+    getChatRow as getChatRowShared,
     listenToChats as listenToChatsShared,
     loadMoreChats as loadMoreChatsShared,
+} from '../chat/rows.js';
+import {
+    deleteMsg as deleteMessageShared,
+    makeMsgPermanent as makeMessagePermanentShared,
+    makeMsgTemporary as makeMessageTemporaryShared,
     readMsgMedia as readMessageFileShared,
     sendReadReceipt as sendReadReceiptShared,
     sendReaction as sendReactionShared,
@@ -31,8 +36,7 @@ import {
     uploadAttachmentMsg as uploadAttachmentShared,
     uploadImgMsg as uploadImageShared,
     updateMsg as updateMessageShared,
-    MSG_BATCH_SIZE,
-} from '../chat/utils.js';
+} from '../chat/messages/write.js';
 import { sortMessages } from '../chat/state.js';
 
 export const DEFAULT_READ_RECEIPT_WRITE_DELAY_MS = 1200;
@@ -161,6 +165,7 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
         const pendingReadRef = useRef(new Map());
         const localByChatRef = useRef(new Map());
         const hiddenChatPreviewKeysRef = useRef(new Map());
+        const chatPreviewOverridesRef = useRef(new Map());
         const lastHydratedCacheKeyRef = useRef('');
         const chatsRef = useRef([]);
         const resetSendingRef = useRef(null);
@@ -217,6 +222,7 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
             localByChatRef,
             lastServerChatsRef,
             hiddenChatPreviewKeysRef,
+            chatPreviewOverridesRef,
             readCacheRef,
             pendingReadRef,
             listActionsRef: deleteListActionsRef,
@@ -238,8 +244,8 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
             chatListCallbacksRef.current.applyBatchReadReceipt?.(chatId, messages);
         }, []);
 
-        const handleExpiredChatPreview = useCallback((chatId, keys) => {
-            chatListCallbacksRef.current.clearChatPreviewKeys?.(chatId, keys);
+        const handleExpiredChatPreview = useCallback((chatId, keys, replacement = null) => {
+            chatListCallbacksRef.current.clearChatPreviewKeys?.(chatId, keys, replacement);
         }, []);
 
         const {
@@ -251,8 +257,13 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
             releaseMessageBatch,
             subscribeMessageBatch,
             queueMessagePreload,
+            getMessageView,
+            rememberMessageView,
+            updateMessageView,
+            retainMessageView,
+            releaseMessageView,
             warm: warmChats,
-        } = useChatWarming({
+        } = useChatMessageSessions({
             chat,
             chatPK,
             chatPrivateKey,
@@ -276,6 +287,7 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
             setLocalByChat((prev) => (prev.size ? new Map() : prev));
             resetDeleteState();
             hiddenChatPreviewKeysRef.current = new Map();
+            chatPreviewOverridesRef.current = new Map();
             readCacheRef.current = new Map();
             localByChatRef.current = new Map();
 
@@ -319,6 +331,7 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
             pendingDeleteIdsRef,
             keepSelectedDeletedChatIdsRef,
             deletingChatIdsRef,
+            chatPreviewOverridesRef,
             syncLiveDeleting,
             mergeDeletingIds,
             clearDeletedChatState,
@@ -516,7 +529,13 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
                 subscribeMessageBatch,
                 queueMessagePreload,
                 getMessageBatch,
+                getMessageView,
+                rememberMessageView,
+                updateMessageView,
+                retainMessageView,
+                releaseMessageView,
                 getChatRowLastMsgKey,
+                syncChatPreviewDrop: clearChatPreviewKeys,
             }),
             [
                 chats,
@@ -564,7 +583,13 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
                 subscribeMessageBatch,
                 queueMessagePreload,
                 getMessageBatch,
+                getMessageView,
+                rememberMessageView,
+                updateMessageView,
+                retainMessageView,
+                releaseMessageView,
                 getChatRowLastMsgKey,
+                clearChatPreviewKeys,
             ]
         );
 

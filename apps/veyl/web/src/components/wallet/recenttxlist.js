@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/avatar';
 import { Button } from '@/components/button';
@@ -23,24 +23,13 @@ export function RecentTxList() {
     const user = useUser();
     const { settings } = user;
     const moneyFormat = settings.moneyFormat;
-    const { transactions } = useTxData();
-    const { peers } = usePeer();
+    const { sortedTransactions } = useTxData();
+    const { peerByWalletPK } = usePeer();
     const { cloaked } = useCloak();
     const rowRefs = useRef([]);
-    const txsInRange = transactions || [];
-    const sorted = [...txsInRange].sort((a, b) => new Date(b.createdTime) - new Date(a.createdTime));
+    const txsInRange = sortedTransactions || [];
     const maxTxs = 50;
-    const recentTxs = sorted.slice(0, maxTxs);
-
-    const peerMap = useMemo(() => {
-        const map = new Map();
-        peers?.forEach((peer) => {
-            if (peer.walletPK) {
-                map.set(peer.walletPK, peer);
-            }
-        });
-        return map;
-    }, [peers]);
+    const recentTxs = txsInRange.slice(0, maxTxs);
 
     const hasMoreThanMax = recentTxs.length == maxTxs;
     const itemCount = recentTxs.length + (hasMoreThanMax ? 1 : 0);
@@ -106,7 +95,7 @@ export function RecentTxList() {
                         const label = formatFullDateTime(tx.createdTime);
                         const isInflow = tx.amount > 0;
                         const formattedAmount = renderMoney(tx.totalValue, moneyFormat, bitcoin.price, isInflow ? '+' : '-');
-                        const profile = peerMap.get(tx.peerPK);
+                        const profile = peerByWalletPK.get(tx.peerPK);
                         const displayName = tx.funding
                             ? 'Funded'
                             : tx.withdrawal
@@ -124,19 +113,19 @@ export function RecentTxList() {
                                 }}
                                 type="button"
                                 tabIndex={index === 0 ? 0 : -1}
-                                className="group h-auto grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-none px-3 py-2 text-left"
+                                className="group h-15 w-full justify-start rounded-none px-3 text-left first:pt-px last:pb-px"
                                 onClick={() => openDialog('txdetails', { tx })}
                             >
-                                <div className="flex min-w-0 items-center gap-2.5 pr-4">
+                                <div className="flex w-full items-center gap-2.5">
                                     <Avatar active={tx.funding || tx.withdrawal ? false : profile?.active} bot={!!profile?.bot} className="grower group-focus-visible:scale-120">
                                         <AvatarImage src={tx.funding || tx.withdrawal ? user?.avatar : profile?.avatar} alt={displayName} />
                                         <AvatarFallback />
                                     </Avatar>
-                                    <span className={`${tx.funding ? 'font-black text-inflow' : tx.withdrawal ? 'font-black text-outflow' : ''} truncate`}>{displayName}</span>
-                                </div>
-                                <div className="flex flex-col items-end">
-                                    <span className={`${isInflow ? 'text-inflow' : 'text-outflow'} font-black ${tx.pending ? 'opacity-50' : ''} ${cloaked ? 'cloaked' : ''}`}>{formattedAmount}</span>
-                                    <span className="whitespace-nowrap text-sm text-muted">{tx.pending ? 'pending' : label}</span>
+                                    <span className={`${tx.funding ? 'text-inflow' : tx.withdrawal ? 'text-outflow' : ''} min-w-0 flex-1 truncate font-black leading-5`}>{displayName}</span>
+                                    <div className="ml-auto flex min-w-0 shrink-0 flex-col items-end">
+                                        <span className="whitespace-nowrap text-sm leading-4 font-black text-muted">{tx.pending ? 'pending' : label}</span>
+                                        <span className={`${isInflow ? 'text-inflow' : 'text-outflow'} mt-0.5 max-w-36 truncate text-right text-base leading-5 font-black ${tx.pending ? 'opacity-50' : ''} ${cloaked ? 'cloaked' : ''}`}>{formattedAmount}</span>
+                                    </div>
                                 </div>
                             </Button>
                         );

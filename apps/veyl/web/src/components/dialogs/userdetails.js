@@ -13,7 +13,7 @@ import { makeTxt } from '@glyphteck/shared/chat/messages';
 import { CHAT_RETENTION_24H, CHAT_RETENTION_SEEN, cleanChatRetention } from '@glyphteck/shared/chat/ttl';
 import { usePeer } from '@/components/providers/peerprovider';
 import { formatUserDisplay } from '@/lib/utils';
-import { prepareChatFile } from '@/lib/chatfiles';
+import { chatUploadErrorMessage, getChatUploadFiles, queueChatFileMessages } from '@/lib/chatfiles';
 import { getFunctions } from '@/lib/firebase/firebaseclient';
 import { HandCoins, Copy, CircleArrowRight, CircleCheck, Clock3, Eye, Flag, Paperclip, Trash2, UserX } from 'lucide-react';
 import { httpsCallable } from 'firebase/functions';
@@ -21,7 +21,7 @@ import { toast } from 'sonner';
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { getChatId } from '@glyphteck/shared/crypto/chat';
-import { getPeerChatPKFromChatId } from '@glyphteck/shared/chat/utils';
+import { getPeerChatPKFromChatId } from '@glyphteck/shared/chat/ids';
 
 const RETENTION_OPTIONS = [
     {
@@ -39,15 +39,15 @@ export default function UserDetails({ data, close }) {
     const { chats, sendMessage, sendAttachment, dropChat, setChatTtl, startDeleteChat, finishDeleteChat, restoreDeletedChat } = useChat();
     const { openDialog } = useDialog();
     const { cloaked } = useCloak();
-    const { peers, updatePeer, dropPeer } = usePeer();
+    const { peerByUid, updatePeer, dropPeer } = usePeer();
     const [msgContent, setMsgContent] = useState('');
     const messageInputRef = useRef(null);
     const fileRef = useRef(null);
     const userFromData = data?.user;
     const user = useMemo(() => {
-        const next = peers?.find((p) => p.uid === userFromData?.uid) ?? null;
+        const next = peerByUid.get(userFromData?.uid) ?? null;
         return next || userFromData;
-    }, [peers, userFromData?.uid]);
+    }, [peerByUid, userFromData]);
     const isOwnProfile = user?.uid === uid;
     const blocked = isBlocked?.(user);
     const peerChatPK = user?.chatPK || '';
@@ -170,16 +170,24 @@ export default function UserDetails({ data, close }) {
     };
 
     const handleFileChange = async (e) => {
-        const file = e.target.files?.[0];
+        let files;
+        try {
+            files = getChatUploadFiles(e.target.files);
+        } catch (error) {
+            toast.error(chatUploadErrorMessage(error));
+            e.target.value = '';
+            return;
+        }
         e.target.value = '';
-        if (!file || !user?.chatPK) return;
+        if (!files.length || !user?.chatPK) return;
         await savePendingRetention().catch(() => {});
         close();
         try {
-            await sendAttachment(user.chatPK, await prepareChatFile(file));
-            toast(`sent attachment to ${formatUserDisplay(user, false)}`, { icon: <CircleCheck /> });
+            const result = await queueChatFileMessages(files, (attachment) => sendAttachment(user.chatPK, attachment));
+            const label = result.sent === 1 ? 'attachment' : `${result.sent} attachments`;
+            toast(`sent ${label} to ${formatUserDisplay(user, false)}`, { icon: <CircleCheck /> });
         } catch (error) {
-            toast.error(error?.message || 'failed to send attachment');
+            toast.error(chatUploadErrorMessage(error));
         }
     };
 
@@ -342,7 +350,7 @@ export default function UserDetails({ data, close }) {
             {showInput && (
                 <form onSubmit={handleSendMessage} className="w-full">
                     <div className="flex items-end relative">
-                        <input ref={fileRef} type="file" hidden onChange={handleFileChange} />
+                        <input ref={fileRef} type="file" hidden multiple onChange={handleFileChange} />
                         <Input
                             ref={messageInputRef}
                             value={msgContent}
@@ -366,7 +374,7 @@ export default function UserDetails({ data, close }) {
                                     </div>
                                 )
                             }
-                            endPos="right-2.5 bottom-2"
+                            endPos="right-3 bottom-2"
                             endPad="pr-20"
                             className={cloaked ? 'cloaked' : ''}
                             maxLength={256}

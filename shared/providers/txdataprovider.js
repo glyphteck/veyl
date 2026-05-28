@@ -4,6 +4,47 @@ import { createContext, useContext, useMemo, useRef } from 'react';
 
 const formatDay = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const formatHour = (d) => String(d.getHours()).padStart(2, '0');
+const DAY_MS = 24 * 60 * 60 * 1000;
+const HOUR_MS = 60 * 60 * 1000;
+const timeMs = (value) => {
+    if (typeof value?.toMillis === 'function') {
+        const ms = value.toMillis();
+        return Number.isFinite(ms) ? ms : 0;
+    }
+    if (value instanceof Date) {
+        const ms = value.getTime();
+        return Number.isFinite(ms) ? ms : 0;
+    }
+    if (Number.isFinite(value)) return value;
+    if (typeof value === 'string') {
+        const ms = Date.parse(value);
+        return Number.isFinite(ms) ? ms : 0;
+    }
+    return 0;
+};
+const byRecentTx = (a, b) => {
+    const delta = (b?.createdMs || 0) - (a?.createdMs || 0);
+    if (delta !== 0) return delta;
+    return String(b?.id || '').localeCompare(String(a?.id || ''));
+};
+
+export const TX_TIME_RANGES = Object.freeze(['today', '24h', 7, 30, 90, 180, 365, 'all-time']);
+
+export function getTxRangeStartMs(timeRange, nowMs = Date.now()) {
+    if (timeRange === 'today') {
+        const today = new Date(nowMs);
+        today.setHours(0, 0, 0, 0);
+        return today.getTime();
+    }
+    if (timeRange === '24h') return nowMs - DAY_MS;
+    if (typeof timeRange === 'number') return nowMs - timeRange * DAY_MS;
+    return null;
+}
+
+function coveredUnitsSince(oldestLoadedMs, unitMs, nowMs = Date.now()) {
+    if (!oldestLoadedMs) return 1;
+    return Math.max(1, Math.ceil((nowMs - oldestLoadedMs) / unitMs) + 1);
+}
 
 const isValidTx = (tx) => {
     if (!tx.status) return true;
@@ -18,6 +59,7 @@ const enrichTx = (tx) => {
     const peerPK = incoming ? tx.senderIdentityPublicKey : tx.receiverIdentityPublicKey;
     return {
         ...tx,
+        createdMs: timeMs(tx.createdTime),
         incoming,
         peerPK,
         totalValue: tx.totalValue,
@@ -32,6 +74,8 @@ const aggregateTxs = (transfers, userPK) => {
     const dayMap = new Map();
     const hourMap = new Map();
     const peerMap = new Map();
+    const txById = new Map();
+    const peerTxsByPK = new Map();
     let net = 0;
     let vol = 0;
     let firstDate = null;
@@ -42,7 +86,10 @@ const aggregateTxs = (transfers, userPK) => {
         const tx = enrichTx(raw);
         if (!isValidTx(tx)) continue;
         enrichedTxs.push(tx);
-        const txDate = new Date(tx.createdTime);
+        if (tx.id) {
+            txById.set(tx.id, tx);
+        }
+        const txDate = new Date(tx.createdMs);
 
         if (!tx.funding) {
             net += tx.amount;
@@ -79,6 +126,10 @@ const aggregateTxs = (transfers, userPK) => {
                 peer.stats.sent += tx.totalValue;
                 peer.stats.net -= tx.totalValue;
             }
+            if (!peerTxsByPK.has(tx.peerPK)) {
+                peerTxsByPK.set(tx.peerPK, []);
+            }
+            peerTxsByPK.get(tx.peerPK).push(tx);
         }
 
         const dayKey = formatDay(txDate);
@@ -97,6 +148,11 @@ const aggregateTxs = (transfers, userPK) => {
         hourBucket.txIds.push(tx.id);
     }
 
+    const sortedTxs = [...enrichedTxs].sort(byRecentTx);
+    for (const txs of peerTxsByPK.values()) {
+        txs.sort(byRecentTx);
+    }
+
     return {
         dayMap,
         hourMap,
@@ -106,6 +162,9 @@ const aggregateTxs = (transfers, userPK) => {
         firstDate,
         count,
         enrichedTxs,
+        sortedTxs,
+        txById,
+        peerTxsByPK,
     };
 };
 
@@ -117,6 +176,9 @@ const EMPTY_AGG = {
     vol: 0,
     firstDate: null,
     enrichedTxs: [],
+    sortedTxs: [],
+    txById: new Map(),
+    peerTxsByPK: new Map(),
 };
 
 export function createTxDataProvider({ useWallet, useUser }) {
@@ -127,16 +189,17 @@ export function createTxDataProvider({ useWallet, useUser }) {
     const TxDataContext = createContext(null);
 
     function TxDataProvider({ children }) {
-        const { transfers, balance } = useWallet();
+        const { transfers, balance, oldestTxMs, txHistoryComplete, hasMoreTxs, isTxLoading, ensureTxCoverage, loadMoreTxs } = useWallet();
         const { walletPK } = useUser();
         const seriesCache = useRef(new Map());
-        const lastTransfersHash = useRef(null);
+        const lastTransfersRef = useRef(null);
+        const lastBalanceRef = useRef(null);
 
         const aggregatedData = useMemo(() => {
-            const transfersHash = `${transfers?.length ?? 0}-${balance}`;
-            if (transfersHash !== lastTransfersHash.current) {
+            if (transfers !== lastTransfersRef.current || balance !== lastBalanceRef.current) {
                 seriesCache.current.clear();
-                lastTransfersHash.current = transfersHash;
+                lastTransfersRef.current = transfers;
+                lastBalanceRef.current = balance;
             }
             const r = walletPK && transfers?.length ? aggregateTxs(transfers, walletPK) : null;
             return r ?? EMPTY_AGG;
@@ -144,7 +207,27 @@ export function createTxDataProvider({ useWallet, useUser }) {
 
         const contextValue = useMemo(() => {
             const transactions = aggregatedData.enrichedTxs;
-            const completed = transactions.filter((tx) => !tx.pending);
+            const sortedTransactions = aggregatedData.sortedTxs;
+
+            const isTxRangeCovered = (timeRange) => {
+                if (timeRange === 'all-time') return txHistoryComplete;
+                const startMs = getTxRangeStartMs(timeRange);
+                if (!Number.isFinite(startMs)) return true;
+                return txHistoryComplete || (oldestTxMs != null && oldestTxMs <= startMs);
+            };
+
+            const ensureTxRange = (timeRange) => {
+                const startMs = getTxRangeStartMs(timeRange);
+                return ensureTxCoverage?.(startMs);
+            };
+
+            const getDefaultTimeRange = () => {
+                if (txHistoryComplete && transactions.length) return 'all-time';
+                for (const range of [30, 7, '24h', 'today']) {
+                    if (isTxRangeCovered(range)) return range;
+                }
+                return 'today';
+            };
 
             const getSeries = (days) => {
                 if (!transactions.length || balance == null) return [];
@@ -157,7 +240,8 @@ export function createTxDataProvider({ useWallet, useUser }) {
                 const series = [];
                 let runningBalance = Number(balance);
                 const daysSinceFirst = aggregatedData.firstDate ? Math.ceil((today.getTime() - aggregatedData.firstDate.getTime()) / (1000 * 60 * 60 * 24)) : 0;
-                const actualDays = Math.min(days, daysSinceFirst + 1);
+                const coveredDays = txHistoryComplete ? days : coveredUnitsSince(oldestTxMs, DAY_MS, today.getTime());
+                const actualDays = Math.min(days, daysSinceFirst + 1, coveredDays);
 
                 for (let i = 0; i < actualDays; i++) {
                     const d = new Date(today);
@@ -185,10 +269,12 @@ export function createTxDataProvider({ useWallet, useUser }) {
                 let runningBalance = Number(balance);
                 const today = formatDay(now);
                 const yesterday = formatDay(new Date(now.getTime() - 24 * 60 * 60 * 1000));
+                const coveredHours = txHistoryComplete ? hours : coveredUnitsSince(oldestTxMs, HOUR_MS, now.getTime());
+                const actualHours = Math.min(hours, coveredHours);
 
                 if (prefix === 'today') {
                     const currentHour = now.getHours();
-                    const maxHour = Math.min(hours - 1, currentHour);
+                    const maxHour = Math.min(actualHours - 1, currentHour);
                     for (let i = 0; i <= maxHour; i++) {
                         const hourKey = `${today}-${String(i).padStart(2, '0')}`;
                         const hourData = aggregatedData.hourMap.get(hourKey);
@@ -207,23 +293,24 @@ export function createTxDataProvider({ useWallet, useUser }) {
                     series.push({ hour: 'now', balance: Number(balance) });
                 } else if (prefix === '24h') {
                     const currentHour = now.getHours();
+                    const firstOffset = Math.max(0, 24 - actualHours);
                     for (let i = 0; i <= currentHour; i++) {
                         const hourKey = `${today}-${String(i).padStart(2, '0')}`;
                         const hourData = aggregatedData.hourMap.get(hourKey);
                         if (hourData) runningBalance -= hourData.net;
                     }
-                    for (let i = currentHour + 1; i < 24; i++) {
+                    for (let i = Math.max(currentHour + 1, firstOffset); i < 24; i++) {
                         const hourKey = `${yesterday}-${String(i).padStart(2, '0')}`;
                         const hourData = aggregatedData.hourMap.get(hourKey);
                         if (hourData) runningBalance -= hourData.net;
                     }
-                    for (let i = currentHour + 1; i < 24; i++) {
+                    for (let i = Math.max(currentHour + 1, firstOffset); i < 24; i++) {
                         series.push({ hour: String(i).padStart(2, '0'), balance: runningBalance });
                         const hourKey = `${yesterday}-${String(i).padStart(2, '0')}`;
                         const hourData = aggregatedData.hourMap.get(hourKey);
                         if (hourData) runningBalance += hourData.net;
                     }
-                    for (let i = 0; i <= currentHour; i++) {
+                    for (let i = firstOffset > currentHour ? firstOffset : 0; i <= currentHour; i++) {
                         series.push({ hour: String(i).padStart(2, '0'), balance: runningBalance });
                         const hourKey = `${today}-${String(i).padStart(2, '0')}`;
                         const hourData = aggregatedData.hourMap.get(hourKey);
@@ -245,20 +332,21 @@ export function createTxDataProvider({ useWallet, useUser }) {
                 } else if (typeof timeRange === 'number') {
                     cutoffDate.setDate(cutoffDate.getDate() - timeRange);
                 } else {
-                    return transactions;
+                    return sortedTransactions;
                 }
-                return transactions.filter((tx) => new Date(tx.createdTime) >= cutoffDate);
+                const cutoffMs = cutoffDate.getTime();
+                return sortedTransactions.filter((tx) => tx.createdMs >= cutoffMs);
             };
 
-            const getTxById = (txId) => transactions.find((tx) => tx.id === txId) || null;
+            const getTxById = (txId) => aggregatedData.txById.get(txId) || null;
             const getPeerTxs = (peerPK) => {
                 if (!peerPK) return [];
-                return transactions.filter((tx) => tx.peerPK === peerPK && !tx.funding && !tx.withdrawal);
+                return aggregatedData.peerTxsByPK.get(peerPK) || [];
             };
             const getPeerStats = (peerPK) => aggregatedData.peers?.[peerPK]?.stats ?? null;
 
             const getTxsForPeriod = (periodKey, isHourly = false) =>
-                (aggregatedData[isHourly ? 'hourMap' : 'dayMap'].get(periodKey)?.txIds ?? []).map((id) => transactions.find((tx) => tx.id === id));
+                (aggregatedData[isHourly ? 'hourMap' : 'dayMap'].get(periodKey)?.txIds ?? []).map((id) => aggregatedData.txById.get(id)).filter(Boolean);
 
             return {
                 getSeries,
@@ -269,14 +357,23 @@ export function createTxDataProvider({ useWallet, useUser }) {
                 getPeerStats,
                 getTxsForPeriod,
                 transactions,
-                completed,
+                sortedTransactions,
+                oldestTxMs,
+                txHistoryComplete,
+                hasMoreTxs,
+                isTxLoading,
+                isTxRangeCovered,
+                ensureTxRange,
+                ensureTxCoverage,
+                loadMoreTxs,
+                getDefaultTimeRange,
                 peers: aggregatedData.peers,
                 net: aggregatedData.net,
                 vol: aggregatedData.vol,
                 first: aggregatedData.firstDate ? aggregatedData.firstDate.toISOString() : null,
                 hasTx: transactions.length > 0,
             };
-        }, [aggregatedData, balance]);
+        }, [aggregatedData, balance, ensureTxCoverage, hasMoreTxs, isTxLoading, loadMoreTxs, oldestTxMs, txHistoryComplete]);
 
         return <TxDataContext value={contextValue}>{children}</TxDataContext>;
     }

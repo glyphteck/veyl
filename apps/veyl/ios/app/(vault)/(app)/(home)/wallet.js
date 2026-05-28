@@ -26,22 +26,18 @@ const ACTION_GAP = 24;
 const ACTION_COLLAPSE_OFFSET = (ACTION_ICON_SIZE + ACTION_GAP) / 2;
 const PEER_SELECTOR_LOCK_MS = 520;
 
-function TxRow({ tx, theme, moneyFormat, btcPrice, isLast, openRoute }) {
-    const { peers } = usePeer() || {};
-    const { selectChat } = useChat() || {};
-    const user = useUser();
+function TxRow({ tx, profile, theme, moneyFormat, btcPrice, isLast, openRoute, selectChat, user }) {
     const { chatPK, chatBanned } = user || {};
     const isInflow = (tx?.amount ?? 0) > 0;
     const amountText = renderMoney(tx?.totalValue ?? 0, moneyFormat, btcPrice, isInflow ? '+' : '-');
 
     const label = tx?.pending ? 'pending' : formatFullDateTime(tx?.createdTime);
-    const profile = tx?.peerPK && Array.isArray(peers) ? peers.find((p) => p?.walletPK === tx.peerPK) : null;
     const displayName = tx?.funding ? 'Funded' : tx?.withdrawal ? 'Withdrawn' : formatUserDisplay({ username: profile?.username, walletPK: tx?.peerPK });
 
     const avatarSource = tx?.funding || tx?.withdrawal ? (user?.avatar ? { uri: user.avatar } : null) : profile?.avatar ? { uri: profile.avatar } : null;
     const isActive = tx?.funding || tx?.withdrawal ? false : !!profile?.active;
     const nameColor = tx?.funding ? theme.inflow : tx?.withdrawal ? theme.outflow : theme.foreground;
-    const nameWeight = tx?.funding || tx?.withdrawal ? '900' : '800';
+    const nameWeight = tx?.funding || tx?.withdrawal ? '900' : '700';
     const canOpen = !!tx?.funding || !!tx?.withdrawal || (!chatBanned && !!chatPK && !!profile?.chatPK);
 
     const openRow = useCallback(() => {
@@ -76,34 +72,34 @@ function TxRow({ tx, theme, moneyFormat, btcPrice, isLast, openRoute }) {
                 flexDirection: 'row',
                 alignItems: 'center',
                 justifyContent: 'space-between',
+                gap: 16,
                 borderBottomWidth: isLast ? 0 : 1,
                 borderBottomColor: theme.border,
             }}
         >
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16, flex: 1, paddingRight: 12 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16, flex: 1 }}>
                 <Animated.View style={{ transform: [{ scale: pressFeedback.scale }] }} pointerEvents="none">
                     <Avatar pointerEvents="none" source={avatarSource} active={isActive} bot={!tx?.funding && !tx?.withdrawal && !!profile?.bot} />
                 </Animated.View>
-                <View style={{ flex: 1, justifyContent: 'center' }}>
-                    <Text numberOfLines={1} style={{ fontSize: 16, fontWeight: nameWeight, color: nameColor }}>
-                        {displayName}
-                    </Text>
-                </View>
+                <Text numberOfLines={1} style={{ flex: 1, fontSize: 16, fontWeight: nameWeight, color: nameColor }}>
+                    {displayName}
+                </Text>
             </View>
-
             <View style={{ alignItems: 'flex-end' }}>
+                <Text numberOfLines={1} style={{ fontSize: 12, fontWeight: '700', color: theme.muted }}>
+                    {label}
+                </Text>
                 <Text
+                    numberOfLines={1}
                     style={{
-                        fontSize: 18,
+                        marginTop: 2,
+                        fontSize: 14,
                         fontWeight: '900',
                         color: isInflow ? theme.inflow : theme.outflow,
                         opacity: tx?.pending ? 0.5 : 1,
                     }}
                 >
                     {amountText}
-                </Text>
-                <Text numberOfLines={1} style={{ marginTop: 2, fontSize: 12, fontWeight: '700', color: theme.muted }}>
-                    {label}
                 </Text>
             </View>
         </Pressable>
@@ -141,7 +137,10 @@ export default function Wallet() {
     const insets = useSafeAreaInsets();
     const bitcoin = useBitcoin();
     const { balance, txReady } = useWallet();
-    const { settings, chatBanned } = useUser();
+    const user = useUser();
+    const { settings, chatBanned } = user || {};
+    const { peerByWalletPK } = usePeer() || {};
+    const { selectChat } = useChat() || {};
     const txData = useTxData();
     const routeLockRef = useRef(false);
     const routeLockTimerRef = useRef(null);
@@ -188,11 +187,7 @@ export default function Wallet() {
     }, [activeFormat, balance]);
     const balanceFeedback = useTap({ onPress: cycleFormat, disabled: !showBalance });
 
-    const recentTxs = useMemo(() => {
-        const txs = txData?.transactions ?? [];
-        const sorted = [...txs].sort((a, b) => new Date(b.createdTime) - new Date(a.createdTime));
-        return sorted.slice(0, 25);
-    }, [txData?.transactions]);
+    const recentTxs = useMemo(() => (txData?.sortedTransactions ?? []).slice(0, 25), [txData?.sortedTransactions]);
 
     const balanceText = useMemo(() => {
         if (displayBalance == null) return '';
@@ -267,7 +262,19 @@ export default function Wallet() {
                 <FlatList
                     data={recentTxs}
                     keyExtractor={(item) => item.id}
-                    renderItem={({ item, index }) => <TxRow tx={item} theme={theme} moneyFormat={moneyFormat} btcPrice={btcPrice} isLast={index === recentTxs.length - 1} openRoute={openRoute} />}
+                    renderItem={({ item, index }) => (
+                        <TxRow
+                            tx={item}
+                            profile={item?.peerPK ? peerByWalletPK?.get(item.peerPK) : null}
+                            theme={theme}
+                            moneyFormat={moneyFormat}
+                            btcPrice={btcPrice}
+                            isLast={index === recentTxs.length - 1}
+                            openRoute={openRoute}
+                            selectChat={selectChat}
+                            user={user}
+                        />
+                    )}
                     ListHeaderComponent={<View style={{ height: listTopSpace }} />}
                     ListEmptyComponent={() => (txReady ? <WalletEmpty /> : <WalletLoading />)}
                     contentContainerStyle={{ flexGrow: 1, paddingBottom: insets.bottom + 56 + BALANCE_HEIGHT }}

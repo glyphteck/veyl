@@ -26,6 +26,8 @@ function emptyPayload() {
         chatsById: {},
         transfersById: {},
         transferIds: [],
+        transferHistoryComplete: false,
+        transferNextOffset: 0,
         profilesByUid: {},
         mediaByKey: {},
         lastRoute: null,
@@ -125,6 +127,8 @@ function normalizePayload(value) {
         chatsById: isObject(input.chatsById) ? input.chatsById : {},
         transfersById: isObject(input.transfersById) ? input.transfersById : {},
         transferIds: Array.isArray(input.transferIds) ? input.transferIds.filter(Boolean) : [],
+        transferHistoryComplete: input.transferHistoryComplete === true,
+        transferNextOffset: Number.isFinite(input.transferNextOffset) ? input.transferNextOffset : 0,
         profilesByUid: isObject(input.profilesByUid) ? input.profilesByUid : {},
         mediaByKey: isObject(input.mediaByKey) ? input.mediaByKey : {},
         lastRoute: cleanAppRoute(input.lastRoute),
@@ -786,6 +790,10 @@ export function dropCachedMedia(cache, msg) {
 
 function txCreatedMs(tx) {
     const value = tx?.createdTime;
+    if (typeof value?.toMillis === 'function') {
+        const ms = value.toMillis();
+        return Number.isFinite(ms) ? ms : 0;
+    }
     if (value instanceof Date) {
         return value.getTime();
     }
@@ -793,19 +801,29 @@ function txCreatedMs(tx) {
     return Number.isFinite(ms) ? ms : 0;
 }
 
-export function readCachedTransfers(cache) {
+export function readCachedTransferState(cache) {
     const payload = cache?.read?.();
     if (!payload?.transfersById) {
-        return [];
+        return { transfers: [], historyComplete: false, nextOffset: 0 };
     }
     const ids = Array.isArray(payload.transferIds) && payload.transferIds.length ? payload.transferIds : Object.keys(payload.transfersById);
-    return ids
+    const transfers = ids
         .map((id) => payload.transfersById[id])
         .filter(Boolean)
         .sort((a, b) => txCreatedMs(b) - txCreatedMs(a));
+    const nextOffset = Number.isFinite(payload.transferNextOffset) ? payload.transferNextOffset : transfers.length;
+    return {
+        transfers,
+        historyComplete: payload.transferHistoryComplete === true,
+        nextOffset,
+    };
 }
 
-export function writeCachedTransfers(cache, transfers) {
+export function readCachedTransfers(cache) {
+    return readCachedTransferState(cache).transfers;
+}
+
+export function writeCachedTransferState(cache, { transfers, historyComplete = false, nextOffset = null } = {}) {
     if (!cache?.patch || !Array.isArray(transfers)) {
         return;
     }
@@ -821,8 +839,14 @@ export function writeCachedTransfers(cache, transfers) {
         }
         payload.transfersById = byId;
         payload.transferIds = ids;
+        payload.transferHistoryComplete = historyComplete === true;
+        payload.transferNextOffset = Number.isFinite(nextOffset) ? nextOffset : ids.length;
         return payload;
     });
+}
+
+export function writeCachedTransfers(cache, transfers) {
+    writeCachedTransferState(cache, { transfers });
 }
 
 export function readCachedProfiles(cache) {

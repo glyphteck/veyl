@@ -78,12 +78,12 @@ Starts the runtime process. Uses an atomic `.bot.lock` directory with a PID file
 
 ### Secrets (`apps/veyl/bot/src/secrets.js`)
 
-Reads and writes bot seed material to Google Cloud Secret Manager. Each bot's seed is stored under `veyl-bot-<username>-seed`. Provides:
+Reads and writes bot seed material to Google Cloud Secret Manager. All bot seeds live in the single `veyl-bot-seeds` secret as a JSON `seeds` object keyed by username with base64-encoded seed bytes. Provides:
 
 - `readBotSeed` — fetch the seed for a running bot
 - `writeBotSeed` — store a new seed
 - `ensureBotSeed` — read-or-create for provisioning
-- `deleteBotSeed` — remove the secret entirely
+- `deleteBotSeed` — remove the username's seed entry from the bundle
 
 ### Admin / Firebase (`apps/veyl/bot/src/admin.js`)
 
@@ -100,7 +100,7 @@ When no username is provided, generates a random 12-character lowercase alphanum
 - `account.js` — derives wallet and chat keys from a master seed, boots SparkWallet
 - `chat.js` — encrypt/decrypt bot messages, send/update messages, handle attachment upload/download with a pair cache
 - `wallet.js` — balance queries and outgoing transfers
-- `events.js` — constants (`BOT_MODE`, `BOT_UNDERFUNDED_TEXT`), bot marker factory, secret id helpers
+- `events.js` — constants (`BOT_MODE`, `BOT_UNDERFUNDED_TEXT`, `BOT_SEEDS_SECRET_ID`), bot marker factory, seed key helpers
 - `storage.js` — encrypted attachment read/write against Cloud Storage
 
 ### Wallet Environment
@@ -203,7 +203,7 @@ bun nuke bots @mybot   # one bot
 bun nuke bots           # all bots
 ```
 
-Removes `bots/{uid}`, `users/{uid}`, `profiles/{uid}`, `moderation/{uid}`, `usernames/*`, `chatkeys/{chatPK}`, and chats containing the bot, plus associated bot avatar and chat media files. Does not delete the seed secret or the Auth user.
+Removes `bots/{uid}`, `users/{uid}`, `profiles/{uid}`, `moderation/{uid}`, `usernames/*`, `chatkeys/{chatPK}`, and chats containing the bot, plus associated bot avatar and chat media files. Does not delete the bundled seed entry or the Auth user.
 
 ### Test it
 

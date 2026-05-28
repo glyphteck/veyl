@@ -1,14 +1,14 @@
 'use client';
 
 import { useCallback } from 'react';
-import { dropCachedMedia, readCachedMedia, writeCachedMedia } from '../localdatacache.js';
-import { attachmentBytes, isFileGoneError, makeChatUnavailableError, makeFileGoneError, saveMedia } from './attachments.js';
-import { CHAT_MEDIA_TTL_MS, getMediaFileId } from './filepayload.js';
-import { hasStoredFileRef, isAttachmentMsgType, isExpiredAttachmentMsg } from './messages.js';
-import { makeMessagePreviewMedia, MESSAGE_PREVIEW_MIME } from './previews.js';
-import { timestampMs } from './chats.js';
-import { randomBytes, toHex } from '../crypto/core.js';
-import { getPeerChatPKFromChatId } from './utils.js';
+import { dropCachedMedia, readCachedMedia, writeCachedMedia } from '../../localdatacache.js';
+import { randomBytes, toHex } from '../../crypto/core.js';
+import { attachmentBytes, isFileGoneError, makeChatUnavailableError, makeFileGoneError, saveMedia } from '../attachments.js';
+import { timestampMs } from '../chats.js';
+import { CHAT_MEDIA_TTL_MS, getMediaFileId } from '../filepayload.js';
+import { getPeerChatPKFromChatId } from '../ids.js';
+import { hasStoredFileRef, isAttachmentMsgType, isExpiredAttachmentMsg } from '../messages.js';
+import { makeMessagePreviewMedia, MESSAGE_PREVIEW_MIME } from '../previews.js';
 
 export function newMediaStayId() {
     return toHex(randomBytes(16));

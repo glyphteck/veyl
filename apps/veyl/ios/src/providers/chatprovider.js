@@ -1,6 +1,6 @@
 import { AppState } from 'react-native';
 import { httpsCallable } from 'firebase/functions';
-import { IOS_CHAT_WARMING } from '@glyphteck/shared/chat/warmingconfig';
+import { IOS_CHAT_WARMING } from '@glyphteck/shared/chat/messages/session/config';
 import { createChat, createChatProvider } from '@glyphteck/shared/providers/chatprovider';
 import { db, functions, storage } from '@/lib/firebase';
 import { readMessageFileNative, uploadAttachmentMsgNative } from '@/lib/chatmedia';

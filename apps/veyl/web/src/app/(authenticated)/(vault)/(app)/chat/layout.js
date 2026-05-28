@@ -12,7 +12,7 @@ import { useEffect } from 'react';
 export default function ChatTitleLayout({ children }) {
     const { chatPK, settings } = useUser();
     const { chats, selectedChatId, isChatDataReady } = useChat();
-    const { peers } = usePeer();
+    const { peerByChatPK } = usePeer();
     const bitcoin = useBitcoin();
     const { cloaked } = useCloak();
 
@@ -29,14 +29,14 @@ export default function ChatTitleLayout({ children }) {
         }
         // Find peer info for the selected chat
         const peerChatPK = selectedChat.participants.find((p) => p !== chatPK);
-        const profile = peers?.find((peer) => peer.chatPK === peerChatPK) ?? null;
+        const profile = peerByChatPK.get(peerChatPK) ?? null;
         const displayName = formatUserDisplay({
             username: profile?.username,
             chatPK: peerChatPK,
         });
         const preview = displayLastMsg(selectedChat.lastMsg, chatPK, settings, bitcoin.price);
         document.title = `${displayName}: ${preview}`;
-    }, [chats, selectedChatId, isChatDataReady, chatPK, peers, settings.moneyFormat, bitcoin.price, cloaked]);
+    }, [chats, selectedChatId, isChatDataReady, chatPK, peerByChatPK, settings.moneyFormat, bitcoin.price, cloaked]);
 
     return children;
 }

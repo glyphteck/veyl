@@ -53,7 +53,7 @@ export default function PeerChatRoute() {
     const { chats, selectChat, sendMessage, sendAttachment, sendImage, updateMessage } = useChat();
     const { chatPK, chatBanned } = useUser();
     const { sendMoneyWithSpark } = useWallet();
-    const { peers, updatePeer } = usePeer() || {};
+    const { peerByChatPK, updatePeer } = usePeer() || {};
     const backTap = useTap({ onPress: () => router.dismissTo('/chat') });
     const inputH = useRef(0);
     const routeLockRef = useRef(false);
@@ -81,7 +81,7 @@ export default function PeerChatRoute() {
         () => currentChat?.participants?.find?.((participant) => participant && participant !== chatPK) ?? peerChatPKParam,
         [currentChat?.participants, chatPK, peerChatPKParam]
     );
-    const peerProfile = useMemo(() => (peerChatPK && Array.isArray(peers) ? peers.find((p) => p?.chatPK === peerChatPK) : null), [peerChatPK, peers]);
+    const peerProfile = useMemo(() => (peerChatPK ? (peerByChatPK?.get(peerChatPK) ?? null) : null), [peerByChatPK, peerChatPK]);
     const chatTitle = useMemo(() => {
         if (!peerChatPK) return 'chat';
         return peerProfile?.username || formatUserDisplay({ chatPK: peerChatPK });

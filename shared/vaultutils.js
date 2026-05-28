@@ -1,5 +1,5 @@
 import { getKeyPair } from './crypto/seed.js';
-import { clearChatPairCache } from './chat/utils.js';
+import { clearChatPairCache } from './chat/pairs.js';
 import { hasWalletPKForNetwork } from './wallet/keys.js';
 
 function getBootWalletClass(SparkWallet, { enableTokenSync = false } = {}) {

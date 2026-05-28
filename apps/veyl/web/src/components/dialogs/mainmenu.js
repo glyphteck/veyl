@@ -44,7 +44,6 @@ import {
     formatCacheSize,
     getMainMenuPeers,
     getMainMenuWindow,
-    sortMainMenuTransactions,
     textMatches,
 } from '@/lib/mainmenu';
 import { useSearch } from '@/lib/search/usesearch';
@@ -189,11 +188,11 @@ export default function MainMenu({ close, data, open = true }) {
     const { openDialog } = useDialog();
     const { uid, username, settings, chatPK, chatBanned, isAdmin, avatar, walletPK } = useUser();
     const bitcoin = useBitcoin();
-    const { copyFundingAddress, fundingAddress, getFundingAddress, sendMoneyWithSpark, balance } = useWallet();
+    const { copyFundingAddress, fundingAddress, getFundingAddress, sendMoneyWithSpark, balance, hasMoreTxs, isTxLoading, loadMoreTxs } = useWallet();
     const { lock, localCache } = useVault();
-    const { hasTx, transactions } = useTxData();
+    const { hasTx, sortedTransactions } = useTxData();
     const { hasChats, lastChat, chats, sendMessage, selectChat } = useChat();
-    const { peers, recentPeers, addPeer } = usePeer();
+    const { peers, recentPeers, peerByWalletPK, peerByChatPK, addPeer } = usePeer();
     const { cloaked, cloak } = useCloak();
     const { searching, results, query, search, clearSearch } = useSearch('mainmenu');
     const [searchValue, setSearchValue] = useState(data?.searchInput || '');
@@ -398,16 +397,6 @@ export default function MainMenu({ close, data, open = true }) {
         };
     }, [localCache]);
 
-    const peerMap = useMemo(() => {
-        const map = new Map();
-        peers?.forEach((peer) => {
-            if (peer.walletPK) {
-                map.set(peer.walletPK, peer);
-            }
-        });
-        return map;
-    }, [peers]);
-
     const topPeers = (recentPeers?.all || []).slice(0, 3);
     const matchedPeers = useMemo(() => {
         if (!query) return [];
@@ -416,7 +405,7 @@ export default function MainMenu({ close, data, open = true }) {
         }
         return mergeProfiles({ local: peers || [], remote: results || [], parsed: query, excludeUid: uid });
     }, [browseUsers, peers, query, recentPeers?.all, results, uid]);
-    const txs = useMemo(() => (showAllTx ? sortMainMenuTransactions(transactions) : []), [showAllTx, transactions]);
+    const txs = useMemo(() => (showAllTx ? sortedTransactions || [] : []), [showAllTx, sortedTransactions]);
 
     const openRoute = (href) => {
         router.push(href);
@@ -595,7 +584,7 @@ export default function MainMenu({ close, data, open = true }) {
                             {lastChat && !cloaked && (
                                 <span className="truncate text-muted">
                                     {(() => {
-                                        const profile = peers?.find((peer) => peer.chatPK === lastChat.peerChatPK) ?? null;
+                                        const profile = peerByChatPK.get(lastChat.peerChatPK) ?? null;
                                         const displayName = formatUserDisplay(
                                             {
                                                 username: profile?.username,
@@ -848,7 +837,7 @@ export default function MainMenu({ close, data, open = true }) {
             render: (index, active, onActive, separated) => {
                 const tx = txs[index];
                 if (!tx) return null;
-                const peer = peerMap.get(tx.peerPK);
+                const peer = peerByWalletPK.get(tx.peerPK);
                 const peerDisplayName = tx.funding ? 'Funded' : tx.withdrawal ? 'Withdrawn' : formatUserDisplay(peer || { walletPK: tx.peerPK }, true);
                 return (
                     <MainMenuItem active={active} className={separated && 'shadow-[inset_0_1px_0_0_var(--border)]'} onActive={onActive} onSelect={() => openDialog('txdetails', { tx })}>
@@ -856,13 +845,13 @@ export default function MainMenu({ close, data, open = true }) {
                             <AvatarImage src={tx.funding || tx.withdrawal ? avatar : peer?.avatar} alt={peerDisplayName} />
                             <AvatarFallback />
                         </Avatar>
-                        <span className="flex min-w-0 items-center gap-2">
-                            <span className={`font-black ${tx.incoming ? 'text-inflow' : 'text-outflow'} ${tx.pending ? 'opacity-50' : ''} ${cloaked ? 'cloaked' : ''}`}>
+                        <span className="min-w-0 flex-1 truncate font-black">{peerDisplayName}</span>
+                        <span className="ml-auto flex shrink-0 flex-col items-end leading-none">
+                            <span className="text-xs text-muted">{tx.pending ? 'pending' : formatFullDateTime(tx.createdTime)}</span>
+                            <span className={`truncate text-xs font-black ${tx.incoming ? 'text-inflow' : 'text-outflow'} ${tx.pending ? 'opacity-50' : ''} ${cloaked ? 'cloaked' : ''}`}>
                                 {renderMoney(tx.totalValue, settings?.moneyFormat, bitcoin.price, tx.incoming ? '+' : '-')}
                             </span>
-                            {peerDisplayName && <span className="truncate text-muted">{peerDisplayName}</span>}
                         </span>
-                        <div className="ml-auto text-sm text-muted">{formatFullDateTime(tx.createdTime)}</div>
                     </MainMenuItem>
                 );
             },
@@ -891,6 +880,11 @@ export default function MainMenu({ close, data, open = true }) {
     useEffect(() => {
         setActiveIndex(menuTotal > 0 ? 0 : -1);
     }, [menuSignature, searchValue, menuTotal]);
+
+    useEffect(() => {
+        if (!showAllTx || !hasMoreTxs || isTxLoading || activeIndex < 0 || menuTotal - activeIndex > 20) return;
+        void loadMoreTxs?.();
+    }, [activeIndex, hasMoreTxs, isTxLoading, loadMoreTxs, menuTotal, showAllTx]);
 
     const handleMenuKeyDown = (event) => {
         if (event.defaultPrevented || event.nativeEvent?.isComposing) return;

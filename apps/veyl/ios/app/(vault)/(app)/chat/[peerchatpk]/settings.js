@@ -14,7 +14,7 @@ import { useChat } from '@/providers/chatprovider';
 import { usePeer } from '@/providers/peerprovider';
 import { useTheme } from '@/providers/themeprovider';
 import { useUser } from '@/providers/userprovider';
-import { getPeerChatPKFromChatId } from '@glyphteck/shared/chat/utils';
+import { getPeerChatPKFromChatId } from '@glyphteck/shared/chat/ids';
 import { CHAT_RETENTION_24H, CHAT_RETENTION_SEEN, cleanChatRetention } from '@glyphteck/shared/chat/ttl';
 import { formatUserDisplay } from '@glyphteck/shared/utils';
 
@@ -85,7 +85,7 @@ export default function ChatSettingsRoute() {
     const router = useRouter();
     const { blockPeer, chatPK: ownChatPK } = useUser();
     const { chats, dropChat, setChatTtl } = useChat() || {};
-    const { peers, addPeer, dropPeer } = usePeer() || {};
+    const { peerByUsername, peerByUid, peerByChatPK, peerByWalletPK, addPeer, dropPeer } = usePeer() || {};
     const backTap = useTap({ onPress: router.back });
     const routeLockRef = useRef(false);
     const routeLockTimerRef = useRef(null);
@@ -101,17 +101,14 @@ export default function ChatSettingsRoute() {
     const walletPK = routePeer?.walletPK || pick(params?.walletPK).trim();
 
     const knownPeer = useMemo(() => {
-        if (!Array.isArray(peers)) return null;
         return (
-            peers.find(
-                (peer) =>
-                    (username && peer?.username === username) ||
-                    (uid && peer?.uid === uid) ||
-                    (peerChatPKParam && peer?.chatPK === peerChatPKParam) ||
-                    (walletPK && peer?.walletPK === walletPK)
-            ) ?? null
+            (username ? peerByUsername?.get(username) : null) ??
+            (uid ? peerByUid?.get(uid) : null) ??
+            (peerChatPKParam ? peerByChatPK?.get(peerChatPKParam) : null) ??
+            (walletPK ? peerByWalletPK?.get(walletPK) : null) ??
+            null
         );
-    }, [peerChatPKParam, peers, uid, username, walletPK]);
+    }, [peerByChatPK, peerByUid, peerByUsername, peerByWalletPK, peerChatPKParam, uid, username, walletPK]);
 
     const peer = useMemo(
         () =>

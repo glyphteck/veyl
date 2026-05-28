@@ -45,10 +45,12 @@ Forced auth, vault, and onboarding flows are route-guard owned. After a required
 ## Chat
 
 - Shared chat provider factory: `shared/providers/chatprovider.js`
-- Shared chat transport: `shared/chat/utils.js`
+- Shared chat row transport: `shared/chat/rows.js`
 - Shared chat crypto: `shared/crypto/chat.js`
 - Shared chat message and encrypted control-payload helpers: `shared/chat/messages.js`
-- Shared chat outbound/local pending helpers: `shared/chat/send.js`
+- Shared chat message query helpers: `shared/chat/messages/query.js`
+- Shared chat message write helpers: `shared/chat/messages/write.js`
+- Shared chat action hooks: `shared/chat/actions/*`
 - Shared chat read-receipt helpers: `shared/chat/read.js`
 - Shared chat list/cache state helpers: `shared/chat/chats.js`
 - Shared chat attachment/cache helpers: `shared/chat/attachments.js`
@@ -60,7 +62,7 @@ Forced auth, vault, and onboarding flows are route-guard owned. After a required
 - iOS long-press menu portal UI: `apps/veyl/ios/src/components/menuportal.js`
 - iOS transient media render-file cache: `apps/veyl/ios/src/lib/msgimagecache.js`
 
-Keep `shared/providers/chatprovider.js` focused on React provider orchestration. It owns the chat-list listener, pending local state, and read receipts. Recent-chat warming lives in `shared/chat/warming.js`: it keeps provider-owned latest-message batches, prioritizes the first chat row, and warms image/video caches in the background after server-confirmed messages arrive. `shared/chat/usemessages.js` should consume those provider-owned batches as its initial visible list instead of attaching its own latest-message listener or carrying a separate route-built list cache, so opening a warmed chat does not double-subscribe or restart from an empty list. Media rows may reuse in-memory render-file URIs, and video rows should render cached poster images instead of mounting live video elements just because a row appeared. Put outbound message shaping, optimistic local send state, and retry payload helpers in `shared/chat/send.js`; put read-receipt scheduling and derivation in `shared/chat/read.js`. Chat media is still evolving. Before changing payload shape, inspect both clients and shared chat code.
+Keep `shared/providers/chatprovider.js` focused on React provider orchestration. It owns chat-list wiring, pending local action state, and read receipts. Provider-owned current-message state lives in `shared/chat/messages/session/`: it keeps latest-message session entries, session-only remembered views, and recent-chat warming. `shared/chat/usemessages.js` should consume those provider-owned sessions as its initial visible list instead of attaching its own latest-message listener or carrying a separate route-built list cache, so opening a warmed chat does not double-subscribe or restart from an empty list. Warm sessions must not download attachment bytes; media rows may reuse in-memory render-file URIs, and video rows should render cached poster images instead of mounting live video elements just because a row appeared. Put outbound message shaping, optimistic local send state, retry payload helpers, reactions, save/unsave, deletion, seen/read action scheduling, and settings mutations in `shared/chat/actions/`; put encrypted read-receipt primitives in `shared/chat/read.js`. Chat media is still evolving. Before changing payload shape, inspect both clients and shared chat code.
 
 ## Bots
 

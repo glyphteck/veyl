@@ -23,7 +23,7 @@ import { useTap } from '@/lib/tap';
 import { functions } from '@/lib/firebase';
 import { formatFullDateTime, formatUserDisplay } from '@glyphteck/shared/utils';
 import { getChatId } from '@glyphteck/shared/crypto/chat';
-import { getPeerChatPKFromChatId } from '@glyphteck/shared/chat/utils';
+import { getPeerChatPKFromChatId } from '@glyphteck/shared/chat/ids';
 import { getMsgPreview } from '@glyphteck/shared/chat/messages';
 
 const SEARCH_BAR_HEIGHT = 42;
@@ -198,22 +198,13 @@ export default function ChatList() {
     const insets = useSafeAreaInsets();
     const { chats, isChatDataReady, hasMoreChats, loadingMoreChats, loadMoreChats, startDeleteChat, restoreDeletedChat } = useChat();
     const { chatPK, blockedSet, chatBanned } = useUser();
-    const { peers, isBlockedChatPK, isPeerDataReady } = usePeer() || {};
+    const { peers, peerByChatPK, isBlockedChatPK, isPeerDataReady } = usePeer() || {};
     const { searching, results, query, search: runSearch, clearSearch } = useSearch('profiles');
     const routeLockRef = useRef(false);
     const routeLockTimerRef = useRef(null);
     const searchInputRef = useRef(null);
     const [search, setSearch] = useState('');
     const [headerHeight, setHeaderHeight] = useState(0);
-
-    const peerMap = useMemo(() => {
-        const map = new Map();
-        if (!Array.isArray(peers)) return map;
-        for (const peer of peers) {
-            if (peer?.chatPK) map.set(peer.chatPK, peer);
-        }
-        return map;
-    }, [peers]);
 
     const chatQuery = useMemo(() => search.trim().toLowerCase(), [search]);
 
@@ -231,7 +222,7 @@ export default function ChatList() {
 
         return baseItems.filter((chat) => {
             const peerChatPK = getPeerChatPK(chat, chatPK);
-            const profile = peerChatPK ? peerMap.get(peerChatPK) : null;
+            const profile = peerChatPK ? peerByChatPK?.get(peerChatPK) : null;
             const title = formatUserDisplay({ username: profile?.username, chatPK: peerChatPK }).toLowerCase();
             const username = String(profile?.username ?? '').toLowerCase();
             const atUsername = username ? `@${username}` : '';
@@ -240,7 +231,7 @@ export default function ChatList() {
 
             return title.includes(chatQuery) || username.includes(chatQuery) || atUsername.includes(chatQuery) || preview.includes(chatQuery) || peerKey.includes(chatQuery);
         });
-    }, [chatPK, chatQuery, chats, hasBlockedUsers, isBlockedChatPK, isPeerDataReady, peerMap]);
+    }, [chatPK, chatQuery, chats, hasBlockedUsers, isBlockedChatPK, isPeerDataReady, peerByChatPK]);
 
     const chatIds = useMemo(() => new Set((Array.isArray(chats) ? chats : []).map((chat) => chat?.id).filter(Boolean)), [chats]);
 
@@ -348,7 +339,7 @@ export default function ChatList() {
 
             const chat = item.chat;
             const peerChatPK = getPeerChatPK(chat, chatPK);
-            const profile = peerChatPK ? peerMap.get(peerChatPK) : null;
+            const profile = peerChatPK ? peerByChatPK?.get(peerChatPK) : null;
             const title = formatUserDisplay({ username: profile?.username, chatPK: peerChatPK });
             const avatarSource = profile?.avatar ? { uri: profile.avatar } : null;
             const subtitle = getMsgPreview(chat?.lastMsg, chatPK, null, null) || ' ';
@@ -370,7 +361,7 @@ export default function ChatList() {
                 />
             );
         },
-        [chatPK, handleDeleteChat, openChat, peerMap]
+        [chatPK, handleDeleteChat, openChat, peerByChatPK]
     );
 
     if (chatBanned) {

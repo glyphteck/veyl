@@ -5,11 +5,9 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Field } from '@/components/field';
 import { Input } from '@/components/input';
-import { ToggleGroup, ToggleGroupItem } from '@/components/togglegroup';
 import { Button } from '@/components/button';
-import { Loader, Coins, PiggyBank, ScanQrCode } from 'lucide-react';
+import { Loader, Coins, ScanQrCode } from 'lucide-react';
 import { formatUserDisplay, toSats, toDisplay, renderMoney } from '@/lib/utils';
-import { Card } from '@/components/card';
 import { useBitcoin } from '@/components/providers/bitcoinprovider';
 import { useWallet } from '@/components/providers/walletprovider';
 import { useUser } from '@/components/providers/userprovider';
@@ -18,19 +16,27 @@ import { useCloak } from '@glyphteck/shared/providers/cloakprovider';
 import { toast } from 'sonner';
 import PeerSelector from '@/components/peerselector';
 
-export default function SendMoney({ peer, amount }) {
+const MONEY_UNITS = ['sats', 'btc', 'usd'];
+
+function unitLabel(unit) {
+    if (unit === 'btc') return '₿';
+    if (unit === 'usd') return '$';
+    return 'sats';
+}
+
+export default function SendMoney({ peer, amount = '', inputUnit, onPeerChange, onAmountChange, onInputUnitChange }) {
     const [receiver, setReceiver] = useState(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const bitcoin = useBitcoin();
     const { sendMoneyWithSpark, balance } = useWallet();
     const { settings, walletPK: currentUserWalletPK } = useUser();
-    const { closeDialog, openDialog } = useDialog();
+    const { closeDialog } = useDialog();
     const router = useRouter();
     const { cloaked } = useCloak();
     const amountInputRef = useRef(null);
-    const sendButtonRef = useRef(null);
+    const unit = inputUnit || settings.moneyFormat;
     const hasAmount = amount != null && amount !== '';
-    const start = !peer ? 'peer' : !hasAmount ? 'amount' : 'submit';
+    const start = !peer ? 'peer' : !hasAmount ? 'amount' : null;
 
     const schema = (max, price, currentWalletPK) =>
         z
@@ -76,28 +82,30 @@ export default function SendMoney({ peer, amount }) {
         defaultValues: {
             receiver: null,
             amount: '',
-            inputUnit: settings.moneyFormat,
+            inputUnit: unit,
         },
     });
+    const watchedInputUnit = form.watch('inputUnit');
 
     useEffect(() => {
+        const nextReceiver = peer || null;
         const defaultValues = {
-            receiver: peer || null,
-            amount: hasAmount ? toDisplay(amount, settings.moneyFormat, bitcoin.price) : '',
-            inputUnit: settings.moneyFormat,
+            receiver: nextReceiver,
+            amount: amount || '',
+            inputUnit: unit,
         };
+        const current = form.getValues();
+        setReceiver(nextReceiver);
+        if (current.receiver === defaultValues.receiver && current.amount === defaultValues.amount && current.inputUnit === defaultValues.inputUnit) {
+            return;
+        }
         form.reset(defaultValues);
-        setReceiver(peer || null);
-    }, [peer, hasAmount, amount, settings.moneyFormat, bitcoin.price, form]);
+    }, [peer, amount, unit, form]);
 
     useEffect(() => {
         const timeout = window.setTimeout(() => {
             if (start === 'amount') {
                 amountInputRef.current?.focus({ preventScroll: true });
-                return;
-            }
-            if (start === 'submit') {
-                sendButtonRef.current?.focus({ preventScroll: true });
             }
         }, 0);
 
@@ -110,30 +118,45 @@ export default function SendMoney({ peer, amount }) {
             const currentUnit = form.getValues('inputUnit');
             if (u === currentUnit) return;
             const currentAmount = form.getValues('amount');
+            let nextAmount = currentAmount;
             if (currentAmount) {
                 const sats = toSats(currentAmount, currentUnit, bitcoin.price);
                 form.setValue('inputUnit', u);
                 if (sats === 0n) {
-                    form.setValue('amount', '');
+                    nextAmount = '';
+                    form.setValue('amount', nextAmount);
                 } else {
-                    form.setValue('amount', toDisplay(sats, u, bitcoin.price));
+                    nextAmount = toDisplay(sats, u, bitcoin.price);
+                    form.setValue('amount', nextAmount);
                 }
             } else {
                 form.setValue('inputUnit', u);
+            }
+            onInputUnitChange?.(u);
+            if (nextAmount !== currentAmount) {
+                onAmountChange?.(nextAmount);
             }
             if (amountInputRef.current) {
                 amountInputRef.current.focus();
             }
         },
-        [form, bitcoin.price]
+        [form, bitcoin.price, onAmountChange, onInputUnitChange]
     );
+
+    const cycleUnit = useCallback(() => {
+        const currentUnit = form.getValues('inputUnit');
+        const index = MONEY_UNITS.indexOf(currentUnit);
+        setUnit(MONEY_UNITS[(index + 1) % MONEY_UNITS.length]);
+    }, [form, setUnit]);
 
     const setAmount = useCallback(
         (raw) => {
             const unit = form.getValues('inputUnit');
             const max = balance;
             const accept = (regex, ok) => {
-                if (regex.test(raw) && ok()) form.setValue('amount', raw);
+                if (!regex.test(raw) || !ok()) return;
+                form.setValue('amount', raw);
+                onAmountChange?.(raw);
             };
             if (unit === 'sats') {
                 // Prevent entering only zeros or starting with zero in sats mode
@@ -147,7 +170,7 @@ export default function SendMoney({ peer, amount }) {
                 accept(/^\d{0,8}(\.\d{0,4})?$/, () => isValidUsd && (raw === '' || toSats(raw, 'usd', bitcoin.price) <= max));
             }
         },
-        [form, balance, bitcoin.price]
+        [form, balance, bitcoin.price, onAmountChange]
     );
 
     const handleAmountChange = useCallback(
@@ -156,11 +179,6 @@ export default function SendMoney({ peer, amount }) {
         },
         [setAmount]
     );
-
-    const setMax = useCallback(() => {
-        const unit = form.getValues('inputUnit');
-        form.setValue('amount', toDisplay(balance, unit, bitcoin.price));
-    }, [form, balance, bitcoin.price]);
 
     useEffect(() => {
         form.clearErrors();
@@ -192,6 +210,9 @@ export default function SendMoney({ peer, amount }) {
                     inputUnit: settings.moneyFormat,
                 });
                 setReceiver(null);
+                onPeerChange?.(null);
+                onAmountChange?.('');
+                onInputUnitChange?.(settings.moneyFormat);
             } catch (error) {
                 toast.error(error.message || 'failed to send money', {
                     id: loadingToastId,
@@ -201,72 +222,71 @@ export default function SendMoney({ peer, amount }) {
                 setIsSubmitting(false);
             }
         },
-        [sendMoneyWithSpark, settings.moneyFormat, bitcoin.price, closeDialog, form]
+        [sendMoneyWithSpark, settings.moneyFormat, bitcoin.price, closeDialog, form, onAmountChange, onInputUnitChange, onPeerChange]
     );
 
     return (
         <div className="flex flex-col gap-2">
-            <Card>
-                <div className="px-4 py-6">
-                    <form id="sendMoney" onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-3">
-                        <Field
-                            control={form.control}
-                            name="receiver"
-                            render={({ field }) => (
-                                <PeerSelector
-                                    className="w-full"
-                                    selectedPeer={receiver}
-                                    onPeerChange={(peer) => {
-                                        setReceiver(peer);
-                                        field.onChange(peer);
-                                        if (amountInputRef.current) {
-                                            amountInputRef.current.focus();
-                                        }
-                                    }}
-                                    disabled={isSubmitting}
-                                    active={start === 'peer'}
-                                    filterPeers={(peer) => Boolean(peer.walletPK)}
-                                    label="receiver"
-                                />
-                            )}
+            <form id="sendMoney" onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-3">
+                <Field
+                    control={form.control}
+                    name="receiver"
+                    render={({ field }) => (
+                        <PeerSelector
+                            className="h-12 pl-2 pr-3 text-base [&_.avatar]:size-9"
+                            selectedPeer={receiver}
+                            onPeerChange={(peer) => {
+                                setReceiver(peer);
+                                field.onChange(peer);
+                                onPeerChange?.(peer);
+                                if (amountInputRef.current) {
+                                    amountInputRef.current.focus();
+                                }
+                            }}
+                            disabled={isSubmitting}
+                            active={start === 'peer'}
+                            filterPeers={(peer) => Boolean(peer.walletPK)}
+                            label="receiver"
                         />
-                        <Field
-                            control={form.control}
-                            name="amount"
-                            render={({ field, inputProps }) => (
-                                <div className="flex gap-2.5">
-                                    <Input
-                                        {...field}
-                                        {...inputProps}
-                                        ref={(el) => {
-                                            field.ref(el);
-                                            amountInputRef.current = el;
-                                        }}
-                                        className={`w-54 ${cloaked ? 'cloaked' : ''}`}
-                                        placeholder={form.watch('inputUnit') === 'sats' ? '0000' : '0.00'}
-                                        onChange={handleAmountChange}
-                                        inputMode="numeric"
-                                        pattern={form.watch('inputUnit') === 'sats' ? '[0-9]*' : '[0-9.]*'}
-                                        disabled={isSubmitting}
-                                        autoFocus={peer && !hasAmount}
-                                    />
-                                    <Button tabIndex={-1} className="grower-lg hidden sm:block" type="button" onClick={setMax} disabled={isSubmitting}>
-                                        <PiggyBank className="size-6 stroke-2" />
-                                    </Button>
-                                    <ToggleGroup tabIndex={-1} className="ml-auto" type="single" value={form.watch('inputUnit')} onValueChange={setUnit} disabled={isSubmitting}>
-                                        <ToggleGroupItem value="btc">₿</ToggleGroupItem>
-                                        <ToggleGroupItem value="sats">sats</ToggleGroupItem>
-                                        <ToggleGroupItem value="usd">$</ToggleGroupItem>
-                                    </ToggleGroup>
-                                </div>
-                            )}
-                        />
-                    </form>
-                </div>
-            </Card>
+                    )}
+                />
+                <Field
+                    control={form.control}
+                    name="amount"
+                    render={({ field, inputProps }) => (
+                        <div className="relative w-full">
+                            <Input
+                                {...field}
+                                {...inputProps}
+                                ref={(el) => {
+                                    field.ref(el);
+                                    amountInputRef.current = el;
+                                }}
+                                className={`h-12 min-w-0 pl-4 pr-20 text-2xl font-black ${cloaked ? 'cloaked' : ''}`}
+                                placeholder={watchedInputUnit === 'sats' ? '0000' : '0.00'}
+                                onChange={handleAmountChange}
+                                inputMode="numeric"
+                                pattern={watchedInputUnit === 'sats' ? '[0-9]*' : '[0-9.]*'}
+                                disabled={isSubmitting}
+                                autoFocus={peer && !hasAmount}
+                            />
+                            <Button
+                                type="button"
+                                aria-label={`change currency, current ${watchedInputUnit}`}
+                                title="change currency"
+                                className="grower-lg absolute top-1/2 right-3 h-9 min-w-12 -translate-y-1/2 justify-end px-2.5 text-2xl font-black text-muted"
+                                onMouseDown={(event) => event.preventDefault()}
+                                onClick={cycleUnit}
+                                disabled={isSubmitting}
+                            >
+                                {unitLabel(watchedInputUnit)}
+                            </Button>
+                        </div>
+                    )}
+                />
+            </form>
             <div className="flex gap-2.5">
                 <Button
-                    ref={sendButtonRef}
                     type="submit"
                     form="sendMoney"
                     className="button-outline shrinker flex-1"

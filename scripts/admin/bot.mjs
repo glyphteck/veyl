@@ -226,7 +226,7 @@ function printKillResult(result) {
     const names = result.wiped.map((entry) => entry.username ? `@${entry.username}` : entry.uid).join(', ');
     const chatsDeleted = result.wiped.reduce((sum, entry) => sum + (entry.chatsDeleted || 0), 0);
     const suffix = names ? `: ${names}` : '';
-    console.log(`deleted ${plural(result.count, 'bot account')}, ${plural(chatsDeleted, 'chat')}, auth users, and bot seeds${suffix}`);
+    console.log(`deleted ${plural(result.count, 'bot account')}, ${plural(chatsDeleted, 'chat')}, auth users, and bot seed entries${suffix}`);
 }
 
 async function main() {

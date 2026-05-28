@@ -1,10 +1,10 @@
 'use client';
 
 import { useCallback, useRef } from 'react';
-import { getChatId } from '../crypto/chat.js';
-import { dropCachedChat } from '../localdatacache.js';
-import { filterPendingDeleteChats, getLastChat, sameChats, sameLastChat, setLocalChats } from './chats.js';
-import { clearReadWrite } from './read.js';
+import { getChatId } from '../../crypto/chat.js';
+import { dropCachedChat } from '../../localdatacache.js';
+import { filterPendingDeleteChats, getLastChat, sameChats, sameLastChat, setLocalChats } from '../chats.js';
+import { clearReadWrite } from '../read.js';
 
 export function useChatDelete({
     chat,
@@ -15,6 +15,7 @@ export function useChatDelete({
     localByChatRef,
     lastServerChatsRef,
     hiddenChatPreviewKeysRef,
+    chatPreviewOverridesRef,
     readCacheRef,
     pendingReadRef,
     listActionsRef,
@@ -134,6 +135,7 @@ export function useChatDelete({
                     localChanged = true;
                 }
                 readCacheRef.current.delete(chatId);
+                chatPreviewOverridesRef.current.delete(chatId);
                 clearReadWrite(pendingReadRef.current, chatId);
             }
 
@@ -143,7 +145,7 @@ export function useChatDelete({
             }
             return localForRender;
         },
-        [closeMessageBatchRef, hiddenChatPreviewKeysRef, localByChatRef, localCache, pendingReadRef, readCacheRef, setLocalByChat]
+        [chatPreviewOverridesRef, closeMessageBatchRef, hiddenChatPreviewKeysRef, localByChatRef, localCache, pendingReadRef, readCacheRef, setLocalByChat]
     );
 
     const renderVisibleChats = useCallback(

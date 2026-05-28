@@ -63,7 +63,7 @@ async function getClaimableDepositUtxos(wallet, getFundingAddress) {
     }
 }
 
-export function useDepositClaims({ wallet, getFundingAddress, getAllTxs, updateWalletData, diag }) {
+export function useDepositClaims({ wallet, getFundingAddress, updateWalletData, diag }) {
     const claimPromiseRef = useRef(null);
 
     const claimDeposits = useCallback(async () => {
@@ -126,12 +126,9 @@ export function useDepositClaims({ wallet, getFundingAddress, getAllTxs, updateW
         const startedAt = Date.now();
         markDiag(diag, 'wallet.refresh.start', {});
         const claimed = await claimDeposits();
-        if (claimed) {
-            await getAllTxs();
-        }
         await updateWalletData(true);
         markDone(diag, 'wallet.refresh', startedAt, { claimed: !!claimed });
-    }, [claimDeposits, diag, getAllTxs, updateWalletData]);
+    }, [claimDeposits, diag, updateWalletData]);
 
     const refreshClaims = useCallback(async () => {
         const claimed = await claimDeposits();
@@ -139,10 +136,9 @@ export function useDepositClaims({ wallet, getFundingAddress, getAllTxs, updateW
             return false;
         }
 
-        await getAllTxs();
         await updateWalletData(true);
         return true;
-    }, [claimDeposits, getAllTxs, updateWalletData]);
+    }, [claimDeposits, updateWalletData]);
 
     const resetClaims = useCallback(() => {
         claimPromiseRef.current = null;

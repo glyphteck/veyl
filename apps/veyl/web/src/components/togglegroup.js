@@ -7,9 +7,9 @@ import { cn } from '@/lib/utils';
 
 const ToggleGroupContext = React.createContext(null);
 
-const rootClasses = 'shadow flex w-fit items-center rounded-full';
+const rootClasses = 'shadow flex w-fit items-center rounded-full bg-background/60 backdrop-blur-sm';
 const itemClasses =
-    'font-black cursor-pointer bg-transparent text-foreground backdrop-blur-sm transition-[color,box-shadow] ease-in-out inline-flex items-center justify-center gap-2 whitespace-nowrap h-9 min-w-9 rounded-none p-2 outline-none disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 border-l first:border-l-0 first:rounded-l-full last:rounded-r-full focus:z-10 focus-visible:z-10';
+    'font-black cursor-pointer bg-transparent text-foreground backdrop-blur-sm transition-colors ease-in-out inline-flex items-center justify-center gap-2 whitespace-nowrap h-9 min-w-9 rounded-none p-2 first:pl-2.5 last:pr-2.5 outline-none disabled:pointer-events-none disabled:opacity-50 data-[state=off]:hover:bg-foreground/5 data-[state=off]:focus-visible:bg-foreground/5 [&_svg]:pointer-events-none [&_svg]:shrink-0 border-l first:border-l-0 first:rounded-l-full last:rounded-r-full focus:z-10 focus-visible:z-10';
 
 function ToggleGroup({ className, type = 'single', value, onValueChange, disabled = false, required = false, children, ...props }) {
     const currentValue = type === 'multiple' ? (Array.isArray(value) ? value : []) : value ?? '';

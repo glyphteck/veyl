@@ -7,7 +7,7 @@ import { useVault } from '@/providers/vaultprovider';
 import { useChat } from '@/providers/chatprovider';
 import { dropPush, getPushState, setPush } from '@/lib/push';
 import { mark } from '@/lib/diagnostics';
-import { getPeerChatPKFromChatId } from '@glyphteck/shared/chat/utils';
+import { getPeerChatPKFromChatId } from '@glyphteck/shared/chat/ids';
 
 Notifications.setNotificationHandler({
     handleNotification: async () => {

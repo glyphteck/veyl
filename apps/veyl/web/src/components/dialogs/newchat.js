@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card } from '@/components/card';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/avatar';
@@ -16,8 +16,11 @@ import { makeTxt } from '@glyphteck/shared/chat/messages';
 import { getChatId } from '@glyphteck/shared/crypto/chat';
 import { mergeProfiles } from '@glyphteck/shared/search/merge';
 import { formatUserDisplay } from '@/lib/utils';
-import { prepareChatFile } from '@/lib/chatfiles';
+import { chatUploadErrorMessage, getChatUploadFiles, queueChatFileMessages } from '@/lib/chatfiles';
 import { toast } from 'sonner';
+
+const PEER_RENDER_BATCH = 24;
+const PEER_LOAD_MARGIN = 48;
 
 function PeerCell({ peer, onSelect, selected }) {
     return (
@@ -43,6 +46,7 @@ export default function NewChat({ close }) {
     const [searchValue, setSearchValue] = useState('');
     const [selectedPeer, setSelectedPeer] = useState(null);
     const [msgContent, setMsgContent] = useState('');
+    const [peerLimit, setPeerLimit] = useState(PEER_RENDER_BATCH);
     const inputRef = useRef(null);
     const msgRef = useRef(null);
     const fileRef = useRef(null);
@@ -79,6 +83,20 @@ export default function NewChat({ close }) {
     );
 
     const displayPeers = query ? searchPeers : defaultPeers;
+    const visiblePeers = useMemo(() => displayPeers.slice(0, peerLimit), [displayPeers, peerLimit]);
+
+    useEffect(() => {
+        setPeerLimit(PEER_RENDER_BATCH);
+    }, [displayPeers]);
+
+    const handlePeerScroll = useCallback(
+        (event) => {
+            const el = event.currentTarget;
+            if (el.scrollHeight - el.scrollTop - el.clientHeight > PEER_LOAD_MARGIN) return;
+            setPeerLimit((limit) => Math.min(displayPeers.length, limit + PEER_RENDER_BATCH));
+        },
+        [displayPeers.length]
+    );
 
     const handleSearchChange = (e) => {
         const value = e.target.value;
@@ -107,17 +125,25 @@ export default function NewChat({ close }) {
     };
 
     const handleFileChange = async (e) => {
-        const file = e.target.files?.[0];
+        let files;
+        try {
+            files = getChatUploadFiles(e.target.files);
+        } catch (error) {
+            toast.error(chatUploadErrorMessage(error));
+            e.target.value = '';
+            return;
+        }
         e.target.value = '';
-        if (!file || !selectedPeer?.chatPK) return;
+        if (!files.length || !selectedPeer?.chatPK) return;
         close();
         selectChat(getChatId(chatPK, selectedPeer.chatPK));
         router.push('/chat');
         try {
-            await sendAttachment(selectedPeer.chatPK, await prepareChatFile(file));
-            toast(`sent attachment to ${formatUserDisplay(selectedPeer, false)}`, { icon: <CircleCheck /> });
+            const result = await queueChatFileMessages(files, (attachment) => sendAttachment(selectedPeer.chatPK, attachment));
+            const label = result.sent === 1 ? 'attachment' : `${result.sent} attachments`;
+            toast(`sent ${label} to ${formatUserDisplay(selectedPeer, false)}`, { icon: <CircleCheck /> });
         } catch (error) {
-            toast.error(error?.message || 'failed to send attachment');
+            toast.error(chatUploadErrorMessage(error));
         }
     };
 
@@ -159,14 +185,14 @@ export default function NewChat({ close }) {
                 autoFocus
             />
             <Card>
-                <div className="overflow-y-scroll p-4" style={{ height: 'calc((80px + 24px) * 3 + 16px)' }}>
+                <div className="overflow-y-scroll p-4" style={{ height: 'calc((80px + 24px) * 3 + 16px)' }} onScroll={handlePeerScroll}>
                     {searching && query && !displayPeers.length ? (
                         <div className="flex items-center justify-center h-full">
                             <Loader className="animate-spin size-6 text-muted" />
                         </div>
                     ) : displayPeers.length > 0 ? (
                         <div className="grid grid-cols-4 gap-4">
-                            {displayPeers.map((peer) => (
+                            {visiblePeers.map((peer) => (
                                 <PeerCell key={peer.uid} peer={peer} onSelect={handleSelect} selected={selectedPeer?.uid === peer.uid} />
                             ))}
                         </div>
@@ -178,7 +204,7 @@ export default function NewChat({ close }) {
             {showInput && (
                 <form onSubmit={handleSendMessage} className={`w-full transition-opacity ${selectedPeer ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
                     <div className="flex items-end relative">
-                        <input ref={fileRef} type="file" hidden onChange={handleFileChange} />
+                        <input ref={fileRef} type="file" hidden multiple onChange={handleFileChange} />
                         <Input
                             ref={msgRef}
                             value={msgContent}
@@ -202,7 +228,7 @@ export default function NewChat({ close }) {
                                     </div>
                                 )
                             }
-                            endPos="right-2.5 bottom-2"
+                            endPos="right-3 bottom-2"
                             endPad="pr-20"
                             className={cloaked ? 'cloaked' : ''}
                             maxLength={256}

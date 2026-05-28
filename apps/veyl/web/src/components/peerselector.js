@@ -2,7 +2,7 @@ import { useMemo, useState, useRef, useEffect, useLayoutEffect, useCallback } fr
 import { createPortal } from 'react-dom';
 import { Button } from '@/components/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/avatar';
-import { ChevronsUpDown, Check, Loader, Search, UsersRound } from 'lucide-react';
+import { ChevronsUpDown, Loader, Search, UsersRound } from 'lucide-react';
 import { mergeProfiles } from '@glyphteck/shared/search/merge';
 import { formatUserDisplay } from '@/lib/utils';
 import { useSearch } from '@/lib/search/usesearch';
@@ -10,7 +10,11 @@ import { useUser } from '@/components/providers/userprovider';
 import { usePeer } from '@/components/providers/peerprovider';
 import { isEditableTarget, listNavigationStep } from '@/lib/focus';
 
-export default function PeerSelector({ selectedPeer, onPeerChange, disabled = false, active = false, openOnActive = false, filterPeers, label = 'user', className = '' }) {
+function isFastSearchKey(event) {
+    return event.key.length === 1 && event.key !== ' ' && !event.metaKey && !event.ctrlKey && !event.altKey;
+}
+
+export default function PeerSelector({ selectedPeer, onPeerChange, disabled = false, active = false, filterPeers, label = 'user', className = '' }) {
     const [popoverOpen, setPopoverOpen] = useState(false);
     const [searchValue, setSearchValue] = useState('');
     const [mounted, setMounted] = useState(false);
@@ -130,12 +134,9 @@ export default function PeerSelector({ selectedPeer, onPeerChange, disabled = fa
         if (!active || disabled) return;
         const timeout = window.setTimeout(() => {
             triggerRef.current?.focus({ preventScroll: true });
-            if (openOnActive) {
-                setPopoverOpen(true);
-            }
         }, 0);
         return () => window.clearTimeout(timeout);
-    }, [active, disabled, openOnActive]);
+    }, [active, disabled]);
 
     const handlePeerSelect = (peer) => {
         if (peer) {
@@ -194,6 +195,12 @@ export default function PeerSelector({ selectedPeer, onPeerChange, disabled = fa
 
     const handleTriggerKeyDown = (event) => {
         if (disabled) return;
+        if (isFastSearchKey(event)) {
+            event.preventDefault();
+            handleSearchChange(`${searchValue}${event.key}`);
+            handlePopoverOpenChange(true);
+            return;
+        }
         if (event.key === 'Enter' || event.key === ' ' || listNavigationStep(event, { ignoreEditable: false }) > 0) {
             event.preventDefault();
             handlePopoverOpenChange(true);
@@ -236,25 +243,24 @@ export default function PeerSelector({ selectedPeer, onPeerChange, disabled = fa
                                       <Loader className="animate-spin size-6" />
                                   </div>
                               ) : displayPeers.length > 0 ? (
-                                  displayPeers.map((peer) => {
-                                      const displayName = formatUserDisplay(peer, true);
-                                      return (
+                                  <div className="grid grid-cols-4 gap-4 p-4">
+                                      {displayPeers.map((peer) => (
                                           <Button
                                               key={peer.uid}
                                               type="button"
                                               data-peer-selector-item=""
-                                              className="relative h-auto w-full justify-start rounded-none px-3 py-1.5 text-left text-base select-none [&>*:nth-child(-n+2)]:transition-transform [&>*:nth-child(-n+2)]:ease-out hover:[&>*:nth-child(-n+2)]:translate-x-3 focus:[&>*:nth-child(-n+2)]:translate-x-3 [&>*.avatar]:size-6"
+                                              aria-pressed={selectedPeer?.uid === peer.uid}
+                                              className="h-auto flex-col rounded-none p-0 shrinker"
                                               onClick={() => handlePeerSelect(peer)}
                                           >
-                                              <Avatar active={peer?.active} bot={!!peer?.bot}>
+                                              <Avatar active={peer?.active} selected={selectedPeer?.uid === peer.uid} bot={!!peer?.bot} className="size-16">
                                                   <AvatarImage src={peer.avatar} alt={peer.username} />
                                                   <AvatarFallback />
                                               </Avatar>
-                                              <span>{displayName}</span>
-                                              {selectedPeer?.uid === peer.uid && <Check className="ml-auto shrink-0" />}
+                                              <span className="text-sm font-bold truncate max-w-20">{formatUserDisplay(peer, true)}</span>
                                           </Button>
-                                      );
-                                  })
+                                      ))}
+                                  </div>
                               ) : (
                                   <div className="flex justify-center py-1.5 text-muted">{query ? 'no result' : 'search for a user'}</div>
                               )}
@@ -274,24 +280,24 @@ export default function PeerSelector({ selectedPeer, onPeerChange, disabled = fa
                 aria-haspopup="dialog"
                 onClick={() => handlePopoverOpenChange(!popoverOpen)}
                 onKeyDown={handleTriggerKeyDown}
-                className={`button-outline shrinker justify-between max-w-3xs ${className || ''}`}
+                className={`group button-outline w-full justify-between ${className || ''}`}
                 disabled={disabled}
             >
                 {selectedPeer ? (
-                    <span className="flex items-center gap-2">
-                        <Avatar active={selectedPeer?.active} bot={!!selectedPeer?.bot} className="size-6">
+                    <span className="flex min-w-0 items-center gap-3.5">
+                        <Avatar active={selectedPeer?.active} bot={!!selectedPeer?.bot} className="size-9">
                             <AvatarImage src={selectedPeer.avatar} alt={selectedPeer.username} />
                             <AvatarFallback />
                         </Avatar>
-                        {formatUserDisplay(selectedPeer, true)}
+                        <span className="truncate text-lg font-bold">{formatUserDisplay(selectedPeer, true)}</span>
                     </span>
                 ) : (
-                    <span className="flex items-center gap-2 text-muted">
-                        <UsersRound />
+                    <span className="flex min-w-0 items-center gap-3 text-muted">
+                        <UsersRound className={`size-7 text-foreground transition-opacity ease-out ${popoverOpen ? 'opacity-100' : 'opacity-45 group-hover:opacity-100 group-focus-visible:opacity-100'}`} />
                         {label}
                     </span>
                 )}
-                <ChevronsUpDown className="text-muted" />
+                <ChevronsUpDown className="size-6 text-muted" />
             </Button>
             {content}
         </>

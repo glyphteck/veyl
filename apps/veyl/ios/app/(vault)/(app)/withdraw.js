@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Keyboard, Pressable, Text, TextInput, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
-import { CircleQuestionMark, ScanQrCode } from 'lucide-react-native';
+import { CircleQuestionMark, PiggyBank, ScanQrCode } from 'lucide-react-native';
 import { toSats, toDisplay, renderMoney } from '@glyphteck/shared/utils';
 import { COOPERATIVE_EXIT_FLAT_FEE_SATS, COOPERATIVE_EXIT_TX_VBYTES, getWithdrawalFeeRisk } from '@glyphteck/shared/wallet/fees';
 import { isAddressOnNetwork, isMainnet } from '@glyphteck/shared/network';
@@ -13,6 +13,7 @@ import { useUser } from '@/providers/userprovider';
 import { useWallet } from '@/providers/walletprovider';
 import GlassButton from '@/components/glass/glassbutton';
 import GlassField from '@/components/glass/glassfield';
+import GlassIcon from '@/components/glass/glassicon';
 import Icon from '@/components/icon';
 import { warmCamera } from '@/lib/camera/warming';
 import { tap } from '@/lib/tap';
@@ -87,6 +88,12 @@ export default function Withdraw() {
     }, [amount, inputUnit, bitcoin?.price]);
     const amountAboveBalance = enteredSats != null && balanceSats != null && enteredSats > balanceSats;
     const validSats = enteredSats != null && enteredSats > 0n && !amountAboveBalance ? enteredSats : 0n;
+    const setMaxAmount = useCallback(() => {
+        if (balanceSats == null || balanceSats <= 0n) return;
+        const price = bitcoin?.price ?? 100000;
+        setAmount(toDisplay(balanceSats, inputUnit, price));
+        amountInputRef.current?.focus?.();
+    }, [balanceSats, bitcoin?.price, inputUnit]);
 
     const trimmedAddress = receivingAddress.trim();
     const hasAddress = trimmedAddress.length > 0;
@@ -107,6 +114,7 @@ export default function Withdraw() {
     );
     const buttonFeedback = amountAboveBalance ? 'amount is above your balance' : '';
     const canSubmit = validSats > 0n && addressOnNetwork && !isSubmitting;
+    const canSetMax = balanceSats != null && balanceSats > 0n && !isSubmitting;
     const hasFeeEstimate = feeAmountSats != null;
     const feeText = hasFeeEstimate ? formatSatsLabel(feeAmountSats, settings?.moneyFormat, bitcoin.price) : 'updating';
     const feeColor = withdrawalFeeRisk?.high ? theme.destructive : theme.foreground;
@@ -208,25 +216,28 @@ export default function Withdraw() {
             </GlassField>
             {addressError ? <Text style={{ color: theme.destructive, fontSize: 13, paddingHorizontal: 4 }}>{addressError}</Text> : null}
             {/* amount input */}
-            <GlassField disabled={isSubmitting} style={{ paddingHorizontal: 16 }}>
-                <TextInput
-                    ref={amountInputRef}
-                    value={amount}
-                    placeholder={inputUnit === 'sats' ? '0000' : '0.00'}
-                    placeholderTextColor={theme.muted}
-                    keyboardType="numeric"
-                    onChangeText={setAmount}
-                    editable={!isSubmitting}
-                    style={{ flex: 1, fontSize: 24, fontWeight: '900', color: theme.foreground, paddingVertical: 10 }}
-                />
-                <Pressable {...cyclePress} hitSlop={8} disabled={isSubmitting}>
-                    <Animated.View style={[{ paddingLeft: 12, alignItems: 'center', justifyContent: 'center' }, cycleStyle]}>
-                        {inputUnit === 'btc' && <Text style={{ fontSize: 24, fontWeight: '900', color: theme.muted }}>₿</Text>}
-                        {inputUnit === 'usd' && <Text style={{ fontSize: 24, fontWeight: '900', color: theme.muted }}>$</Text>}
-                        {inputUnit === 'sats' && <Text style={{ marginBottom: 2, fontSize: 24, fontWeight: '900', color: theme.muted }}>sats</Text>}
-                    </Animated.View>
-                </Pressable>
-            </GlassField>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <GlassField disabled={isSubmitting} style={{ flex: 1, paddingHorizontal: 16 }}>
+                    <TextInput
+                        ref={amountInputRef}
+                        value={amount}
+                        placeholder={inputUnit === 'sats' ? '0000' : '0.00'}
+                        placeholderTextColor={theme.muted}
+                        keyboardType="numeric"
+                        onChangeText={setAmount}
+                        editable={!isSubmitting}
+                        style={{ flex: 1, fontSize: 24, fontWeight: '900', color: theme.foreground, paddingVertical: 10 }}
+                    />
+                    <Pressable {...cyclePress} hitSlop={8} disabled={isSubmitting}>
+                        <Animated.View style={[{ paddingLeft: 12, alignItems: 'center', justifyContent: 'center' }, cycleStyle]}>
+                            {inputUnit === 'btc' && <Text style={{ fontSize: 24, fontWeight: '900', color: theme.muted }}>₿</Text>}
+                            {inputUnit === 'usd' && <Text style={{ fontSize: 24, fontWeight: '900', color: theme.muted }}>$</Text>}
+                            {inputUnit === 'sats' && <Text style={{ marginBottom: 2, fontSize: 24, fontWeight: '900', color: theme.muted }}>sats</Text>}
+                        </Animated.View>
+                    </Pressable>
+                </GlassField>
+                <GlassIcon icon={PiggyBank} onPress={setMaxAmount} disabled={!canSetMax} size={54} iconSize={26} />
+            </View>
             {/* withdraw button */}
             <GlassButton onPress={handleWithdraw} label={buttonLabel} accent disabled={!canSubmit} tintColor={buttonFeedback ? theme.destructive : undefined} color={buttonFeedback ? theme.background : undefined} />
         </View>

@@ -42,6 +42,7 @@ const SCROLL_BOTTOM_SHOW_PAGE_FRACTION = 1.25;
 const SCROLL_BOTTOM_HIDE_PAGE_FRACTION = 1;
 const SCROLL_BOTTOM_ANIMATION_MS = 160;
 const SCROLL_BOTTOM_START_SCALE = 0.001;
+const SCROLL_BOTTOM_DIRECTION_EPSILON = 2;
 const LIKE_PREVIEW_INSET = 22;
 const KEYBOARD_DISMISS_MODE = 'interactive';
 const CHAT_KEYBOARD_GAP = 8;
@@ -376,6 +377,7 @@ export default function MessageList({
     const [scrollBottomMounted, setScrollBottomMounted] = useState(false);
     const time = useSharedValue(0);
     const scrollBottomProgress = useSharedValue(0);
+    const scrollBottomDistanceRef = useRef(0);
     const receiptSnapshotRef = useRef(new Map());
     const receiptSnapshotChatRef = useRef('');
     if (receiptSnapshotChatRef.current !== (chatId || '')) {
@@ -533,6 +535,7 @@ export default function MessageList({
     useEffect(() => {
         setMediaItems([]);
         loadingOlderRef.current = false;
+        scrollBottomDistanceRef.current = 0;
         setShowScrollBottom(false);
         mark('chat.list.mount', { chatId: chatId || '' });
         return () => {
@@ -579,10 +582,13 @@ export default function MessageList({
     const handleListScroll = useCallback((event) => {
         const y = Number(event?.nativeEvent?.contentOffset?.y) || 0;
         const page = Number(event?.nativeEvent?.layoutMeasurement?.height) || 0;
-        const distance = Math.abs(y);
+        const distance = Math.max(0, y);
+        const previousDistance = scrollBottomDistanceRef.current;
+        const movingAwayFromBottom = distance > previousDistance + SCROLL_BOTTOM_DIRECTION_EPSILON;
         const showDistance = Math.max(SCROLL_BOTTOM_SHOW_MIN_DISTANCE, page * SCROLL_BOTTOM_SHOW_PAGE_FRACTION);
         const hideDistance = page * SCROLL_BOTTOM_HIDE_PAGE_FRACTION;
-        setShowScrollBottom((show) => (show ? distance > hideDistance : distance > showDistance));
+        scrollBottomDistanceRef.current = distance;
+        setShowScrollBottom((show) => distance > hideDistance && (show || (movingAwayFromBottom && distance > showDistance)));
     }, []);
 
     const scrollToBottom = useCallback(() => {

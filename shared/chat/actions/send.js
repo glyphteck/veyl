@@ -1,15 +1,15 @@
 'use client';
 
 import { useCallback, useRef } from 'react';
-import { getChatId } from '../crypto/chat.js';
-import { checkAttachmentSize, getAttachmentType, isAttachmentType, makeAttachmentUnavailableError, makeChatUnavailableError, makeTxtFileAttachment, saveMedia } from './attachments.js';
-import { makeTs, setLocalChats } from './chats.js';
-import { hasStoredFileRef, isAttachmentMsgType, isLongTxt, makeSharedAttachment } from './messages.js';
+import { getChatId } from '../../crypto/chat.js';
+import { checkAttachmentSize, getAttachmentType, isAttachmentType, makeAttachmentUnavailableError, makeChatUnavailableError, makeTxtFileAttachment, saveMedia } from '../attachments.js';
+import { makeTs, setLocalChats } from '../chats.js';
+import { hasStoredFileRef, isAttachmentMsgType, isLongTxt, makeSharedAttachment } from '../messages.js';
 import { usePendingSendQueue } from './pending.js';
 import { newMediaStayId, requireMediaSaved } from './save.js';
-import { makeCid, sortMessages } from './state.js';
-import { getPeerChatPKFromChatId } from './utils.js';
-import { cleanChatRetention, getMessageRetention, hasChatRetention, withMessageRetention } from './ttl.js';
+import { getPeerChatPKFromChatId } from '../ids.js';
+import { makeCid, sortMessages } from '../state.js';
+import { cleanChatRetention, getMessageRetention, hasChatRetention, withMessageRetention } from '../ttl.js';
 
 export const LOCAL_FAILED = Object.freeze({ pending: false, failed: true });
 export const LOCAL_PENDING = Object.freeze({ pending: true, failed: false });

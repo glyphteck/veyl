@@ -1,8 +1,8 @@
 'use client';
 
 import { useCallback } from 'react';
-import { writeCachedChats } from '../localdatacache.js';
-import { markChatsRead, readCandidate, scheduleReadReceiptWrite } from './read.js';
+import { writeCachedChats } from '../../localdatacache.js';
+import { markChatsRead, readCandidate, scheduleReadReceiptWrite } from '../read.js';
 
 export function useChatSeen({ chat, chatBanned, chatPK, chatPrivateKey, localCache, pendingReadRef, readCacheRef, readReceiptWriteDelay, getChatRetention, setChats }) {
     const scheduleReadReceipt = useCallback(

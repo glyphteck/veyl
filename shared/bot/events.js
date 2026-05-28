@@ -1,12 +1,13 @@
 export const BOT_MODE = 'mirror';
 export const BOT_UNDERFUNDED_TEXT = 'not enough balance right now';
+export const BOT_SEEDS_SECRET_ID = 'veyl-bot-seeds';
 
-export function botSecretId(username) {
+export function botSeedKey(username) {
     const name = String(username ?? '').trim().toLowerCase();
     if (!name) {
-        throw new Error('bot secret id requires username');
+        throw new Error('bot seed key requires username');
     }
-    return `veyl-bot-${name}-seed`;
+    return name;
 }
 
 export function walletEventId(txId) {

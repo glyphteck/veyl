@@ -14,6 +14,17 @@ import { useCloak } from '@glyphteck/shared/providers/cloakprovider';
 import { formatToUSD } from '@glyphteck/shared/formatmoney';
 import { formatUserDisplay, renderBalance, renderMoney, renderNet } from '@/lib/utils';
 
+const TIME_RANGE_OPTIONS = [
+    { value: 'today', label: 'today' },
+    { value: '24h', label: '24h', title: '24 hours' },
+    { value: 7, label: '7d', title: '7 days' },
+    { value: 30, label: '30d', title: '30 days' },
+    { value: 90, label: '3m', title: '3 months' },
+    { value: 180, label: '6m', title: '6 months' },
+    { value: 365, label: '1y', title: '1 year' },
+    { value: 'all-time', label: 'all', title: 'all time' },
+];
+
 function renderBalanceDescription(amount, moneyFormat, price) {
     if (amount == null) return '—';
     const primary = renderBalance(amount, moneyFormat, price);
@@ -25,12 +36,14 @@ export function WalletDashboard() {
     const bitcoin = useBitcoin();
     const { balance } = useWallet();
     const { settings, uid } = useUser();
-    const { getSeries, getHourlySeries, getTxsInRange, first, transactions } = useTxData();
-    const { peers } = usePeer();
+    const { getSeries, getHourlySeries, getTxsInRange, first, transactions, txHistoryComplete, isTxRangeCovered, ensureTxRange, getDefaultTimeRange } = useTxData();
+    const { peerByWalletPK } = usePeer();
     const { openDialog } = useDialog();
     const { cloaked } = useCloak();
     const moneyFormat = settings.moneyFormat;
-    const [timeRange, setTimeRange] = useState('all-time');
+    const defaultTimeRange = getDefaultTimeRange?.() ?? 'today';
+    const [timeRange, setTimeRange] = useState(null);
+    const activeTimeRange = timeRange ?? defaultTimeRange;
     const balanceDescription = renderBalanceDescription(balance, moneyFormat, bitcoin.price);
     const openUser = (peer) => {
         openDialog(peer?.uid && peer.uid === uid ? 'settings' : 'userdetails', peer?.uid && peer.uid === uid ? null : { user: peer });
@@ -40,13 +53,13 @@ export function WalletDashboard() {
         if (!getSeries || !getHourlySeries || !getTxsInRange) return { chartData: [], filteredTxs: [], percentChange: 0 };
 
         const chartData = (() => {
-            if (timeRange === 'today') return getHourlySeries(24, 'today');
-            if (timeRange === '24h') return getHourlySeries(24, '24h');
-            if (timeRange === 'all-time') {
+            if (activeTimeRange === 'today') return getHourlySeries(24, 'today');
+            if (activeTimeRange === '24h') return getHourlySeries(24, '24h');
+            if (activeTimeRange === 'all-time') {
                 const daysSinceFirst = first ? Math.ceil((Date.now() - new Date(first).getTime()) / (1000 * 60 * 60 * 24)) + 1 : 1;
                 return getSeries(daysSinceFirst);
             }
-            return getSeries(Number(timeRange));
+            return getSeries(Number(activeTimeRange));
         })();
 
         // get % change
@@ -58,53 +71,50 @@ export function WalletDashboard() {
                 percentChange = ((endBalance - startBalance) / Math.abs(startBalance)) * 100;
             }
         }
-        const filteredTxs = getTxsInRange(timeRange);
+        const filteredTxs = getTxsInRange(activeTimeRange);
         return { chartData, filteredTxs, percentChange };
-    }, [getSeries, getHourlySeries, getTxsInRange, timeRange, first]);
+    }, [activeTimeRange, first, getHourlySeries, getSeries, getTxsInRange]);
 
-    const netTotal = filteredTxs.reduce((sum, tx) => sum + (tx.incoming ? tx.totalValue : -tx.totalValue), 0);
-    const nonFundingTxs = filteredTxs.filter((tx) => !tx.funding);
-    const txCount = nonFundingTxs.length;
-    const volume = nonFundingTxs.reduce((sum, tx) => sum + tx.totalValue, 0);
-    const avgTxSize = txCount > 0 ? Math.round(volume / txCount) : 0;
-
-    let avgDailyVolume = 0;
-    if (timeRange === 'today' || timeRange === '24h') {
-        avgDailyVolume = Math.round(volume / 24);
-    } else if (timeRange === 'all-time') {
-        const firstTxDate = first ? new Date(first) : null;
-        if (firstTxDate) {
-            const daysSinceFirst = Math.max(1, Math.ceil((Date.now() - firstTxDate.getTime()) / (1000 * 60 * 60 * 24)));
-            avgDailyVolume = Math.round(volume / daysSinceFirst);
-        }
-    } else if (timeRange > 0) {
-        avgDailyVolume = Math.round(volume / timeRange);
-    }
-    let topPeers = [];
-    if (filteredTxs.length > 0) {
+    const { netTotal, txCount, volume, avgDailyVolume, topPeers } = useMemo(() => {
+        let netTotal = 0;
+        let txCount = 0;
+        let volume = 0;
         const peerStats = new Map();
-        filteredTxs.forEach((tx) => {
-            if (!tx.peerPK || tx.funding || tx.withdrawal) return;
+        for (const tx of filteredTxs) {
+            const totalValue = tx.totalValue || 0;
+            netTotal += tx.incoming ? totalValue : -totalValue;
+            if (tx.funding) continue;
+            txCount += 1;
+            volume += totalValue;
+            if (!tx.peerPK || tx.withdrawal) continue;
             if (!peerStats.has(tx.peerPK)) peerStats.set(tx.peerPK, { vol: 0, net: 0, cnt: 0 });
             const stats = peerStats.get(tx.peerPK);
-            stats.vol += tx.totalValue;
-            stats.net += tx.incoming ? tx.totalValue : -tx.totalValue;
+            stats.vol += totalValue;
+            stats.net += tx.incoming ? totalValue : -totalValue;
             stats.cnt += 1;
-        });
-
+        }
+        let avgDailyVolume = 0;
+        if (activeTimeRange === 'today' || activeTimeRange === '24h') {
+            avgDailyVolume = Math.round(volume / 24);
+        } else if (activeTimeRange === 'all-time') {
+            const firstTxDate = first ? new Date(first) : null;
+            if (firstTxDate) {
+                const daysSinceFirst = Math.max(1, Math.ceil((Date.now() - firstTxDate.getTime()) / (1000 * 60 * 60 * 24)));
+                avgDailyVolume = Math.round(volume / daysSinceFirst);
+            }
+        } else if (activeTimeRange > 0) {
+            avgDailyVolume = Math.round(volume / activeTimeRange);
+        }
         const topPeerPKs = Array.from(peerStats.entries())
             .sort(([, a], [, b]) => b.vol - a.vol)
             .slice(0, 10);
-        // add profile data and store period stats separately
-        topPeers = topPeerPKs.map(([walletPK, periodStats]) => {
-            const profile = peers?.find((peer) => peer.walletPK === walletPK);
-            return {
-                ...profile,
-                walletPK,
-                periodStats,
-            };
-        });
-    }
+        const topPeers = topPeerPKs.map(([walletPK, periodStats]) => ({
+            ...peerByWalletPK.get(walletPK),
+            walletPK,
+            periodStats,
+        }));
+        return { netTotal, txCount, volume, avgDailyVolume, topPeers };
+    }, [activeTimeRange, filteredTxs, first, peerByWalletPK]);
 
     // get avaialble time ranges
     const availableTimeRanges = useMemo(() => {
@@ -115,32 +125,29 @@ export function WalletDashboard() {
         const hoursSinceFirst = Math.floor((Date.now() - new Date(first).getTime()) / (1000 * 60 * 60));
         const ranges = [];
         if (transactions.length > 0) ranges.push('today');
-        if (hoursSinceFirst >= 24) ranges.push('24h');
-        if (daysSinceFirst >= 7) ranges.push(7);
-        if (daysSinceFirst >= 30) ranges.push(30);
-        if (daysSinceFirst >= 90) ranges.push(90);
-        if (daysSinceFirst >= 180) ranges.push(180);
-        if (daysSinceFirst >= 365) ranges.push(365);
-        if (daysSinceFirst >= 1) ranges.push('all-time');
+        if (hoursSinceFirst >= 24 || !txHistoryComplete) ranges.push('24h');
+        if (daysSinceFirst >= 7 || !txHistoryComplete) ranges.push(7);
+        if (daysSinceFirst >= 30 || !txHistoryComplete) ranges.push(30);
+        if (daysSinceFirst >= 90 || !txHistoryComplete) ranges.push(90);
+        if (daysSinceFirst >= 180 || !txHistoryComplete) ranges.push(180);
+        if (daysSinceFirst >= 365 || !txHistoryComplete) ranges.push(365);
+        if (transactions.length > 0) ranges.push('all-time');
         return ranges.length ? ranges : ['today'];
-    }, [transactions, first]);
+    }, [first, transactions, txHistoryComplete]);
 
     useEffect(() => {
-        if (availableTimeRanges.length > 0 && !availableTimeRanges.includes(timeRange)) {
-            setTimeRange(availableTimeRanges[0]);
+        if (timeRange !== null && availableTimeRanges.length > 0 && !availableTimeRanges.includes(timeRange)) {
+            setTimeRange(null);
         }
     }, [availableTimeRanges, timeRange]);
 
-    const timeRangeOptions = [
-        availableTimeRanges.includes('today') && { value: 'today', label: 'today' },
-        availableTimeRanges.includes('24h') && { value: '24h', label: '24h', title: '24 hours' },
-        availableTimeRanges.includes(7) && { value: '7', label: '7d', title: '7 days' },
-        availableTimeRanges.includes(30) && { value: '30', label: '30d', title: '30 days' },
-        availableTimeRanges.includes(90) && { value: '90', label: '3m', title: '3 months' },
-        availableTimeRanges.includes(180) && { value: '180', label: '6m', title: '6 months' },
-        availableTimeRanges.includes(365) && { value: '365', label: '1y', title: '1 year' },
-        availableTimeRanges.includes('all-time') && { value: 'all-time', label: 'all', title: 'all time' },
-    ].filter(Boolean);
+    useEffect(() => {
+        if (!isTxRangeCovered?.(activeTimeRange)) {
+            void ensureTxRange?.(activeTimeRange);
+        }
+    }, [activeTimeRange, ensureTxRange, isTxRangeCovered]);
+
+    const timeRangeOptions = TIME_RANGE_OPTIONS.filter((option) => availableTimeRanges.includes(option.value));
 
     return (
         <div className="flex flex-col gap-2 h-full min-h-0">
@@ -161,21 +168,21 @@ export function WalletDashboard() {
                                         if (Math.abs(percentChange) < 10) return `${percentChange > 0 ? '+' : ''}${percentChange.toFixed(2)}% from `;
                                         return `${percentChange > 0 ? '+' : ''}${percentChange.toFixed(0)}% from `;
                                     })()}
-                                    {timeRange === 'today'
+                                    {activeTimeRange === 'today'
                                         ? 'midnight'
-                                        : timeRange === '24h'
+                                        : activeTimeRange === '24h'
                                           ? 'yesterday'
-                                          : timeRange === 7
+                                          : activeTimeRange === 7
                                             ? 'last week'
-                                            : timeRange === 30
+                                            : activeTimeRange === 30
                                               ? 'last month'
-                                              : timeRange === 90
+                                              : activeTimeRange === 90
                                                 ? 'last 3 months'
-                                                : timeRange === 180
+                                                : activeTimeRange === 180
                                                   ? 'last 6 months'
-                                                  : timeRange === 365
+                                                  : activeTimeRange === 365
                                                     ? 'last year'
-                                                    : timeRange === 'all-time'
+                                                    : activeTimeRange === 'all-time'
                                                       ? 'first day'
                                                       : ''}
                                 </div>
@@ -190,23 +197,26 @@ export function WalletDashboard() {
                             aria-label="select a time range"
                             className="ml-auto self-center shrink-0"
                             type="single"
-                            value={String(timeRange)}
+                            value={String(activeTimeRange)}
                             onValueChange={(next) => {
                                 if (!next) return;
                                 setTimeRange(['7', '30', '90', '180', '365'].includes(next) ? Number(next) : next);
                             }}
                             required
                         >
-                            {timeRangeOptions.map((option) => (
-                                <ToggleGroupItem key={option.value} value={option.value} aria-label={option.title || option.label} title={option.title || option.label} className="px-3 text-sm">
-                                    {option.label}
-                                </ToggleGroupItem>
-                            ))}
+                            {timeRangeOptions.map((option) => {
+                                const value = String(option.value);
+                                return (
+                                    <ToggleGroupItem key={value} value={value} aria-label={option.title || option.label} title={option.title || option.label} className="px-3 text-sm">
+                                        {option.label}
+                                    </ToggleGroupItem>
+                                );
+                            })}
                         </ToggleGroup>
                     )}
                 </div>
                 <div className="w-full h-full min-h-0 overflow-visible px-4 py-2">
-                    <BalanceChart data={chartData} timeRange={timeRange} moneyFormat={moneyFormat} bitcoin={bitcoin} className="min-h-0" />
+                    <BalanceChart data={chartData} timeRange={activeTimeRange} moneyFormat={moneyFormat} bitcoin={bitcoin} className="min-h-0" />
                 </div>
             </Card>
             <div className="grid grid-cols-2 gap-2 ">
@@ -225,7 +235,7 @@ export function WalletDashboard() {
                             <div className={`text-muted whitespace-nowrap shrink-0 overflow-hidden text-sm ${cloaked ? 'cloaked' : ''}`}>
                                 {avgDailyVolume > 0 && txCount >= 1 ? renderMoney(avgDailyVolume, moneyFormat, bitcoin.price, '~') : ''}
                                 {avgDailyVolume > 0 && txCount >= 1
-                                    ? timeRange === 'today' || timeRange === '24h'
+                                    ? activeTimeRange === 'today' || activeTimeRange === '24h'
                                         ? '/hour'
                                         : '/day'
                                     : volume === 0

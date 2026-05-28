@@ -53,7 +53,7 @@ export default function ChatPage() {
 
     return (
         <div className="h-full flex gap-2">
-            <div className="flex-1 min-w-16 max-w-16 md:min-w-2xs md:max-w-full ">
+            <div className="flex-1 min-w-16 max-w-16 md:min-w-[19rem] md:max-w-full ">
                 <RecentChatsList />
             </div>
             <div className="flex-4 min-w-0">

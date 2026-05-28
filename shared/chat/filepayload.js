@@ -9,6 +9,7 @@ export const CHAT_MEDIA_TTL_DAYS = 21;
 export const CHAT_MEDIA_TTL_MS = CHAT_MEDIA_TTL_DAYS * 24 * 60 * 60 * 1000;
 export const MAX_CHAT_FILE_BYTES = 20 * 1024 * 1024;
 export const CHAT_FILE_SIZE_LIMIT_ENABLED = false;
+export const MAX_CHAT_UPLOAD_FILES = 5;
 const MEDIA_ID_BYTES = 16;
 const MEDIA_ID_PATTERN = '[0-9a-fA-F]{32}';
 const MEDIA_FILE_PATTERN = new RegExp(`^${CHAT_MEDIA_ROOT}/(${MEDIA_ID_PATTERN})/${CHAT_SLOT}$`);

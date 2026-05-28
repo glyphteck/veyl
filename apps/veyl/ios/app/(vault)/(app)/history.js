@@ -34,32 +34,32 @@ function TxRow({ tx, theme, moneyFormat, btcPrice, peerAvatarSource, userAvatarS
                 flexDirection: 'row',
                 alignItems: 'center',
                 justifyContent: 'space-between',
+                gap: 16,
                 borderBottomWidth: isLast ? 0 : 1,
                 borderBottomColor: theme.border,
             }}
         >
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16, flex: 1, paddingRight: 12 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16, flex: 1 }}>
                 <Avatar pointerEvents="none" source={avatarSource} active={isActive} bot={isInflow ? isPeerBot : false} />
-                <View style={{ flex: 1, justifyContent: 'center' }}>
-                    <Text numberOfLines={1} style={{ fontSize: 16, fontWeight: '800', color: theme.foreground }}>
-                        {title}
-                    </Text>
-                </View>
+                <Text numberOfLines={1} style={{ flex: 1, fontSize: 16, fontWeight: '700', color: theme.foreground }}>
+                    {title}
+                </Text>
             </View>
-
             <View style={{ alignItems: 'flex-end' }}>
+                <Text numberOfLines={1} style={{ fontSize: 12, fontWeight: '700', color: theme.muted }}>
+                    {label}
+                </Text>
                 <Text
+                    numberOfLines={1}
                     style={{
-                        fontSize: 18,
+                        marginTop: 2,
+                        fontSize: 14,
                         fontWeight: '900',
                         color: isInflow ? theme.inflow : theme.outflow,
                         opacity: tx?.pending ? 0.5 : 1,
                     }}
                 >
                     {amountText}
-                </Text>
-                <Text numberOfLines={1} style={{ marginTop: 2, fontSize: 12, fontWeight: '700', color: theme.muted }}>
-                    {label}
                 </Text>
             </View>
         </View>
@@ -71,14 +71,19 @@ export default function HistoryRoute() {
     const insets = useSafeAreaInsets();
     const router = useRouter();
     const params = useLocalSearchParams();
-    const { peers } = usePeer() || {};
+    const { peerByWalletPK, peerByChatPK } = usePeer() || {};
     const { settings, avatar } = useUser();
     const bitcoin = useBitcoin();
+    const { hasMoreTxs, isTxLoading, loadMoreTxs } = useWallet();
     const { getPeerStats, getPeerTxs } = useTxData();
     const [displayFormat, setDisplayFormat] = useState(null);
     const [headerHeight, setHeaderHeight] = useState(0);
     const [footerHeight, setFooterHeight] = useState(0);
     const backTap = useTap({ onPress: router.back });
+    const handleLoadMoreTxs = useCallback(() => {
+        if (!hasMoreTxs || isTxLoading) return;
+        void loadMoreTxs?.();
+    }, [hasMoreTxs, isTxLoading, loadMoreTxs]);
 
     const peerWalletPK = typeof params?.walletPK === 'string' ? params.walletPK : Array.isArray(params?.walletPK) ? params.walletPK[0] : '';
     const peerChatPK = typeof params?.chatPK === 'string' ? params.chatPK : Array.isArray(params?.chatPK) ? params.chatPK[0] : '';
@@ -86,13 +91,11 @@ export default function HistoryRoute() {
     const btcPrice = bitcoin?.price ?? 100000;
 
     const peerProfile = useMemo(() => {
-        if (!Array.isArray(peers)) return null;
-        return peers.find((peer) => (peerWalletPK && peer?.walletPK === peerWalletPK) || (peerChatPK && peer?.chatPK === peerChatPK)) ?? null;
-    }, [peerChatPK, peerWalletPK, peers]);
+        return (peerWalletPK ? peerByWalletPK?.get(peerWalletPK) : null) ?? (peerChatPK ? peerByChatPK?.get(peerChatPK) : null) ?? null;
+    }, [peerByChatPK, peerByWalletPK, peerChatPK, peerWalletPK]);
 
     const txs = useMemo(() => {
-        const list = getPeerTxs?.(peerWalletPK) ?? [];
-        return [...list].sort((a, b) => new Date(b.createdTime) - new Date(a.createdTime));
+        return getPeerTxs?.(peerWalletPK) ?? [];
     }, [getPeerTxs, peerWalletPK]);
 
     const stats = useMemo(() => {
@@ -149,6 +152,8 @@ export default function HistoryRoute() {
                         isLast={index === txs.length - 1}
                     />
                 )}
+                onEndReached={handleLoadMoreTxs}
+                onEndReachedThreshold={0.6}
                 ListEmptyComponent={() => <EmptyState icon={History} title="no transactions with this user yet" />}
                 contentContainerStyle={{ flexGrow: 1, paddingTop: headerHeight, paddingBottom: footerHeight }}
                 style={{ flex: 1 }}

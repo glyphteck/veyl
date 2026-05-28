@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { readCachedTransfers, writeCachedTransfers } from '../localdatacache.js';
+import { readCachedTransferState, writeCachedTransferState } from '../localdatacache.js';
 import { markDiag, markDone, markError } from './diag.js';
 
-export const RECENT_TRANSFER_LIMIT = 50;
+export const RECENT_TRANSFER_LIMIT = 100;
+export const TRANSFER_PAGE_LIMIT = 100;
 const INITIAL_TRANSFER_LIMIT = RECENT_TRANSFER_LIMIT;
+const TRANSFER_FETCH_THROTTLE_MS = 150;
 const FINAL_TRANSFER_STATUSES = new Set(['TRANSFER_STATUS_COMPLETED', 'TRANSFER_STATUS_EXPIRED', 'TRANSFER_STATUS_RETURNED', 'UNRECOGNIZED']);
 
 export function isPendingTransfer(tx) {
@@ -27,7 +29,7 @@ function sameTransfers(a = [], b = []) {
         if (
             left?.id !== right?.id ||
             left?.status !== right?.status ||
-            left?.createdTime !== right?.createdTime ||
+            txCreatedMs(left) !== txCreatedMs(right) ||
             left?.totalValue !== right?.totalValue ||
             left?.type !== right?.type ||
             left?.transferDirection !== right?.transferDirection ||
@@ -41,152 +43,279 @@ function sameTransfers(a = [], b = []) {
     return true;
 }
 
-function sameTransferForSync(a, b) {
-    return sameTransfers(a ? [a] : [], b ? [b] : []);
+function txCreatedMs(tx) {
+    const value = tx?.createdTime;
+    if (typeof value?.toMillis === 'function') {
+        const ms = value.toMillis();
+        return Number.isFinite(ms) ? ms : 0;
+    }
+    if (value instanceof Date) {
+        const ms = value.getTime();
+        return Number.isFinite(ms) ? ms : 0;
+    }
+    if (Number.isFinite(value)) return value;
+    if (typeof value === 'string') {
+        const ms = Date.parse(value);
+        return Number.isFinite(ms) ? ms : 0;
+    }
+    return 0;
+}
+
+function getOldestTransferMs(transfers = []) {
+    let oldest = null;
+    for (const tx of transfers) {
+        const ms = txCreatedMs(tx);
+        if (!ms) continue;
+        oldest = oldest == null ? ms : Math.min(oldest, ms);
+    }
+    return oldest;
+}
+
+function mergeTransferPage(currentTransfers = [], pageTransfers = [], position = 'append') {
+    const seen = new Set();
+    const nextTransfers = [];
+    const add = (tx) => {
+        if (!tx?.id || seen.has(tx.id)) {
+            return;
+        }
+        seen.add(tx.id);
+        nextTransfers.push(tx);
+    };
+
+    if (position === 'prepend') {
+        pageTransfers.forEach(add);
+        currentTransfers.forEach(add);
+    } else {
+        currentTransfers.forEach(add);
+        pageTransfers.forEach(add);
+    }
+
+    return nextTransfers;
+}
+
+function getNextOffset(page, currentOffset, pageTransfers) {
+    const returnedOffset = Number(page?.offset);
+    if (Number.isFinite(returnedOffset) && returnedOffset > currentOffset) {
+        return returnedOffset;
+    }
+    return currentOffset + pageTransfers.length;
+}
+
+function hasMorePage(pageTransfers, limit) {
+    return pageTransfers.length >= limit;
+}
+
+function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export function useWalletTransfers({ wallet, localCache, diag }) {
     const [transfers, setTransfers] = useState([]);
     const [txReady, setTxReady] = useState(false);
     const [isTxLoading, setIsTxLoading] = useState(false);
+    const [historyComplete, setHistoryComplete] = useState(false);
     const transfersRef = useRef([]);
+    const historyCompleteRef = useRef(false);
+    const nextOffsetRef = useRef(0);
+    const recentFetchPromiseRef = useRef(null);
+    const fetchPromiseRef = useRef(null);
+    const transferFetchQueueRef = useRef(Promise.resolve());
+    const lastFetchAtRef = useRef(0);
+    const cacheWriteRef = useRef({ timer: null, cache: null, state: null });
 
     const transferCount = transfers.length;
+    const oldestLoadedMs = useMemo(() => getOldestTransferMs(transfers), [transfers]);
     const hasPendingTxs = useMemo(() => transfers.slice(0, RECENT_TRANSFER_LIMIT).some(isPendingTransfer), [transfers]);
 
     useEffect(() => {
         transfersRef.current = transfers;
     }, [transfers]);
 
-    const setNextTransfers = useCallback((latestTransfers = []) => {
-        setTransfers((currentTransfers) => {
-            if (!currentTransfers.length) {
-                return latestTransfers;
+    const setHistoryCompleteValue = useCallback((next) => {
+        historyCompleteRef.current = next === true;
+        setHistoryComplete((current) => (current === historyCompleteRef.current ? current : historyCompleteRef.current));
+    }, []);
+
+    const setNextOffset = useCallback((nextOffset) => {
+        if (Number.isFinite(nextOffset)) {
+            nextOffsetRef.current = Math.max(nextOffsetRef.current || 0, nextOffset);
+        }
+    }, []);
+
+    const commitTransfers = useCallback((pageTransfers = [], position = 'append') => {
+        const nextTransfers = mergeTransferPage(transfersRef.current, pageTransfers, position);
+        if (sameTransfers(transfersRef.current, nextTransfers)) {
+            return transfersRef.current;
+        }
+        transfersRef.current = nextTransfers;
+        setTransfers((currentTransfers) => (sameTransfers(currentTransfers, nextTransfers) ? currentTransfers : nextTransfers));
+        return nextTransfers;
+    }, []);
+
+    const waitForFetchSlot = useCallback(async () => {
+        const elapsed = Date.now() - lastFetchAtRef.current;
+        if (elapsed > 0 && elapsed < TRANSFER_FETCH_THROTTLE_MS) {
+            await sleep(TRANSFER_FETCH_THROTTLE_MS - elapsed);
+        }
+        lastFetchAtRef.current = Date.now();
+    }, []);
+
+    const flushTransferCache = useCallback(() => {
+        const pending = cacheWriteRef.current;
+        if (pending.timer) {
+            clearTimeout(pending.timer);
+        }
+        pending.timer = null;
+        if (pending.cache && pending.state) {
+            writeCachedTransferState(pending.cache, pending.state);
+        }
+        pending.state = null;
+    }, []);
+
+    const fetchTransfersPage = useCallback(
+        async (limit, offset, createdAfter = undefined, createdBefore = undefined) => {
+            const run = async () => {
+                await waitForFetchSlot();
+                return wallet.getTransfers(limit, offset, createdAfter, createdBefore);
+            };
+            const request = transferFetchQueueRef.current.then(run, run);
+            transferFetchQueueRef.current = request.catch(() => {});
+            return request;
+        },
+        [wallet, waitForFetchSlot]
+    );
+
+    const hasCoverage = useCallback((sinceMs) => {
+        if (historyCompleteRef.current) return true;
+        if (!Number.isFinite(sinceMs)) return false;
+        const oldest = getOldestTransferMs(transfersRef.current);
+        return oldest != null && oldest <= sinceMs;
+    }, []);
+
+    const fetchUntil = useCallback(
+        async ({ sinceMs = null, allHistory = false, maxPages = Infinity, label = 'wallet.txs' } = {}) => {
+            if (!wallet) {
+                return { loaded: transfersRef.current.length, historyComplete: historyCompleteRef.current };
             }
 
-            const recentIds = new Set(latestTransfers.map((tx) => tx.id));
-            const nextTransfers = [...latestTransfers];
-            for (const tx of currentTransfers) {
-                if (!recentIds.has(tx.id)) {
-                    nextTransfers.push(tx);
-                }
+            if (recentFetchPromiseRef.current) {
+                await recentFetchPromiseRef.current;
             }
-            return sameTransfers(currentTransfers, nextTransfers) ? currentTransfers : nextTransfers;
-        });
-    }, []);
+            if (fetchPromiseRef.current) {
+                await fetchPromiseRef.current;
+            }
+
+            if (historyCompleteRef.current || (!allHistory && Number.isFinite(sinceMs) && hasCoverage(sinceMs))) {
+                return { loaded: transfersRef.current.length, historyComplete: historyCompleteRef.current };
+            }
+
+            const run = async () => {
+                setIsTxLoading(true);
+                const startedAt = Date.now();
+                let pages = 0;
+                markDiag(diag, `${label}.start`, { sinceMs: Number.isFinite(sinceMs) ? sinceMs : null, allHistory: !!allHistory, maxPages: Number.isFinite(maxPages) ? maxPages : null });
+                try {
+                    while (!historyCompleteRef.current && pages < maxPages) {
+                        if (!allHistory && Number.isFinite(sinceMs) && hasCoverage(sinceMs)) {
+                            break;
+                        }
+
+                        const offset = nextOffsetRef.current;
+                        const page = await fetchTransfersPage(TRANSFER_PAGE_LIMIT, offset);
+                        const pageTransfers = Array.isArray(page?.transfers) ? page.transfers : [];
+                        const nextOffset = getNextOffset(page, offset, pageTransfers);
+                        pages += 1;
+
+                        if (pageTransfers.length) {
+                            commitTransfers(pageTransfers, 'append');
+                        }
+
+                        if (!hasMorePage(pageTransfers, TRANSFER_PAGE_LIMIT)) {
+                            setHistoryCompleteValue(true);
+                            break;
+                        }
+
+                        setNextOffset(nextOffset);
+                    }
+                    markDone(diag, label, startedAt, { pages, loaded: transfersRef.current.length, historyComplete: historyCompleteRef.current });
+                } catch (error) {
+                    markError(diag, label, startedAt, error, { pages });
+                    console.debug?.('could not fetch transfer history', error?.message ?? error);
+                } finally {
+                    setTxReady(true);
+                    setIsTxLoading(false);
+                }
+
+                return { loaded: transfersRef.current.length, historyComplete: historyCompleteRef.current };
+            };
+
+            fetchPromiseRef.current = run().finally(() => {
+                fetchPromiseRef.current = null;
+            });
+
+            return fetchPromiseRef.current;
+        },
+        [commitTransfers, diag, fetchTransfersPage, hasCoverage, setHistoryCompleteValue, setNextOffset, wallet]
+    );
 
     const getRecentTxs = useCallback(async () => {
         if (!wallet) {
             return null;
         }
-
-        const startedAt = Date.now();
-        markDiag(diag, 'wallet.recentTxs.start', { limit: INITIAL_TRANSFER_LIMIT });
-        setIsTxLoading(true);
-        try {
-            const page = await wallet.getTransfers(INITIAL_TRANSFER_LIMIT, 0);
-            const latestTransfers = Array.isArray(page?.transfers) ? page.transfers : [];
-            setNextTransfers(latestTransfers);
-            const result = {
-                transfers: latestTransfers,
-                offset: page?.offset,
-                hasMore: latestTransfers.length >= INITIAL_TRANSFER_LIMIT && page?.offset != null,
-            };
-            markDone(diag, 'wallet.recentTxs', startedAt, { count: latestTransfers.length, hasMore: result.hasMore });
-            return result;
-        } catch (error) {
-            markError(diag, 'wallet.recentTxs', startedAt, error);
-            console.debug?.('could not get recent transfers', error?.message ?? error);
-            return null;
-        } finally {
-            setTxReady(true);
-            setIsTxLoading(false);
+        if (recentFetchPromiseRef.current) {
+            return recentFetchPromiseRef.current;
         }
-    }, [diag, wallet, setNextTransfers]);
 
-    const getAllTxs = useCallback(
-        async (firstPage = null) => {
-            if (!wallet) {
-                return;
-            }
-
-            setIsTxLoading(true);
+        const run = async () => {
             const startedAt = Date.now();
-            let pages = Array.isArray(firstPage?.transfers) && firstPage.transfers.length ? 1 : 0;
-            markDiag(diag, 'wallet.allTxs.start', { seeded: !!firstPage, seededCount: firstPage?.transfers?.length || 0 });
+            markDiag(diag, 'wallet.recentTxs.start', { limit: INITIAL_TRANSFER_LIMIT });
+            setIsTxLoading(true);
             try {
-                const limit = RECENT_TRANSFER_LIMIT;
-                const seededTransfers = Array.isArray(firstPage?.transfers) ? firstPage.transfers : [];
-                const cachedTransfers = transfersRef.current;
-                const cachedById = new Map(cachedTransfers.filter((tx) => tx?.id).map((tx) => [tx.id, tx]));
-                const pendingCachedIds = new Set(cachedTransfers.filter(isPendingTransfer).map((tx) => tx.id).filter(Boolean));
-                let offset = firstPage?.offset ?? 0;
-                const nextTransfers = [];
-                let shouldFetch = !firstPage || firstPage.hasMore;
-                let reachedCacheBoundary = false;
-
-                const appendPage = (pageTransfers = []) => {
-                    let reachedStableCachedBoundary = false;
-                    for (const tx of pageTransfers) {
-                        if (!tx?.id) {
-                            continue;
-                        }
-
-                        nextTransfers.push(tx);
-                        pendingCachedIds.delete(tx.id);
-
-                        const cached = cachedById.get(tx.id);
-                        if (cached && sameTransferForSync(tx, cached)) {
-                            reachedStableCachedBoundary = true;
-                        }
-                    }
-                    return reachedStableCachedBoundary && pendingCachedIds.size === 0;
+                const page = await fetchTransfersPage(INITIAL_TRANSFER_LIMIT, 0);
+                const latestTransfers = Array.isArray(page?.transfers) ? page.transfers : [];
+                commitTransfers(latestTransfers, 'prepend');
+                const nextOffset = getNextOffset(page, 0, latestTransfers);
+                const hasMore = hasMorePage(latestTransfers, INITIAL_TRANSFER_LIMIT);
+                setNextOffset(hasMore ? nextOffset : latestTransfers.length);
+                setHistoryCompleteValue(!hasMore);
+                const result = {
+                    transfers: latestTransfers,
+                    offset: nextOffset,
+                    hasMore,
                 };
-
-                if (appendPage(seededTransfers)) {
-                    reachedCacheBoundary = true;
-                    shouldFetch = false;
-                }
-
-                while (shouldFetch) {
-                    const { transfers: txs = [], offset: nextOffset } = await wallet.getTransfers(limit, offset);
-                    pages += 1;
-                    if (appendPage(txs)) {
-                        reachedCacheBoundary = true;
-                        break;
-                    }
-                    if (txs.length < limit) {
-                        break;
-                    }
-                    if (nextOffset == null || nextOffset === offset) {
-                        break;
-                    }
-                    offset = nextOffset;
-                    shouldFetch = true;
-                }
-                if (reachedCacheBoundary) {
-                    setNextTransfers(nextTransfers);
-                } else {
-                    setTransfers((currentTransfers) => (sameTransfers(currentTransfers, nextTransfers) ? currentTransfers : nextTransfers));
-                }
-                markDone(diag, 'wallet.allTxs', startedAt, { pages, count: nextTransfers.length, reachedCacheBoundary });
+                markDone(diag, 'wallet.recentTxs', startedAt, { count: latestTransfers.length, hasMore: result.hasMore });
+                return result;
             } catch (error) {
-                markError(diag, 'wallet.allTxs', startedAt, error, { pages });
-                console.debug?.('could not get all transfers', error?.message ?? error);
+                markError(diag, 'wallet.recentTxs', startedAt, error);
+                console.debug?.('could not get recent transfers', error?.message ?? error);
+                return null;
             } finally {
                 setTxReady(true);
                 setIsTxLoading(false);
             }
-        },
-        [diag, wallet, setNextTransfers]
-    );
+        };
+
+        recentFetchPromiseRef.current = run().finally(() => {
+            recentFetchPromiseRef.current = null;
+        });
+        return recentFetchPromiseRef.current;
+    }, [commitTransfers, diag, fetchTransfersPage, setHistoryCompleteValue, setNextOffset, wallet]);
+
+    const ensureTxCoverage = useCallback((sinceMs = null) => fetchUntil({ sinceMs, allHistory: !Number.isFinite(sinceMs), label: 'wallet.ensureTxCoverage' }), [fetchUntil]);
+
+    const loadMoreTxs = useCallback(() => fetchUntil({ maxPages: 1, label: 'wallet.moreTxs' }), [fetchUntil]);
 
     const resetTransfers = useCallback(() => {
         setTransfers([]);
         setTxReady(false);
         setIsTxLoading(false);
+        setHistoryCompleteValue(false);
         transfersRef.current = [];
-    }, []);
+        nextOffsetRef.current = 0;
+        recentFetchPromiseRef.current = null;
+        fetchPromiseRef.current = null;
+        transferFetchQueueRef.current = Promise.resolve();
+    }, [setHistoryCompleteValue]);
 
     useEffect(() => {
         if (!wallet || !localCache) {
@@ -194,32 +323,56 @@ export function useWalletTransfers({ wallet, localCache, diag }) {
         }
 
         const startedAt = Date.now();
-        const cachedTransfers = readCachedTransfers(localCache);
-        markDiag(diag, 'wallet.provider.cache.hydrate', { elapsedMs: Date.now() - startedAt, count: cachedTransfers.length });
-        if (!cachedTransfers.length) {
+        const cached = readCachedTransferState(localCache);
+        markDiag(diag, 'wallet.provider.cache.hydrate', { elapsedMs: Date.now() - startedAt, count: cached.transfers.length, historyComplete: cached.historyComplete });
+        if (!cached.transfers.length) {
             return;
         }
 
-        setTransfers((currentTransfers) => (sameTransfers(currentTransfers, cachedTransfers) ? currentTransfers : cachedTransfers));
+        transfersRef.current = cached.transfers;
+        nextOffsetRef.current = cached.nextOffset;
+        setHistoryCompleteValue(cached.historyComplete);
+        setTransfers((currentTransfers) => (sameTransfers(currentTransfers, cached.transfers) ? currentTransfers : cached.transfers));
         setTxReady(true);
-    }, [diag, wallet, localCache]);
+    }, [diag, wallet, localCache, setHistoryCompleteValue]);
 
     useEffect(() => {
         if (!wallet || !localCache || !txReady) {
             return;
         }
 
-        writeCachedTransfers(localCache, transfers);
-    }, [wallet, localCache, transfers, txReady]);
+        cacheWriteRef.current.cache = localCache;
+        cacheWriteRef.current.state = {
+            transfers,
+            historyComplete,
+            nextOffset: nextOffsetRef.current,
+        };
+        if (cacheWriteRef.current.timer) {
+            clearTimeout(cacheWriteRef.current.timer);
+        }
+        cacheWriteRef.current.timer = setTimeout(flushTransferCache, 500);
+        return () => {
+            if (cacheWriteRef.current.timer) {
+                clearTimeout(cacheWriteRef.current.timer);
+                cacheWriteRef.current.timer = null;
+            }
+        };
+    }, [wallet, localCache, transfers, txReady, historyComplete, flushTransferCache]);
+
+    useEffect(() => () => flushTransferCache(), [flushTransferCache]);
 
     return {
         transfers,
         txReady,
         isTxLoading,
         transferCount,
+        oldestLoadedMs,
+        historyComplete,
+        hasMoreTxs: !historyComplete,
         hasPendingTxs,
         getRecentTxs,
-        getAllTxs,
+        ensureTxCoverage,
+        loadMoreTxs,
         resetTransfers,
     };
 }

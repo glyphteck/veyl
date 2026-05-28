@@ -15,7 +15,7 @@ import { toast } from 'sonner';
 export default function TxDetails({ data, close }) {
     const bitcoin = useBitcoin();
     const user = useUser();
-    const { peers } = usePeer();
+    const { peerByWalletPK } = usePeer();
     const { openDialog } = useDialog();
     const { cloaked } = useCloak();
     const { settings } = user;
@@ -24,7 +24,7 @@ export default function TxDetails({ data, close }) {
     if (!tx) return null;
 
     const hasAccepted = !tx.pending && tx.updatedTime !== tx.createdTime;
-    const peerProfile = tx.peerPK ? peers?.find((peer) => peer.walletPK === tx.peerPK) : null;
+    const peerProfile = tx.peerPK ? peerByWalletPK.get(tx.peerPK) : null;
 
     const getSenderInfo = () => {
         if (tx.funding) {

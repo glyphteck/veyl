@@ -1,7 +1,7 @@
 'use client';
 
 import { canShowMsg } from './messages.js';
-import { getMessageKey } from './state.js';
+import { collectMessageKeys, messageHasKey } from './messagekeys.js';
 import { ttlMillis } from './ttl.js';
 
 export function timestampMs(value) {
@@ -117,38 +117,6 @@ export function filterPendingDeleteChats(chats, pendingDeleteIds) {
     return (chats || []).filter((chatItem) => !pendingDeleteIds.has(chatItem?.id));
 }
 
-function messageKeySet(messages) {
-    const keys = new Set();
-    for (const message of messages || []) {
-        if (typeof message === 'string') {
-            const key = message.trim();
-            if (key) keys.add(key);
-            continue;
-        }
-        const key = getMessageKey(message);
-        const id = typeof message?.id === 'string' ? message.id.trim() : '';
-        const cid = typeof message?.cid === 'string' ? message.cid.trim() : '';
-        if (key) keys.add(key);
-        if (id) keys.add(id);
-        if (cid) keys.add(cid);
-    }
-    return keys;
-}
-
-function messageMatchesKeys(message, keys) {
-    if (!message || !keys?.size) {
-        return false;
-    }
-    const key = getMessageKey(message);
-    const id = typeof message.id === 'string' ? message.id.trim() : '';
-    const cid = typeof message.cid === 'string' ? message.cid.trim() : '';
-    return !!((key && keys.has(key)) || (id && keys.has(id)) || (cid && keys.has(cid)));
-}
-
-export function collectMessageKeys(messages) {
-    return messageKeySet(messages);
-}
-
 function skipChatSet(options) {
     const ids = options?.skipChatIds;
     if (ids instanceof Set) {
@@ -159,6 +127,105 @@ function skipChatSet(options) {
     }
     const id = options?.skipChatId;
     return id ? new Set([id]) : null;
+}
+
+function samePreviewMsg(a, b) {
+    if (!a && !b) return true;
+    if (!a || !b) return false;
+    return (
+        a.cid === b.cid &&
+        a.id === b.id &&
+        a.t === b.t &&
+        a.c === b.c &&
+        a.sys === b.sys &&
+        a.retention === b.retention &&
+        timestampMs(a.ttl) === timestampMs(b.ttl) &&
+        a.pending === b.pending &&
+        a.failed === b.failed
+    );
+}
+
+function cleanPreviewReplacement(replacement, keys) {
+    return replacement && canShowMsg(replacement) && !messageHasKey(replacement, keys) ? replacement : null;
+}
+
+function previewUnseen(chatId, lastMsg, chatPK, readCache) {
+    if (!lastMsg || !canShowMsg(lastMsg)) {
+        return false;
+    }
+    const from = lastMsg?.from || lastMsg?.s || lastMsg?.head?.from;
+    if (!from || from === chatPK) {
+        return false;
+    }
+    const readMs = readCache instanceof Map ? readCache.get(chatId) : null;
+    const lastMs = timestampMs(lastMsg.ts);
+    return readMs == null || lastMs == null || readMs < lastMs;
+}
+
+export function mergeChatPreviewDrop(overridesByChat, chatId, keys, replacement) {
+    if (!(overridesByChat instanceof Map) || !chatId) {
+        return false;
+    }
+    const nextKeys = keys instanceof Set ? new Set(keys) : collectMessageKeys(keys);
+    if (!nextKeys.size) {
+        return false;
+    }
+
+    const current = overridesByChat.get(chatId);
+    const mergedKeys = new Set(current?.keys || []);
+    let keysChanged = false;
+    for (const key of nextKeys) {
+        if (!mergedKeys.has(key)) {
+            mergedKeys.add(key);
+            keysChanged = true;
+        }
+    }
+
+    const lastMsg = cleanPreviewReplacement(replacement, mergedKeys);
+    const lastMsgChanged = !samePreviewMsg(current?.lastMsg ?? null, lastMsg);
+    if (!keysChanged && !lastMsgChanged) {
+        return false;
+    }
+
+    overridesByChat.set(chatId, { keys: mergedKeys, lastMsg });
+    return true;
+}
+
+export function applyChatPreviewOverrides(chats, overridesByChat, chatPK, readCache) {
+    if (!(overridesByChat instanceof Map) || !overridesByChat.size) {
+        return chats;
+    }
+
+    let changed = false;
+    const next = (chats || []).map((chat) => {
+        const override = overridesByChat.get(chat?.id);
+        if (!override?.keys?.size) {
+            return chat;
+        }
+
+        const lastMsg = cleanPreviewReplacement(override.lastMsg, override.keys);
+        if (chat?.lastMsg && !messageHasKey(chat.lastMsg, override.keys)) {
+            if (samePreviewMsg(chat.lastMsg, lastMsg)) {
+                return chat;
+            }
+            overridesByChat.delete(chat.id);
+            return chat;
+        }
+
+        const unseen = previewUnseen(chat.id, lastMsg, chatPK, readCache);
+        if (samePreviewMsg(chat?.lastMsg ?? null, lastMsg) && chat?.unseen === unseen) {
+            return chat;
+        }
+
+        changed = true;
+        return {
+            ...chat,
+            lastMsg,
+            unseen,
+        };
+    });
+
+    return changed ? next : chats;
 }
 
 export function trimExpiredChatPreviews(chats, options = {}) {
@@ -182,7 +249,7 @@ export function clearChatPreviewsByKeys(chats, chatId, keys) {
     if (!chatId) {
         return chats;
     }
-    const nextKeys = keys instanceof Set ? keys : messageKeySet(keys);
+    const nextKeys = keys instanceof Set ? keys : collectMessageKeys(keys);
     if (!nextKeys.size) {
         return chats;
     }
@@ -192,7 +259,7 @@ export function clearChatPreviewsByKeys(chats, chatId, keys) {
         if (chat?.id !== chatId || !chat.lastMsg) {
             return chat;
         }
-        if (!messageMatchesKeys(chat.lastMsg, nextKeys)) {
+        if (!messageHasKey(chat.lastMsg, nextKeys)) {
             return chat;
         }
         changed = true;
@@ -207,7 +274,7 @@ export function clearChatPreviewsByKeys(chats, chatId, keys) {
 }
 
 export function clearChatPreviewsByMessages(chats, chatId, messages) {
-    return clearChatPreviewsByKeys(chats, chatId, messageKeySet(messages));
+    return clearChatPreviewsByKeys(chats, chatId, collectMessageKeys(messages));
 }
 
 export function clearChatPreviewsByHiddenKeys(chats, hiddenKeysByChat) {
@@ -218,7 +285,7 @@ export function clearChatPreviewsByHiddenKeys(chats, hiddenKeysByChat) {
     let changed = false;
     const next = (chats || []).map((chat) => {
         const keys = hiddenKeysByChat.get(chat?.id);
-        if (!chat?.lastMsg || !messageMatchesKeys(chat.lastMsg, keys)) {
+        if (!chat?.lastMsg || !messageHasKey(chat.lastMsg, keys)) {
             return chat;
         }
         changed = true;

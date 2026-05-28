@@ -10,6 +10,15 @@ import { useSearch } from '@/lib/search/usesearch';
 import { formatUserDisplay } from '@/lib/utils';
 import { mergeProfiles } from '@glyphteck/shared/search/merge';
 
+const PEER_RENDER_BATCH = 24;
+const PEER_LOAD_MARGIN = 48;
+
+function defaultSubmitLabel(peers) {
+    if (peers.length > 1) return `send to ${peers.length} people`;
+    if (peers.length === 1) return `send to ${formatUserDisplay(peers[0], true)}`;
+    return 'send';
+}
+
 function PeerCell({ peer, onToggle, selected }) {
     return (
         <Button type="button" onClick={() => onToggle(peer)} className="h-auto flex-col rounded-none p-0 shrinker">
@@ -28,7 +37,9 @@ export default function Share({ onShare, disabled = false, busy = false, label }
     const { searching, results, query, search, clearSearch } = useSearch('profiles');
     const [searchValue, setSearchValue] = useState('');
     const [selected, setSelected] = useState([]);
+    const [peerLimit, setPeerLimit] = useState(PEER_RENDER_BATCH);
     const inputRef = useRef(null);
+    const lastSelectedRef = useRef([]);
 
     useEffect(() => clearSearch, [clearSearch]);
 
@@ -52,9 +63,25 @@ export default function Share({ onShare, disabled = false, busy = false, label }
     );
 
     const displayPeers = query ? searchPeers : allPeers;
+    const visiblePeers = useMemo(() => displayPeers.slice(0, peerLimit), [displayPeers, peerLimit]);
     const selectedUids = useMemo(() => new Set(selected.map((peer) => peer.uid)), [selected]);
     const hasSelection = selected.length > 0;
-    const submitLabel = label?.(selected) || (selected.length > 1 ? `send to ${selected.length} people` : selected.length === 1 ? `send to ${formatUserDisplay(selected[0], true)}` : 'send');
+    if (hasSelection) lastSelectedRef.current = selected;
+    const labelPeers = hasSelection ? selected : lastSelectedRef.current;
+    const submitLabel = label?.(labelPeers) || defaultSubmitLabel(labelPeers);
+
+    useEffect(() => {
+        setPeerLimit(PEER_RENDER_BATCH);
+    }, [displayPeers]);
+
+    const handlePeerScroll = useCallback(
+        (event) => {
+            const el = event.currentTarget;
+            if (el.scrollHeight - el.scrollTop - el.clientHeight > PEER_LOAD_MARGIN) return;
+            setPeerLimit((limit) => Math.min(displayPeers.length, limit + PEER_RENDER_BATCH));
+        },
+        [displayPeers.length]
+    );
 
     const handleSearchChange = useCallback(
         (event) => {
@@ -90,14 +117,14 @@ export default function Share({ onShare, disabled = false, busy = false, label }
                 autoFocus
             />
             <Card>
-                <div className="overflow-y-scroll p-4" style={{ height: 'calc((80px + 24px) * 3 + 16px)' }}>
+                <div className="overflow-y-scroll p-4" style={{ height: 'calc((80px + 24px) * 3 + 16px)' }} onScroll={handlePeerScroll}>
                     {searching && query && !displayPeers.length ? (
                         <div className="flex items-center justify-center h-full">
                             <Loader className="animate-spin size-6 text-muted" />
                         </div>
                     ) : displayPeers.length > 0 ? (
                         <div className="grid grid-cols-4 gap-4">
-                            {displayPeers.map((peer) => (
+                            {visiblePeers.map((peer) => (
                                 <PeerCell key={peer.uid} peer={peer} onToggle={togglePeer} selected={selectedUids.has(peer.uid)} />
                             ))}
                         </div>

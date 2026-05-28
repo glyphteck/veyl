@@ -11,18 +11,12 @@ import { useDialog } from '@/components/providers/dialogprovider';
 import { useBitcoin } from '@/components/providers/bitcoinprovider';
 import { useWallet } from '@/components/providers/walletprovider';
 import { formatUserDisplay, renderMoney } from '@/lib/utils';
-import { prepareChatFile } from '@/lib/chatfiles';
-import { getPeerChatPKFromChatId } from '@glyphteck/shared/chat/utils';
+import { chatUploadErrorMessage, queueChatFileMessages } from '@/lib/chatfiles';
+import { getPeerChatPKFromChatId } from '@glyphteck/shared/chat/ids';
 import { canReplyToMsg, makeReq, makeTxt, setReply, setTxt } from '@glyphteck/shared/chat/messages';
 import { parseCommandAmountSats } from '@glyphteck/shared/commands';
-import { CHAT_FILE_SIZE_LIMIT_ENABLED, MAX_CHAT_FILE_BYTES } from '@glyphteck/shared/chat/filepayload';
 import { toast } from 'sonner';
 import { useCallback, useEffect, useRef, useState } from 'react';
-
-function formatMaxSize(bytes) {
-    const mb = bytes / (1024 * 1024);
-    return Number.isInteger(mb) ? `${mb}MB` : `${mb.toFixed(1)}MB`;
-}
 
 function canFocusControl(element) {
     return !!element && typeof element.focus === 'function' && !element.disabled;
@@ -51,7 +45,7 @@ export function Chatbox() {
     const { chatPK, chatBanned, settings } = useUser();
     const bitcoin = useBitcoin();
     const { sendMoneyWithSpark } = useWallet();
-    const { peers, updatePeer } = usePeer();
+    const { peerByChatPK, updatePeer } = usePeer();
     const { openDialog } = useDialog();
     const dragDepthRef = useRef(0);
     const [isDragOver, setIsDragOver] = useState(false);
@@ -59,7 +53,7 @@ export function Chatbox() {
     const [inputH, setInputH] = useState(96);
     const currentChat = chats?.find((chat) => chat.id === selectedChatId) ?? null;
     const peerChatPK = getPeerChatPKFromChatId(selectedChatId, chatPK);
-    const peerProfile = peers?.find((peer) => peer.chatPK === peerChatPK) ?? null;
+    const peerProfile = peerByChatPK.get(peerChatPK) ?? null;
     const peerDisplayName = formatUserDisplay({
         username: peerProfile?.username,
         chatPK: peerChatPK,
@@ -108,25 +102,16 @@ export function Chatbox() {
         [peerChatPK, selectedChatId, updateMessage]
     );
 
-    const handleSendAttachment = useCallback(
-        async (file) => {
-            if (!file || !peerChatPK) {
-                return;
-            }
-
-            if (CHAT_FILE_SIZE_LIMIT_ENABLED && Number.isFinite(file?.size) && file.size > MAX_CHAT_FILE_BYTES) {
-                toast.error(`attachment too large (max ${formatMaxSize(MAX_CHAT_FILE_BYTES)})`);
+    const handleSendAttachments = useCallback(
+        async (files) => {
+            if (!peerChatPK) {
                 return;
             }
 
             try {
-                await sendAttachment(peerChatPK, await prepareChatFile(file));
+                await queueChatFileMessages(files, (attachment) => sendAttachment(peerChatPK, attachment));
             } catch (error) {
-                if (error?.code === 'file-too-large') {
-                    toast.error(`attachment too large (max ${formatMaxSize(MAX_CHAT_FILE_BYTES)})`);
-                    return;
-                }
-                toast.error(error?.message || 'failed to send attachment');
+                toast.error(chatUploadErrorMessage(error));
             }
         },
         [peerChatPK, sendAttachment]
@@ -302,11 +287,9 @@ export function Chatbox() {
                 return;
             }
 
-            for (const file of files) {
-                await handleSendAttachment(file);
-            }
+            await handleSendAttachments(files);
         },
-        [handleSendAttachment, resetDragState]
+        [handleSendAttachments, resetDragState]
     );
 
     if (!selectedChatId) {
@@ -362,7 +345,7 @@ export function Chatbox() {
                 moneyButtonRef={moneyButtonRef}
                 onSendMessage={handleSendMessage}
                 onEditMessage={handleEditMessage}
-                onSendAttachment={handleSendAttachment}
+                onSendAttachments={handleSendAttachments}
                 onSendMoney={peerProfile?.walletPK ? () => handleOpenMoney('send') : undefined}
                 onCommand={handleCommand}
                 onHeightChange={setInputH}

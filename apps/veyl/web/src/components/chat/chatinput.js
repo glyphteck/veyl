@@ -165,7 +165,7 @@ function CommandBubbles({ items, onSelect, interactive = true }) {
 export function ChatInput({
     onSendMessage,
     onEditMessage,
-    onSendAttachment,
+    onSendAttachments,
     onSendMoney,
     onCommand,
     onHeightChange,
@@ -252,10 +252,10 @@ export function ChatInput({
     };
 
     const handleFileChange = async (e) => {
-        const file = e.target.files?.[0];
+        const files = Array.from(e.target.files || []).filter(Boolean);
         e.target.value = '';
-        if (!file || disabled || !onSendAttachment) return;
-        await onSendAttachment(file);
+        if (!files.length || disabled || !onSendAttachments) return;
+        await onSendAttachments(files);
     };
 
     useEffect(() => {
@@ -294,7 +294,7 @@ export function ChatInput({
             <CommandBubbles items={commandContext.items} onSelect={applyCommandPrefix} interactive={commandContext.kind === 'pick'} />
             <DraftBar draft={draft} onClear={onClearDraft} />
             <div className="pointer-events-auto flex items-end gap-2 bg-background/70 px-2.5 pt-0.5 shadow backdrop-blur-sm rounded-round">
-                <input ref={fileRef} type="file" hidden onChange={handleFileChange} disabled={disabled} />
+                <input ref={fileRef} type="file" hidden multiple onChange={handleFileChange} disabled={disabled} />
                 <ChatTextarea
                     ref={textareaRef}
                     className={`min-h-9 flex-1 bg-transparent pl-1.5 pr-1 py-1 shadow-none resize-none ${cloaked ? 'cloaked' : ''}`}

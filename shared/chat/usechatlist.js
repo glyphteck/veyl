@@ -8,13 +8,13 @@ import {
     getLatestReadReceiptTarget,
 } from './messages.js';
 import {
+    applyChatPreviewOverrides,
     applyReadCache,
     clearChatPreviewsByHiddenKeys,
-    clearChatPreviewsByKeys,
-    collectMessageKeys,
     filterPendingDeleteChats,
     getLastChat,
     getPeersFromChats,
+    mergeChatPreviewDrop,
     nextChatPreviewExpiryMs,
     sameChats,
     sameLastChat,
@@ -22,10 +22,11 @@ import {
     timestampMs,
     trimExpiredChatPreviews,
 } from './chats.js';
+import { collectMessageKeys } from './messagekeys.js';
 import { markChatsRead } from './read.js';
 import { CHAT_RETENTION_24H, normalizeChatSettings } from './ttl.js';
-import { getChatRowLastMsgKey as getRowLastMsgKey } from './utils.js';
-import { CHAT_LIST_LIVE_COUNT, CHAT_LIST_PAGE_SIZE } from './warmingconfig.js';
+import { getChatRowLastMsgKey as getRowLastMsgKey } from './ids.js';
+import { CHAT_LIST_LIVE_COUNT, CHAT_LIST_PAGE_SIZE } from './list/config.js';
 
 function markDiag(diag, label, data) {
     try {
@@ -72,6 +73,7 @@ export function useChatList({
     pendingDeleteIdsRef,
     keepSelectedDeletedChatIdsRef,
     deletingChatIdsRef,
+    chatPreviewOverridesRef,
     syncLiveDeleting,
     mergeDeletingIds,
     clearDeletedChatState,
@@ -112,14 +114,19 @@ export function useChatList({
 
     const updateRenderedChats = useCallback(
         (nextChats) => {
-            const filteredChats = clearChatPreviewsByHiddenKeys(trimExpiredChatPreviews(nextChats, { skipChatId: selectedChatIdRef.current }), hiddenChatPreviewKeysRef.current);
+            const filteredChats = applyChatPreviewOverrides(
+                clearChatPreviewsByHiddenKeys(trimExpiredChatPreviews(nextChats, { skipChatId: selectedChatIdRef.current }), hiddenChatPreviewKeysRef.current),
+                chatPreviewOverridesRef.current,
+                chatPK,
+                readCacheRef.current
+            );
             const shownChats = setLocalChats(filterPendingDeleteChats(filteredChats, pendingDeleteIdsRef.current), localByChatRef.current);
             setChats((prev) => (sameChats(prev, shownChats) ? prev : shownChats));
             const nextLastChat = getLastChat(shownChats, chatPK);
             setLastChat((prev) => (sameLastChat(prev, nextLastChat) ? prev : nextLastChat));
             return shownChats;
         },
-        [chatPK, hiddenChatPreviewKeysRef, localByChatRef, pendingDeleteIdsRef, selectedChatIdRef]
+        [chatPK, chatPreviewOverridesRef, hiddenChatPreviewKeysRef, localByChatRef, pendingDeleteIdsRef, readCacheRef, selectedChatIdRef]
     );
 
     const rememberHiddenChatPreviewKeys = useCallback(
@@ -145,17 +152,18 @@ export function useChatList({
     );
 
     const clearChatPreviewKeys = useCallback(
-        (chatId, keys) => {
+        (chatId, keys, replacement = null) => {
             const remembered = rememberHiddenChatPreviewKeys(chatId, keys);
-            const nextServerChats = clearChatPreviewsByHiddenKeys(clearChatPreviewsByKeys(lastServerChatsRef.current, chatId, keys), hiddenChatPreviewKeysRef.current);
-            if (!remembered && nextServerChats === lastServerChatsRef.current) {
+            const replaced = mergeChatPreviewDrop(chatPreviewOverridesRef.current, chatId, keys, replacement);
+            const nextServerChats = applyChatPreviewOverrides(clearChatPreviewsByHiddenKeys(lastServerChatsRef.current, hiddenChatPreviewKeysRef.current), chatPreviewOverridesRef.current, chatPK, readCacheRef.current);
+            if (!remembered && !replaced && nextServerChats === lastServerChatsRef.current) {
                 return;
             }
             lastServerChatsRef.current = nextServerChats;
             writeCachedChats(localCache, filterPendingDeleteChats(nextServerChats, pendingDeleteIdsRef.current));
             updateRenderedChats(nextServerChats);
         },
-        [hiddenChatPreviewKeysRef, lastServerChatsRef, localCache, pendingDeleteIdsRef, rememberHiddenChatPreviewKeys, updateRenderedChats]
+        [chatPK, chatPreviewOverridesRef, hiddenChatPreviewKeysRef, lastServerChatsRef, localCache, pendingDeleteIdsRef, readCacheRef, rememberHiddenChatPreviewKeys, updateRenderedChats]
     );
 
     const updateServerChatIds = useCallback(
@@ -188,7 +196,7 @@ export function useChatList({
 
     const commitServerChats = useCallback(
         (rows, options = {}) => {
-            const nextServerChats = sortedUniqueChatRows(rows);
+            const nextServerChats = applyChatPreviewOverrides(sortedUniqueChatRows(rows), chatPreviewOverridesRef.current, chatPK, readCacheRef.current);
             lastServerChatsRef.current = nextServerChats;
             const shownChats = updateRenderedChats(nextServerChats);
             updatePeersFromRows(nextServerChats);
@@ -201,7 +209,7 @@ export function useChatList({
             }
             return shownChats;
         },
-        [lastServerChatsRef, localCache, pendingDeleteIdsRef, updatePeersFromRows, updateRenderedChats, updateServerChatIds, warmChats]
+        [chatPK, chatPreviewOverridesRef, lastServerChatsRef, localCache, pendingDeleteIdsRef, readCacheRef, updatePeersFromRows, updateRenderedChats, updateServerChatIds, warmChats]
     );
 
     const resetChatList = useCallback(
@@ -219,6 +227,7 @@ export function useChatList({
             lastServerChatIdsKey.current = '';
             lastHydratedCacheKeyRef.current = '';
             lastServerChatsRef.current = [];
+            chatPreviewOverridesRef.current = new Map();
             serverChatIdsRef.current = [];
             serverChatsReadyRef.current = false;
             chatPageCursorRef.current = null;
@@ -232,6 +241,7 @@ export function useChatList({
             chatLoadingMoreRef,
             chatPageCursorRef,
             chatPageLockedRef,
+            chatPreviewOverridesRef,
             chatRowLoadsRef,
             lastHydratedCacheKeyRef,
             lastPeersKey,
@@ -486,7 +496,7 @@ export function useChatList({
             }
 
             setChats((prev) => {
-                const next = clearChatPreviewsByHiddenKeys(trimExpiredChatPreviews(prev, { skipChatId: selectedChatId }), hiddenChatPreviewKeysRef.current);
+                const next = applyChatPreviewOverrides(clearChatPreviewsByHiddenKeys(trimExpiredChatPreviews(prev, { skipChatId: selectedChatId }), hiddenChatPreviewKeysRef.current), chatPreviewOverridesRef.current, chatPK, readCacheRef.current);
                 if (sameChats(prev, next)) {
                     return prev;
                 }
@@ -497,7 +507,7 @@ export function useChatList({
         }, delay);
 
         return () => clearTimeout(timeout);
-    }, [chatPK, chats, hiddenChatPreviewKeysRef, lastServerChatsRef, localCache, pendingDeleteIdsRef, selectedChatId, updateRenderedChats]);
+    }, [chatPK, chatPreviewOverridesRef, chats, hiddenChatPreviewKeysRef, lastServerChatsRef, localCache, pendingDeleteIdsRef, readCacheRef, selectedChatId, updateRenderedChats]);
 
     const getChatRowLastMsgKey = useCallback(
         (chatId) => {

@@ -1,10 +1,67 @@
 'use client';
 
+import { CHAT_FILE_SIZE_LIMIT_ENABLED, MAX_CHAT_FILE_BYTES, MAX_CHAT_UPLOAD_FILES } from '@glyphteck/shared/chat/filepayload';
 import { toMp3 } from './audio';
 import { toMp4 } from './video';
 
 const MAX_CHAT_IMAGE_EDGE = 1600;
 const CHAT_IMAGE_QUALITY = 0.82;
+
+function plural(count, one, many = `${one}s`) {
+    return count === 1 ? one : many;
+}
+
+export function formatMaxChatFileSize(bytes = MAX_CHAT_FILE_BYTES) {
+    const mb = bytes / (1024 * 1024);
+    return Number.isInteger(mb) ? `${mb}MB` : `${mb.toFixed(1)}MB`;
+}
+
+export function formatMaxChatUploadFiles(maxFiles = MAX_CHAT_UPLOAD_FILES) {
+    return `${maxFiles} ${plural(maxFiles, 'file')}`;
+}
+
+function makeTooManyFilesError(count) {
+    const error = new Error('too many files');
+    error.code = 'too-many-files';
+    error.maxFiles = MAX_CHAT_UPLOAD_FILES;
+    error.count = count;
+    return error;
+}
+
+function makeFileTooLargeError(size) {
+    const error = new Error('file too large');
+    error.code = 'file-too-large';
+    error.maxBytes = MAX_CHAT_FILE_BYTES;
+    error.size = size;
+    return error;
+}
+
+function checkRawFileSize(file) {
+    if (CHAT_FILE_SIZE_LIMIT_ENABLED && Number.isFinite(file?.size) && file.size > MAX_CHAT_FILE_BYTES) {
+        throw makeFileTooLargeError(file.size);
+    }
+}
+
+export function getChatUploadFiles(files) {
+    const list = Array.from(files || []).filter(Boolean);
+    if (list.length > MAX_CHAT_UPLOAD_FILES) {
+        throw makeTooManyFilesError(list.length);
+    }
+    for (const file of list) {
+        checkRawFileSize(file);
+    }
+    return list;
+}
+
+export function chatUploadErrorMessage(error, fallback = 'failed to send attachment') {
+    if (error?.code === 'too-many-files') {
+        return `choose up to ${formatMaxChatUploadFiles(error.maxFiles || MAX_CHAT_UPLOAD_FILES)}`;
+    }
+    if (error?.code === 'file-too-large') {
+        return `attachment too large (max ${formatMaxChatFileSize(error.maxBytes || MAX_CHAT_FILE_BYTES)})`;
+    }
+    return error?.message || fallback;
+}
 
 function readPreview(file) {
     return new Promise((resolve, reject) => {
@@ -140,5 +197,36 @@ export async function prepareChatFile(file) {
         ...(Number.isFinite(upload.width) ? { width: upload.width } : {}),
         ...(Number.isFinite(upload.height) ? { height: upload.height } : {}),
         ...(previewUri ? { previewUri } : {}),
+    };
+}
+
+export async function queueChatFileMessages(files, sendAttachment) {
+    const selectedFiles = getChatUploadFiles(files);
+    const jobs = [];
+    const errors = [];
+
+    for (const file of selectedFiles) {
+        try {
+            const attachment = await prepareChatFile(file);
+            jobs.push(Promise.resolve(sendAttachment(attachment)));
+        } catch (error) {
+            errors.push(error);
+        }
+    }
+
+    const results = await Promise.allSettled(jobs);
+    for (const result of results) {
+        if (result.status === 'rejected') {
+            errors.push(result.reason);
+        }
+    }
+
+    if (errors.length) {
+        throw errors[0];
+    }
+
+    return {
+        total: selectedFiles.length,
+        sent: results.length,
     };
 }

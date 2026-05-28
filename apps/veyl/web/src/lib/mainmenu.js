@@ -82,28 +82,3 @@ export function getMainMenuPeers({ peers = [], recentPeers, excludeUid } = {}) {
 
     return ordered;
 }
-
-function timeMs(value) {
-    if (typeof value?.toMillis === 'function') {
-        const ms = value.toMillis();
-        return Number.isFinite(ms) ? ms : 0;
-    }
-    if (value instanceof Date) {
-        const ms = value.getTime();
-        return Number.isFinite(ms) ? ms : 0;
-    }
-    if (Number.isFinite(value)) return value;
-    if (typeof value === 'string') {
-        const ms = Date.parse(value);
-        return Number.isFinite(ms) ? ms : 0;
-    }
-    return 0;
-}
-
-export function sortMainMenuTransactions(transactions = []) {
-    return [...(transactions || [])].sort((a, b) => {
-        const delta = timeMs(b?.createdTime) - timeMs(a?.createdTime);
-        if (delta !== 0) return delta;
-        return String(b?.id || '').localeCompare(String(a?.id || ''));
-    });
-}
