@@ -159,7 +159,7 @@ The wrapper URL is intentional for veyl-specific actions. On iOS, the veyl web h
 ### Chat
 
 - Chat is a custom encrypted 1:1 system on top of Firestore.
-- Chat keys are X25519-derived.
+- Chat keys are X25519-derived from the random client master seed and published once on the user's profile.
 - Messages are AES-GCM encrypted and stored as packed Firestore `Bytes`.
 - Attachments are encrypted separately and stored in Firebase Storage. Message docs store encrypted attachment references and metadata, not plaintext file bodies.
 - The iOS full-screen media viewer is owned by `apps/veyl/ios/src/providers/mediaviewerprovider.js`. Swipe navigation moves only the horizontal rail; vertical dismiss scale, opacity, rounding, and save-action fade are scoped to the active media slide so neighboring slides stay unscaled during exit.
@@ -227,7 +227,6 @@ Main Firestore collections:
 - `chats/{chatId}/messages/{messageId}`: encrypted user-visible messages and encrypted control payloads such as read receipts and reactions
 - `bitcoin/current`: public cached BTC price, block height, and compact fee-rate tiers watched by the app-level Bitcoin provider
 - `passkeys/{credentialId}`: stored passkey credentials
-- `chatkeys/{chatPK}`: chat public key to uid lookup cache
 
 ## Local Development
 

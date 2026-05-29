@@ -16,22 +16,22 @@ export const onChatMessage = onDocumentCreated({ document: 'chats/{chatId}/messa
         return;
     }
 
-    const { senderUid, receiverUid } = actors;
-    if (!receiverUid || senderUid === receiverUid) {
+    const { duplicateChatPKs, senderUid, receiverUid } = actors;
+    if (duplicateChatPKs.length || !receiverUid || senderUid === receiverUid) {
         console.info('push skip: receiver unresolved', {
             chatId: event.params.chatId,
+            duplicateChatPKs: duplicateChatPKs.length,
             senderUid: senderUid || null,
             receiverUid: receiverUid || null,
         });
         return;
     }
 
-    const [senderBanned, receiverBanned, receiverBlockedSender, pushDocs, senderProfile, chatSnap] = await Promise.all([
+    const [senderBanned, receiverBanned, receiverBlockedSender, pushDocs, chatSnap] = await Promise.all([
         isChatBanned(senderUid),
         isChatBanned(receiverUid),
         isBlocked(receiverUid, senderUid),
         getPushDocs(receiverUid),
-        senderUid ? db.collection('profiles').doc(senderUid).get() : null,
         db.collection('chats').doc(event.params.chatId).get(),
     ]);
     if (senderBanned || receiverBanned) {
@@ -68,13 +68,14 @@ export const onChatMessage = onDocumentCreated({ document: 'chats/{chatId}/messa
         return;
     }
 
-    const senderName = senderProfile?.data()?.username || messageSenderFallback();
+    const senderName = actors.senderProfile?.username || messageSenderFallback();
     console.info('push send: chat', {
         chatId: event.params.chatId,
         receiverUid,
         devices: pushDocs.length,
     });
     await sendPush(receiverUid, pushDocs, {
+        collapseId: `chat-${event.params.chatId}`,
         title: senderName,
         body: 'sent you a message',
         data: {

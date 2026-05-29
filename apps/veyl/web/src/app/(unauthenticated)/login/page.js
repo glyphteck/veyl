@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/button';
 import { Fingerprint, Loader, UserRoundPlus, X } from 'lucide-react';
@@ -119,7 +120,7 @@ export default function LoginPage() {
     return (
         <div className="relative min-h-dvh overflow-y-auto bg-background text-foreground">
             <div className="relative z-10 mx-auto flex min-h-dvh w-full flex-col items-center px-5 pt-[14vh] md:pt-[16vh]">
-                <img src={walletLogoSrc} className="pointer-events-none mb-4 size-32 select-none md:size-40" alt="" />
+                <Image src={walletLogoSrc} className="pointer-events-none mb-4 size-32 select-none md:size-40" alt="" width={160} height={160} loading="eager" unoptimized />
                 {isPasskeyLoading ? (
                     <div className="flex items-center gap-2 text-muted">
                         <Loader className="size-6 animate-spin" />

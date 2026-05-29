@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import Image from 'next/image';
 import { headers } from 'next/headers';
 import { userAgent } from 'next/server';
 import { ArrowRight, HatGlasses, KeyRound, Lock, MessageCircle, Smartphone, Wallet } from 'lucide-react';
@@ -105,7 +106,7 @@ function FeatureMark({ icon: Icon, icon2: Icon2, logos }) {
                 </div>
                 <div className="flex items-center gap-2">
                     {visibleLogos.map((logo) => (
-                        <img key={logo.alt} src={logo.src} alt={logo.alt} className="size-12 rounded-full shadow" />
+                        <Image key={logo.alt} src={logo.src} alt={logo.alt} width={48} height={48} className="size-12 rounded-full shadow" unoptimized />
                     ))}
                 </div>
             </div>
@@ -146,8 +147,8 @@ function FeatureCard({ icon, icon2, logos, title, body }) {
 
 function FeatureShot({ shot, iphone }) {
     return (
-        <Card aria-hidden="true" className={cn(iphone ? 'mx-auto h-auto aspect-[9/16] min-h-0 w-full max-w-[17rem]' : 'aspect-[4/3] min-h-[22rem] md:min-h-[28rem]')}>
-            <img src={shot.src} alt="" className="h-full w-full object-cover" />
+        <Card aria-hidden="true" className={cn('relative', iphone ? 'mx-auto h-auto aspect-[9/16] min-h-0 w-full max-w-[17rem]' : 'aspect-[4/3] min-h-[22rem] md:min-h-[28rem]')}>
+            <Image src={shot.src} alt="" className="object-cover" fill sizes={iphone ? '17rem' : '(min-width: 768px) 672px, 100vw'} unoptimized />
         </Card>
     );
 }
@@ -186,7 +187,7 @@ export default async function LandingPage() {
 
             <section className="relative z-10 flex min-h-[86svh] items-start justify-center overflow-hidden px-5 text-center md:min-h-[84svh] md:px-8">
                 <div className="relative z-10 flex w-full max-w-3xl flex-col items-center pt-[14vh] md:pt-[16vh]">
-                    <img src={walletLogoSrc} alt="" className="pointer-events-none mb-7 size-32 select-none md:size-40" />
+                    <Image src={walletLogoSrc} alt="" width={160} height={160} className="pointer-events-none mb-7 size-32 select-none md:size-40" loading="eager" unoptimized />
                     <h1 className="text-6xl font-black leading-none md:text-8xl">veyl</h1>
                     <p className="mt-5 max-w-2xl text-2xl font-black leading-tight">own your money. chat privately.</p>
 
@@ -213,7 +214,7 @@ export default async function LandingPage() {
 
             <div className="relative z-10 mx-auto flex w-full flex-col items-center gap-8 pb-2 text-xs font-black uppercase tracking-normal text-muted">
                 <a href="https://glyphteck.com" aria-label="Glyphteck" className="grower inline-flex">
-                    <img src={gtlogo} alt="" className="h-8 w-auto dark:invert md:h-16" />
+                    <Image src={gtlogo} alt="" width={128} height={64} className="h-8 w-auto dark:invert md:h-16" unoptimized />
                 </a>
                 <span>©2026 Glyphteck Corp.</span>
             </div>

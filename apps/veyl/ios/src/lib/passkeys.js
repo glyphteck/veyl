@@ -70,7 +70,6 @@ export async function passkeyRegister({ onPrompt, onVerified, label: providedLab
             functions,
             'passkeyRegisterVerify'
         )({
-            uid,
             attestation,
         });
 

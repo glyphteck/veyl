@@ -715,10 +715,8 @@ export class BotRuntime {
             return this.chatPeers.get(key);
         }
 
-        const keySnap = await db.collection('chatkeys').doc(key).get();
-        const uid = typeof keySnap.data()?.uid === 'string' ? keySnap.data().uid.trim() : '';
-        const profileSnap = uid ? await db.collection('profiles').doc(uid).get() : null;
-        const peer = uid ? { uid, ...(profileSnap?.exists ? profileSnap.data() : { chatPK: key }) } : null;
+        const profileSnap = await db.collection('profiles').where('chatPK', '==', key).limit(2).get();
+        const peer = profileSnap.docs.length === 1 ? { uid: profileSnap.docs[0].id, ...profileSnap.docs[0].data() } : null;
         setLimitedMap(this.chatPeers, key, peer, MAX_BOT_PEER_CACHE);
         return peer;
     }

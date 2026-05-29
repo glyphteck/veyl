@@ -92,7 +92,6 @@ Main Firestore collections:
 - `chats/{chatId}` and `chats/{chatId}/messages/{messageId}`: encrypted chat state. Chat docs carry participant metadata and encrypted `lastMsg`; user read receipts are encrypted append-only control payloads in the messages subcollection.
 - `bitcoin/current`: public cached BTC price, block height, and compact fee-rate tiers watched by the app-level Bitcoin provider
 - `passkeys/{credentialId}`: stored passkey credentials
-- `chatkeys/{chatPK}`: chat public key lookup cache
 
 Firebase Storage stores avatars, chat media, and report file blobs.
 

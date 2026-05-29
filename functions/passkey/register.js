@@ -1,9 +1,31 @@
 import admin from 'firebase-admin';
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
+import { randomBytes } from 'node:crypto';
 import { bufferToBase64url, encodeOptionsForClient, decodeCredentialFromClient, getRpIdForOrigin, createFido2Lib, storeChallenge, consumeChallenge, validateOrigin, resolveOrigin, isRpIdHashMismatch } from '../lib/passkey.js';
 import { ensureUserDoc } from '../lib/userdoc.js';
 
 const db = admin.firestore();
+
+function newUid() {
+    return randomBytes(20).toString('base64url');
+}
+
+function parseClientData(clientDataJSON) {
+    try {
+        return JSON.parse(Buffer.from(clientDataJSON, 'base64url').toString());
+    } catch {
+        throw new HttpsError('invalid-argument', 'Invalid passkey client data.');
+    }
+}
+
+function cleanLabel(value, fallback) {
+    const label = typeof value === 'string' ? value.trim() : '';
+    return label ? label.slice(0, 64) : fallback;
+}
+
+function challengeMatchesRegistration(record, { origin, rpId }) {
+    return record?.type === 'register' && typeof record.uid === 'string' && record.uid && record.origin === origin && record.rpId === rpId;
+}
 
 /* 1. Generate passkey registration options */
 export const passkeyRegisterOptions = onCall(async (context) => {
@@ -14,8 +36,8 @@ export const passkeyRegisterOptions = onCall(async (context) => {
     const rpId = getRpIdForOrigin(origin);
     const fido = createFido2Lib(rpId);
     const options = await fido.attestationOptions();
-    const uid = (await admin.auth().createUser({})).uid;
-    const label = context.data?.label?.trim() || uid;
+    const uid = newUid();
+    const label = cleanLabel(context.data?.label, uid);
 
     // Set user info
     options.user = {
@@ -26,7 +48,12 @@ export const passkeyRegisterOptions = onCall(async (context) => {
 
     // Store challenge
     const challengeString = bufferToBase64url(options.challenge);
-    await storeChallenge(challengeString);
+    await storeChallenge(challengeString, {
+        origin,
+        rpId,
+        type: 'register',
+        uid,
+    });
 
     return {
         uid,
@@ -36,12 +63,12 @@ export const passkeyRegisterOptions = onCall(async (context) => {
 
 /* 2. Verify passkey registration */
 export const passkeyRegisterVerify = onCall(async ({ data }) => {
-    const { uid, attestation } = data ?? {};
-    if (!uid || !attestation) {
-        throw new HttpsError('invalid-argument', 'uid and attestation required');
+    const { attestation } = data ?? {};
+    if (!attestation) {
+        throw new HttpsError('invalid-argument', 'attestation required');
     }
     // Extract challenge and origin from clientDataJSON
-    const clientDataJSON = JSON.parse(Buffer.from(attestation.response.clientDataJSON, 'base64url').toString());
+    const clientDataJSON = parseClientData(attestation.response?.clientDataJSON);
 
     // Validate origin
     if (!validateOrigin(clientDataJSON.origin)) {
@@ -53,9 +80,10 @@ export const passkeyRegisterVerify = onCall(async ({ data }) => {
 
     // Verify challenge exists and is valid
     const challenge = await consumeChallenge(clientDataJSON.challenge);
-    if (!challenge) {
+    if (!challenge || !challengeMatchesRegistration(challenge, { origin: clientDataJSON.origin, rpId })) {
         throw new HttpsError('deadline-exceeded', 'Invalid or expired challenge');
     }
+    const uid = challenge.uid;
 
     // Convert credential to proper format for fido2-lib
     const decodedCredential = decodeCredentialFromClient(attestation);
@@ -64,10 +92,10 @@ export const passkeyRegisterVerify = onCall(async ({ data }) => {
     let result;
     try {
         result = await fido.attestationResult(decodedCredential, {
-            challenge,
+            challenge: challenge.challenge,
             origin: clientDataJSON.origin,
             rpId,
-            factor: 'either',
+            factor: 'first',
         });
     } catch (error) {
         if (isRpIdHashMismatch(error)) {
@@ -82,12 +110,25 @@ export const passkeyRegisterVerify = onCall(async ({ data }) => {
     const counter = result.authnrData.get('counter') ?? 0;
 
     // Store credential
-    await db.collection('passkeys').doc(credentialId).set({
-        uid,
-        PK,
-        counter,
-        rpId,
-    });
+    let authUserCreated = false;
+    try {
+        await admin.auth().createUser({ uid });
+        authUserCreated = true;
+        await db.collection('passkeys').doc(credentialId).create({
+            uid,
+            PK,
+            counter,
+            rpId,
+        });
+    } catch (error) {
+        if (authUserCreated) {
+            await admin.auth().deleteUser(uid).catch(() => {});
+        }
+        if (error?.code === 6 || error?.code === 'already-exists') {
+            throw new HttpsError('already-exists', 'Passkey already registered.');
+        }
+        throw error;
+    }
     await ensureUserDoc(uid);
 
     // Create auth token

@@ -1,25 +1,44 @@
 import { db } from './admin.js';
-import { getUidByChatPK } from './chatkeys.js';
 
 export function messageSenderFallback() {
     return 'someone';
 }
 
 export function getChatPair(chatId, senderChatPK) {
+    const sender = String(senderChatPK ?? '')
+        .trim()
+        .toLowerCase();
     const parts = String(chatId ?? '')
         .split('_')
+        .map((part) => part.trim().toLowerCase())
         .filter(Boolean);
 
     if (parts.length !== 2) {
         return null;
     }
 
-    const receiverChatPK = parts[0] === senderChatPK ? parts[1] : parts[1] === senderChatPK ? parts[0] : null;
+    const receiverChatPK = parts[0] === sender ? parts[1] : parts[1] === sender ? parts[0] : null;
     if (!receiverChatPK) {
         return null;
     }
 
-    return { senderChatPK, receiverChatPK };
+    return { senderChatPK: sender, receiverChatPK };
+}
+
+async function getProfileByChatPK(chatPK) {
+    const snap = await db.collection('profiles').where('chatPK', '==', chatPK).limit(2).get();
+    if (snap.docs.length !== 1) {
+        return {
+            duplicate: snap.docs.length > 1,
+            profile: null,
+        };
+    }
+
+    const profileSnap = snap.docs[0];
+    return {
+        duplicate: false,
+        profile: { uid: profileSnap.id, ...profileSnap.data() },
+    };
 }
 
 export async function resolveChatActors(chatId, senderChatPK) {
@@ -28,11 +47,16 @@ export async function resolveChatActors(chatId, senderChatPK) {
         return null;
     }
 
-    const [senderUid, receiverUid] = await Promise.all([getUidByChatPK(pair.senderChatPK), getUidByChatPK(pair.receiverChatPK)]);
+    const [sender, receiver] = await Promise.all([getProfileByChatPK(pair.senderChatPK), getProfileByChatPK(pair.receiverChatPK)]);
+    const senderProfile = sender.profile;
+    const receiverProfile = receiver.profile;
     return {
         ...pair,
-        senderUid,
-        receiverUid,
+        duplicateChatPKs: [sender.duplicate ? pair.senderChatPK : null, receiver.duplicate ? pair.receiverChatPK : null].filter(Boolean),
+        senderProfile,
+        receiverProfile,
+        senderUid: senderProfile?.uid || null,
+        receiverUid: receiverProfile?.uid || null,
     };
 }
 

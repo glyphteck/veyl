@@ -10,7 +10,6 @@ Every bot has:
 - a `users/{uid}` doc (same as regular users)
 - a `profiles/{uid}` doc with network-scoped `walletPKs`, `chatPK`, `username`, and a `bot` marker
 - a `usernames/{username}` reservation
-- a `chatkeys/{chatPK}` lookup entry
 - a Spark wallet and an encrypted chat identity
 
 Bots are deliberately stored in the same places as regular users. Regular users can find them, message them, send them money, block them, and report them without any special handling in the PeerProvider or chat system.
@@ -91,7 +90,7 @@ Initializes `firebase-admin` for the bot process. Reads project config from `FIR
 
 ### Provisioning (`apps/veyl/bot/src/newbot.js`)
 
-One-time bot account setup. Creates or reuses the Auth user, writes all Firestore identity records (`users`, `profiles`, `usernames`, `chatkeys`, `bots`), and stores the seed in Secret Manager.
+One-time bot account setup. Creates or reuses the Auth user, writes all Firestore identity records (`users`, `profiles`, `usernames`, `bots`), and stores the seed in Secret Manager.
 
 When no username is provided, generates a random 12-character lowercase alphanumeric username and verifies uniqueness against the `usernames` collection before reserving it.
 
@@ -118,7 +117,6 @@ Bots that have no custom avatar show a bot icon instead of the default user silh
 - `users/{uid}` — standard account doc, block lists under `users/{uid}/blocked/{peerUid}`
 - `profiles/{uid}` — public identity, avatar, network-scoped `walletPKs`, `chatPK`, presence, `bot` marker
 - `usernames/{username}` — username reservation
-- `chatkeys/{chatPK}` — chat public-key lookup
 - no `seeds/{uid}` — bot seeds are in Secret Manager
 
 ### Bot control record
@@ -203,7 +201,7 @@ bun nuke bots @mybot   # one bot
 bun nuke bots           # all bots
 ```
 
-Removes `bots/{uid}`, `users/{uid}`, `profiles/{uid}`, `moderation/{uid}`, `usernames/*`, `chatkeys/{chatPK}`, and chats containing the bot, plus associated bot avatar and chat media files. Does not delete the bundled seed entry or the Auth user.
+Removes `bots/{uid}`, `users/{uid}`, `profiles/{uid}`, `moderation/{uid}`, `usernames/*`, and chats containing the bot, plus associated bot avatar and chat media files. Does not delete the bundled seed entry or the Auth user.
 
 ### Test it
 

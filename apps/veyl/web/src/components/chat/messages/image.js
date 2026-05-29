@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import { Loader } from 'lucide-react';
 import { useCloak } from '@glyphteck/shared/providers/cloakprovider';
 import { cn } from '@/lib/utils';
@@ -19,7 +20,9 @@ export default function ImageMessage({ msg, peerChatPK }) {
     return (
         <div className={cn('overflow-hidden rounded-round', barePng ? '' : 'bg-foreground/5 shadow-sm')} style={{ width, maxWidth: '100%' }} onClick={stopClick}>
             {src ? (
-                <img src={src} alt={msg?.c || 'chat image'} className={`block w-full object-cover ${cloaked ? 'blur-xl saturate-0' : ''}`} style={{ aspectRatio: aspect }} />
+                <div className="relative w-full" style={{ aspectRatio: aspect }}>
+                    <Image src={src} alt={msg?.c || 'chat image'} className={`object-cover ${cloaked ? 'blur-xl saturate-0' : ''}`} fill sizes={`${width}px`} unoptimized />
+                </div>
             ) : (
                 <div className="flex items-center justify-center bg-foreground/5" style={{ width: '100%', aspectRatio: aspect }}>
                     {loading ? (

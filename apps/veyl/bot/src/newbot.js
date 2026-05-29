@@ -6,7 +6,7 @@ import { resolveNetwork } from '@glyphteck/shared/network';
 import { normalizeWalletNetwork, resolveWalletPK, walletPKPatch } from '@glyphteck/shared/wallet/keys';
 import { BOT_MODE } from '@glyphteck/shared/bot/events';
 import { bootBotAccount, closeBotAccount } from '@glyphteck/shared/bot/account';
-import admin, { db, FieldValue, projectId } from './admin.js';
+import admin, { db, projectId } from './admin.js';
 import { createSecretClient, ensureBotSeed } from './secrets.js';
 import { ensureUserDoc } from '../../../../functions/lib/userdoc.js';
 import { MAX_USERNAME, isUsername, normalizeUsername } from '../../../../functions/lib/regex.js';
@@ -57,19 +57,13 @@ async function syncDocs({ uid, username, walletPK, chatPK, network }) {
     const botRef = db.collection('bots').doc(uid);
     const profileRef = db.collection('profiles').doc(uid);
     const usernameRef = db.collection('usernames').doc(username);
-    const chatKeyRef = db.collection('chatkeys').doc(chatPK);
 
     await db.runTransaction(async (tx) => {
-        const [botSnap, profileSnap, usernameSnap, chatKeySnap] = await Promise.all([tx.get(botRef), tx.get(profileRef), tx.get(usernameRef), tx.get(chatKeyRef)]);
+        const [botSnap, profileSnap, usernameSnap] = await Promise.all([tx.get(botRef), tx.get(profileRef), tx.get(usernameRef)]);
 
         const reservedUid = typeof usernameSnap.data()?.uid === 'string' ? usernameSnap.data().uid.trim() : '';
         if (reservedUid && reservedUid !== uid) {
             throw new Error(`@${username} is already reserved`);
-        }
-
-        const chatKeyUid = typeof chatKeySnap.data()?.uid === 'string' ? chatKeySnap.data().uid.trim() : '';
-        if (chatKeyUid && chatKeyUid !== uid) {
-            throw new Error('chat identity already belongs to another account');
         }
 
         const profileData = profileSnap.exists ? profileSnap.data() : {};
@@ -97,14 +91,6 @@ async function syncDocs({ uid, username, walletPK, chatPK, network }) {
                 chatPK,
                 active: false,
                 bot: BOT_MODE,
-            },
-            { merge: true }
-        );
-        tx.set(
-            chatKeyRef,
-            {
-                uid,
-                updatedAt: FieldValue.serverTimestamp(),
             },
             { merge: true }
         );

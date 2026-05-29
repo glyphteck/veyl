@@ -138,7 +138,7 @@ export async function passkeyRegister({ label: providedLabel } = {}) {
         const functions = getFunctions();
 
         const {
-            data: { uid, opts },
+            data: { opts },
         } = await httpsCallable(functions, 'passkeyRegisterOptions')({ label, origin });
 
         const cred = await navigator.credentials.create({
@@ -155,7 +155,6 @@ export async function passkeyRegister({ label: providedLabel } = {}) {
             functions,
             'passkeyRegisterVerify'
         )({
-            uid,
             attestation: credToJSON(cred),
         });
 

@@ -39,7 +39,10 @@ service firebase.storage {
 
     function isChatBlob() {
       return request.resource == null
-        || request.resource.contentType == 'application/octet-stream';
+        || (
+          request.resource.size < 20 * 1024 * 1024
+          && request.resource.contentType == 'application/octet-stream'
+        );
     }
 
     function isReportBlob() {
@@ -76,10 +79,11 @@ service firebase.storage {
 
     match /reports/{reporterUid}/{targetUid}/{evidenceId} {
       allow read: if isAdmin();
-      allow write: if signedIn()
+      allow create: if signedIn()
         && request.auth.uid == reporterUid
         && isReportEvidenceId(evidenceId)
         && isReportBlob();
+      allow update, delete: if false;
     }
   }
 }

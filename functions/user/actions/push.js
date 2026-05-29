@@ -3,10 +3,17 @@ import { db, FieldValue, OK } from '../../lib/admin.js';
 
 const DID_RE = /^[a-zA-Z0-9_-]{12,128}$/;
 const EXPO_RE = /^(Expo|Exponent)PushToken\[[^\]]+\]$/;
+const APNS_TOKEN_RE = /^[0-9a-fA-F]{32,256}$/;
 const PUSH_VARIANTS = new Set(['dev', 'test', 'prod']);
 const PUSH_ENVIRONMENTS = new Set(['development', 'production']);
 const APNS_TOPICS = new Set(['com.glyphteck.veyl.dev', 'com.glyphteck.veyl.test', 'com.glyphteck.veyl']);
 const DELETE_BATCH_SIZE = 450;
+const MAX_PUSH_DEVICES_PER_USER = 4;
+const PUSH_VARIANT_META = {
+    dev: { apnsTopic: 'com.glyphteck.veyl.dev', apnsEnvironment: 'development' },
+    test: { apnsTopic: 'com.glyphteck.veyl.test', apnsEnvironment: 'production' },
+    prod: { apnsTopic: 'com.glyphteck.veyl', apnsEnvironment: 'production' },
+};
 
 function cleanString(value) {
     return typeof value === 'string' ? value.trim() : '';
@@ -35,7 +42,7 @@ function optionalExpoToken(value) {
 
 function optionalNativeToken(value) {
     const token = optionalString(value);
-    if (token && (token.length < 16 || token.length > 512)) {
+    if (token && !APNS_TOKEN_RE.test(token)) {
         throw new HttpsError('invalid-argument', 'bad native push token');
     }
     return token;
@@ -56,6 +63,13 @@ function pushDoc(data) {
     if (!token && !nativeToken) {
         throw new HttpsError('invalid-argument', 'push token required');
     }
+    const appVariant = requireMember(data?.appVariant, PUSH_VARIANTS, 'bad app variant');
+    const apnsTopic = requireMember(data?.apnsTopic, APNS_TOPICS, 'bad apns topic');
+    const apnsEnvironment = requireMember(data?.apnsEnvironment, PUSH_ENVIRONMENTS, 'bad apns environment');
+    const expectedMeta = PUSH_VARIANT_META[appVariant];
+    if (expectedMeta.apnsTopic !== apnsTopic || expectedMeta.apnsEnvironment !== apnsEnvironment) {
+        throw new HttpsError('invalid-argument', 'bad push environment');
+    }
 
     return {
         did,
@@ -63,9 +77,9 @@ function pushDoc(data) {
         nativeToken,
         platform: 'ios',
         provider: nativeToken ? 'apns' : 'expo',
-        appVariant: requireMember(data?.appVariant, PUSH_VARIANTS, 'bad app variant'),
-        apnsTopic: requireMember(data?.apnsTopic, APNS_TOPICS, 'bad apns topic'),
-        apnsEnvironment: requireMember(data?.apnsEnvironment, PUSH_ENVIRONMENTS, 'bad apns environment'),
+        appVariant,
+        apnsTopic,
+        apnsEnvironment,
         enabled: true,
         updatedAt: FieldValue.serverTimestamp(),
     };
@@ -112,6 +126,23 @@ async function deleteRefs(refs) {
     }
 }
 
+async function setUserPush(uid, ref, data) {
+    const pushRefs = db.collection('users').doc(uid).collection('push');
+    await db.runTransaction(async (tx) => {
+        const currentSnap = await tx.get(ref);
+        if (!currentSnap.exists) {
+            const existingSnap = await tx.get(pushRefs.orderBy('updatedAt', 'asc').limit(MAX_PUSH_DEVICES_PER_USER));
+            if (existingSnap.size >= MAX_PUSH_DEVICES_PER_USER) {
+                const oldest = existingSnap.docs.find((docSnap) => docSnap.ref.path !== ref.path);
+                if (oldest) {
+                    tx.delete(oldest.ref);
+                }
+            }
+        }
+        tx.set(ref, data);
+    });
+}
+
 export const setPush = onCall(async ({ auth, data }) => {
     if (!auth?.uid) throw new HttpsError('unauthenticated', 'auth');
 
@@ -127,7 +158,7 @@ export const setPush = onCall(async ({ auth, data }) => {
     ]);
 
     await deleteRefs(staleRefs);
-    await ref.set(next);
+    await setUserPush(uid, ref, next);
     return OK;
 });
 

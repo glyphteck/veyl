@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Image from 'next/image';
 import { File, Loader, Play } from 'lucide-react';
 import { useBitcoin } from '@/components/providers/bitcoinprovider';
 import { useChat } from '@/components/providers/chatprovider';
@@ -81,7 +82,9 @@ function ReplyImage({ reply, peerChatPK, onReplyPress }) {
         <ReplyButton onReplyPress={onReplyPress}>
             <div className="overflow-hidden rounded-[20px] bg-foreground/5 shadow-sm opacity-65" style={{ width, maxWidth: '100%' }}>
                 {src ? (
-                    <img src={src} alt={reply?.c || 'replied image'} className={`block w-full object-cover ${cloaked ? 'blur-xl saturate-0' : ''}`} style={{ aspectRatio: aspect }} />
+                    <div className="relative w-full" style={{ aspectRatio: aspect }}>
+                        <Image src={src} alt={reply?.c || 'replied image'} className={`object-cover ${cloaked ? 'blur-xl saturate-0' : ''}`} fill sizes={`${width}px`} unoptimized />
+                    </div>
                 ) : (
                     <div className="flex items-center justify-center bg-foreground/5" style={{ width: '100%', aspectRatio: aspect }}>
                         {loading ? <Loader className="size-4 animate-spin text-muted" /> : <span className="text-xs text-muted">{error ? 'image unavailable' : 'image'}</span>}
@@ -150,7 +153,7 @@ function ReplyVideo({ reply, peerChatPK, onReplyPress }) {
             <div className="overflow-hidden rounded-[20px] bg-foreground/5 shadow-sm opacity-65" style={{ width, maxWidth: '100%' }}>
                 <div className="relative bg-foreground/5" style={{ width: '100%', aspectRatio: aspect }}>
                     {poster ? (
-                        <img src={poster} alt={reply?.c || 'replied video'} className={`block size-full object-cover ${cloaked ? 'blur-xl saturate-0' : ''}`} />
+                        <Image src={poster} alt={reply?.c || 'replied video'} className={`object-cover ${cloaked ? 'blur-xl saturate-0' : ''}`} fill sizes={`${width}px`} unoptimized />
                     ) : (
                         <div className="flex size-full items-center justify-center">{loading ? <Loader className="size-4 animate-spin text-muted" /> : null}</div>
                     )}

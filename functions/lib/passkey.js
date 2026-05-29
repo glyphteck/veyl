@@ -3,6 +3,7 @@ import { allowedPasskeyOrigins, links, PASSKEY_DOMAIN } from './links.js';
 import { db, Timestamp } from './admin.js';
 
 const LOCALHOST_RP_ID = 'localhost';
+const CHALLENGE_RE = /^[A-Za-z0-9_-]{32,256}$/;
 
 export const ALLOWED_ORIGINS = [...allowedPasskeyOrigins];
 export const DEFAULT_ORIGIN = links.root;
@@ -96,25 +97,46 @@ export function createFido2Lib(rpId) {
         rpName: 'Glyphteck',
         challengeSize: 32,
         attestation: 'none',
-        authenticatorRequirement: 'discouraged',
-        userVerification: 'discouraged',
+        authenticatorUserVerification: 'required',
     });
 }
 
+function cleanChallengeString(value) {
+    const challenge = typeof value === 'string' ? value.trim() : '';
+    return CHALLENGE_RE.test(challenge) ? challenge : '';
+}
+
 /* Store challenge in Firestore with TTL */
-export async function storeChallenge(challengeString, ttlMs = 300_000) {
+export async function storeChallenge(challengeString, data = {}, ttlMs = 300_000) {
+    const challenge = cleanChallengeString(challengeString);
+    if (!challenge) {
+        throw new Error('invalid passkey challenge');
+    }
     const ttl = Timestamp.fromMillis(Date.now() + ttlMs);
-    await db.collection('passkey_challenges').doc(challengeString).set({ ttl });
+    await db.collection('passkey_challenges').doc(challenge).set({ ...data, ttl });
 }
 
 /* Retrieve and delete challenge from Firestore */
 export async function consumeChallenge(challengeString) {
-    const doc = await db.collection('passkey_challenges').doc(challengeString).get();
-    if (!doc.exists || doc.data().ttl.toMillis() < Date.now()) {
+    const challenge = cleanChallengeString(challengeString);
+    if (!challenge) {
         return null;
     }
-    await doc.ref.delete();
-    return challengeString;
+    const ref = db.collection('passkey_challenges').doc(challenge);
+    return await db.runTransaction(async (tx) => {
+        const doc = await tx.get(ref);
+        if (!doc.exists) {
+            return null;
+        }
+
+        const data = doc.data() || {};
+        tx.delete(ref);
+        if (typeof data.ttl?.toMillis !== 'function' || data.ttl.toMillis() < Date.now()) {
+            return null;
+        }
+
+        return { ...data, challenge };
+    });
 }
 
 /* Validate origin against allowed origins */

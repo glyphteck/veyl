@@ -31,9 +31,6 @@ export const deleteAccount = onCall(async (context) => {
     batch.delete(db.collection('seeds').doc(uid));
     batch.delete(db.collection('profiles').doc(uid));
     batch.delete(db.collection('moderation').doc(uid));
-    if (profileData?.chatPK) {
-        batch.delete(db.collection('chatkeys').doc(profileData.chatPK));
-    }
     const unameSnap = await db.collection('usernames').where('uid', '==', uid).get();
     unameSnap.forEach((d) => batch.delete(d.ref));
     const pks = await db.collection('passkeys').where('uid', '==', uid).get();

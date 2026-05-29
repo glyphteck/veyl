@@ -20,21 +20,29 @@ export const setWalletPK = onCall(async (context) => {
     }
 
     const profileRef = db.collection('profiles').doc(context.auth.uid);
-    const profileSnap = await profileRef.get();
-    const profileData = profileSnap.data() || {};
-    const walletPKs = profileData.walletPKs && typeof profileData.walletPKs === 'object' ? profileData.walletPKs : {};
-    const existingWalletPK = typeof walletPKs[network] === 'string' ? walletPKs[network].trim() : '';
-    if (existingWalletPK) {
-        if (existingWalletPK.toLowerCase() === walletPK.toLowerCase()) {
-            if (walletPKs[network] !== walletPK) {
-                await profileRef.set({ walletPKs: { [network]: walletPK } }, { merge: true });
+    await db.runTransaction(async (tx) => {
+        const profileSnap = await tx.get(profileRef);
+        const profileData = profileSnap.data() || {};
+        const walletPKs = profileData.walletPKs && typeof profileData.walletPKs === 'object' ? profileData.walletPKs : {};
+        const existingWalletPK = typeof walletPKs[network] === 'string' ? walletPKs[network].trim() : '';
+        if (existingWalletPK) {
+            if (existingWalletPK.toLowerCase() === walletPK.toLowerCase()) {
+                if (walletPKs[network] !== walletPK) {
+                    tx.set(profileRef, { walletPKs: { [network]: walletPK } }, { merge: true });
+                }
+                return;
             }
-            return OK;
+            throw new HttpsError('already-exists', 'Wallet identity already set.');
         }
-        throw new HttpsError('already-exists', 'Wallet identity already set.');
-    }
 
-    await profileRef.set({ walletPKs: { [network]: walletPK } }, { merge: true });
+        const duplicateSnap = await tx.get(db.collection('profiles').where(`walletPKs.${network}`, '==', walletPK).limit(1));
+        const duplicateProfile = duplicateSnap.docs.find((doc) => doc.id !== context.auth.uid);
+        if (duplicateProfile) {
+            throw new HttpsError('already-exists', 'Wallet identity already in use.');
+        }
+
+        tx.set(profileRef, { walletPKs: { [network]: walletPK } }, { merge: true });
+    });
     return OK;
 });
 
@@ -47,26 +55,25 @@ export const setChatPK = onCall(async (context) => {
         throw new HttpsError('invalid-argument', 'Invalid chat identity.');
     }
 
-    // check if user already has a chat PK
     const profileRef = db.collection('profiles').doc(context.auth.uid);
-    const profileSnap = await profileRef.get();
-    const existingChatPK = typeof profileSnap.data()?.chatPK === 'string' ? profileSnap.data().chatPK.trim().toLowerCase() : '';
-    if (existingChatPK) {
-        if (existingChatPK === chatPK) {
-            return OK;
+    await db.runTransaction(async (tx) => {
+        const profileSnap = await tx.get(profileRef);
+        const profileData = profileSnap.data() || {};
+        const existingChatPK = typeof profileData.chatPK === 'string' ? profileData.chatPK.trim().toLowerCase() : '';
+        if (existingChatPK) {
+            if (existingChatPK === chatPK) {
+                return;
+            }
+            throw new HttpsError('already-exists', 'Chat identity already set.');
         }
-        throw new HttpsError('already-exists', 'Chat identity already set.');
-    }
 
-    const batch = db.batch();
-    batch.set(profileRef, { chatPK }, { merge: true });
-    batch.set(
-        db.collection('chatkeys').doc(chatPK),
-        {
-            uid: context.auth.uid,
-        },
-        { merge: true }
-    );
-    await batch.commit();
+        const duplicateSnap = await tx.get(db.collection('profiles').where('chatPK', '==', chatPK).limit(1));
+        const duplicateProfile = duplicateSnap.docs.find((doc) => doc.id !== context.auth.uid);
+        if (duplicateProfile) {
+            throw new HttpsError('already-exists', 'Chat identity already in use.');
+        }
+
+        tx.set(profileRef, { chatPK }, { merge: true });
+    });
     return OK;
 });

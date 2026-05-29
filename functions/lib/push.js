@@ -1,5 +1,5 @@
 import { FieldValue, db } from './admin.js';
-import { createSign } from 'node:crypto';
+import { createHash, createSign } from 'node:crypto';
 import { defineSecret } from 'firebase-functions/params';
 import http2 from 'node:http2';
 
@@ -7,6 +7,7 @@ const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 const APNS_PROD_HOST = 'api.push.apple.com';
 const APNS_SANDBOX_HOST = 'api.sandbox.push.apple.com';
 const CHUNK = 100;
+const MAX_PUSH_DOCS_PER_USER = 4;
 const APNS_KEY_ID = defineSecret('APNS_KEY_ID');
 const APNS_TEAM_ID = defineSecret('APNS_TEAM_ID');
 const APNS_PRIVATE_KEY_BASE64 = defineSecret('APNS_PRIVATE_KEY_BASE64');
@@ -23,7 +24,7 @@ function chunk(list, size) {
 }
 
 export async function getPushDocs(uid) {
-    const snap = await db.collection('users').doc(uid).collection('push').get();
+    const snap = await db.collection('users').doc(uid).collection('push').orderBy('updatedAt', 'desc').limit(MAX_PUSH_DOCS_PER_USER).get();
     return snap.docs
         .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
         .filter((item) => item.enabled !== false && ((typeof item.nativeToken === 'string' && item.nativeToken) || (typeof item.token === 'string' && item.token)));
@@ -52,6 +53,17 @@ async function markDead(uid, docs, lastError = 'DeviceNotRegistered') {
 
 function base64url(input) {
     return Buffer.from(input).toString('base64url');
+}
+
+function normalizeCollapseId(value) {
+    const clean = typeof value === 'string' ? value.trim() : '';
+    if (!clean) {
+        return null;
+    }
+    if (Buffer.byteLength(clean) <= 64) {
+        return clean;
+    }
+    return `v-${createHash('sha256').update(clean).digest('base64url')}`;
 }
 
 function secretValue(param) {
@@ -118,6 +130,7 @@ function apnsPayload(body) {
 }
 
 function sendApnsOne(client, token, item, body) {
+    const collapseId = normalizeCollapseId(body.collapseId);
     return new Promise((resolve) => {
         const req = client.request({
             ':method': 'POST',
@@ -126,6 +139,7 @@ function sendApnsOne(client, token, item, body) {
             'apns-topic': item.apnsTopic,
             'apns-push-type': 'alert',
             'apns-priority': '10',
+            ...(collapseId ? { 'apns-collapse-id': collapseId } : {}),
         });
         let response = '';
         let status = 0;
@@ -201,6 +215,7 @@ async function sendApns(uid, docs, body) {
 
 async function sendExpo(uid, docs, body) {
     const stale = [];
+    const collapseId = normalizeCollapseId(body.collapseId);
 
     for (const group of chunk(docs, CHUNK)) {
         const payload = group.map((item) => ({
@@ -209,6 +224,7 @@ async function sendExpo(uid, docs, body) {
             title: body.title,
             body: body.body,
             data: body.data,
+            ...(collapseId ? { collapseId, tag: collapseId } : {}),
         }));
 
         const res = await fetch(EXPO_PUSH_URL, {

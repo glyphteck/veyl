@@ -18,8 +18,24 @@ const db = admin.firestore();
 const UNLINKED_PASSKEY = 'Passkey is not linked to an account';
 const LOCALHOST_PASSKEY_MISMATCH = 'This passkey was created for a different local host. Use the matching local veyl host or register a new passkey.';
 
+function parseClientData(clientDataJSON) {
+    try {
+        return JSON.parse(Buffer.from(clientDataJSON, 'base64url').toString());
+    } catch {
+        throw new HttpsError('invalid-argument', 'Invalid passkey client data.');
+    }
+}
+
 function cleanUid(value) {
-    return typeof value === 'string' ? value.trim() : '';
+    const uid = typeof value === 'string' ? value.trim() : '';
+    if (uid.length > 128) {
+        throw new HttpsError('invalid-argument', 'Invalid account id.');
+    }
+    return uid;
+}
+
+function challengeMatchesLogin(record, { origin, rpId }) {
+    return record?.type === 'login' && record.origin === origin && record.rpId === rpId;
 }
 
 async function getCredentialsForUid(uid, rpId) {
@@ -64,7 +80,12 @@ export const passkeyLoginOptions = onCall(async (context) => {
 
     // Store challenge
     const challengeString = bufferToBase64url(options.challenge);
-    await storeChallenge(challengeString);
+    await storeChallenge(challengeString, {
+        origin,
+        rpId,
+        type: 'login',
+        uid: uid || null,
+    });
 
     return {
         opts: encodeOptionsForClient(options),
@@ -78,7 +99,7 @@ export const passkeyLoginVerify = onCall(async ({ data }) => {
         throw new HttpsError('invalid-argument', 'assertion required');
     }
 
-    const clientDataJSON = JSON.parse(Buffer.from(assertion.response.clientDataJSON, 'base64url').toString());
+    const clientDataJSON = parseClientData(assertion.response?.clientDataJSON);
 
     // Validate origin before looking up credential state.
     if (!validateOrigin(clientDataJSON.origin)) {
@@ -86,6 +107,12 @@ export const passkeyLoginVerify = onCall(async ({ data }) => {
     }
 
     const rpId = getRpIdForOrigin(clientDataJSON.origin);
+
+    // Verify challenge exists and is valid before accepting any credential.
+    const challenge = await consumeChallenge(clientDataJSON.challenge);
+    if (!challenge || !challengeMatchesLogin(challenge, { origin: clientDataJSON.origin, rpId })) {
+        throw new HttpsError('deadline-exceeded', 'Invalid or expired challenge');
+    }
 
     // Get credential from database
     const credentialId = assertion.rawId;
@@ -105,6 +132,15 @@ export const passkeyLoginVerify = onCall(async ({ data }) => {
     if (!uid || !PK) {
         throw new HttpsError('not-found', UNLINKED_PASSKEY);
     }
+    if (cred.rpId !== rpId) {
+        if (rpId === 'localhost') {
+            throw new HttpsError('failed-precondition', LOCALHOST_PASSKEY_MISMATCH);
+        }
+        throw new HttpsError('failed-precondition', 'This passkey belongs to a different Glyphteck passkey setup. Register a new passkey.');
+    }
+    if (challenge.uid && challenge.uid !== uid) {
+        throw new HttpsError('permission-denied', 'Passkey does not match the requested account.');
+    }
 
     try {
         await admin.auth().getUser(uid);
@@ -118,12 +154,6 @@ export const passkeyLoginVerify = onCall(async ({ data }) => {
 
     const fido = createFido2Lib(rpId);
 
-    // Verify challenge exists and is valid
-    const challenge = await consumeChallenge(clientDataJSON.challenge);
-    if (!challenge) {
-        throw new HttpsError('deadline-exceeded', 'Invalid or expired challenge');
-    }
-
     // Convert assertion to proper format for fido2-lib
     const decodedAssertion = decodeCredentialFromClient(assertion);
 
@@ -131,10 +161,10 @@ export const passkeyLoginVerify = onCall(async ({ data }) => {
     let result;
     try {
         result = await fido.assertionResult(decodedAssertion, {
-            challenge,
+            challenge: challenge.challenge,
             origin: clientDataJSON.origin,
             rpId,
-            factor: 'either',
+            factor: 'first',
             publicKey: PK,
             prevCounter: counter,
             userHandle: Buffer.from(uid),

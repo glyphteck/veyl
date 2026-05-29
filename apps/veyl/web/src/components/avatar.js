@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import Image from 'next/image';
 import { Bot, UserRound } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
@@ -71,7 +72,8 @@ const AvatarImage = React.forwardRef(function AvatarImage({ className, src, alt 
     }
 
     return (
-        <img
+        <Image
+            alt={alt}
             ref={(node) => {
                 imgRef.current = node;
                 if (typeof ref === 'function') {
@@ -82,8 +84,10 @@ const AvatarImage = React.forwardRef(function AvatarImage({ className, src, alt 
             }}
             className={cn('aspect-square size-full select-none pointer-events-none', avatar?.status !== 'loaded' && 'hidden', className)}
             draggable={false}
-            src={src}
-            alt={alt}
+            height={40}
+            src={srcKey}
+            unoptimized
+            width={40}
             onLoad={(event) => {
                 loadedAvatarSrcs.add(srcKey);
                 setStatus?.('loaded');
@@ -119,13 +123,16 @@ const StaticAvatar = React.forwardRef(function StaticAvatar({ className, src, st
     return (
         <span ref={ref} className={cn('relative flex size-full items-center justify-center overflow-hidden rounded-full bg-background', className)} style={style} {...props}>
             {!loaded ? fallback : null}
-            <img
+            <Image
                 alt=""
                 aria-hidden="true"
                 className="absolute inset-0 size-full object-cover"
                 draggable={false}
+                height={40}
                 src={srcKey}
                 style={{ opacity: loaded ? 1 : 0 }}
+                unoptimized
+                width={40}
                 onLoad={() => {
                     loadedAvatarSrcs.add(srcKey);
                     setLoaded(true);

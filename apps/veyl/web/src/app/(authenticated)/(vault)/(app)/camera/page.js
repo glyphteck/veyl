@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import Image from 'next/image';
 import Webcam from 'react-webcam';
 import { useBitcoin } from '@/components/providers/bitcoinprovider';
 import { useDialog } from '@/components/providers/dialogprovider';
@@ -721,7 +722,7 @@ export default function CameraPage() {
                         className={`absolute inset-0 w-full h-full object-cover transition-all duration-300 ${cloaked ? 'blur-3xl scale-110' : ''}`}
                     />
                 </div>
-                {capture?.kind === 'photo' && <img src={capture.uri} alt="preview" className="absolute inset-0 w-full h-full object-cover" />}
+                {capture?.kind === 'photo' && <Image src={capture.uri} alt="preview" className="object-cover" fill sizes="100vw" unoptimized />}
                 {capture?.kind === 'video' && <video src={capture.uri} className="absolute inset-0 w-full h-full object-cover" autoPlay loop muted playsInline />}
             </div>
             <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-8">

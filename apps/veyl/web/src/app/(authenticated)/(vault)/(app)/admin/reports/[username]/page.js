@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useParams } from 'next/navigation';
 import { ArrowLeft, Copy, Download, Loader, MessageCircleOff } from 'lucide-react';
 import Loading from '@/components/loading';
@@ -130,18 +131,22 @@ function ReportEvidence({ report }) {
                     }}
                     disabled={downloading}
                 >
-                    <img
-                        src={fileUrl}
-                        alt={attachment.name || 'reported image'}
-                        className="block w-full object-cover"
-                        style={{ aspectRatio: aspect }}
-                        onLoad={(event) => {
-                            const { naturalWidth, naturalHeight } = event.currentTarget;
-                            if (naturalWidth > 0 && naturalHeight > 0) {
-                                setAspect(naturalWidth / naturalHeight);
-                            }
-                        }}
-                    />
+                    <div className="relative w-full" style={{ aspectRatio: aspect }}>
+                        <Image
+                            src={fileUrl}
+                            alt={attachment.name || 'reported image'}
+                            className="object-cover"
+                            fill
+                            sizes={`${width}px`}
+                            unoptimized
+                            onLoad={(event) => {
+                                const { naturalWidth, naturalHeight } = event.currentTarget;
+                                if (naturalWidth > 0 && naturalHeight > 0) {
+                                    setAspect(naturalWidth / naturalHeight);
+                                }
+                            }}
+                        />
+                    </div>
                 </Button>
             </div>
         );

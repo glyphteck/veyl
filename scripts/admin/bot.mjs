@@ -130,10 +130,6 @@ async function deleteBot(target, options = {}) {
     batch.delete(profileRef);
     batch.delete(moderationRef);
 
-    if (chatPK) {
-        batch.delete(db.collection('chatkeys').doc(chatPK));
-    }
-
     if (username) {
         batch.delete(db.collection('usernames').doc(username));
         deletedUsernames.add(username);
