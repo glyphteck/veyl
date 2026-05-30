@@ -2,6 +2,10 @@
 
 Repo-level changes are listed newest first. Keep entries short and concrete. Broad pushes get grouped bullets, while narrow fixes can use one concise bugfix or cleanup bullet that still names the actual change.
 
+## 4.14.1 - 2026-05-30
+
+- Fixed Vercel web builds by making the web-root `scripts/vercel-build.mjs` path resolve to the repo-root build helper.
+
 ## 4.14.0 - 2026-05-30
 
 - Added encrypted chat retention controls, hidden-message checkpoints, adaptive message paging, and client-side cleanup for expired, hidden, duplicate, and superseded control rows.
