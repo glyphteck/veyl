@@ -1,12 +1,10 @@
 'use client';
 
 import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import { userAvatarCache } from '@/lib/useravatarcache';
+import { replaceDocument } from '@/lib/documentnav';
 
 export default function RootRedirect() {
-    const router = useRouter();
-
     useEffect(() => {
         let active = true;
 
@@ -20,7 +18,7 @@ export default function RootRedirect() {
                 target = '/landing';
             }
             if (active) {
-                router.replace(target);
+                replaceDocument(target);
             }
         }
 
@@ -29,7 +27,7 @@ export default function RootRedirect() {
         return () => {
             active = false;
         };
-    }, [router]);
+    }, []);
 
     return null;
 }

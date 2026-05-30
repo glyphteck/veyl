@@ -572,7 +572,7 @@ if (target === 'dev') {
 }
 
 if (!commands[target]) {
-    console.error('Usage: bun veyl [verbose] [web|ios|bot] [...args]');
+    console.error('Usage: bun dev [verbose] [web|ios|bot] [...args]');
     process.exit(1);
 }
 

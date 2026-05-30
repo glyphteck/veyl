@@ -309,7 +309,7 @@ const memoryTimer = setInterval(() => {
         return;
     }
     lastMemoryWarning = now;
-    console.warn(`[web] memory high: ${total} MB rss. Run "bun veyl web mem trace" if it keeps climbing.`);
+    console.warn(`[web] memory high: ${total} MB rss. Run "bun dev web mem trace" if it keeps climbing.`);
 }, checkMs);
 memoryTimer.unref?.();
 

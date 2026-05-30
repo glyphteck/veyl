@@ -8,6 +8,7 @@ import { Button } from '@/components/button';
 import { Card } from '@/components/card';
 import { walletLogoSrc } from '@/lib/brand';
 import { cn } from '@/lib/utils';
+import { FeatureJump } from './featurejump';
 import { Graph } from './graph';
 
 export const metadata = {
@@ -22,21 +23,25 @@ const points = [
         icon: Lock,
         title: 'safety first',
         body: 'anonymous accounts. all you need is a passkey and a password. you own your account, chats and wallet, and can delete it all anytime.',
+        target: 'security-and-privacy',
     },
     {
         icon: MessageCircle,
         title: 'private communication',
         body: 'fully end-to-end encrypted chats. send text, photos, audio, video, files, and payment requests to anyone with an account.',
+        target: 'chat-without-a-paper-trail',
     },
     {
         icon: Wallet,
         title: 'fast and free payments',
         body: 'built on bitcoin. you get the security and ownership you deserve, without the fees and latency.',
+        target: 'bitcoin-that-moves-like-money',
     },
 ];
 
 const sections = [
     {
+        id: 'chat-without-a-paper-trail',
         icon: MessageCircle,
         icon2: KeyRound,
         title: 'chat without a paper trail',
@@ -44,6 +49,7 @@ const sections = [
         shots: { web: null, ios: null },
     },
     {
+        id: 'bitcoin-that-moves-like-money',
         icon: Wallet,
         logos: [
             { src: btclogo, alt: 'bitcoin' },
@@ -54,6 +60,7 @@ const sections = [
         shots: { web: null, ios: null },
     },
     {
+        id: 'security-and-privacy',
         icon: Lock,
         icon2: HatGlasses,
         title: 'security and privacy',
@@ -95,13 +102,13 @@ function featureShot(shots, device) {
     return device.iphone ? shots?.ios : shots?.web;
 }
 
-function FeatureMark({ icon: Icon, icon2: Icon2, logos }) {
+function FeatureMark({ icon: Icon, icon2: Icon2, logos, markClassName }) {
     const visibleLogos = logos?.filter((logo) => !logo.hidden);
 
     if (logos) {
         return (
             <div className="flex items-center gap-3">
-                <div className="flex size-12 items-center justify-center rounded-full bg-foreground text-background shadow">
+                <div className={cn('flex size-12 items-center justify-center rounded-full bg-foreground text-background shadow', markClassName)}>
                     <Icon className="size-6" />
                 </div>
                 <div className="flex items-center gap-2">
@@ -116,10 +123,10 @@ function FeatureMark({ icon: Icon, icon2: Icon2, logos }) {
     if (Icon2) {
         return (
             <div className="flex items-center gap-3">
-                <div className="flex size-12 items-center justify-center rounded-full bg-foreground text-background shadow">
+                <div className={cn('flex size-12 items-center justify-center rounded-full bg-foreground text-background shadow', markClassName)}>
                     <Icon className="size-6" />
                 </div>
-                <div className="flex size-12 items-center justify-center rounded-full bg-foreground text-background shadow">
+                <div className={cn('flex size-12 items-center justify-center rounded-full bg-foreground text-background shadow', markClassName)}>
                     <Icon2 className="size-6" />
                 </div>
             </div>
@@ -127,21 +134,23 @@ function FeatureMark({ icon: Icon, icon2: Icon2, logos }) {
     }
 
     return (
-        <div className="flex size-12 items-center justify-center rounded-full bg-foreground text-background shadow">
+        <div className={cn('flex size-12 items-center justify-center rounded-full bg-foreground text-background shadow', markClassName)}>
             <Icon className="size-6" />
         </div>
     );
 }
 
-function FeatureCard({ icon, icon2, logos, title, body }) {
+function FeatureCard({ icon, icon2, logos, title, body, target }) {
     return (
-        <Card className="h-full gap-4 p-4 md:p-5">
-            <FeatureMark icon={icon} icon2={icon2} logos={logos} />
-            <div className="space-y-2">
-                <h2 className="text-xl font-black">{title}</h2>
-                <p className="text-sm text-muted md:text-base">{body}</p>
-            </div>
-        </Card>
+        <FeatureJump target={target}>
+            <Card className="h-full gap-4 p-4 md:p-5">
+                <FeatureMark icon={icon} icon2={icon2} logos={logos} markClassName="transition-transform group-hover:scale-120 group-focus-visible:scale-120 group-active:scale-85" />
+                <div className="space-y-2">
+                    <h2 className="text-xl font-black">{title}</h2>
+                    <p className="text-sm text-muted md:text-base">{body}</p>
+                </div>
+            </Card>
+        </FeatureJump>
     );
 }
 
@@ -153,12 +162,12 @@ function FeatureShot({ shot, iphone }) {
     );
 }
 
-function FeatureSection({ icon, icon2, logos, title, body, shots, device, reverse = false }) {
+function FeatureSection({ id, icon, icon2, logos, title, body, shots, device, reverse = false }) {
     const shot = featureShot(shots, device);
     const hasShot = !!shot?.src;
 
     return (
-        <section className={cn('grid items-center gap-6 md:gap-8', hasShot && 'lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]')}>
+        <section id={id} className={cn('grid scroll-mt-8 items-center gap-6 md:gap-8', hasShot && 'lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]')}>
             <div className={cn('max-w-xl space-y-4', hasShot && reverse && 'lg:order-2 lg:ml-auto')}>
                 <FeatureMark icon={icon} icon2={icon2} logos={logos} />
                 <div className="space-y-3">
@@ -211,6 +220,8 @@ export default async function LandingPage() {
                     <FeatureSection key={section.title} {...section} device={device} reverse={index % 2 === 1} />
                 ))}
             </div>
+
+            <div aria-hidden="true" className="relative z-10 h-dvh" />
 
             <div className="relative z-10 mx-auto flex w-full flex-col items-center gap-8 pb-2 text-xs font-black uppercase tracking-normal text-muted">
                 <a href="https://glyphteck.com" aria-label="Glyphteck" className="grower inline-flex">

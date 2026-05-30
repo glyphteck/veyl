@@ -2,6 +2,12 @@
 
 Repo-level changes are listed newest first. Keep entries short and concrete. Broad pushes get grouped bullets, while narrow fixes can use one concise bugfix or cleanup bullet that still names the actual change.
 
+## 4.14.2 - 2026-05-30
+
+- Renamed the local Veyl dev launcher from `bun veyl` to `bun dev` and updated command docs.
+- Added queued bot burst actions for deterministic chat pressure runs from the live bot runtime.
+- Adjusted web root/auth redirects and landing feature jumps to use document-level navigation where needed.
+
 ## 4.14.1 - 2026-05-30
 
 - Fixed Vercel web builds by making the web-root `scripts/vercel-build.mjs` path resolve to the repo-root build helper.

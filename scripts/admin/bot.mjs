@@ -1,17 +1,38 @@
 #!/usr/bin/env bun
 
 import { fileURLToPath } from 'node:url';
-import admin, { db, projectId } from '../../functions/lib/admin.js';
-import { BOT_MODE } from '../../shared/bot/events.js';
+import admin, { db, FieldValue, projectId } from '../../functions/lib/admin.js';
+import {
+    BOT_ACTION_STATUS_DONE,
+    BOT_ACTION_STATUS_ERROR,
+    BOT_ACTION_STATUS_QUEUED,
+    BOT_ACTION_TYPE_BURST,
+    BOT_MODE,
+    BOT_RUNTIME_ACTIONS,
+    BOT_RUNTIME_DOC_ID,
+    BOT_RUNTIME_LEASE_MS,
+} from '../../shared/bot/events.js';
+import {
+    BOT_BURST_DEFAULT_COUNT,
+    BOT_BURST_DEFAULT_DELAY_MS,
+    BOT_BURST_MAX_COUNT,
+    BOT_BURST_MIN_DELAY_MS,
+} from '../../shared/config.js';
 import { resolveBotUid, setBotPowerState } from '../../functions/lib/bots.js';
 import { provisionBot } from '../../apps/veyl/bot/src/newbot.js';
 import { createSecretClient, deleteBotSeed } from '../../apps/veyl/bot/src/secrets.js';
-import { cliArgs } from './common.mjs';
+import { cliArgs, resolveUid } from './common.mjs';
+
+const DEFAULT_BURST_TARGET = '@zxrl';
+const BURST_WAIT_POLL_MS = 2000;
+const BURST_WAIT_GRACE_MS = 60000;
 
 function usage() {
     console.error('usage: bun bot add [username|count]');
     console.error('usage: bun bot power <@username|uid|all> <on|off>');
     console.error('usage: bun bot kill <@username|uid|all>');
+    console.error('usage: bun bot burst [@username|uid] [--count 60] [--delay 3000|3s] [--no-wait]');
+    console.error('usage: bun bot b [@username|uid] [--count 60] [--delay 3000|3s] [--no-wait]');
     process.exit(1);
 }
 
@@ -38,6 +59,135 @@ function normalizePower(value) {
 
 function plural(count, word) {
     return `${count} ${word}${count === 1 ? '' : 's'}`;
+}
+
+function tsMs(value) {
+    if (typeof value?.toMillis === 'function') {
+        return value.toMillis();
+    }
+    if (value instanceof Date) {
+        return value.getTime();
+    }
+    const ms = Number(value);
+    return Number.isFinite(ms) ? ms : 0;
+}
+
+function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function runtimeRef() {
+    return db.collection('runtimes').doc(BOT_RUNTIME_DOC_ID);
+}
+
+function isRuntimeActive(data) {
+    return data?.running === true && tsMs(data?.heartbeatAt) > Date.now() - BOT_RUNTIME_LEASE_MS;
+}
+
+function supportsRuntimeAction(data, actionType) {
+    return Array.isArray(data?.actions) && data.actions.includes(actionType);
+}
+
+function msLabel(ms) {
+    return ms % 1000 === 0 ? `${ms / 1000}s` : `${ms}ms`;
+}
+
+function parseCount(value) {
+    const count = Number(value);
+    if (!Number.isInteger(count) || count <= 0 || count > BOT_BURST_MAX_COUNT) {
+        throw new Error(`count must be an integer from 1 to ${BOT_BURST_MAX_COUNT}`);
+    }
+    return count;
+}
+
+function parseDelayMs(value) {
+    const raw = String(value ?? '').trim().toLowerCase();
+    const ms = raw.endsWith('ms') ? Number(raw.slice(0, -2)) : raw.endsWith('s') ? Number(raw.slice(0, -1)) * 1000 : Number(raw);
+    if (!Number.isFinite(ms) || ms < BOT_BURST_MIN_DELAY_MS) {
+        throw new Error(`delay must be at least ${BOT_BURST_MIN_DELAY_MS}ms`);
+    }
+    return Math.round(ms);
+}
+
+function splitOption(arg) {
+    const raw = String(arg ?? '').trim();
+    const eq = raw.indexOf('=');
+    if (eq === -1) {
+        return { name: raw, value: null };
+    }
+    return {
+        name: raw.slice(0, eq),
+        value: raw.slice(eq + 1),
+    };
+}
+
+function readOptionValue(args, index, inlineValue) {
+    if (inlineValue != null) {
+        return { value: inlineValue, index };
+    }
+    if (index + 1 >= args.length) {
+        usage();
+    }
+    return { value: args[index + 1], index: index + 1 };
+}
+
+function parseBurstArgs(args) {
+    let target = DEFAULT_BURST_TARGET;
+    let targetSet = false;
+    let count = BOT_BURST_DEFAULT_COUNT;
+    let delayMs = BOT_BURST_DEFAULT_DELAY_MS;
+    let wait = true;
+
+    for (let i = 0; i < args.length; i++) {
+        const raw = String(args[i] ?? '').trim();
+        if (!raw) {
+            continue;
+        }
+
+        const { name, value } = splitOption(raw);
+        if (name === '--count' || name === '-c') {
+            const next = readOptionValue(args, i, value);
+            count = parseCount(next.value);
+            i = next.index;
+            continue;
+        }
+        if (name === '--delay' || name === '--delay-ms' || name === '-d') {
+            const next = readOptionValue(args, i, value);
+            delayMs = parseDelayMs(next.value);
+            i = next.index;
+            continue;
+        }
+        if (name === '--wait') {
+            wait = true;
+            continue;
+        }
+        if (name === '--no-wait') {
+            wait = false;
+            continue;
+        }
+        if (raw.startsWith('-')) {
+            usage();
+        }
+        if (targetSet) {
+            usage();
+        }
+        target = raw;
+        targetSet = true;
+    }
+
+    return { target, count, delayMs, wait };
+}
+
+async function requireRuntimeAction(actionType) {
+    const snap = await runtimeRef().get();
+    const data = snap.exists ? snap.data() : {};
+    if (!isRuntimeActive(data)) {
+        throw new Error('bot runtime is not running');
+    }
+    if (!supportsRuntimeAction(data, actionType)) {
+        throw new Error('bot runtime does not support burst actions; restart the bot runtime');
+    }
+    return data;
 }
 
 async function resolveBotTargets(target) {
@@ -212,6 +362,35 @@ export async function addBot(target) {
     return result;
 }
 
+export async function queueBurstAction(options = {}) {
+    await requireRuntimeAction(BOT_ACTION_TYPE_BURST);
+
+    const target = await resolveUid(options.target || DEFAULT_BURST_TARGET);
+    const count = parseCount(options.count ?? BOT_BURST_DEFAULT_COUNT);
+    const delayMs = parseDelayMs(options.delayMs ?? BOT_BURST_DEFAULT_DELAY_MS);
+    const actionRef = runtimeRef().collection(BOT_RUNTIME_ACTIONS).doc();
+
+    await actionRef.set({
+        type: BOT_ACTION_TYPE_BURST,
+        status: BOT_ACTION_STATUS_QUEUED,
+        targetUid: target.uid,
+        targetUsername: target.username || null,
+        count,
+        delayMs,
+        requestedBy: 'cli',
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    return {
+        id: actionRef.id,
+        ref: actionRef,
+        target,
+        count,
+        delayMs,
+    };
+}
+
 function printPowerResult(result) {
     const names = result.updated.map((entry) => entry.username ? `@${entry.username}` : entry.uid).join(', ');
     const suffix = names ? `: ${names}` : '';
@@ -223,6 +402,51 @@ function printKillResult(result) {
     const chatsDeleted = result.wiped.reduce((sum, entry) => sum + (entry.chatsDeleted || 0), 0);
     const suffix = names ? `: ${names}` : '';
     console.log(`deleted ${plural(result.count, 'bot account')}, ${plural(chatsDeleted, 'chat')}, auth users, and bot seed entries${suffix}`);
+}
+
+function printBurstQueued(action) {
+    const target = action.target.username ? `@${action.target.username}` : action.target.uid;
+    console.log(`queued bot burst ${action.id}: ${plural(action.count, 'message')} to ${target} every ${msLabel(action.delayMs)}`);
+}
+
+function printBurstResult(data) {
+    const result = data?.result || {};
+    const sent = Number.isFinite(result.sent) ? result.sent : 0;
+    const requested = Number.isFinite(result.requested) ? result.requested : data?.count;
+    const botNames = Array.isArray(result.bots) ? result.bots.filter(Boolean).map((name) => `@${name}`).join(', ') : '';
+    const botSuffix = botNames ? ` from ${botNames}` : '';
+    const receipts = Number.isFinite(result.readReceipts) ? result.readReceipts : 0;
+    const receiptSuffix = receipts ? ` and ${plural(receipts, 'read receipt')}` : '';
+    console.log(`burst complete: sent ${sent}/${requested} messages${receiptSuffix}${botSuffix}`);
+}
+
+async function waitForAction(actionRef, timeoutMs) {
+    const startedAt = Date.now();
+    const deadline = startedAt + timeoutMs;
+
+    while (Date.now() <= deadline) {
+        const snap = await actionRef.get();
+        if (!snap.exists) {
+            throw new Error('bot burst action disappeared');
+        }
+
+        const data = snap.data();
+        if (data?.status === BOT_ACTION_STATUS_DONE) {
+            return data;
+        }
+        if (data?.status === BOT_ACTION_STATUS_ERROR) {
+            throw new Error(data?.error || 'bot burst failed');
+        }
+
+        const runtimeSnap = await runtimeRef().get();
+        if (!isRuntimeActive(runtimeSnap.exists ? runtimeSnap.data() : {})) {
+            throw new Error('bot runtime stopped before burst finished');
+        }
+
+        await sleep(Math.min(BURST_WAIT_POLL_MS, Math.max(0, deadline - Date.now())));
+    }
+
+    throw new Error('bot burst did not finish before the wait timeout');
 }
 
 async function main() {
@@ -270,6 +494,18 @@ async function main() {
 
         const result = await killBots(arg1);
         printKillResult(result);
+        return;
+    }
+
+    if (cmd === 'burst' || cmd === 'b') {
+        const options = parseBurstArgs(cliArgs().slice(1));
+        const action = await queueBurstAction(options);
+        printBurstQueued(action);
+        if (!options.wait) {
+            return;
+        }
+        const result = await waitForAction(action.ref, action.count * action.delayMs + BURST_WAIT_GRACE_MS);
+        printBurstResult(result);
         return;
     }
 

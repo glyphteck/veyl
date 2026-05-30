@@ -7,6 +7,7 @@ import { doc, getDoc } from 'firebase/firestore';
 import { hasCurrentCommunityRules } from '@glyphteck/shared/community';
 import Loading from '@/components/loading';
 import { auth, db } from '@/lib/firebase/firebaseclient';
+import { replaceDocument } from '@/lib/documentnav';
 
 const STEP_HREF = {
     username: '/getusername',
@@ -14,6 +15,7 @@ const STEP_HREF = {
     community: '/community',
     password: '/getpassword',
 };
+let leavingAuth = false;
 
 function useAuthUser() {
     const [state, setState] = useState({ ready: false, user: null });
@@ -21,6 +23,12 @@ function useAuthUser() {
     useEffect(() => onAuthStateChanged(auth, (user) => setState({ ready: true, user })), []);
 
     return state;
+}
+
+function leaveAuth() {
+    if (typeof window === 'undefined' || leavingAuth) return;
+    leavingAuth = true;
+    replaceDocument('/');
 }
 
 export async function readOnboardingState(uid) {
@@ -86,28 +94,26 @@ function useOnboardingState(user, enabled) {
 }
 
 export function AuthGate({ children }) {
-    const router = useRouter();
     const { ready, user } = useAuthUser();
 
     useEffect(() => {
         if (ready && !user) {
-            router.replace('/');
+            leaveAuth();
         }
-    }, [ready, router, user]);
+    }, [ready, user]);
 
     if (!ready || !user) return <Loading />;
     return children;
 }
 
 export function GuestGate({ children }) {
-    const router = useRouter();
     const { ready, user } = useAuthUser();
 
     useEffect(() => {
         if (ready && user) {
-            router.replace('/');
+            replaceDocument('/');
         }
-    }, [ready, router, user]);
+    }, [ready, user]);
 
     if (!ready || user) return <Loading />;
     return children;
@@ -143,11 +149,6 @@ export function OnboardingGate({ step, children }) {
     const shouldRedirect = !!targetHref && targetHref !== currentHref;
 
     useEffect(() => {
-        if (ready && !user) {
-            router.replace('/');
-            return;
-        }
-
         if (onboarding.error) {
             router.replace('/');
             return;
@@ -156,7 +157,7 @@ export function OnboardingGate({ step, children }) {
         if (shouldRedirect) {
             router.replace(targetHref);
         }
-    }, [onboarding.error, ready, router, shouldRedirect, targetHref, user]);
+    }, [onboarding.error, router, shouldRedirect, targetHref]);
 
     if (!ready || !user || onboarding.loading || onboarding.error || shouldRedirect) return <Loading />;
     return children;
@@ -170,11 +171,6 @@ export function VaultReadyGate({ children }) {
     const shouldRedirect = !!targetHref && targetHref !== '/unlock';
 
     useEffect(() => {
-        if (ready && !user) {
-            router.replace('/');
-            return;
-        }
-
         if (onboarding.error) {
             router.replace('/');
             return;
@@ -183,7 +179,7 @@ export function VaultReadyGate({ children }) {
         if (shouldRedirect) {
             router.replace(targetHref);
         }
-    }, [onboarding.error, ready, router, shouldRedirect, targetHref, user]);
+    }, [onboarding.error, router, shouldRedirect, targetHref]);
 
     if (!ready || !user || onboarding.loading || onboarding.error || shouldRedirect) return <Loading />;
     return children;
@@ -217,11 +213,6 @@ export function AdminGate({ children }) {
     }, [ready, user?.uid]);
 
     useEffect(() => {
-        if (ready && !user) {
-            router.replace('/');
-            return;
-        }
-
         if (ready && user && !adminState.loading && !adminState.allowed) {
             router.replace('/wallet');
         }

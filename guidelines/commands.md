@@ -15,19 +15,19 @@ cd functions && npm install
 ## Common App Commands
 
 ```bash
-bun veyl
-bun veyl clear
-bun veyl bot
-bun veyl web
-bun veyl web clear
-bun veyl web mainnet
-bun veyl web regtest
-bun veyl ios
-bun veyl ios clear
-bun veyl ios mainnet
-bun veyl ios regtest
-bun veyl ios tunnel
-bun veyl ios submit
+bun dev
+bun dev clear
+bun dev bot
+bun dev web
+bun dev web clear
+bun dev web mainnet
+bun dev web regtest
+bun dev ios
+bun dev ios clear
+bun dev ios mainnet
+bun dev ios regtest
+bun dev ios tunnel
+bun dev ios submit
 bun make ios
 bun make ios test
 bun make ios prod
@@ -45,6 +45,7 @@ bun push
 bun merge
 bun bot add @mybot
 bun bot power @mybot on
+bun bot burst
 bun bot kill @mybot
 ```
 
@@ -122,22 +123,22 @@ bun make cors
 bun make lifecycle
 ```
 
-## veyl Script Notes
+## Dev Script Notes
 
-- `bun veyl` starts web, iOS, and bot together.
+- `bun dev` starts web, iOS, and bot together.
 - veyl web always uses Turbopack for local dev.
-- `bun veyl web` clears web `.next` before launch when the cache exceeds 5 GiB. Set `VEYL_WEB_CACHE_MAX_GB` to tune that threshold.
-- `bun veyl clear` clears web `.next`, iOS `.expo`, and Metro cache before starting the combined runtime.
-- `bun veyl web clear` clears only the veyl web `.next` cache before starting.
-- `bun veyl web mem` starts web with V8 heap snapshots near the heap limit; combine with `trace` for Turbopack trace output or `inspect` for Chrome DevTools memory profiling.
-- `bun veyl ios clear` clears only the veyl iOS `.expo` and Metro caches before starting.
-- `bun veyl ios` starts Expo in dev-client mode for the installed `dev.veyl` app.
-- `bun make ios` runs a clean Expo prebuild, then installs the `dev.veyl` Expo dev-client build on `REGTEST` with bundle id `com.glyphteck.veyl.dev`. It does not start Metro; run the dev server separately with `bun veyl ios` or the combined runtime.
+- `bun dev web` clears web `.next` before launch when the cache exceeds 5 GiB. Set `VEYL_WEB_CACHE_MAX_GB` to tune that threshold.
+- `bun dev clear` clears web `.next`, iOS `.expo`, and Metro cache before starting the combined runtime.
+- `bun dev web clear` clears only the veyl web `.next` cache before starting.
+- `bun dev web mem` starts web with V8 heap snapshots near the heap limit; combine with `trace` for Turbopack trace output or `inspect` for Chrome DevTools memory profiling.
+- `bun dev ios clear` clears only the veyl iOS `.expo` and Metro caches before starting.
+- `bun dev ios` starts Expo in dev-client mode for the installed `dev.veyl` app.
+- `bun make ios` runs a clean Expo prebuild, then installs the `dev.veyl` Expo dev-client build on `REGTEST` with bundle id `com.glyphteck.veyl.dev`. It does not start Metro; run the dev server separately with `bun dev ios` or the combined runtime.
 - `bun make ios reset` uninstalls the dev app before reinstalling it, which clears on-device app data and forces iOS to reprocess the current app identity.
 - `bun make ios test` installs the standalone test `test.veyl` build on `REGTEST` with bundle id `com.glyphteck.veyl.test`.
 - `bun make ios prod` installs the standalone production `veyl` build on `MAINNET` with bundle id `com.glyphteck.veyl`.
 - `bun make ios` is quiet by default: it prints phase lines, writes child command output under `apps/veyl/ios/ios/build/<scheme>/logs/<timestamp>/`, logs warning details to `*.warnings.log`, and prints the first failure details plus the full log path when a child command fails. Add `-v` or `--verbose` to also show full child command output.
-- `bun veyl mainnet` and `bun veyl regtest` apply the selected network to web, iOS, and bot.
+- `bun dev mainnet` and `bun dev regtest` apply the selected network to web, iOS, and bot.
 
 ## iOS Production Builds
 
@@ -158,10 +159,10 @@ bun make ios store --clear-cache
 After the App Store Connect app record exists and the EAS build is ready, upload the latest EAS iOS build with:
 
 ```bash
-bun veyl ios submit
+bun dev ios submit
 ```
 
-`bun veyl ios submit` runs EAS Submit from `apps/veyl/ios` with the prod profile. It defaults to `--latest` and forwards extra EAS Submit flags, so a specific build still works with `bun veyl ios submit --id <build-id>`. EAS Submit can use the preset non-secret values in `apps/veyl/ios/eas.json`, but the Apple account, App Store Connect app id, or API key still need to come from Apple.
+`bun dev ios submit` runs EAS Submit from `apps/veyl/ios` with the prod profile. It defaults to `--latest` and forwards extra EAS Submit flags, so a specific build still works with `bun dev ios submit --id <build-id>`. EAS Submit can use the preset non-secret values in `apps/veyl/ios/eas.json`, but the Apple account, App Store Connect app id, or API key still need to come from Apple.
 
 ## Local Web Hosts
 
@@ -171,7 +172,7 @@ For local web passkey work, map `domains.veylDev` from [../links.md](../links.md
 links.veylDevWeb
 ```
 
-`bun veyl web` is expected to bind to that host with local HTTPS so the shared `glyphteck.com` RP works without a localhost passkey silo.
+`bun dev web` is expected to bind to that host with local HTTPS so the shared `glyphteck.com` RP works without a localhost passkey silo.
 
 Use the chat route directly for web chat checks:
 

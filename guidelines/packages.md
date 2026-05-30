@@ -100,7 +100,7 @@ import { useIsFocused } from 'expo-router/react-navigation';
 
 Do not keep direct app dependencies on `@react-navigation/*` unless app code truly imports those packages directly and the SDK release supports that surface.
 
-`bun make ios` is the normal phone rebuild path for the dev client. It runs a clean prebuild, builds, installs `dev.veyl` on the configured phone, and does not start Metro. Use `bun veyl ios` for the dev-client server. Use `bun make ios reset` after app identity, signing, associated-domain, or bundle-id changes when on-device state must be cleared.
+`bun make ios` is the normal phone rebuild path for the dev client. It runs a clean prebuild, builds, installs `dev.veyl` on the configured phone, and does not start Metro. Use `bun dev ios` for the dev-client server. Use `bun make ios reset` after app identity, signing, associated-domain, or bundle-id changes when on-device state must be cleared.
 
 Generated native directories such as `apps/veyl/ios/ios/` are build output. Do not hand edit them unless the task is explicitly about generated native output. A manual `pod install` inside that directory can refresh pods for an already-generated native project, but it is not a replacement for the repo's prebuild/build path after Expo config or package changes.
 

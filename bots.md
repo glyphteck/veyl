@@ -155,6 +155,8 @@ The CLI can do the same:
 - `bun bot add <count>` — provision N bots with random usernames
 - `bun bot power <@username|uid> on`
 - `bun bot power <@username|uid> off`
+- `bun bot burst [@username|uid]` — ask the running runtime to send a short deterministic message burst to a user; defaults to `@zxrl`, 60 messages, and a 3-second delay
+- `bun bot b [@username|uid]` — short alias for `bun bot burst`
 - `bun bot kill <@username|uid>` — fully delete the bot account
 - `bun bot kill all` — delete every bot
 
@@ -177,7 +179,7 @@ bun bot add 10
 ### Start the runtime
 
 ```bash
-bun veyl bot
+bun dev bot
 ```
 
 One runtime serves all bots. Power control happens from `/bot` or `bun bot power`.
@@ -188,6 +190,18 @@ One runtime serves all bots. Power control happens from `/bot` or `bun bot power
 bun bot power @mybot on
 bun bot power @mybot off
 ```
+
+### Send a test burst
+
+The bot runtime must already be running. The command queues an action for the live runtime and waits for completion by default:
+
+```bash
+bun bot burst
+bun bot burst @alice --count 20 --delay 1s
+bun bot b @alice --no-wait
+```
+
+The burst action sends plain text only, round-robins across enabled bot sessions, and tries one final encrypted read receipt per bot chat when there is a recent user-authored message to acknowledge.
 
 ### Delete a bot
 

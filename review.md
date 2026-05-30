@@ -188,7 +188,7 @@ bun bot power @review off
 The local bot runtime is started with:
 
 ```bash
-bun veyl bot
+bun dev bot
 ```
 
 ## Community Rules Gate

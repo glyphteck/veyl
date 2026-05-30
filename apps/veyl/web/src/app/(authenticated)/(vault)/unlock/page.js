@@ -69,12 +69,6 @@ export default function UnlockPage() {
         });
     }, [openDialog, username]);
 
-    useEffect(() => {
-        if (user.authReady && !user.uid) {
-            logout();
-        }
-    }, [user.authReady, user.uid]);
-
     // Keyboard shortcuts
     useEffect(() => {
         const handleKeyDown = (e) => {

@@ -259,9 +259,9 @@ cd functions && npm install
 ### Run web
 
 ```bash
-bun veyl web
-bun veyl web mainnet
-bun veyl web regtest
+bun dev web
+bun dev web mainnet
+bun dev web regtest
 ```
 
 ### Repo workflows
@@ -286,7 +286,7 @@ Map the local hosts from `shared/links.js` / [links.md](links.md) in `/etc/hosts
 Then run the web app:
 
 ```bash
-bun veyl web
+bun dev web
 ```
 
 The launcher applies the configured Veyl hostname, port, and HTTPS flags automatically.
@@ -294,7 +294,7 @@ The launcher applies the configured Veyl hostname, port, and HTTPS flags automat
 If you need to override them manually, you still can:
 
 ```bash
-bun veyl web --hostname <domains.veylDev> --experimental-https
+bun dev web --hostname <domains.veylDev> --experimental-https
 ```
 
 Root-domain auth files live in the separate Website repo. App-owned Veyl web shell files such as the global stylesheet, loading screen, theme wrapper, and notifications live under `apps/veyl/web/src/app/*` and `apps/veyl/web/src/components/*`.
@@ -302,11 +302,11 @@ Root-domain auth files live in the separate Website repo. App-owned Veyl web she
 ### Run iOS
 
 ```bash
-bun veyl ios
-bun veyl ios mainnet
-bun veyl ios regtest
-bun veyl ios tunnel
-bun veyl ios submit
+bun dev ios
+bun dev ios mainnet
+bun dev ios regtest
+bun dev ios tunnel
+bun dev ios submit
 bun make ios
 bun make ios test
 bun make ios prod
@@ -320,7 +320,7 @@ bun make fns
 
 `bun make ios` prebuilds, builds, and installs the Expo dev-client build on the configured device. The dev app is `dev.veyl`, uses bundle id `com.glyphteck.veyl.dev`, runs on `REGTEST`, and is effectively `test.veyl` with Expo dev tooling for live reload and rebundling.
 
-`bun veyl ios` starts that Expo server in dev-client mode.
+`bun dev ios` starts that Expo server in dev-client mode.
 
 Local iOS make commands use Expo only for prebuild/config sync, then build with `xcodebuild` and install with `devicectl` to avoid Expo's device-install hang.
 
@@ -330,7 +330,7 @@ Use `bun make ios reset` after signing, associated-domain, or app-identity chang
 
 `bun make ios prod` prebuilds, builds, and installs the standalone production build on the configured device. The prod app is `veyl`, uses bundle id `com.glyphteck.veyl`, runs on `MAINNET`, and does not require the Expo server after install.
 
-`bun make ios store` starts a cloud EAS App Store production build. After it finishes, `bun veyl ios submit` submits the latest EAS iOS build to App Store Connect using the prod submit profile.
+`bun make ios store` starts a cloud EAS App Store production build. After it finishes, `bun dev ios submit` submits the latest EAS iOS build to App Store Connect using the prod submit profile.
 
 If native iOS dependencies change, rebuild with the normal `bun make ios` path when device validation is needed. A manual `pod install` inside `apps/veyl/ios/ios` can refresh pods for an already-generated native project, but it is not a replacement for the repo's Expo prebuild/build path after package or config changes.
 

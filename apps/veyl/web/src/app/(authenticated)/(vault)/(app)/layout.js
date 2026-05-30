@@ -11,7 +11,6 @@ import { TxDataProvider } from '@/components/providers/txdataprovider';
 import { useUser } from '@/components/providers/userprovider';
 import { useVault } from '@/components/providers/vaultprovider';
 import { WalletProvider } from '@/components/providers/walletprovider';
-import { logout } from '@/lib/useractions';
 import { writeLastAppTarget } from '@glyphteck/shared/localdatacache';
 import { lastAppTargetForPathname } from '@/lib/approute';
 
@@ -78,12 +77,6 @@ export default function AppLayout({ children }) {
     pathnameRef.current = pathname;
     cacheRef.current = localCache;
     unlockedRef.current = lockState === 'unlocked';
-
-    useEffect(() => {
-        if (user.authReady && !user.uid) {
-            logout();
-        }
-    }, [user.authReady, user.uid]);
 
     useEffect(() => {
         function saveCurrentRoute() {

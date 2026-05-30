@@ -1,10 +1,29 @@
-import { BOT_MODE, BOT_UNDERFUNDED_TEXT } from '@glyphteck/shared/bot/events';
+import {
+    BOT_ACTION_STATUS_DONE,
+    BOT_ACTION_STATUS_ERROR,
+    BOT_ACTION_STATUS_QUEUED,
+    BOT_ACTION_STATUS_RUNNING,
+    BOT_ACTION_TYPE_BURST,
+    BOT_MODE,
+    BOT_RUNTIME_ACTIONS,
+    BOT_RUNTIME_DOC_ID,
+    BOT_RUNTIME_LEASE_MS,
+    BOT_UNDERFUNDED_TEXT,
+} from '@glyphteck/shared/bot/events';
 import { bootBotAccount, closeBotAccount } from '@glyphteck/shared/bot/account';
 import { clearBotChatPairCache, decryptBotChatSettings, decryptBotMsg, hasBotMsg, readBotMsgAttachment, sendBotMsg, updateBotMsg, uploadBotAttachmentMsg } from '@glyphteck/shared/bot/chat';
 import { getBotBalance, mirrorBotTransfer } from '@glyphteck/shared/bot/wallet';
 import { isControlMsg, isSystemMsg, makeHiddenCheckpoint, makeReadReceipt, makeReq, makeTxt, setReqTx } from '@glyphteck/shared/chat/messages';
 import { makeCid } from '@glyphteck/shared/chat/state';
-import { BOT_REPLY_AFTER_READ_DELAY_MS } from '@glyphteck/shared/config';
+import { getChatId } from '@glyphteck/shared/crypto/chat';
+import {
+    BOT_BURST_DEFAULT_COUNT,
+    BOT_BURST_DEFAULT_DELAY_MS,
+    BOT_BURST_MAX_COUNT,
+    BOT_BURST_MIN_DELAY_MS,
+    BOT_BURST_SESSION_WAIT_MS,
+    BOT_REPLY_AFTER_READ_DELAY_MS,
+} from '@glyphteck/shared/config';
 import { resolveNetwork } from '@glyphteck/shared/network';
 import { resolveWalletPK } from '@glyphteck/shared/wallet/keys';
 import { SparkWallet, SparkWalletEvent } from '@buildonspark/spark-sdk';
@@ -18,8 +37,9 @@ const VERBOSE = process.env.VEYL_VERBOSE === '1';
 const MAX_BOT_PEER_CACHE = 512;
 const MAX_BOT_READ_CACHE = 2048;
 const BOT_READS = 'reads';
-const RUNTIME_LEASE_MS = 45000;
 const RUNTIME_HEARTBEAT_MS = 15000;
+const RUNTIME_ACTIONS_SUPPORTED = Object.freeze([BOT_ACTION_TYPE_BURST]);
+const BURST_READ_RECEIPT_SCAN_LIMIT = 100;
 const TRANSIENT_CONNECTION_CODES = new Set([
     4,
     14,
@@ -184,6 +204,73 @@ function sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function runtimeRef() {
+    return db.collection('runtimes').doc(BOT_RUNTIME_DOC_ID);
+}
+
+function cleanBurstCount(value) {
+    const count = Number(value ?? BOT_BURST_DEFAULT_COUNT);
+    if (!Number.isInteger(count) || count <= 0 || count > BOT_BURST_MAX_COUNT) {
+        throw new Error(`burst count must be an integer from 1 to ${BOT_BURST_MAX_COUNT}`);
+    }
+    return count;
+}
+
+function cleanBurstDelayMs(value) {
+    const delayMs = Number(value ?? BOT_BURST_DEFAULT_DELAY_MS);
+    if (!Number.isFinite(delayMs) || delayMs < BOT_BURST_MIN_DELAY_MS) {
+        throw new Error(`burst delay must be at least ${BOT_BURST_MIN_DELAY_MS}ms`);
+    }
+    return Math.round(delayMs);
+}
+
+const BURST_OPENERS = Object.freeze([
+    'checking in from the bot side',
+    'sending another quick note',
+    'dropping a chat test message',
+    'pushing one more message through',
+    'keeping the thread warm',
+    'making sure the list keeps up',
+    'sending this for the smoke run',
+    'adding another message to the stack',
+]);
+
+const BURST_DETAILS = Object.freeze([
+    'the route should stay responsive',
+    'the latest preview should update cleanly',
+    'the keyboard should not get in the way',
+    'the chat list should keep ordering stable',
+    'the message row should render without drama',
+    'the app can treat this like normal traffic',
+    'the notification path should have something to chew on',
+    'the cache should not need anything special here',
+]);
+
+const BURST_ENDINGS = Object.freeze([
+    'nothing fancy, just pressure',
+    'same test, different sentence',
+    'this is still deterministic',
+    'leaving enough delay to watch it land',
+    'one more ordinary line',
+    'almost like a real conversation',
+    'good enough for a repeatable run',
+    'keeping it plain text only',
+]);
+
+function pickBurstLine(parts, seed) {
+    return parts[Math.abs(seed) % parts.length];
+}
+
+function makeBurstText(action, session, index, count) {
+    const seed = `${action?.id || ''}:${session?.uid || ''}:${index}`
+        .split('')
+        .reduce((sum, char) => sum + char.charCodeAt(0), 0);
+    const opener = pickBurstLine(BURST_OPENERS, seed);
+    const detail = pickBurstLine(BURST_DETAILS, seed + index + 3);
+    const ending = pickBurstLine(BURST_ENDINGS, seed + index * 7 + 11);
+    return `${opener}. ${detail}; ${ending}. ${index + 1}/${count}`;
+}
+
 async function isBlocked(uid, peerUid) {
     if (!uid || !peerUid) {
         return false;
@@ -229,12 +316,14 @@ export class BotRuntime {
         this.secretClient = createSecretClient();
         this.sessions = new Map();
         this.botJobs = new Map();
+        this.actionJobs = new Map();
         this.chatPeers = new Map();
         this.running = false;
         this.stopped = false;
         this.bucket = admin.storage().bucket();
         this.walletDown = new Set();
         this.unsubscribeBots = null;
+        this.unsubscribeActions = null;
         this.stopResolve = null;
         this.runtimeId = randomUUID();
         this.heartbeatTimer = null;
@@ -251,6 +340,7 @@ export class BotRuntime {
         this.startHeartbeat();
         console.log(`bot runtime started on ${SPARK_NETWORK}`);
         this.subscribeBots();
+        this.subscribeActions();
 
         await new Promise((resolve) => {
             this.stopResolve = resolve;
@@ -270,6 +360,18 @@ export class BotRuntime {
                 this.unsubscribeBots();
             } catch {}
             this.unsubscribeBots = null;
+        }
+
+        if (this.unsubscribeActions) {
+            try {
+                this.unsubscribeActions();
+            } catch {}
+            this.unsubscribeActions = null;
+        }
+
+        const actionJobs = [...this.actionJobs.values()];
+        if (actionJobs.length) {
+            await Promise.allSettled(actionJobs);
         }
 
         const uids = [...this.sessions.keys()];
@@ -305,13 +407,33 @@ export class BotRuntime {
         );
     }
 
+    subscribeActions() {
+        const q = runtimeRef().collection(BOT_RUNTIME_ACTIONS).where('status', '==', BOT_ACTION_STATUS_QUEUED);
+
+        this.unsubscribeActions = q.onSnapshot(
+            (snap) => {
+                for (const change of snap.docChanges()) {
+                    if (change.type === 'removed') {
+                        continue;
+                    }
+                    void queueMapJob(this.actionJobs, 'actions', () => this.processAction(change.doc.ref)).catch((error) => {
+                        console.error(`bot action ${change.doc.id} failed`, error);
+                    });
+                }
+            },
+            (error) => {
+                console.error('bot runtime action subscription failed', error);
+            }
+        );
+    }
+
     async acquireRuntimeLease() {
-        const ref = db.collection('runtimes').doc('bot');
+        const ref = runtimeRef();
         await db.runTransaction(async (tx) => {
             const snap = await tx.get(ref);
             const data = snap.exists ? snap.data() : {};
             const heartbeatMs = tsMs(data?.heartbeatAt);
-            const active = data?.running === true && heartbeatMs > Date.now() - RUNTIME_LEASE_MS;
+            const active = data?.running === true && heartbeatMs > Date.now() - BOT_RUNTIME_LEASE_MS;
             if (active && data?.runtimeId !== this.runtimeId) {
                 throw new Error(`bot runtime already running (${data?.host || 'unknown host'} pid ${data?.pid || 'unknown'})`);
             }
@@ -326,6 +448,7 @@ export class BotRuntime {
                     startedAt: FieldValue.serverTimestamp(),
                     heartbeatAt: FieldValue.serverTimestamp(),
                     network: SPARK_NETWORK,
+                    actions: RUNTIME_ACTIONS_SUPPORTED,
                 },
                 { merge: true }
             );
@@ -339,7 +462,7 @@ export class BotRuntime {
         this.heartbeatTimer = setInterval(() => {
             void db
                 .collection('runtimes')
-                .doc('bot')
+                .doc(BOT_RUNTIME_DOC_ID)
                 .set(
                     {
                         running: true,
@@ -348,6 +471,7 @@ export class BotRuntime {
                         host: hostname(),
                         heartbeatAt: FieldValue.serverTimestamp(),
                         network: SPARK_NETWORK,
+                        actions: RUNTIME_ACTIONS_SUPPORTED,
                     },
                     { merge: true }
                 )
@@ -359,7 +483,7 @@ export class BotRuntime {
     }
 
     async releaseRuntimeLease() {
-        const ref = db.collection('runtimes').doc('bot');
+        const ref = runtimeRef();
         await db
             .runTransaction(async (tx) => {
                 const snap = await tx.get(ref);
@@ -378,6 +502,218 @@ export class BotRuntime {
             .catch((error) => {
                 console.error('bot runtime lease release failed', error);
             });
+    }
+
+    async processAction(actionRef) {
+        const action = await this.claimAction(actionRef);
+        if (!action) {
+            return;
+        }
+
+        try {
+            let result;
+            if (action.type === BOT_ACTION_TYPE_BURST) {
+                result = await this.runBurstAction(action);
+            } else {
+                throw new Error(`unsupported bot action: ${action.type || 'unknown'}`);
+            }
+
+            await actionRef.set(
+                {
+                    status: BOT_ACTION_STATUS_DONE,
+                    result: result || null,
+                    finishedAt: FieldValue.serverTimestamp(),
+                    updatedAt: FieldValue.serverTimestamp(),
+                },
+                { merge: true }
+            );
+        } catch (error) {
+            await actionRef.set(
+                {
+                    status: BOT_ACTION_STATUS_ERROR,
+                    error: statusMessage(error),
+                    finishedAt: FieldValue.serverTimestamp(),
+                    updatedAt: FieldValue.serverTimestamp(),
+                },
+                { merge: true }
+            );
+            console.error(`bot action ${action.id} failed`, error);
+        }
+    }
+
+    async claimAction(actionRef) {
+        let action = null;
+        await db.runTransaction(async (tx) => {
+            const snap = await tx.get(actionRef);
+            if (!snap.exists) {
+                return;
+            }
+
+            const data = snap.data();
+            if (data?.status !== BOT_ACTION_STATUS_QUEUED) {
+                return;
+            }
+
+            tx.set(
+                actionRef,
+                {
+                    status: BOT_ACTION_STATUS_RUNNING,
+                    runtimeId: this.runtimeId,
+                    host: hostname(),
+                    pid: process.pid,
+                    startedAt: FieldValue.serverTimestamp(),
+                    updatedAt: FieldValue.serverTimestamp(),
+                },
+                { merge: true }
+            );
+            action = {
+                id: snap.id,
+                ref: actionRef,
+                ...data,
+            };
+        });
+        return action;
+    }
+
+    activeBurstSessions() {
+        return [...this.sessions.values()].filter((session) => (
+            session?.started &&
+            !session.closing &&
+            (!session.mode || session.mode === BOT_MODE) &&
+            session.chatJobs &&
+            session.chatPK &&
+            session.chatPrivKey
+        ));
+    }
+
+    async waitForBurstSessions() {
+        const deadline = Date.now() + BOT_BURST_SESSION_WAIT_MS;
+        while (!this.stopped && Date.now() <= deadline) {
+            const sessions = this.activeBurstSessions();
+            if (sessions.length) {
+                return sessions;
+            }
+            await sleep(250);
+        }
+        throw new Error('no active bot sessions');
+    }
+
+    async runBurstAction(action) {
+        const count = cleanBurstCount(action.count);
+        const delayMs = cleanBurstDelayMs(action.delayMs);
+        const target = await getProfile(action.targetUid);
+        if (!target?.uid || !target?.chatPK) {
+            throw new Error('burst target missing chat identity');
+        }
+        if (target.bot) {
+            throw new Error('burst target cannot be a bot');
+        }
+
+        await this.waitForBurstSessions();
+
+        const usedBots = new Map();
+        const sentChats = new Map();
+        let sent = 0;
+
+        for (let index = 0; index < count; index++) {
+            if (this.stopped) {
+                throw new Error('bot runtime stopped');
+            }
+
+            const sessions = this.activeBurstSessions();
+            if (!sessions.length) {
+                throw new Error('no active bot sessions');
+            }
+
+            const session = sessions[index % sessions.length];
+            const chatId = getChatId(session.chatPK, target.chatPK);
+            const message = makeTxt(makeBurstText(action, session, index, count));
+
+            await queueMapJob(session.chatJobs, chatId, async () => {
+                if (session.closing || this.stopped) {
+                    throw new Error('bot session closed');
+                }
+                const result = await this.sendPayload(session, target.chatPK, message);
+                sentChats.set(session.uid, result?.chatId || chatId);
+            });
+
+            usedBots.set(session.uid, session.username);
+            sent++;
+
+            if (index + 1 < count) {
+                await sleep(delayMs);
+            }
+        }
+
+        const readReceipts = await this.sendBurstReadReceipts(action, target, sentChats);
+
+        return {
+            type: BOT_ACTION_TYPE_BURST,
+            requested: count,
+            sent,
+            delayMs,
+            targetUid: target.uid,
+            targetUsername: target.username || null,
+            bots: [...usedBots.values()].filter(Boolean),
+            readReceipts,
+        };
+    }
+
+    async sendBurstReadReceipts(action, target, sentChats) {
+        let sent = 0;
+        for (const [uid, chatId] of sentChats.entries()) {
+            if (this.stopped) {
+                return sent;
+            }
+
+            const session = this.sessions.get(uid);
+            if (!session || session.closing) {
+                continue;
+            }
+
+            const receipt = await this.findLatestPeerReceiptTarget(chatId, target.chatPK);
+            if (!receipt) {
+                continue;
+            }
+
+            const result = await queueMapJob(session.chatJobs, chatId, () => {
+                if (session.closing || this.stopped) {
+                    throw new Error('bot session closed');
+                }
+                return this.sendReadReceipt(
+                    session,
+                    target.chatPK,
+                    receipt.target,
+                    null,
+                    {
+                        chatId,
+                        msgId: `${action.id}_${receipt.msgId}`,
+                        msgTs: receipt.ts,
+                        peerChatPK: target.chatPK,
+                    }
+                );
+            });
+            if (!result?.skipped) {
+                sent++;
+            }
+        }
+        return sent;
+    }
+
+    async findLatestPeerReceiptTarget(chatId, peerChatPK) {
+        const snap = await db.collection('chats').doc(chatId).collection('messages').orderBy('ts', 'desc').limit(BURST_READ_RECEIPT_SCAN_LIMIT).get();
+        for (const msgSnap of snap.docs) {
+            const data = msgSnap.data();
+            if (data?.head?.from !== peerChatPK) {
+                continue;
+            }
+            return {
+                msgId: msgSnap.id,
+                target: data?.head?.cid || msgSnap.id,
+                ts: data?.ts,
+            };
+        }
+        return null;
     }
 
     async handleBotsSnapshot(snap) {
