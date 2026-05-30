@@ -36,6 +36,33 @@ const composerOverlayTiming = {
 };
 const composerOverlayLayout = LinearTransition.duration(COMPOSER_OVERLAY_MS).easing(Easing.out(Easing.cubic));
 
+function formatUploadSize(bytes) {
+    const size = Number(bytes);
+    if (!Number.isFinite(size) || size <= 0) {
+        return '';
+    }
+    if (size >= 1024 * 1024) {
+        return `${Math.round(size / 1024 / 1024)} MB`;
+    }
+    return `${Math.max(1, Math.round(size / 1024))} KB`;
+}
+
+function uploadErrorMessage(error, fallback) {
+    const code = String(error?.code || '');
+    if (code === 'file-too-large') {
+        const max = formatUploadSize(error?.maxBytes);
+        return max ? `This file is too large. Chat uploads are limited to ${max}.` : 'This file is too large.';
+    }
+    if (code === 'video-unavailable') {
+        return 'This video could not be read. Try a shorter video or export it again.';
+    }
+    return fallback;
+}
+
+function showUploadError(title, error, fallback) {
+    Alert.alert(title, uploadErrorMessage(error, fallback));
+}
+
 function pickParam(value) {
     return Array.isArray(value) ? value[0] : value;
 }
@@ -248,6 +275,7 @@ export default function PeerChatRoute() {
             } catch (error) {
                 mark('chat.image.prepare.error', { message: error?.message || String(error), code: error?.code || '' });
                 console.warn('chat image prepare failed', error);
+                showUploadError('Upload failed', error, 'Could not prepare this media. Please try another file.');
                 return;
             }
 
@@ -264,6 +292,7 @@ export default function PeerChatRoute() {
             } catch (error) {
                 mark('chat.image.send.error', { message: error?.message || String(error), code: error?.code || '', stage: error?.stage || '' });
                 console.warn('chat image send failed', error);
+                showUploadError('Upload failed', error, 'Could not send this media. Please try again.');
             }
         },
         [peerChatPK, sendAttachment, sendImage]
@@ -278,6 +307,7 @@ export default function PeerChatRoute() {
                 prepared = await prepareAssetForChatUpload(asset);
             } catch (error) {
                 console.warn('chat attachment prepare failed', error);
+                showUploadError('Upload failed', error, 'Could not prepare this attachment. Please try another file.');
                 return;
             }
 
@@ -285,6 +315,7 @@ export default function PeerChatRoute() {
                 await sendAttachment?.(peerChatPK, prepared);
             } catch (error) {
                 console.warn('chat attachment send failed', error);
+                showUploadError('Upload failed', error, 'Could not send this attachment. Please try again.');
             }
         },
         [peerChatPK, sendAttachment]

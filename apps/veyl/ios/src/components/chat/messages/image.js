@@ -2,9 +2,9 @@ import { useCallback } from 'react';
 import { ActivityIndicator, Text, View } from 'react-native';
 import { useIsFocused } from 'expo-router/react-navigation';
 import { Image } from 'expo-image';
-import { GestureDetector } from 'react-native-gesture-handler';
 import { useMediaViewer } from '@/providers/mediaviewerprovider';
 import { useTheme } from '@/providers/themeprovider';
+import { useMessageGestureBlockers } from '@/components/chat/messagegesturecontext';
 import { getMediaViewerKey } from '@/lib/chatmediaitems';
 import { imageWidth } from '@/lib/messages';
 import { useMsgImage } from '@/lib/usemsgimage';
@@ -18,7 +18,8 @@ const MEDIA_ACTIVE_STYLE = { opacity: 0.01 };
 
 export default function ImageMessage({ msg, peerChatPK, fromPeer = false, menuItems, menuId, onLike, reactions = [], reactionUsers, reactionPreviewInset = 0 }) {
     const { theme } = useTheme();
-    const { activeMediaId, openMedia } = useMediaViewer();
+    const blockExternalGestures = useMessageGestureBlockers();
+    const { openMedia } = useMediaViewer();
     const focused = useIsFocused();
     const { source, loading } = useMsgImage(peerChatPK, msg, focused);
     const aspect = getImageAspect(msg);
@@ -29,12 +30,12 @@ export default function ImageMessage({ msg, peerChatPK, fromPeer = false, menuIt
     const hasFile = !!(msg?.localUri || (msg?.p && msg?.k));
     const disabled = !key || !hasFile;
     const openFullscreen = useCallback(() => {
-        if (disabled || activeMediaId === key) {
+        if (disabled) {
             return false;
         }
         return openMedia(key);
-    }, [activeMediaId, disabled, key, openMedia]);
-    const imageTapGesture = useMediaTapGesture({ disabled, msg, onLike, onOpen: openFullscreen });
+    }, [disabled, key, openMedia]);
+    const imageTapGesture = useMediaTapGesture({ blockExternalGestures, disabled, msg, onLike, onOpen: openFullscreen });
     const renderImage = useCallback(
         () => (
             <View
@@ -81,7 +82,7 @@ export default function ImageMessage({ msg, peerChatPK, fromPeer = false, menuIt
     );
 
     return (
-        <Menu id={menuId} items={menuItems} longScale={IMAGE_LONG_SCALE} activeStyle={MEDIA_ACTIVE_STYLE} renderPreview={renderPreview} previewBottomInset={reactionPreviewInset}>
+        <Menu id={menuId} items={menuItems} contentGesture={imageTapGesture} blockExternalGestures={blockExternalGestures} longScale={IMAGE_LONG_SCALE} activeStyle={MEDIA_ACTIVE_STYLE} renderPreview={renderPreview} previewBottomInset={reactionPreviewInset}>
             <ReactionTray reactions={reactions} users={reactionUsers} fromPeer={fromPeer}>
                 <View
                     style={{
@@ -91,7 +92,7 @@ export default function ImageMessage({ msg, peerChatPK, fromPeer = false, menuIt
                         backgroundColor: barePng ? 'transparent' : theme.background,
                     }}
                 >
-                    <GestureDetector gesture={imageTapGesture}>{renderImage()}</GestureDetector>
+                    {renderImage()}
                     {hasCaption ? (
                         <View style={{ paddingHorizontal: 12, paddingVertical: 10 }}>
                             <Text style={{ color: theme.foreground, fontSize: 16, fontWeight: '500' }}>{msg.c}</Text>

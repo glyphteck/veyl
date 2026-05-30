@@ -206,8 +206,8 @@ export default function MainMenu({ close, data, open = true }) {
     const showWalletDot = false;
     const showAllTx = searchValue.trim() === '#';
     const browseUsers = query?.kind === 'username' && !query.value;
-    const showCommands = searchValue.startsWith('/');
-    const showUserSearch = !!query && !showCommands;
+    const showSlashCommands = searchValue.startsWith('/');
+    const showUserSearch = !!query && !showSlashCommands;
 
     const openUser = useCallback(
         (peer) => {
@@ -215,9 +215,9 @@ export default function MainMenu({ close, data, open = true }) {
         },
         [openDialog, uid]
     );
-    const matchedCommands = showCommands ? matchCommands(searchValue, { mode: 'mainmenu' }) : [];
-    const parsedCommand = showCommands ? parseCommand(searchValue, { mode: 'mainmenu' }) : null;
-    const typingUsername = showCommands ? getTypingUsername(searchValue, { mode: 'mainmenu' }) : null;
+    const matchedSlashCommands = showSlashCommands ? matchCommands(searchValue, { mode: 'mainmenu' }) : [];
+    const parsedSlashCommand = showSlashCommands ? parseCommand(searchValue, { mode: 'mainmenu' }) : null;
+    const typingUsername = showSlashCommands ? getTypingUsername(searchValue, { mode: 'mainmenu' }) : null;
 
     const openFundingQr = async () => {
         close();
@@ -227,7 +227,7 @@ export default function MainMenu({ close, data, open = true }) {
         void copyFundingAddress(address).catch(() => {});
     };
 
-    const executeCommand = async (parsed) => {
+    const runSlashCommand = async (parsed) => {
         if (!parsed?.complete) return;
         let peer =
             [...(peers || []), ...(results || [])].find((p) => {
@@ -452,50 +452,50 @@ export default function MainMenu({ close, data, open = true }) {
 
     const menuSections = [];
 
-    if (showCommands && matchedCommands.length > 0) {
-        if (parsedCommand?.complete) {
-            const { username: targetUsername, amount, message } = parsedCommand.args;
-            const label = parsedCommand.name === 'msg' ? `msg @${targetUsername}: ${message}` : `${parsedCommand.name} ${amount} sats to @${targetUsername}`;
+    if (showSlashCommands && matchedSlashCommands.length > 0) {
+        if (parsedSlashCommand?.complete) {
+            const { username: targetUsername, amount, message } = parsedSlashCommand.args;
+            const label = parsedSlashCommand.name === 'msg' ? `msg @${targetUsername}: ${message}` : `${parsedSlashCommand.name} ${amount} sats to @${targetUsername}`;
             menuSections.push(
-                rowsSection('commands', [
+                rowsSection('slash', [
                     {
-                        key: 'cmd-execute',
+                        key: 'slash-execute',
                         label: `/${label}`,
                         value: searchValue,
                         keywords: [searchValue.trim()],
-                        select: () => executeCommand(parsedCommand),
+                        select: () => runSlashCommand(parsedSlashCommand),
                         content: <span>/{label}</span>,
                     },
                 ])
             );
         } else if (typingUsername !== null && matchedPeers.length > 0) {
             menuSections.push(
-                userSection('command-users', matchedPeers, (peer) => {
-                    const cmd = matchedCommands[0];
-                    if (!cmd || !peer?.username) return;
-                    handleSearchChange(`/${cmd.name} @${peer.username} `);
+                userSection('slash-users', matchedPeers, (peer) => {
+                    const slashCommand = matchedSlashCommands[0];
+                    if (!slashCommand || !peer?.username) return;
+                    handleSearchChange(`/${slashCommand.name} @${peer.username} `);
                     focusInput();
                 })
             );
-        } else if (parsedCommand?.args?.username) {
-            const { username: targetUsername } = parsedCommand.args;
+        } else if (parsedSlashCommand?.args?.username) {
+            const { username: targetUsername } = parsedSlashCommand.args;
             const hintLabel =
-                parsedCommand.name === 'msg'
+                parsedSlashCommand.name === 'msg'
                     ? `send a message to @${targetUsername}`
-                    : parsedCommand.name === 'send'
+                    : parsedSlashCommand.name === 'send'
                       ? `send money to @${targetUsername}`
-                      : parsedCommand.name === 'request'
+                      : parsedSlashCommand.name === 'request'
                         ? `request money from @${targetUsername}`
                         : null;
             if (hintLabel) {
                 menuSections.push(
-                    rowsSection('commands', [
+                    rowsSection('slash', [
                         {
-                            key: 'cmd-hint',
+                            key: 'slash-hint',
                             label: hintLabel,
                             value: searchValue,
-                            keywords: [searchValue.trim(), `/${parsedCommand.name} ${targetUsername}`, `/${parsedCommand.name} ${targetUsername} `],
-                            select: () => executeCommand(parsedCommand),
+                            keywords: [searchValue.trim(), `/${parsedSlashCommand.name} ${targetUsername}`, `/${parsedSlashCommand.name} ${targetUsername} `],
+                            select: () => runSlashCommand(parsedSlashCommand),
                             content: <span>{hintLabel}</span>,
                         },
                     ])
@@ -504,17 +504,17 @@ export default function MainMenu({ close, data, open = true }) {
         } else {
             menuSections.push(
                 rowsSection(
-                    'commands',
-                    matchedCommands.map((cmd) => ({
-                        key: cmd.name,
-                        label: cmd.name,
-                        value: `/${cmd.name}`,
-                        keywords: ['/', 'command', cmd.name, searchValue],
+                    'slash',
+                    matchedSlashCommands.map((slashCommand) => ({
+                        key: slashCommand.name,
+                        label: slashCommand.name,
+                        value: `/${slashCommand.name}`,
+                        keywords: ['/', slashCommand.name, searchValue],
                         select: () => {
-                            handleSearchChange(`/${cmd.name} @`);
+                            handleSearchChange(`/${slashCommand.name} @`);
                             focusInput();
                         },
-                        content: <span className="font-mono">{cmd.syntax}</span>,
+                        content: <span className="font-mono">{slashCommand.syntax}</span>,
                     }))
                 )
             );
@@ -525,7 +525,7 @@ export default function MainMenu({ close, data, open = true }) {
         menuSections.push(userSection('top-users', topPeers, openUser));
     }
 
-    if (!showCommands && !showUserSearch && !showAllTx) {
+    if (!showSlashCommands && !showUserSearch && !showAllTx) {
         const staticFilter = searchValue;
         const moneyRows = [
             !chatBanned && {
@@ -865,9 +865,9 @@ export default function MainMenu({ close, data, open = true }) {
     const emptyMessage =
         searching && query?.value ? (
             <Loader className="size-6 animate-spin" />
-        ) : showCommands && matchedCommands.length === 0 ? (
-            'unknown command'
-        ) : showCommands && typingUsername !== null ? (
+        ) : showSlashCommands && matchedSlashCommands.length === 0 ? (
+            'unknown / command'
+        ) : showSlashCommands && typingUsername !== null ? (
             'no users found'
         ) : browseUsers ? (
             'search users'

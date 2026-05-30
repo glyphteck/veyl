@@ -7,6 +7,10 @@ const MediaViewerContext = createContext(null);
 export function MediaViewerProvider({ children }) {
     const [items, setItems] = useState([]);
     const [activeId, setActiveId] = useState(null);
+    const [railId, setRailId] = useState(null);
+    const [openSeq, setOpenSeq] = useState(0);
+    const activeIdRef = useRef(null);
+    const railIdRef = useRef(null);
     const itemsRef = useRef([]);
 
     const setMediaItems = useCallback((nextItems) => {
@@ -31,33 +35,70 @@ export function MediaViewerProvider({ children }) {
         if (!key || !itemsRef.current.some((item) => item.id === key)) {
             return false;
         }
+        if (activeIdRef.current === key) {
+            return true;
+        }
+        railIdRef.current = key;
+        activeIdRef.current = key;
+        setRailId(key);
         setActiveId(key);
+        setOpenSeq((current) => current + 1);
         return true;
     }, []);
 
     const closeMedia = useCallback((id) => {
+        setRailId((current) => {
+            if (!current || (id && current !== id)) {
+                return current;
+            }
+            railIdRef.current = null;
+            return null;
+        });
         setActiveId((current) => {
             if (!current || (id && current !== id)) {
                 return current;
             }
+            activeIdRef.current = null;
             return null;
         });
     }, []);
 
-    const activeIndex = useMemo(() => (activeId ? items.findIndex((item) => item.id === activeId) : -1), [activeId, items]);
+    const activeIndex = useMemo(() => (railId ? items.findIndex((item) => item.id === railId) : -1), [items, railId]);
 
     useEffect(() => {
-        if (activeId && activeIndex === -1) {
+        if (railId && activeIndex === -1) {
+            railIdRef.current = null;
+            activeIdRef.current = null;
+            setRailId(null);
             setActiveId(null);
         }
-    }, [activeId, activeIndex]);
+    }, [activeIndex, railId]);
 
-    const moveMedia = useCallback((step) => {
-        setActiveId((current) => {
-            const currentIndex = itemsRef.current.findIndex((item) => item.id === current);
+    const moveMedia = useCallback(
+        (step) => {
+            const currentIndex = itemsRef.current.findIndex((item) => item.id === railId);
             const next = itemsRef.current[currentIndex + step];
-            return next?.id || current;
-        });
+            if (!next?.id) {
+                return;
+            }
+            railIdRef.current = next.id;
+            activeIdRef.current = next.id;
+            setRailId(next.id);
+            setActiveId(next.id);
+        },
+        [railId]
+    );
+
+    const handleCloseStart = useCallback(() => {
+        activeIdRef.current = null;
+        setActiveId(null);
+    }, []);
+
+    const handleCloseComplete = useCallback(() => {
+        railIdRef.current = null;
+        activeIdRef.current = null;
+        setRailId(null);
+        setActiveId(null);
     }, []);
 
     const value = useMemo(
@@ -77,7 +118,7 @@ export function MediaViewerProvider({ children }) {
         <MediaViewerContext.Provider value={value}>
             <View style={{ flex: 1 }}>
                 {children}
-                {activeIndex >= 0 ? <FullscreenRail activeIndex={activeIndex} items={items} onMove={moveMedia} onCloseComplete={() => setActiveId(null)} /> : null}
+                {activeIndex >= 0 ? <FullscreenRail key={`viewer:${openSeq}`} activeIndex={activeIndex} items={items} onMove={moveMedia} onCloseStart={handleCloseStart} onCloseComplete={handleCloseComplete} /> : null}
             </View>
         </MediaViewerContext.Provider>
     );

@@ -1,6 +1,7 @@
-import { requireCommunityStep } from '@/lib/routeguards';
+'use client';
 
-export default async function CommunityLayout({ children }) {
-    await requireCommunityStep();
-    return children;
+import { OnboardingGate } from '@/lib/routeguards';
+
+export default function CommunityLayout({ children }) {
+    return <OnboardingGate step="community">{children}</OnboardingGate>;
 }

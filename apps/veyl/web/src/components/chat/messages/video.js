@@ -8,16 +8,9 @@ import { clear, play } from '@/lib/media';
 import { getAttachmentCaption, getImageAspect, isExpiredAttachmentMsg } from '@glyphteck/shared/chat/messages';
 import { getMessagePreviewCacheKey } from '@glyphteck/shared/chat/previews';
 import { useCloak } from '@glyphteck/shared/providers/cloakprovider';
+import { formatDuration } from '@glyphteck/shared/utils';
 import { getReadyPoster, getVideoCacheKey, loadVideoObjectUrl, loadVideoPoster, releaseVideo, retainVideo } from '../videomediacache';
 import { stopClick } from './utils';
-
-function fmtTime(value) {
-    if (!Number.isFinite(value) || value <= 0) {
-        return '0:00';
-    }
-    const total = Math.floor(value);
-    return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
-}
 
 export default function VideoMessage({ msg, peerChatPK }) {
     const { readMessageFile, readMessagePreview, writeMessagePreview } = useChat();
@@ -242,7 +235,7 @@ export default function VideoMessage({ msg, peerChatPK }) {
                     ) : null}
                     <div className="absolute inset-x-3 bottom-2" onClick={stopClick}>
                         <span className="mb-1 ml-auto block w-fit rounded-full bg-black/30 px-2 py-1 text-xs font-bold tabular-nums" style={{ WebkitBackdropFilter: 'blur(8px)', backdropFilter: 'blur(8px)' }}>
-                            {fmtTime(time)} / {fmtTime(duration)}
+                            {formatDuration(time, { hours: false })} / {formatDuration(duration, { hours: false })}
                         </span>
                         <div className="flex items-center rounded-full bg-black/30 px-2 py-1" style={{ WebkitBackdropFilter: 'blur(8px)', backdropFilter: 'blur(8px)' }}>
                             <input type="range" min="0" max={duration || 1} step="0.01" value={Math.min(time, duration || 0)} onChange={seek} disabled={!src} className="block w-full accent-white" />

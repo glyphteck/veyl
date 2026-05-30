@@ -2,8 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { filterChatMessages, getPeerChatPKFromChatId } from './ids.js';
-import { keySet, addMessageKeys, messageHasKey } from './messagekeys.js';
+import { keySet, addMessageKeys, collectMessageKeys, messageHasKey } from './messagekeys.js';
 import { loadOlderMsgs, MSG_BATCH_SIZE } from './messages/query.js';
+import { runMessageAutoDelete } from './messages/autodelete.js';
+import { compactMessages } from './messages/compact.js';
 import { dropMessageMedia, dropMissingFromBatch, expireMessageView, getMessagesBatch, holdCurrentLiveMessages, isMissingFromBatch, makeMessageViewSeed, messageSeedFromBatch, messageSeedFromView, removeMessagesByKeys, trimExpiredMessages } from './messages/window.js';
 import { getMessageKey, getMessageOrderMs, mergeMessages } from './state.js';
 import { canShowMsg, deriveMessageReactions, getDisplayMessages, getLatestOwnReadReceiptTarget, getLatestReadReceiptTarget, getSeenHiddenMessages, holdVisibleMsg, isControlMsg } from './messages.js';
@@ -51,6 +53,8 @@ export function createUseChatMessages({ db, useChat, useUser, useVault, appState
             hasChatDoc,
             markChatRead,
             markChatReadReceipt,
+            deleteMessages,
+            markMessagesHidden,
             wasChatDeletedLocally,
             ackDeletedChat,
             isChatDataReady,
@@ -104,6 +108,7 @@ export function createUseChatMessages({ db, useChat, useUser, useVault, appState
         const visibleMessageKeysRef = useRef(new Set());
         const deletedMessageKeysRef = useRef(new Set());
         const lastPreviewDropSyncRef = useRef('');
+        const autoDeleteRef = useRef({ checkpointMs: 0, pendingCheckpointMs: 0 });
 
         if (scopeRef.current !== scopeKey) {
             scopeRef.current = scopeKey;
@@ -111,6 +116,7 @@ export function createUseChatMessages({ db, useChat, useUser, useVault, appState
             visibleMessageKeysRef.current = new Set();
             deletedMessageKeysRef.current = new Set();
             lastPreviewDropSyncRef.current = '';
+            autoDeleteRef.current = { checkpointMs: 0, pendingCheckpointMs: 0 };
         }
         const chatExists = !!(chatId && hasChatDoc(chatId));
         const rowLastMsgKey = chatId && typeof getChatRowLastMsgKey === 'function' ? getChatRowLastMsgKey(chatId) : null;
@@ -162,6 +168,7 @@ export function createUseChatMessages({ db, useChat, useUser, useVault, appState
             visibleMessageKeysRef.current = new Set();
             deletedMessageKeysRef.current = new Set();
             lastPreviewDropSyncRef.current = '';
+            autoDeleteRef.current = { checkpointMs: 0, pendingCheckpointMs: 0 };
             olderPrefetchRef.current = { scopeKey, count: 0, queued: 0, exhausted: false };
         }, [chatId, chatPK, chatPrivateKey, getMessageView, getSharedMessageBatch, peerChatPK, scopeKey]);
 
@@ -276,6 +283,9 @@ export function createUseChatMessages({ db, useChat, useUser, useVault, appState
                             if (key) {
                                 deletedKeys.add(key);
                             }
+                        }
+                        for (const key of expiredKeys) {
+                            deletedKeys.add(key);
                         }
                         deletedMessageKeysRef.current = deletedKeys;
                         const keepKeys = new Set();
@@ -593,6 +603,63 @@ export function createUseChatMessages({ db, useChat, useUser, useVault, appState
             visibleMessageKeysRef.current = keys;
         }, [messages]);
 
+        const runCompaction = useCallback(
+            (sourceMessages) => {
+                if (!chatId || !Array.isArray(sourceMessages) || !sourceMessages.length || typeof deleteMessages !== 'function') {
+                    return;
+                }
+
+                void compactMessages({
+                    chatId,
+                    messages: sourceMessages,
+                    deletedKeys: deletedMessageKeysRef.current,
+                    deleteMessages: (targets) => deleteMessages(chatId, targets),
+                }).catch(() => {});
+            },
+            [chatId, deleteMessages]
+        );
+        const runAutoDelete = useCallback(
+            (sourceMessages, keepKeys = new Set()) => {
+                if (!chatId || !chatPK || !peerChatPK || !Array.isArray(sourceMessages) || !sourceMessages.length || typeof markMessagesHidden !== 'function' || typeof deleteMessages !== 'function') {
+                    runCompaction(sourceMessages);
+                    return;
+                }
+
+                void runMessageAutoDelete({
+                    chatId,
+                    messages: sourceMessages,
+                    chatPK,
+                    peerChatPK,
+                    keepKeys,
+                    deletedKeys: deletedMessageKeysRef.current,
+                    state: autoDeleteRef.current,
+                    writeHiddenCheckpoint: (target) => markMessagesHidden(chatId, target),
+                    deleteMessages: (targets) => deleteMessages(chatId, targets),
+                })
+                    .then(({ deleted }) => {
+                        if (!deleted?.length) {
+                            return;
+                        }
+
+                        const keys = collectMessageKeys(deleted);
+                        if (rowLastMsgKeyRef.current && keys.has(rowLastMsgKeyRef.current)) {
+                            syncChatPreviewDrop?.(chatId, keys, latestPreviewMessage(sourceMessages));
+                        }
+                        runCompaction(sourceMessages);
+                    })
+                    .catch(() => {});
+            },
+            [chatId, chatPK, deleteMessages, markMessagesHidden, peerChatPK, runCompaction, syncChatPreviewDrop]
+        );
+
+        useEffect(() => {
+            if (!activeReady || !activeExists) {
+                return;
+            }
+            runAutoDelete(rawMessages, visibleMessageKeysRef.current);
+            runCompaction(rawMessages);
+        }, [activeExists, activeReady, rawMessages, runAutoDelete, runCompaction]);
+
         useEffect(() => {
             if (!chatId || !activeReady || !activeExists || !rowLastMsgKey || typeof syncChatPreviewDrop !== 'function') {
                 return;
@@ -636,8 +703,9 @@ export function createUseChatMessages({ db, useChat, useUser, useVault, appState
                 exists: activeExists,
                 ready: activeReady,
                 messages,
+                rawMessages,
             };
-        }, [activeExists, activeReady, chatId, messages]);
+        }, [activeExists, activeReady, chatId, messages, rawMessages]);
 
         useEffect(() => {
             if (!chatId) {
@@ -649,16 +717,18 @@ export function createUseChatMessages({ db, useChat, useUser, useVault, appState
             return () => {
                 const current = leaveTtlRef.current;
                 releaseMessageView?.(scopeKey, () => {
-                    if (current?.chatId === leavingChatId && current.ready && current.exists && current.messages?.length) {
+                    if (current?.chatId === leavingChatId && current.ready && current.exists && (current.messages?.length || current.rawMessages?.length)) {
                         const expiredMessages = getSeenHiddenMessages(current.messages, chatPK, peerChatPK);
                         if (expiredMessages.length) {
                             expireMessageView(updateMessageView, scopeKey, expiredMessages);
                             expireMessageBatch?.(leavingChatId, expiredMessages);
                         }
+                        runAutoDelete(current.rawMessages || current.messages, new Set());
+                        runCompaction(current.rawMessages || current.messages);
                     }
                 });
             };
-        }, [chatId, chatPK, expireMessageBatch, peerChatPK, releaseMessageView, retainMessageView, scopeKey, updateMessageView]);
+        }, [chatId, chatPK, expireMessageBatch, peerChatPK, releaseMessageView, retainMessageView, runAutoDelete, runCompaction, scopeKey, updateMessageView]);
 
         useEffect(() => {
             if (!chatId || !activeReady || !activeExists || !chatPK || !messages.length) {

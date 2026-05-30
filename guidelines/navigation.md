@@ -62,7 +62,7 @@ Forced auth, vault, and onboarding flows are route-guard owned. After a required
 - iOS long-press menu portal UI: `apps/veyl/ios/src/components/menuportal.js`
 - iOS transient media render-file cache: `apps/veyl/ios/src/lib/msgimagecache.js`
 
-Keep `shared/providers/chatprovider.js` focused on React provider orchestration. It owns chat-list wiring, pending local action state, and read receipts. Provider-owned current-message state lives in `shared/chat/messages/session/`: it keeps latest-message session entries, session-only remembered views, and recent-chat warming. `shared/chat/usemessages.js` should consume those provider-owned sessions as its initial visible list instead of attaching its own latest-message listener or carrying a separate route-built list cache, so opening a warmed chat does not double-subscribe or restart from an empty list. Warm sessions must not download attachment bytes; media rows may reuse in-memory render-file URIs, and video rows should render cached poster images instead of mounting live video elements just because a row appeared. Put outbound message shaping, optimistic local send state, retry payload helpers, reactions, save/unsave, deletion, seen/read action scheduling, and settings mutations in `shared/chat/actions/`; put encrypted read-receipt primitives in `shared/chat/read.js`. Chat media is still evolving. Before changing payload shape, inspect both clients and shared chat code.
+Keep `shared/providers/chatprovider.js` focused on React provider orchestration. It owns chat-list wiring, pending local action state, read receipts, hidden checkpoints, and provider-level message session plumbing. Provider-owned current-message state lives in `shared/chat/messages/session/`: it keeps latest-message session entries, session-only remembered views, and recent-chat warming. `shared/chat/usemessages.js` should consume those provider-owned sessions as its initial visible list instead of attaching its own latest-message listener or carrying a separate route-built list cache, so opening a warmed chat does not double-subscribe or restart from an empty list. Warm sessions must not download attachment bytes; media rows may reuse in-memory render-file URIs, and video rows should render cached poster images instead of mounting live video elements just because a row appeared. Put outbound message shaping, optimistic local send state, retry payload helpers, reactions, save/unsave, whole-chat deletion, seen/read action scheduling, and settings mutations in `shared/chat/actions/`; put encrypted read-receipt primitives in `shared/chat/read.js`; put smart deletion, saved-media stay scans, and control compaction in `shared/chat/messages/`. Chat media is still evolving. Before changing payload shape, inspect both clients, bot runtime, rules, and shared chat code.
 
 ## Bots
 
@@ -101,7 +101,7 @@ The search system is built around profile lookups. An input string is parsed int
 Conventions:
 
 - `@` is the only profile-search prefix.
-- Reserve `/` for future commands.
+- Reserve `/` for slash commands.
 - `useSearch('mainmenu')` requires `@` to engage so the in-house main menu keeps filtering local actions on bare text.
 - Everywhere else uses `useSearch('profiles')`, where bare text is a username and `@<role>` triggers a role lookup.
 - The hook returns `query` as a parsed object `{ kind, value, role?, raw }` or `null`. Consumers should not parse the raw input themselves.
@@ -111,5 +111,5 @@ Conventions:
 - Firebase Functions entrypoint: `functions/index.js`
 - Firestore security rules: `firestore.rules`
 - Firebase Storage rules: `storage.rules`
-- Web server-side auth gate: `apps/veyl/web/src/lib/firebase/firebaseadmin.js`
+- Web client route gates: `apps/veyl/web/src/lib/routeguards.js`
 - veyl web shell files: `apps/veyl/web/src/*`

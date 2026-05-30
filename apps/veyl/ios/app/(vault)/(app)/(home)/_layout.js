@@ -1,28 +1,21 @@
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useRef } from 'react';
+import { useIsFocused } from 'expo-router/react-navigation';
+import { usePathname } from 'expo-router';
 import { readLastAppRoute, writeLastAppTarget } from '@glyphteck/shared/localdatacache';
 import { useTheme } from '@/providers/themeprovider';
 import { useVault } from '@/providers/vaultprovider';
-import { tabForLastAppRoute } from '@/lib/approute';
-import { Pager } from '@/lib/pagernav';
-import { warmCamera } from '@/lib/camera/warming';
+import { HomePager as HomeTabs } from '@/lib/homepager';
+import { HOME_TAB_NAMES, homeTabForLastAppRoute, isHomeTabRootPath, targetForHomeTab, warmHomeTab } from '@/lib/hometabs';
 import MainMenu from '@/components/mainmenu';
-
-function warmHomeRoute(name) {
-    if (name === 'camera') warmCamera();
-}
-
-function targetForHomeRoute(name) {
-    if (name === 'camera') return { route: '/camera' };
-    if (name === 'wallet') return { route: '/wallet' };
-    if (name === 'chat') return { route: '/chat' };
-    return null;
-}
 
 export default function TabsLayout() {
     const { theme, isDark } = useTheme();
     const { localCache } = useVault();
-    const initialRouteNameRef = useRef(tabForLastAppRoute(readLastAppRoute(localCache)));
+    const focused = useIsFocused();
+    const pathname = usePathname();
+    const tabSwipeEnabled = focused && isHomeTabRootPath(pathname);
+    const initialRouteNameRef = useRef(homeTabForLastAppRoute(readLastAppRoute(localCache)));
     const savedInitialRouteRef = useRef(false);
     const saveHomeRoute = useCallback(
         (name) => {
@@ -30,7 +23,7 @@ export default function TabsLayout() {
                 savedInitialRouteRef.current = true;
                 return;
             }
-            const target = targetForHomeRoute(name);
+            const target = targetForHomeTab(name);
             if (target) writeLastAppTarget(localCache, target);
         },
         [localCache]
@@ -39,12 +32,20 @@ export default function TabsLayout() {
     return (
         <>
             <StatusBar style={isDark ? 'light' : 'dark'} />
-            <Pager initialRouteName={initialRouteNameRef.current} tabBar={(props) => <MainMenu {...props} />} onRouteChange={saveHomeRoute} onWarmRoute={warmHomeRoute} screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme?.background } }}>
-                <Pager.Screen name="chat" />
-                <Pager.Screen name="camera" />
-                <Pager.Screen name="wallet" />
-                <Pager.Screen name="settings" />
-            </Pager>
+            <HomeTabs
+                initialRouteName={initialRouteNameRef.current}
+                swipeEnabled={tabSwipeEnabled}
+                tabBar={(props) => <MainMenu {...props} />}
+                onRouteChange={saveHomeRoute}
+                onWarmRoute={warmHomeTab}
+                screenOptions={{
+                    sceneStyle: { backgroundColor: theme?.background },
+                }}
+            >
+                {HOME_TAB_NAMES.map((name) => (
+                    <HomeTabs.Screen key={name} name={name} />
+                ))}
+            </HomeTabs>
         </>
     );
 }

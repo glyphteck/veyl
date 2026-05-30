@@ -34,7 +34,6 @@ import { useWallet } from '@/providers/walletprovider';
 import { usePop } from '@/lib/pop';
 import { mark } from '@/lib/diagnostics';
 import { useCameraWarming } from '@/lib/camera/warming';
-import { usePagerRouteActive } from '@/lib/pagernav';
 import { alpha } from '@/lib/colors';
 
 const BACK_REGULAR_LENS = { physicalDevices: ['wide-angle'] };
@@ -1334,8 +1333,7 @@ function CameraContent({ cameraActive, pageOpen, warming }) {
 }
 
 export default function CameraTab() {
-    const focused = useIsFocused();
-    const pageOpen = usePagerRouteActive(focused);
+    const pageOpen = useIsFocused();
     const cameraWarm = useCameraWarming(pageOpen);
 
     if (!cameraWarm.mounted) return <View style={{ flex: 1 }} />;

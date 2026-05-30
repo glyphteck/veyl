@@ -18,8 +18,8 @@ const chat = createChat({
     readMessageFile(storageInstance, userChatPK, userPrivKey, peerChatPK, message) {
         return readMessageFileNative(storageInstance, userChatPK, userPrivKey, peerChatPK, message);
     },
-    async setMediaSaved(path, stayId, saved) {
-        await httpsCallable(functions, 'setMediaSaved')({ path, stayId, saved });
+    async setMediaSaved(path, stayId, stayKey, saved) {
+        await httpsCallable(functions, 'setMediaSaved')({ path, stayId, stayKey, saved });
         return true;
     },
     async finishDeletingChat(chatId) {

@@ -13,6 +13,7 @@ import { useDialog } from '@/components/providers/dialogprovider';
 import { useBitcoin } from '@/components/providers/bitcoinprovider';
 import { useWallet } from '@/components/providers/walletprovider';
 import { useUser } from '@/components/providers/userprovider';
+import { useChat } from '@/components/providers/chatprovider';
 import { verifyVaultPassword } from '@/lib/crypto/seed';
 import { renderMoney } from '@/lib/utils';
 
@@ -27,6 +28,7 @@ export default function DeleteAccount({ close }) {
     const bitcoin = useBitcoin();
     const { balance } = useWallet();
     const { settings, clearAvatar } = useUser();
+    const { collectAccountSavedMediaStays, releaseSavedMediaStays } = useChat();
     const { encSeed, localCache, lock } = useVault();
     const showWithdraw = Number(balance ?? 0) > 0;
     const balanceLabel = renderMoney(balance ?? 0n, settings.moneyFormat, bitcoin.price);
@@ -59,8 +61,10 @@ export default function DeleteAccount({ close }) {
     const deleteAccount = useCallback(async () => {
         setIsDeleting(true);
         try {
+            const savedMediaStays = await collectAccountSavedMediaStays?.();
             const deleteAccountFn = httpsCallable(getFunctions(), 'deleteAccount');
             await deleteAccountFn();
+            await releaseSavedMediaStays?.(savedMediaStays)?.catch(() => {});
             await localCache?.clear?.().catch(() => {});
             clearAvatar?.();
             lock?.(true);
@@ -74,7 +78,7 @@ export default function DeleteAccount({ close }) {
                 setIsDeleting(false);
             }
         }
-    }, [clearAvatar, close, localCache, lock]);
+    }, [clearAvatar, close, collectAccountSavedMediaStays, localCache, lock, releaseSavedMediaStays]);
 
     useEffect(() => {
         if (!isPasswordValid) return;

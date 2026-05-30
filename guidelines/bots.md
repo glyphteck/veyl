@@ -5,6 +5,7 @@ Use this focused guide when work touches bot accounts, bot runtime behavior, bot
 ## Rules
 
 - Bots are normal veyl accounts with backend runtimes. Keep their data model aligned with regular users unless the root bot doc says otherwise.
+- Keep the bot runtime current with client chat architecture changes. When message lifecycle, retention, control payloads, media handling, or send/read semantics change in the clients, update `apps/veyl/bot/src/runtime.js` in the same task instead of letting the runtime lag behind.
 - Do not special-case bots in peer, chat, wallet, report, block, or moderation UI unless the behavior is genuinely bot-specific.
 - Start bot behavior changes in `apps/veyl/bot/src/runtime.js`, then check shared bot modules under `shared/bot/` and any admin surfaces that expose the state.
 - Preserve deterministic scripted behavior before adding broader automation.

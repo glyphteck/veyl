@@ -1,7 +1,8 @@
 import { collection, getDocs, limit, orderBy, query, where } from 'firebase/firestore';
+import { SEARCH_USERNAME_LIMIT } from '../config.js';
 import { getRole } from './roles.js';
 
-const USERNAME_LIMIT = 15;
+const USERNAME_LIMIT = SEARCH_USERNAME_LIMIT;
 
 function hasPeerKeys(profile) {
     return !!(profile?.walletPK || profile?.chatPK);

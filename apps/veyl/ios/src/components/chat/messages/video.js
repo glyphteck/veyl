@@ -2,10 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Text, View } from 'react-native';
 import { Image } from 'expo-image';
 import { Play } from 'lucide-react-native';
-import { GestureDetector } from 'react-native-gesture-handler';
 import { useChat } from '@/providers/chatprovider';
 import { useMediaViewer } from '@/providers/mediaviewerprovider';
 import { useTheme } from '@/providers/themeprovider';
+import { useMessageGestureBlockers } from '@/components/chat/messagegesturecontext';
 import { getCachedMessageFileUri, resolveMessageFileUri } from '@/lib/chatdownloads';
 import { getMediaViewerKey } from '@/lib/chatmediaitems';
 import { getCachedVideoPreviewUri, loadVideoPreviewUri } from '@/lib/chatvideopreview';
@@ -30,8 +30,9 @@ function normalizeUri(uri) {
 
 export default function VideoMessage({ msg, peerChatPK, fromPeer = false, menuItems, menuId, onLike, reactions = [], reactionUsers, reactionPreviewInset = 0 }) {
     const { theme } = useTheme();
+    const blockExternalGestures = useMessageGestureBlockers();
     const { readMessageFile, readMessagePreview, writeMessagePreview } = useChat();
-    const { activeMediaId, openMedia } = useMediaViewer();
+    const { openMedia } = useMediaViewer();
     const msgType = msg?.t;
     const msgPath = msg?.p;
     const msgKey = msg?.k;
@@ -127,12 +128,12 @@ export default function VideoMessage({ msg, peerChatPK, fromPeer = false, menuIt
     }, [fileMsg, msgKey, msgPath, msgType, peerChatPK, readMessageFile]);
 
     const openFullscreen = useCallback(() => {
-        if (disabled || activeMediaId === key) {
+        if (disabled) {
             return false;
         }
         return openMedia(key);
-    }, [activeMediaId, disabled, key, openMedia]);
-    const fullscreenTapGesture = useMediaTapGesture({ disabled, msg, onLike, onOpen: openFullscreen });
+    }, [disabled, key, openMedia]);
+    const fullscreenTapGesture = useMediaTapGesture({ blockExternalGestures, disabled, msg, onLike, onOpen: openFullscreen });
 
     const videoContent = (
         <View
@@ -169,11 +170,6 @@ export default function VideoMessage({ msg, peerChatPK, fromPeer = false, menuIt
         </View>
     );
 
-    const videoSurface = (
-        <GestureDetector gesture={fullscreenTapGesture}>
-            {videoContent}
-        </GestureDetector>
-    );
     const renderPreview = useCallback(
         () => (
             <ReactionTray reactions={reactions} users={reactionUsers} fromPeer={fromPeer}>
@@ -207,12 +203,14 @@ export default function VideoMessage({ msg, peerChatPK, fromPeer = false, menuIt
             items={menuItems}
             longScale={VIDEO_LONG_SCALE}
             activeStyle={MEDIA_ACTIVE_STYLE}
+            contentGesture={fullscreenTapGesture}
+            blockExternalGestures={blockExternalGestures}
             renderPreview={renderPreview}
             previewBottomInset={reactionPreviewInset}
         >
             <ReactionTray reactions={reactions} users={reactionUsers} fromPeer={fromPeer}>
                 <View style={{ width, borderRadius: VIDEO_RADIUS, overflow: 'hidden', backgroundColor: theme.background }}>
-                    {videoSurface}
+                    {videoContent}
                     {caption ? (
                         <View style={{ paddingHorizontal: 12, paddingVertical: 10 }}>
                             <Text style={{ color: theme.foreground, fontSize: 16, fontWeight: '500' }}>{caption}</Text>

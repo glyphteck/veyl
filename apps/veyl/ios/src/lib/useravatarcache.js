@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system/legacy';
 import { Buffer } from 'buffer';
+import { bytesView, imageExtension } from '@glyphteck/shared/image';
 
 const META_KEY_PREFIX = 'veyl.user.avatar.';
 const CACHE_DIR = FileSystem.documentDirectory ? `${FileSystem.documentDirectory}user-avatar-cache/` : null;
@@ -20,21 +21,6 @@ function readVersion(value) {
 
 function safeUid(uid) {
     return String(uid || '').replace(/[^a-zA-Z0-9_-]/g, '_');
-}
-
-function asBytes(value) {
-    if (value instanceof Uint8Array) return value;
-    if (value instanceof ArrayBuffer) return new Uint8Array(value);
-    if (ArrayBuffer.isView(value)) return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
-    return null;
-}
-
-function imageExtension(bytes) {
-    if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'jpg';
-    if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return 'png';
-    if (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46) return 'gif';
-    if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46 && bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50) return 'webp';
-    return 'img';
 }
 
 function avatarFile(uid, version, ext) {
@@ -152,7 +138,7 @@ export const userAvatarCache = {
     async write(uid, { version, bytes }) {
         if (!uid) return null;
         const nextVersion = readVersion(version);
-        const body = asBytes(bytes);
+        const body = bytesView(bytes);
         if (nextVersion == null || !body || body.byteLength <= 0 || body.byteLength > MAX_IMAGE_BYTES || !(await ensureDir())) {
             return null;
         }

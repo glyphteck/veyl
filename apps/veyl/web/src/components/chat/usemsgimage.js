@@ -3,10 +3,9 @@
 import { useEffect, useState } from 'react';
 import { useChat } from '@/components/providers/chatprovider';
 import { isExpiredAttachmentMsg } from '@glyphteck/shared/chat/messages';
+import { createObjectUrlCache, revokeObjectUrl } from './objecturlcache';
 
-const imageCache = new Map();
-const MAX_IMAGE_CACHE = 40;
-let imageCacheEpoch = 0;
+const imageCache = createObjectUrlCache({ max: 40 });
 
 function getCacheKey(msg) {
     return `${msg?.p || ''}:${msg?.k || ''}`;
@@ -18,116 +17,15 @@ function hasRemoteImageKey(msg) {
     return msg?.t === 'img' && !!path && !!fileKey && !path.startsWith('local:') && fileKey !== 'local';
 }
 
-function isPromise(value) {
-    return !!value && typeof value.then === 'function';
-}
-
-function isBlobUrl(value) {
-    return typeof value === 'string' && value.startsWith('blob:');
-}
-
-function revokeUrl(value) {
-    if (!isBlobUrl(value)) {
-        return;
-    }
-
-    try {
-        URL.revokeObjectURL(value);
-    } catch {}
-}
-
-function trimImageCache() {
-    if (imageCache.size <= MAX_IMAGE_CACHE) {
-        return;
-    }
-
-    while (imageCache.size > MAX_IMAGE_CACHE) {
-        let dropKey = null;
-        let dropEntry = null;
-        let dropPriority = Infinity;
-
-        for (const [key, entry] of imageCache.entries()) {
-            if (!entry || entry.status !== 'ready' || entry.refs > 0) {
-                continue;
-            }
-            const priority = Number(entry.priority) || 0;
-            if (priority < dropPriority) {
-                dropKey = key;
-                dropEntry = entry;
-                dropPriority = priority;
-            }
-        }
-
-        if (!dropKey) {
-            return;
-        }
-
-        imageCache.delete(dropKey);
-        revokeUrl(dropEntry?.url);
-    }
-}
-
-function getReadyEntry(key) {
-    const entry = imageCache.get(key);
-    return entry?.status === 'ready' ? entry : null;
-}
-
 function retainImage(key) {
-    const entry = getReadyEntry(key);
-    if (!entry) {
-        return null;
-    }
-
-    const next = {
-        ...entry,
-        refs: entry.refs + 1,
-    };
-    imageCache.set(key, next);
-    return next.url;
+    return imageCache.retain(key);
 }
 
 function releaseImage(key) {
-    const entry = getReadyEntry(key);
-    if (!entry) {
-        return;
-    }
-
-    imageCache.set(key, {
-        ...entry,
-        refs: Math.max(0, entry.refs - 1),
-    });
-}
-
-function setPendingEntry(key, promise) {
-    imageCache.set(key, {
-        status: 'pending',
-        promise,
-    });
-}
-
-function setReadyEntry(key, url, options = {}) {
-    const previous = getReadyEntry(key);
-    if (previous?.url && previous.url !== url) {
-        revokeUrl(previous.url);
-    }
-
-    imageCache.set(key, {
-        status: 'ready',
-        url,
-        refs: previous?.refs ?? 0,
-        priority: Math.max(Number(previous?.priority) || 0, Number(options.priority) || 0),
-    });
-    trimImageCache();
-    return url;
+    imageCache.release(key);
 }
 
 export function clearMsgImageCache() {
-    imageCacheEpoch += 1;
-    for (const entry of imageCache.values()) {
-        if (entry?.status === 'ready') {
-            revokeUrl(entry.url);
-        }
-    }
     imageCache.clear();
 }
 
@@ -154,17 +52,17 @@ export function preloadMsgImage(peerChatPK, msg, readMessageFile, options = {}) 
 
     const key = getCacheKey(msg);
     const expired = isExpiredAttachmentMsg(msg);
-    const cached = expired ? null : getReadyEntry(key);
+    const cached = expired ? null : imageCache.getReady(key);
     if (cached?.url) {
         return Promise.resolve(cached.url);
     }
 
-    const current = expired ? null : imageCache.get(key);
-    if (current?.status === 'pending' && isPromise(current.promise)) {
-        return current.promise;
+    const pending = expired ? null : imageCache.getPendingPromise(key);
+    if (pending) {
+        return pending;
     }
 
-    const epoch = imageCacheEpoch;
+    const epoch = imageCache.epoch;
     const task = withTimeout(Promise.resolve(readMessageFile(peerChatPK, msg)), 12000)
         .then(async (bytes) => {
             if (!bytes?.byteLength) {
@@ -172,18 +70,18 @@ export function preloadMsgImage(peerChatPK, msg, readMessageFile, options = {}) 
             }
             const nextSrc = URL.createObjectURL(new Blob([bytes], { type: msg?.m || 'image/jpeg' }));
             await warmImage(nextSrc);
-            if (epoch !== imageCacheEpoch) {
-                revokeUrl(nextSrc);
+            if (epoch !== imageCache.epoch) {
+                revokeObjectUrl(nextSrc);
                 return '';
             }
-            return setReadyEntry(key, nextSrc, options);
+            return imageCache.setReady(key, nextSrc, options);
         })
         .catch((error) => {
             imageCache.delete(key);
             throw error;
         });
 
-    setPendingEntry(key, task);
+    imageCache.setPending(key, task);
     return task;
 }
 
@@ -191,7 +89,7 @@ export function seedMsgImage(msg, url, options = {}) {
     if (!hasRemoteImageKey(msg) || !url) {
         return '';
     }
-    return setReadyEntry(getCacheKey(msg), url, options);
+    return imageCache.setReady(getCacheKey(msg), url, options);
 }
 
 function withTimeout(promise, ms) {
@@ -253,10 +151,11 @@ export function useMsgImage(peerChatPK, msg) {
 
         setLoading(true);
         setError(null);
-        const task = cached?.status === 'pending' && isPromise(cached.promise) ? cached.promise : preloadMsgImage(peerChatPK, msg, readMessageFile);
+        const pending = cached?.status === 'pending' ? imageCache.getPendingPromise(key) : null;
+        const task = pending || preloadMsgImage(peerChatPK, msg, readMessageFile);
 
-        if (!(cached?.status === 'pending' && cached.promise === task)) {
-            setPendingEntry(key, task);
+        if (!pending) {
+            imageCache.setPending(key, task);
         }
 
         task.then((nextSrc) => {

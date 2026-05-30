@@ -2,15 +2,16 @@
 
 import { AES_IV_BYTES, openAes, sealAes } from './crypto/aes.js';
 import { makeMessagePreviewMedia } from './chat/previews.js';
+import { LOCAL_CACHE_WRITE_DELAY_MS, LOCAL_MEDIA_ACCESS_TOUCH_MIN_MS, LOCAL_MEDIA_CACHE_MAX_BYTES, LOCAL_MEDIA_CACHE_MAX_ITEMS } from './config.js';
 import { cleanBytes, decoder, encoder, randomBytes, toBytes, toHex } from './crypto/core.js';
 
 export const LOCAL_DATA_CACHE_VERSION = 2;
 export const LOCAL_DATA_CACHE_LABEL = 'local-cache-v2';
 
-const WRITE_DELAY_MS = 350;
-const MEDIA_CACHE_MAX_BYTES = 128 * 1024 * 1024;
-const MEDIA_CACHE_MAX_ITEMS = 96;
-const MEDIA_ACCESS_TOUCH_MIN_MS = 60 * 1000;
+const WRITE_DELAY_MS = LOCAL_CACHE_WRITE_DELAY_MS;
+const MEDIA_CACHE_MAX_BYTES = LOCAL_MEDIA_CACHE_MAX_BYTES;
+const MEDIA_CACHE_MAX_ITEMS = LOCAL_MEDIA_CACHE_MAX_ITEMS;
+const MEDIA_ACCESS_TOUCH_MIN_MS = LOCAL_MEDIA_ACCESS_TOUCH_MIN_MS;
 const MEDIA_ENVELOPE_VERSION = 1;
 const APP_ROUTES = new Set(['/chat', '/camera', '/wallet']);
 
@@ -113,8 +114,16 @@ function jsonClean(value) {
     return out;
 }
 
-function clone(value) {
-    return JSON.parse(JSON.stringify(value ?? null));
+function draftPayload(value) {
+    const input = normalizePayload(value);
+    return {
+        ...input,
+        chatsById: { ...input.chatsById },
+        transfersById: { ...input.transfersById },
+        transferIds: [...input.transferIds],
+        profilesByUid: { ...input.profilesByUid },
+        mediaByKey: { ...input.mediaByKey },
+    };
 }
 
 function normalizePayload(value) {
@@ -367,7 +376,7 @@ export async function openVaultCache({ key, storage, uid, network }) {
             return Promise.resolve();
         }
         removed = false;
-        const draft = clone(payload);
+        const draft = draftPayload(payload);
         payload = normalizePayload(mutator(draft) || draft);
         if (flush) {
             return writeNow();
@@ -452,8 +461,9 @@ export async function openVaultCache({ key, storage, uid, network }) {
                     const now = Date.now();
                     if (now - (Number(entry?.savedAt) || 0) >= MEDIA_ACCESS_TOUCH_MIN_MS) {
                         void patchPayload((draft) => {
-                            if (draft.mediaByKey?.[key]?.id === id) {
-                                draft.mediaByKey[key].savedAt = now;
+                            const current = draft.mediaByKey?.[key];
+                            if (current?.id === id) {
+                                draft.mediaByKey[key] = { ...current, savedAt: now };
                             }
                             return draft;
                         }).catch(() => {});

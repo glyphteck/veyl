@@ -14,8 +14,20 @@ export function newMediaStayId() {
     return toHex(randomBytes(16));
 }
 
-export async function requireMediaSaved(chat, path, stayId, saved) {
-    const updated = await chat.setMediaSaved(path, stayId, saved);
+export function newMediaStayKey() {
+    return toHex(randomBytes(16));
+}
+
+function mediaStayCapability(message) {
+    const id = typeof message?.stay === 'string' ? message.stay.trim() : '';
+    const key = typeof message?.stayKey === 'string' ? message.stayKey.trim() : '';
+    return id && key ? { id, key } : null;
+}
+
+export async function requireMediaSaved(chat, path, stay, saved) {
+    const id = typeof stay?.id === 'string' ? stay.id.trim() : '';
+    const key = typeof stay?.key === 'string' ? stay.key.trim() : '';
+    const updated = await chat.setMediaSaved(path, id, key, saved);
     if (updated !== true) {
         throw new Error('media save state unavailable');
     }
@@ -37,27 +49,27 @@ function hasInvalidStoredMediaRef(message) {
 }
 
 function mediaStay(message) {
-    const stay = typeof message?.stay === 'string' ? message.stay.trim() : '';
-    return stay || newMediaStayId();
+    return mediaStayCapability(message) || { id: newMediaStayId(), key: newMediaStayKey() };
 }
 
-function makeSavedMessagePayload(message, stayId) {
+function makeSavedMessagePayload(message, stay) {
     const { id, ts, ttl, from, pending, failed, localUri, localData, reactions, type, ...payload } = message || {};
     const savedTtl = timestampMs(ttl);
     return {
         ...payload,
         ...(Number.isFinite(savedTtl) ? { savedTtl } : {}),
-        ...(stayId
+        ...(stay?.id && stay?.key
             ? {
                   x: Number.isFinite(payload.x) ? payload.x : Date.now() + CHAT_MEDIA_TTL_MS,
-                  stay: stayId,
+                  stay: stay.id,
+                  stayKey: stay.key,
               }
             : {}),
     };
 }
 
 function makeUnsavedMessagePayload(message) {
-    const { id, ts, ttl, from, pending, failed, localUri, localData, reactions, type, stay, savedTtl, savedTtlMs, permanent, ...payload } = message || {};
+    const { id, ts, ttl, from, pending, failed, localUri, localData, reactions, type, stay, stayKey, savedTtl, savedTtlMs, permanent, ...payload } = message || {};
     if (!isAttachmentMsgType(message?.t)) {
         return payload;
     }
@@ -92,7 +104,7 @@ function unsavedMessageTtlMs(message, ttlMs) {
 }
 
 function hasSavedMessagePayload(message) {
-    return message?.permanent === true || Number.isFinite(Number(message?.savedTtl)) || (typeof message?.stay === 'string' && message.stay.trim().length > 0);
+    return message?.permanent === true || Number.isFinite(Number(message?.savedTtl)) || !!mediaStayCapability(message);
 }
 
 export function useChatSave({ chat, chatBanned, chatPK, chatPrivateKey, localCache }) {
@@ -112,12 +124,19 @@ export function useChatSave({ chat, chatBanned, chatPK, chatPrivateKey, localCac
                     throw makeChatUnavailableError();
                 }
                 const saveMediaRef = isAttachmentMsgType(item.t) && hasStoredFileRef(item);
-                const stayId = saveMediaRef ? mediaStay(item) : '';
+                const stay = saveMediaRef ? mediaStay(item) : null;
                 if (saveMediaRef) {
-                    await requireMediaSaved(chat, item.p, stayId, true);
+                    await requireMediaSaved(chat, item.p, stay, true);
                 }
-                const nextMessage = makeSavedMessagePayload(item, stayId);
-                await chat.updateMessage(chatId, item.id, chatPrivateKey, peerChatPK, nextMessage, { updateLastMsg: false });
+                const nextMessage = makeSavedMessagePayload(item, stay);
+                try {
+                    await chat.updateMessage(chatId, item.id, chatPrivateKey, peerChatPK, nextMessage, { updateLastMsg: false });
+                } catch (error) {
+                    if (saveMediaRef) {
+                        await requireMediaSaved(chat, item.p, stay, false).catch(() => {});
+                    }
+                    throw error;
+                }
             }
 
             return chat.makeMessagePermanent(chatId, list);
@@ -144,11 +163,11 @@ export function useChatSave({ chat, chatBanned, chatPK, chatPrivateKey, localCac
                     throw makeChatUnavailableError();
                 }
                 if (isAttachmentMsgType(item.t) && hasStoredFileRef(item)) {
-                    const stayId = typeof item.stay === 'string' ? item.stay.trim() : '';
+                    const stay = mediaStayCapability(item);
                     await chat.updateMessage(chatId, item.id, chatPrivateKey, peerChatPK, makeUnsavedMessagePayload(item), { updateLastMsg: false });
                     updated += await chat.makeMessageTemporary(chatId, [item], unsavedMessageTtlMs(item, ttlMs));
-                    if (stayId) {
-                        await requireMediaSaved(chat, item.p, stayId, false);
+                    if (stay) {
+                        await requireMediaSaved(chat, item.p, stay, false);
                     }
                     continue;
                 }

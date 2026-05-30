@@ -1,56 +1,20 @@
 'use client';
 
-import { CHAT_FILE_SIZE_LIMIT_ENABLED, MAX_CHAT_FILE_BYTES, MAX_CHAT_UPLOAD_FILES } from '@glyphteck/shared/chat/filepayload';
+import { CHAT_IMAGE_COMPRESS, MAX_CHAT_FILE_BYTES, MAX_CHAT_UPLOAD_FILES, filenameWithExtension, fitChatImageSize, getChatUploadFileList } from '@glyphteck/shared/chat/filepayload';
+import { formatBytes } from '@glyphteck/shared/utils';
 import { toMp3 } from './audio';
 import { toMp4 } from './video';
 
-const MAX_CHAT_IMAGE_EDGE = 1600;
-const CHAT_IMAGE_QUALITY = 0.82;
-
-function plural(count, one, many = `${one}s`) {
-    return count === 1 ? one : many;
-}
-
 export function formatMaxChatFileSize(bytes = MAX_CHAT_FILE_BYTES) {
-    const mb = bytes / (1024 * 1024);
-    return Number.isInteger(mb) ? `${mb}MB` : `${mb.toFixed(1)}MB`;
+    return formatBytes(bytes, { fallback: '0MB', unitSeparator: '', maxUnit: 'MB' });
 }
 
 export function formatMaxChatUploadFiles(maxFiles = MAX_CHAT_UPLOAD_FILES) {
-    return `${maxFiles} ${plural(maxFiles, 'file')}`;
-}
-
-function makeTooManyFilesError(count) {
-    const error = new Error('too many files');
-    error.code = 'too-many-files';
-    error.maxFiles = MAX_CHAT_UPLOAD_FILES;
-    error.count = count;
-    return error;
-}
-
-function makeFileTooLargeError(size) {
-    const error = new Error('file too large');
-    error.code = 'file-too-large';
-    error.maxBytes = MAX_CHAT_FILE_BYTES;
-    error.size = size;
-    return error;
-}
-
-function checkRawFileSize(file) {
-    if (CHAT_FILE_SIZE_LIMIT_ENABLED && Number.isFinite(file?.size) && file.size > MAX_CHAT_FILE_BYTES) {
-        throw makeFileTooLargeError(file.size);
-    }
+    return `${maxFiles} ${maxFiles === 1 ? 'file' : 'files'}`;
 }
 
 export function getChatUploadFiles(files) {
-    const list = Array.from(files || []).filter(Boolean);
-    if (list.length > MAX_CHAT_UPLOAD_FILES) {
-        throw makeTooManyFilesError(list.length);
-    }
-    for (const file of list) {
-        checkRawFileSize(file);
-    }
-    return list;
+    return getChatUploadFileList(files);
 }
 
 export function chatUploadErrorMessage(error, fallback = 'failed to send attachment') {
@@ -89,9 +53,7 @@ function isPng(file) {
 }
 
 function jpgName(file) {
-    const raw = String(file?.name || 'image').trim();
-    const base = raw.replace(/\.[^.]+$/, '') || 'image';
-    return `${base}.jpg`;
+    return filenameWithExtension(file?.name, 'jpg', 'image');
 }
 
 function loadImage(file) {
@@ -113,16 +75,7 @@ function loadImage(file) {
 }
 
 function fitSize(width, height) {
-    const currentMax = Math.max(width, height);
-    if (!currentMax || currentMax <= MAX_CHAT_IMAGE_EDGE) {
-        return { width, height };
-    }
-
-    const scale = MAX_CHAT_IMAGE_EDGE / currentMax;
-    return {
-        width: Math.max(1, Math.round(width * scale)),
-        height: Math.max(1, Math.round(height * scale)),
-    };
+    return fitChatImageSize(width, height) || { width, height };
 }
 
 function canvasBlob(canvas, type, quality) {
@@ -154,7 +107,7 @@ async function toJpeg(file, img) {
     ctx.fillRect(0, 0, size.width, size.height);
     ctx.drawImage(img, 0, 0, size.width, size.height);
 
-    const blob = await canvasBlob(canvas, 'image/jpeg', CHAT_IMAGE_QUALITY);
+    const blob = await canvasBlob(canvas, 'image/jpeg', CHAT_IMAGE_COMPRESS);
     return {
         file: new File([blob], jpgName(file), { type: 'image/jpeg', lastModified: Date.now() }),
         width: size.width,

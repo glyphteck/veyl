@@ -1,3 +1,4 @@
+import { WALLET_TRANSFER_PAGE_LIMIT } from '../config.js';
 import { walletPKtoSparkAddress } from '../wallet/spark.js';
 
 function balanceValue(result, fallback = null) {
@@ -40,7 +41,7 @@ export async function getBotTransfer(wallet, transferId) {
     }
 
     if (typeof wallet.getTransfers === 'function') {
-        const { transfers = [] } = await wallet.getTransfers(100, 0).catch(() => ({}));
+        const { transfers = [] } = await wallet.getTransfers(WALLET_TRANSFER_PAGE_LIMIT, 0).catch(() => ({}));
         const list = Array.isArray(transfers) ? transfers : [];
         return list.find((t) => t?.id === nextTransferId) ?? null;
     }

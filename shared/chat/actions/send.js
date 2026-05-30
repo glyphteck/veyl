@@ -6,7 +6,7 @@ import { checkAttachmentSize, getAttachmentType, isAttachmentType, makeAttachmen
 import { makeTs, setLocalChats } from '../chats.js';
 import { hasStoredFileRef, isAttachmentMsgType, isLongTxt, makeSharedAttachment } from '../messages.js';
 import { usePendingSendQueue } from './pending.js';
-import { newMediaStayId, requireMediaSaved } from './save.js';
+import { newMediaStayId, newMediaStayKey, requireMediaSaved } from './save.js';
 import { getPeerChatPKFromChatId } from '../ids.js';
 import { makeCid, sortMessages } from '../state.js';
 import { cleanChatRetention, getMessageRetention, hasChatRetention, withMessageRetention } from '../ttl.js';
@@ -229,16 +229,19 @@ export function shouldUploadPermanentMedia(attachment) {
     return attachment?.permanent === true || attachment?.meta?.permanent === true;
 }
 
-export function attachmentWithPermanence(attachment, permanent, stayId = '') {
+export function attachmentWithPermanence(attachment, permanent, stay = null) {
     if (!permanent) {
         return attachment;
     }
+    const stayId = typeof stay?.id === 'string' ? stay.id : '';
+    const stayKey = typeof stay?.key === 'string' ? stay.key : '';
     return {
         ...attachment,
         meta: {
             ...(attachment?.meta || {}),
             permanent: true,
             stay: stayId,
+            stayKey,
         },
     };
 }
@@ -557,19 +560,28 @@ export function useChatSend({ chat, chatBanned, chatPK, chatPrivateKey, localCac
             }
             const { cid, nextAttachment, localMessage } = prepareAttachment(chatPK, attachment);
             const permanent = shouldUploadPermanentMedia(attachment);
-            const stayId = permanent ? newMediaStayId() : '';
-            const uploadAttachment = attachmentWithPermanence(nextAttachment, permanent, stayId);
+            const stay = permanent ? { id: newMediaStayId(), key: newMediaStayKey() } : null;
+            const uploadAttachment = attachmentWithPermanence(nextAttachment, permanent, stay);
             const sendOptions = sendOptionsForPeer(peerChatPK);
             const localPayload = withMessageRetention(localMessage, sendOptions.retention);
 
             return queueSend(peerChatPK, localPayload, async () => {
                 const uploaded = await chat.uploadAttachment(chatPK, chatPrivateKey, peerChatPK, uploadAttachment);
-                if (permanent) {
-                    await requireMediaSaved(chat, uploaded.p, stayId, true);
+                let savedMedia = false;
+                try {
+                    if (permanent) {
+                        await requireMediaSaved(chat, uploaded.p, stay, true);
+                        savedMedia = true;
+                    }
+                    saveMedia(localCache, uploaded, attachment?.data, attachment);
+                    rememberCachedLocalMedia(peerChatPK, cid, uploaded);
+                    await chat.sendMessage(chatPK, chatPrivateKey, peerChatPK, withMessageRetention({ ...uploaded, cid, s: chatPK }, sendOptions.retention), sendOptions);
+                } catch (error) {
+                    if (savedMedia) {
+                        await requireMediaSaved(chat, uploaded.p, stay, false).catch(() => {});
+                    }
+                    throw error;
                 }
-                saveMedia(localCache, uploaded, attachment?.data, attachment);
-                rememberCachedLocalMedia(peerChatPK, cid, uploaded);
-                await chat.sendMessage(chatPK, chatPrivateKey, peerChatPK, withMessageRetention({ ...uploaded, cid, s: chatPK }, sendOptions.retention), sendOptions);
             });
         },
         [chat, chatBanned, chatPK, chatPrivateKey, localCache, queueSend, rememberCachedLocalMedia, sendOptionsForPeer]
@@ -598,15 +610,15 @@ export function useChatSend({ chat, chatBanned, chatPK, chatPrivateKey, localCac
                 const sendOptions = sendOptionsForPeer(peerChatPK);
                 const localMessage = withMessageRetention(prepared.localMessage, sendOptions.retention);
                 const local = showLocalMessage(peerChatPK, localMessage);
-                const stayId = permanent ? newMediaStayId() : '';
+                const stay = permanent ? { id: newMediaStayId(), key: newMediaStayKey() } : null;
                 return {
                     peerChatPK,
                     cid: prepared.cid,
                     chatId: local.chatId,
                     sendOptions,
                     permanent,
-                    stayId,
-                    nextAttachment: attachmentWithPermanence(prepared.nextAttachment, permanent, stayId),
+                    stay,
+                    nextAttachment: attachmentWithPermanence(prepared.nextAttachment, permanent, stay),
                 };
             });
 
@@ -633,6 +645,7 @@ export function useChatSend({ chat, chatBanned, chatPK, chatPrivateKey, localCac
                                 continue;
                             }
 
+                            let savedMedia = false;
                             try {
                                 let uploaded = uploads.get(uploadKey);
                                 if (!uploaded) {
@@ -641,12 +654,13 @@ export function useChatSend({ chat, chatBanned, chatPK, chatPrivateKey, localCac
                                     saveMedia(localCache, uploaded, attachment?.data, attachment);
                                 }
                                 if (item.permanent) {
-                                    await requireMediaSaved(chat, uploaded.p, item.stayId, true);
+                                    await requireMediaSaved(chat, uploaded.p, item.stay, true);
+                                    savedMedia = true;
                                 }
 
                                 const sent = {
                                     ...uploaded,
-                                    ...(item.permanent ? { stay: item.stayId } : {}),
+                                    ...(item.permanent ? { stay: item.stay.id, stayKey: item.stay.key } : {}),
                                     cid: item.cid,
                                     s: chatPK,
                                 };
@@ -656,6 +670,10 @@ export function useChatSend({ chat, chatBanned, chatPK, chatPrivateKey, localCac
                                 markLocalStatus(item.chatId, item.cid, LOCAL_SENT);
                                 results.push({ peerChatPK: item.peerChatPK, ok: true, message: sentMessage });
                             } catch (error) {
+                                const uploaded = uploads.get(uploadKey);
+                                if (savedMedia && uploaded?.p) {
+                                    await requireMediaSaved(chat, uploaded.p, item.stay, false).catch(() => {});
+                                }
                                 if (!uploads.has(uploadKey)) {
                                     uploadErrors.set(uploadKey, error);
                                 }

@@ -1,11 +1,25 @@
-import { onDocumentCreated } from 'firebase-functions/v2/firestore';
-import { db } from '../lib/admin.js';
+import { onDocumentWritten } from 'firebase-functions/v2/firestore';
 import { isBlocked, isChatBanned, messageSenderFallback, resolveChatActors } from '../lib/chatroute.js';
 import { getPushDocs, pushSecrets, sendPush } from '../lib/push.js';
 
-export const onChatMessage = onDocumentCreated({ document: 'chats/{chatId}/messages/{msgId}', secrets: pushSecrets }, async (event) => {
-    const msg = event.data?.data();
+function lastCid(snap) {
+    const cid = snap?.data?.()?.lastMsg?.head?.cid;
+    return typeof cid === 'string' ? cid : null;
+}
+
+export const onChatMessage = onDocumentWritten({ document: 'chats/{chatId}', secrets: pushSecrets }, async (event) => {
+    const chat = event.data?.after?.data();
+    if (!chat) {
+        return;
+    }
+
+    const msg = chat.lastMsg;
     const senderChatPK = typeof msg?.head?.from === 'string' ? msg.head.from : null;
+    const cid = typeof msg?.head?.cid === 'string' ? msg.head.cid : null;
+    if (!senderChatPK || !cid || cid === lastCid(event.data?.before)) {
+        return;
+    }
+
     const actors = await resolveChatActors(event.params.chatId, senderChatPK);
 
     if (!actors) {
@@ -27,12 +41,11 @@ export const onChatMessage = onDocumentCreated({ document: 'chats/{chatId}/messa
         return;
     }
 
-    const [senderBanned, receiverBanned, receiverBlockedSender, pushDocs, chatSnap] = await Promise.all([
+    const [senderBanned, receiverBanned, receiverBlockedSender, pushDocs] = await Promise.all([
         isChatBanned(senderUid),
         isChatBanned(receiverUid),
         isBlocked(receiverUid, senderUid),
         getPushDocs(receiverUid),
-        db.collection('chats').doc(event.params.chatId).get(),
     ]);
     if (senderBanned || receiverBanned) {
         console.info('push skip: chat banned', {
@@ -48,13 +61,6 @@ export const onChatMessage = onDocumentCreated({ document: 'chats/{chatId}/messa
         console.info('push skip: receiver blocked sender', {
             chatId: event.params.chatId,
             senderUid,
-            receiverUid,
-        });
-        return;
-    }
-    if (chatSnap.data()?.lastMsg?.head?.cid !== msg?.head?.cid) {
-        console.info('push skip: non-preview message', {
-            chatId: event.params.chatId,
             receiverUid,
         });
         return;

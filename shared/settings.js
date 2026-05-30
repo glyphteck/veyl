@@ -1,4 +1,5 @@
 import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { AUTOLOCK_MAX_MINUTES, AUTOLOCK_MIN_MINUTES } from './config.js';
 
 export const SEND_ON_SCAN_ENABLED = false;
 
@@ -32,7 +33,7 @@ export function normalizeAutolock(autolock, base = defaultSettings.autolock) {
         ...(autolock || {}),
     };
 
-    if (next.timer !== 'never' && (!Number.isInteger(next.timer) || next.timer < 1 || next.timer > 60)) {
+    if (next.timer !== 'never' && (!Number.isInteger(next.timer) || next.timer < AUTOLOCK_MIN_MINUTES || next.timer > AUTOLOCK_MAX_MINUTES)) {
         throw new Error('bad timer');
     }
     if (typeof next.onHide !== 'boolean') {

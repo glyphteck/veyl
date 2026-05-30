@@ -7,12 +7,11 @@ import { useUser } from '@/components/providers/userprovider';
 import { usePeer } from '@/components/providers/peerprovider';
 import { useWallet } from '@/components/providers/walletprovider';
 import { useDialog } from '@/components/providers/dialogprovider';
-import { canShareAttachmentMsg, canShowMsg, collapseSystemMessages, getLatestReadOutgoingReceipt, isPeerMsg, isReadReceiptMsg, isSystemMsg, setReqTx } from '@glyphteck/shared/chat/messages';
+import { canShareAttachmentMsg, canShowMsg, collapseSystemMessages, getLatestReadOutgoingReceipt, getMessageUnsaveTtlMs, isPeerMsg, isSystemMsg, setReqTx } from '@glyphteck/shared/chat/messages';
 import { useOptimisticMessageReactions } from '@glyphteck/shared/chat/usereactions';
 import { formatUserDisplay, formatFullDateTime } from '@/lib/utils';
 import { getPeerChatPKFromChatId } from '@glyphteck/shared/chat/ids';
 import { getMessageOrderMs } from '@glyphteck/shared/chat/state';
-import { CHAT_RETENTION_SEEN, getMessageRetention, onSeenMessageTtlMs, seenMessageTtlMs } from '@glyphteck/shared/chat/ttl';
 import { useChatMessages } from './usechatmessages';
 import { useState, useRef, useEffect, useCallback, useLayoutEffect, useMemo } from 'react';
 import { canSaveMsgFile, saveMsgFile } from '@/lib/messages';
@@ -76,82 +75,6 @@ function isSavedForeverMsg(msg) {
 
 function canToggleSaveForeverMsg(msg) {
     return !!(msg?.id && !String(msg.id).startsWith('local:') && !msg.pending && !msg.failed && !isSystemMsg(msg));
-}
-
-function positiveMs(value) {
-    const ms = Number(value);
-    return Number.isFinite(ms) && ms > 0 ? ms : null;
-}
-
-function getSavedTtlMs(msg) {
-    return positiveMs(msg?.savedTtl);
-}
-
-function messageOrderMs(message) {
-    const ms = getMessageOrderMs(message);
-    return Number.isFinite(ms) ? ms : null;
-}
-
-function readReceiptFromRecipient(receipt, msg, chatPK, peerChatPK) {
-    const messageFromPeer = isPeerMsg(msg, chatPK);
-    const receiptFromPeer = isPeerMsg(receipt, chatPK);
-    return messageFromPeer ? !receiptFromPeer : receiptFromPeer && (!peerChatPK || receipt?.s === peerChatPK);
-}
-
-function readReceiptCoversMessage(receipt, msg, byKey, chatPK) {
-    const targetKey = typeof receipt?.upto === 'string' ? receipt.upto.trim() : '';
-    if (!targetKey) {
-        return false;
-    }
-    if (targetKey === getMsgKey(msg)) {
-        return true;
-    }
-
-    const target = byKey.get(targetKey);
-    if (target && isPeerMsg(target, chatPK) !== isPeerMsg(msg, chatPK)) {
-        return false;
-    }
-
-    const messageMs = messageOrderMs(msg);
-    const targetMs = messageOrderMs(target) ?? messageOrderMs({ cid: targetKey }) ?? messageOrderMs(receipt);
-    return messageMs != null && targetMs != null && messageMs <= targetMs;
-}
-
-function getMessageSeenAtMs(messages, msg, chatPK, peerChatPK, now = Date.now()) {
-    const byKey = new Map();
-    for (const item of messages || []) {
-        const key = getMsgKey(item);
-        if (key) {
-            byKey.set(key, item);
-        }
-    }
-
-    let seenAt = null;
-    for (const receipt of messages || []) {
-        if (!receipt?.id || String(receipt.id).startsWith('local:') || receipt.pending || receipt.failed || !isReadReceiptMsg(receipt) || !readReceiptFromRecipient(receipt, msg, chatPK, peerChatPK)) {
-            continue;
-        }
-        if (!readReceiptCoversMessage(receipt, msg, byKey, chatPK)) {
-            continue;
-        }
-        const receiptMs = messageOrderMs(receipt);
-        if (receiptMs != null && (seenAt == null || receiptMs < seenAt)) {
-            seenAt = receiptMs;
-        }
-    }
-
-    if (seenAt == null && isPeerMsg(msg, chatPK) && canShowMsg(msg)) {
-        return now;
-    }
-    return seenAt;
-}
-
-function getUnsaveTtlMs(msg, messages, chatPK, peerChatPK, now = Date.now()) {
-    const seenAt = getMessageSeenAtMs(messages, msg, chatPK, peerChatPK, now);
-    if (seenAt != null) {
-        return getMessageRetention(msg) === CHAT_RETENTION_SEEN ? onSeenMessageTtlMs(seenAt) : seenMessageTtlMs(seenAt);
-    }
-    return getSavedTtlMs(msg);
 }
 
 function formatMsgFullDateTime(msg) {
@@ -681,7 +604,7 @@ export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
             const key = getMsgKey(msg);
             const saved = isSavedForeverMsg(msg);
             const targetSaved = !saved;
-            const unsaveTtlMs = saved ? getUnsaveTtlMs(msg, msgs, chatPK, peerChatPK) : null;
+            const unsaveTtlMs = saved ? getMessageUnsaveTtlMs(msg, msgs, chatPK, peerChatPK) : null;
 
             if (key) {
                 setSavingForeverMessages((prev) => new Map(prev).set(key, targetSaved));
@@ -862,7 +785,7 @@ export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
             startDeletingMessage(msg);
 
             try {
-                await deleteMessage(selectedChatId, msg.id);
+                await deleteMessage(selectedChatId, msg);
                 finishDeletingMessage(msg.id, msg);
             } catch (error) {
                 clearDeletingMessage(msg);

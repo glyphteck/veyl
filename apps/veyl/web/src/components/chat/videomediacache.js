@@ -2,13 +2,10 @@
 
 import { getMessagePreviewCacheKey, MESSAGE_PREVIEW_COMPRESS, MESSAGE_PREVIEW_MAX_EDGE, MESSAGE_PREVIEW_MIME } from '@glyphteck/shared/chat/previews';
 import { isExpiredAttachmentMsg } from '@glyphteck/shared/chat/messages';
+import { createObjectUrlCache, revokeObjectUrl } from './objecturlcache';
 
-const videoCache = new Map();
-const videoPosterCache = new Map();
-const MAX_VIDEO_CACHE = 16;
-const MAX_VIDEO_POSTER_CACHE = 40;
-let videoCacheEpoch = 0;
-let videoPosterCacheEpoch = 0;
+const videoCache = createObjectUrlCache({ max: 16 });
+const videoPosterCache = createObjectUrlCache({ max: 40 });
 
 export function getVideoCacheKey(peerChatPK, msg) {
     if (msg?.p && msg?.k) {
@@ -17,117 +14,15 @@ export function getVideoCacheKey(peerChatPK, msg) {
     return `${peerChatPK}:${msg?.p || msg?.localUri || ''}:${msg?.k || msg?.id || msg?.cid || ''}`;
 }
 
-function isPromise(value) {
-    return !!value && typeof value.then === 'function';
-}
-
-function revokeUrl(value) {
-    if (typeof value !== 'string' || !value.startsWith('blob:')) {
-        return;
-    }
-
-    try {
-        URL.revokeObjectURL(value);
-    } catch {}
-}
-
-function trimVideoCache() {
-    if (videoCache.size <= MAX_VIDEO_CACHE) {
-        return;
-    }
-
-    while (videoCache.size > MAX_VIDEO_CACHE) {
-        let dropKey = null;
-        let dropEntry = null;
-        let dropPriority = Infinity;
-
-        for (const [key, entry] of videoCache.entries()) {
-            if (!entry || entry.status !== 'ready' || entry.refs > 0) {
-                continue;
-            }
-            const priority = Number(entry.priority) || 0;
-            if (priority < dropPriority) {
-                dropKey = key;
-                dropEntry = entry;
-                dropPriority = priority;
-            }
-        }
-
-        if (!dropKey) {
-            return;
-        }
-
-        videoCache.delete(dropKey);
-        revokeUrl(dropEntry?.url);
-    }
-}
-
-function getReadyEntry(key) {
-    const entry = videoCache.get(key);
-    return entry?.status === 'ready' ? entry : null;
-}
-
 export function retainVideo(key) {
-    const entry = getReadyEntry(key);
-    if (!entry) {
-        return null;
-    }
-
-    videoCache.set(key, {
-        ...entry,
-        refs: entry.refs + 1,
-    });
-    return entry.url;
+    return videoCache.retain(key);
 }
 
 export function releaseVideo(key) {
-    const entry = getReadyEntry(key);
-    if (!entry) {
-        return;
-    }
-
-    videoCache.set(key, {
-        ...entry,
-        refs: Math.max(0, entry.refs - 1),
-    });
-}
-
-function setPendingEntry(key, promise) {
-    videoCache.set(key, {
-        status: 'pending',
-        promise,
-    });
-}
-
-function setReadyEntry(key, url, options = {}) {
-    const previous = getReadyEntry(key);
-    if (previous?.url && previous.url !== url) {
-        revokeUrl(previous.url);
-    }
-
-    videoCache.set(key, {
-        status: 'ready',
-        url,
-        refs: previous?.refs ?? 0,
-        priority: Math.max(Number(previous?.priority) || 0, Number(options.priority) || 0),
-    });
-    trimVideoCache();
-    return url;
+    videoCache.release(key);
 }
 
 export function clearMsgVideoCache() {
-    videoCacheEpoch += 1;
-    videoPosterCacheEpoch += 1;
-    for (const entry of videoCache.values()) {
-        if (entry?.status === 'ready') {
-            revokeUrl(entry.url);
-        }
-    }
-    for (const entry of videoPosterCache.values()) {
-        if (entry?.status === 'ready') {
-            revokeUrl(entry.url);
-        }
-    }
     videoCache.clear();
     videoPosterCache.clear();
 }
@@ -139,88 +34,44 @@ export function loadVideoObjectUrl(peerChatPK, msg, readMessageFile, options = {
 
     const key = getVideoCacheKey(peerChatPK, msg);
     const expired = isExpiredAttachmentMsg(msg);
-    const cached = expired ? null : getReadyEntry(key);
+    const cached = expired ? null : videoCache.getReady(key);
     if (cached?.url) {
         return Promise.resolve(cached.url);
     }
 
-    const current = expired ? null : videoCache.get(key);
-    if (current?.status === 'pending' && isPromise(current.promise)) {
-        return current.promise;
+    const pending = expired ? null : videoCache.getPendingPromise(key);
+    if (pending) {
+        return pending;
     }
 
-    const epoch = videoCacheEpoch;
+    const epoch = videoCache.epoch;
     const task = Promise.resolve(readMessageFile(peerChatPK, msg))
         .then((bytes) => {
             if (!bytes?.byteLength) {
                 throw new Error('video unavailable');
             }
             const objectUrl = URL.createObjectURL(new Blob([bytes], { type: msg?.m || 'video/mp4' }));
-            if (epoch !== videoCacheEpoch) {
-                revokeUrl(objectUrl);
+            if (epoch !== videoCache.epoch) {
+                revokeObjectUrl(objectUrl);
                 return '';
             }
-            return setReadyEntry(key, objectUrl, options);
+            return videoCache.setReady(key, objectUrl, options);
         })
         .catch((error) => {
             videoCache.delete(key);
             throw error;
         });
 
-    setPendingEntry(key, task);
+    videoCache.setPending(key, task);
     return task;
 }
 
 export function getReadyPoster(key) {
-    const entry = videoPosterCache.get(key);
-    if (entry?.status !== 'ready' || !entry.url) {
-        return '';
-    }
-    videoPosterCache.delete(key);
-    videoPosterCache.set(key, entry);
-    return entry.url;
-}
-
-function trimVideoPosterCache() {
-    while (videoPosterCache.size > MAX_VIDEO_POSTER_CACHE) {
-        let dropKey = null;
-        let dropEntry = null;
-        let dropPriority = Infinity;
-
-        for (const [key, entry] of videoPosterCache.entries()) {
-            if (entry?.status !== 'ready') {
-                continue;
-            }
-            const priority = Number(entry.priority) || 0;
-            if (priority < dropPriority) {
-                dropKey = key;
-                dropEntry = entry;
-                dropPriority = priority;
-            }
-        }
-
-        if (!dropKey) {
-            return;
-        }
-
-        videoPosterCache.delete(dropKey);
-        revokeUrl(dropEntry?.url);
-    }
+    return videoPosterCache.getReadyUrl(key, { touch: true });
 }
 
 function setReadyPoster(key, url, options = {}) {
-    const previous = videoPosterCache.get(key);
-    if (previous?.status === 'ready' && previous.url !== url) {
-        revokeUrl(previous.url);
-    }
-    videoPosterCache.delete(key);
-    videoPosterCache.set(key, {
-        status: 'ready',
-        url,
-        priority: Math.max(Number(previous?.priority) || 0, Number(options.priority) || 0),
-    });
-    trimVideoPosterCache();
-    return url;
+    return videoPosterCache.setReady(key, url, { ...options, touch: true });
 }
 
 function waitForIdle() {
@@ -351,12 +202,12 @@ export function loadVideoPoster(key, src, msg, readMessagePreview, writeMessageP
         }
     }
 
-    const epoch = videoPosterCacheEpoch;
+    const epoch = videoPosterCache.epoch;
     const task = waitForIdle()
         .then(async () => {
             const cachedBytes = typeof readMessagePreview === 'function' ? await readMessagePreview(msg) : null;
             if (cachedBytes?.byteLength) {
-                if (epoch !== videoPosterCacheEpoch) {
+                if (epoch !== videoPosterCache.epoch) {
                     return '';
                 }
                 return setReadyPosterBytes(key, cachedBytes, options);
@@ -365,8 +216,8 @@ export function loadVideoPoster(key, src, msg, readMessagePreview, writeMessageP
                 throw new Error('video poster pending');
             }
             const poster = await drawVideoPoster(src);
-            if (epoch !== videoPosterCacheEpoch) {
-                revokeUrl(poster?.url);
+            if (epoch !== videoPosterCache.epoch) {
+                revokeObjectUrl(poster?.url);
                 return '';
             }
             if (poster?.bytes?.byteLength && typeof writeMessagePreview === 'function') {
@@ -381,7 +232,7 @@ export function loadVideoPoster(key, src, msg, readMessagePreview, writeMessageP
             throw error;
         });
 
-    videoPosterCache.set(key, { status: 'pending', promise: task, src: src || '' });
+    videoPosterCache.setPending(key, task, { src: src || '' });
     return task;
 }
 

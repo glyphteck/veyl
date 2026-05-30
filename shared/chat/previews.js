@@ -1,10 +1,12 @@
+import { CHAT_MESSAGE_PREVIEW_COMPRESS, CHAT_MESSAGE_PREVIEW_MAX_EDGE, CHAT_MESSAGE_PREVIEW_MIN_WIDTH } from '../config.js';
+
 export const MESSAGE_PREVIEW_LABEL = 'preview';
 export const MESSAGE_PREVIEW_CACHE_LABEL = 'preview-v2';
 export const MESSAGE_PREVIEW_MIME = 'image/jpeg';
 export const MESSAGE_PREVIEW_EXT = 'jpg';
-export const MESSAGE_PREVIEW_COMPRESS = 0.94;
-export const MESSAGE_PREVIEW_MIN_WIDTH = 960;
-export const MESSAGE_PREVIEW_MAX_EDGE = 1600;
+export const MESSAGE_PREVIEW_COMPRESS = CHAT_MESSAGE_PREVIEW_COMPRESS;
+export const MESSAGE_PREVIEW_MIN_WIDTH = CHAT_MESSAGE_PREVIEW_MIN_WIDTH;
+export const MESSAGE_PREVIEW_MAX_EDGE = CHAT_MESSAGE_PREVIEW_MAX_EDGE;
 
 export function makeMessagePreviewMedia(message, mimeType = MESSAGE_PREVIEW_MIME) {
     const path = typeof message?.p === 'string' ? message.p.trim() : '';

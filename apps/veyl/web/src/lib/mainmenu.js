@@ -1,13 +1,11 @@
+import { formatBytes } from '@glyphteck/shared/utils';
+
 export const MAINMENU_ROW_HEIGHT = 36;
 export const MAINMENU_LIST_HEIGHT = 384;
 export const MAINMENU_MIN_RENDER_ROWS = 44;
 
 export function formatCacheSize(bytes) {
-    const value = Number(bytes) || 0;
-    if (value < 1024) return `${value} B`;
-    if (value < 1024 * 1024) return `${(value / 1024).toFixed(value < 10 * 1024 ? 1 : 0)} KB`;
-    if (value < 1024 * 1024 * 1024) return `${(value / 1024 / 1024).toFixed(value < 10 * 1024 * 1024 ? 1 : 0)} MB`;
-    return `${(value / 1024 / 1024 / 1024).toFixed(1)} GB`;
+    return formatBytes(bytes, { fallback: '0 B', minValue: 0 });
 }
 
 export function textMatches(row, raw) {

@@ -1,4 +1,6 @@
-export const MAX_USERNAME = 12;
+import { USERNAME_MAX_CHARS } from './config.js';
+
+export const MAX_USERNAME = USERNAME_MAX_CHARS;
 
 const usernameKeyRegex = /^[a-z0-9]$/i;
 const usernameStripRegex = /[^a-z0-9]/g;

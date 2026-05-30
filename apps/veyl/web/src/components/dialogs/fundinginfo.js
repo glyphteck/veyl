@@ -1,30 +1,11 @@
 'use client';
 
-import { FUNDING_TX_PREVIEW_VBYTES, STATIC_DEPOSIT_CLAIM_FEE_SATS } from '@glyphteck/shared/wallet/fees';
+import { FUNDING_TX_PREVIEW_VBYTES, STATIC_DEPOSIT_CLAIM_FEE_SATS, formatOnchainFeeAmount, formatOnchainFeeFormula } from '@glyphteck/shared/wallet/fees';
 import { Button } from '@/components/button';
 import { Card } from '@/components/card';
 import { useBitcoin } from '@/components/providers/bitcoinprovider';
 import { useDialog } from '@/components/providers/dialogprovider';
 import { useUser } from '@/components/providers/userprovider';
-import { renderMoney } from '@/lib/utils';
-
-function formatWholeNumber(value) {
-    return String(value).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-}
-
-function formatSats(value) {
-    const amount = Number(value);
-    if (!Number.isFinite(amount)) return 'updating';
-    const sats = Math.max(0, Math.ceil(amount));
-    return `${formatWholeNumber(sats)} ${sats === 1 ? 'sat' : 'sats'}`;
-}
-
-function formatFeeRate(value) {
-    const rate = Number(value);
-    if (!Number.isFinite(rate)) return 'updating';
-    const formatted = rate >= 10 ? formatWholeNumber(Math.round(rate)) : String(Math.round(rate * 100) / 100);
-    return `${formatted} sat/vB`;
-}
 
 export default function FundingInfo({ data, close }) {
     const bitcoin = useBitcoin();
@@ -36,9 +17,8 @@ export default function FundingInfo({ data, close }) {
         baseSats: STATIC_DEPOSIT_CLAIM_FEE_SATS,
     });
     const fee = estimate?.success ? estimate.onchainEstimate : null;
-    const feeFormula = `${fee?.vbytes ?? FUNDING_TX_PREVIEW_VBYTES} vB x ${formatFeeRate(fee?.feeRateSatsPerVbyte)} + ${formatSats(STATIC_DEPOSIT_CLAIM_FEE_SATS)}`;
-    const feeAmount = Number(fee?.feeAmountSats);
-    const feeDisplay = Number.isFinite(feeAmount) ? renderMoney(Math.max(0, Math.ceil(feeAmount)), settings?.moneyFormat || 'sats', bitcoin.price) : 'updating';
+    const feeFormula = formatOnchainFeeFormula(fee, { vbytes: FUNDING_TX_PREVIEW_VBYTES, baseSats: STATIC_DEPOSIT_CLAIM_FEE_SATS, feeRatePrecision: 2 });
+    const feeDisplay = formatOnchainFeeAmount(fee, settings?.moneyFormat || 'sats', bitcoin.price);
 
     const back = () => {
         if (data?.fundingQr) {

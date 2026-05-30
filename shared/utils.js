@@ -39,6 +39,41 @@ export function formatFullDateTime(timestamp) {
     return `${new Date(timestamp).getMonth() + 1}/${new Date(timestamp).getDate()} ${formatTimeHHMM(timestamp, true)}`;
 }
 
+export function formatDuration(seconds, { hours = true } = {}) {
+    const safe = Math.max(0, Math.floor(Number.isFinite(seconds) ? seconds : 0));
+    const minutes = Math.floor(safe / 60);
+    const rest = safe % 60;
+    if (!hours || minutes < 60) {
+        return `${minutes}:${String(rest).padStart(2, '0')}`;
+    }
+    return `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, '0')}:${String(rest).padStart(2, '0')}`;
+}
+
+export function formatBytes(bytes, options = {}) {
+    const {
+        fallback = null,
+        minValue = 1,
+        unitSeparator = ' ',
+        maxUnit = 'GB',
+    } = options;
+    const value = Number(bytes);
+    if (!Number.isFinite(value) || value < minValue) {
+        return fallback;
+    }
+
+    const units = ['B', 'KB', 'MB', 'GB'];
+    const maxIndex = Math.max(0, units.indexOf(maxUnit));
+    let size = value;
+    let unitIndex = 0;
+    while (size >= 1024 && unitIndex < maxIndex) {
+        size /= 1024;
+        unitIndex += 1;
+    }
+
+    const rounded = size >= 10 || unitIndex === 0 ? Math.round(size) : size.toFixed(1);
+    return `${rounded}${unitSeparator}${units[unitIndex]}`;
+}
+
 export function formatUserDisplay(user, showAtSymbol = false) {
     if (user.username) {
         if (showAtSymbol) {

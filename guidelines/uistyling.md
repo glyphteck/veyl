@@ -11,7 +11,7 @@ Use the existing glass primitives first:
 - `GlassButton` for primary text actions.
 - `GlassIcon` for route buttons, toolbar actions, and compact icon-only actions.
 - `GlassField` for inputs.
-- `GlassView` for glass panels, message bubbles, command chips, and other frosted surfaces.
+- `GlassView` for glass panels, message bubbles, slash-command chips, and other frosted surfaces.
 - `GlassHeader` and `GlassFooter` for pinned top and bottom chrome.
 - `Icon` for lucide icons so theme color and stroke width stay consistent.
 
@@ -120,8 +120,8 @@ Use shadows instead of visible borders for separation. Avoid `border`, `border-*
 
 Typography is direct and heavy:
 
-- Do not set branded, downloaded, or named commercial text fonts. Web base text uses `system-ui, sans-serif`; command/code/seed surfaces may use Tailwind `font-mono`, which resolves to a local system monospace stack and does not bundle font files. Do not add loaded fonts or custom `font-family` stacks. iOS uses React Native's default text family with only size, weight, and variant overrides.
-- Main labels and command/menu labels often use `font-black`.
+- Do not set branded, downloaded, or named commercial text fonts. Web base text uses `system-ui, sans-serif`; code, seed, and slash-command surfaces may use Tailwind `font-mono`, which resolves to a local system monospace stack and does not bundle font files. Do not add loaded fonts or custom `font-family` stacks. iOS uses React Native's default text family with only size, weight, and variant overrides.
+- Main, menu, and slash-command labels often use `font-black`.
 - Toggle items use `font-black`.
 - Keyboard shortcuts use `text-sm font-black tracking-widest text-muted`.
 - Secondary UI copy uses `text-muted`.
@@ -131,7 +131,7 @@ Important explanatory, safety, and legal text should use `text-foreground`, not 
 
 Segmented controls use `ToggleGroup`: root is `shadow flex w-fit items-center rounded-full`; items are `h-9 min-w-9`, `font-black`, separated with left borders, and active state is `bg-foreground text-background`. Tabs follow the same full-pill segmented pattern.
 
-Menus and command surfaces should use the existing components. Dropdown items slide their first children on hover/focus. Main menu search is the app-wide navigation surface; keep it in `apps/veyl/web/src/components/dialogs/mainmenu.js` so it can stay lazy-mounted and virtualized.
+Menus and search surfaces should use the existing components. Dropdown items slide their first children on hover/focus. Main menu search is the app-wide navigation surface; keep it in `apps/veyl/web/src/components/dialogs/mainmenu.js` so it can stay lazy-mounted and virtualized.
 
 Web uses `160ms` as the Tailwind default transition duration in `apps/veyl/web/src/app/globals.css`. Do not add explicit `duration-[160ms]`, `duration-160`, `duration-150`, or `duration-200` classes for normal transitions; rely on `transition-*` alone. Use explicit durations only when the animation is intentionally outside the default, such as longer chart/camera transitions, toast lifetimes, custom JavaScript row animation constants, media playback, or loading spinners.
 

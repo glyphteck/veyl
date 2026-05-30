@@ -1,5 +1,6 @@
 import { filterChatMessages } from '../../ids.js';
 import { hasStoredFileRef, isExpiredAttachmentMsg } from '../../messages.js';
+import { IDLE_CALLBACK_MIN_TIMEOUT_MS } from '../../../config.js';
 
 export function isRemoteMediaMessage(message, mediaConfig) {
     const path = typeof message?.p === 'string' ? message.p.trim() : '';
@@ -25,7 +26,7 @@ export function mediaKey(peerChatPK, message) {
 export function waitForIdle(delayMs) {
     return new Promise((resolve) => {
         if (typeof globalThis.requestIdleCallback === 'function') {
-            globalThis.requestIdleCallback(() => resolve(), { timeout: Math.max(50, Number(delayMs) || 0) });
+            globalThis.requestIdleCallback(() => resolve(), { timeout: Math.max(IDLE_CALLBACK_MIN_TIMEOUT_MS, Number(delayMs) || 0) });
             return;
         }
         setTimeout(resolve, Math.max(0, Number(delayMs) || 0));

@@ -1,8 +1,10 @@
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
-import admin, { db, OK } from '../lib/admin.js';
+import { createHash } from 'node:crypto';
+import admin, { db, FieldValue, OK } from '../lib/admin.js';
 
 const MEDIA_PATH_RE = /^media\/[0-9a-fA-F]{32}\/main$/;
 const MEDIA_STAY_RE = /^[A-Za-z0-9_-]{8,80}$/;
+const MEDIA_STAY_KEY_RE = /^[A-Za-z0-9_-]{32,128}$/;
 
 function cleanMediaPath(value) {
     const path = typeof value === 'string' ? value.trim() : '';
@@ -24,6 +26,14 @@ function cleanMediaStay(value) {
     return stayId;
 }
 
+function cleanMediaStayKey(value) {
+    const stayKey = typeof value === 'string' ? value.trim() : '';
+    if (!MEDIA_STAY_KEY_RE.test(stayKey)) {
+        throw new HttpsError('invalid-argument', 'invalid media stay key');
+    }
+    return stayKey;
+}
+
 function mediaDocRef(mediaId) {
     return db.collection('mediaStays').doc(mediaId);
 }
@@ -34,6 +44,16 @@ function mediaStayRef(mediaId, stayId) {
 
 function cleanStayCount(value) {
     return Number.isInteger(value) && value > 0 ? value : 0;
+}
+
+function stayKeyHash(path, stayId, stayKey) {
+    return createHash('sha256').update(`${path}\n${stayId}\n${stayKey}`).digest('base64url');
+}
+
+function requireStayKeyMatch(staySnap, keyHash) {
+    if (staySnap.data()?.keyHash !== keyHash) {
+        throw new HttpsError('permission-denied', 'media stay key');
+    }
 }
 
 async function setTemporaryHold(path, hold, { ignoreMissing = false } = {}) {
@@ -49,9 +69,11 @@ async function setTemporaryHold(path, hold, { ignoreMissing = false } = {}) {
     });
 }
 
-async function setMediaStay(mediaId, stayId, saved) {
+async function setMediaStay(path, stayId, stayKey, saved) {
+    const mediaId = mediaIdFromPath(path);
     const mediaRef = mediaDocRef(mediaId);
     const stayRef = mediaStayRef(mediaId, stayId);
+    const keyHash = stayKeyHash(path, stayId, stayKey);
 
     return db.runTransaction(async (tx) => {
         const [mediaSnap, staySnap] = await Promise.all([tx.get(mediaRef), tx.get(stayRef)]);
@@ -60,18 +82,20 @@ async function setMediaStay(mediaId, stayId, saved) {
 
         if (saved) {
             if (exists) {
+                requireStayKeyMatch(staySnap, keyHash);
                 return { hold: null, stayCount: count };
             }
 
             const stayCount = count + 1;
-            tx.set(stayRef, {});
-            tx.set(mediaRef, { stayCount }, { merge: true });
+            tx.set(stayRef, { keyHash, updatedAt: FieldValue.serverTimestamp() });
+            tx.set(mediaRef, { stayCount, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
             return { hold: count === 0 ? true : null, stayCount };
         }
 
         if (!exists) {
             return { hold: null, stayCount: count };
         }
+        requireStayKeyMatch(staySnap, keyHash);
 
         const stayCount = Math.max(0, count - 1);
         tx.delete(stayRef);
@@ -84,25 +108,23 @@ async function setMediaStay(mediaId, stayId, saved) {
     });
 }
 
-async function rollbackSavedMediaStay(mediaId, stayId) {
-    await setMediaStay(mediaId, stayId, false).catch(() => {});
+async function rollbackSavedMediaStay(path, stayId, stayKey) {
+    await setMediaStay(path, stayId, stayKey, false).catch(() => {});
 }
 
-async function saveMediaStay(path, stayId) {
-    const mediaId = mediaIdFromPath(path);
-    const update = await setMediaStay(mediaId, stayId, true);
+async function saveMediaStay(path, stayId, stayKey) {
+    const update = await setMediaStay(path, stayId, stayKey, true);
     if (update.hold === true) {
         await setTemporaryHold(path, true).catch(async (error) => {
-            await rollbackSavedMediaStay(mediaId, stayId);
+            await rollbackSavedMediaStay(path, stayId, stayKey);
             throw error;
         });
     }
     return update;
 }
 
-async function dropMediaStay(path, stayId) {
-    const mediaId = mediaIdFromPath(path);
-    const update = await setMediaStay(mediaId, stayId, false);
+async function dropMediaStay(path, stayId, stayKey) {
+    const update = await setMediaStay(path, stayId, stayKey, false);
     if (update.hold === false) {
         await setTemporaryHold(path, false, { ignoreMissing: true });
     }
@@ -121,10 +143,11 @@ async function requireSignedInMediaRequest(auth, data) {
 export const setMediaSaved = onCall(async ({ auth, data }) => {
     const path = await requireSignedInMediaRequest(auth, data);
     const stayId = cleanMediaStay(data?.stayId);
+    const stayKey = cleanMediaStayKey(data?.stayKey);
     if (data?.saved === false) {
-        await dropMediaStay(path, stayId);
+        await dropMediaStay(path, stayId, stayKey);
     } else {
-        await saveMediaStay(path, stayId);
+        await saveMediaStay(path, stayId, stayKey);
     }
     return OK;
 });

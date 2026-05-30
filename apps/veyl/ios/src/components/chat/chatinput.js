@@ -416,6 +416,7 @@ function ChatInput({ onLayout, onSend, onEditMessage, onSendImage, onSendAttachm
             const result = await ImagePicker.launchImageLibraryAsync({
                 mediaTypes: ['images', 'videos'],
                 quality: 0.85,
+                shouldDownloadFromNetwork: true,
             });
             mark('chat.imagePicker.launch.done', { canceled: !!result.canceled, assets: result.assets?.length || 0, firstType: result.assets?.[0]?.mimeType || '', firstUri: result.assets?.[0]?.uri || '' });
 
@@ -423,8 +424,9 @@ function ChatInput({ onLayout, onSend, onEditMessage, onSendImage, onSendAttachm
             mark('chat.imagePicker.send.start', { mimeType: result.assets[0]?.mimeType || '', width: result.assets[0]?.width || 0, height: result.assets[0]?.height || 0, fileSize: result.assets[0]?.fileSize || result.assets[0]?.size || 0 });
             Promise.resolve(onSendImage?.(result.assets[0])).catch(() => {});
         } catch (e) {
-            mark('chat.imagePicker.error', { message: e?.message || String(e), code: e?.code || '' });
+            mark('chat.imagePicker.error', { message: e?.message || String(e), code: e?.code || '', type: e?.name || e?.constructor?.name || '' });
             console.warn('chat image picker failed', e);
+            Alert.alert('Picker failed', 'Could not open the selected media. Please try another photo or video.');
         }
     }, [onSendImage]);
 

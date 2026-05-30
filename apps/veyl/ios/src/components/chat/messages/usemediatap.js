@@ -2,81 +2,161 @@ import { useCallback, useEffect, useMemo, useRef } from 'react';
 import * as Haptics from 'expo-haptics';
 import { Gesture } from 'react-native-gesture-handler';
 
-const TAP_DECISION_MS = 180;
-const OPEN_BLOCK_MS = 420;
+const MEDIA_TAP_PAIR_MS = 260;
+const MEDIA_REACTION_BURST_MS = 420;
+const MEDIA_TAP_MAX_DURATION_MS = 360;
+const MEDIA_TAP_MAX_DISTANCE = 24;
 
-export function useMediaTapGesture({ disabled = false, msg, onLike, onOpen }) {
-    const lastTapRef = useRef(0);
-    const openBlockUntilRef = useRef(0);
-    const tapTimerRef = useRef(null);
+function blockGesture(gesture, blockExternalGestures) {
+    const gestures = (Array.isArray(blockExternalGestures) ? blockExternalGestures : [blockExternalGestures]).filter(Boolean);
+    return gestures.length ? gesture.blocksExternalGesture(...gestures) : gesture;
+}
+
+function disabledTapGesture() {
+    return Gesture.Tap().enabled(false);
+}
+
+export function useMediaTapGesture({ blockExternalGestures, disabled = false, msg, onLike, onOpen }) {
     const canLike = typeof onLike === 'function';
+    const canOpen = !disabled && typeof onOpen === 'function';
+    const latestRef = useRef({ canLike, canOpen, msg, onLike, onOpen });
+    const pendingTapRef = useRef({ at: 0, openOnExpire: false, secondDown: false, timeoutId: null });
+    const reactionBurstUntilRef = useRef(0);
 
-    useEffect(
-        () => () => {
-            if (tapTimerRef.current) {
-                clearTimeout(tapTimerRef.current);
-                tapTimerRef.current = null;
-            }
-        },
-        []
-    );
+    latestRef.current = { canLike, canOpen, msg, onLike, onOpen };
 
-    const triggerLike = useCallback(() => {
-        if (!canLike) {
+    const clearPendingTap = useCallback(() => {
+        const pending = pendingTapRef.current;
+        if (pending.timeoutId) {
+            clearTimeout(pending.timeoutId);
+        }
+        pendingTapRef.current = { at: 0, openOnExpire: false, secondDown: false, timeoutId: null };
+    }, []);
+
+    useEffect(() => clearPendingTap, [clearPendingTap]);
+
+    const react = useCallback(() => {
+        const latest = latestRef.current;
+        if (!latest.canLike || typeof latest.onLike !== 'function') {
             return;
         }
         Haptics.selectionAsync().catch(() => {});
-        onLike(msg);
-    }, [canLike, msg, onLike]);
+        latest.onLike(latest.msg);
+    }, []);
+
+    const open = useCallback(() => {
+        const latest = latestRef.current;
+        if (!latest.canOpen || typeof latest.onOpen !== 'function') {
+            return;
+        }
+        latest.onOpen();
+    }, []);
+
+    const startPendingTap = useCallback(
+        (at, openOnExpire) => {
+            clearPendingTap();
+            pendingTapRef.current = {
+                at,
+                openOnExpire,
+                secondDown: false,
+                timeoutId: setTimeout(() => {
+                    const pending = pendingTapRef.current;
+                    const shouldOpen = pending.at === at && pending.openOnExpire;
+                    pendingTapRef.current = { at: 0, openOnExpire: false, secondDown: false, timeoutId: null };
+                    if (shouldOpen) {
+                        open();
+                    }
+                }, MEDIA_TAP_PAIR_MS),
+            };
+        },
+        [clearPendingTap, open]
+    );
 
     const handleTap = useCallback(() => {
+        const latest = latestRef.current;
         const now = Date.now();
-        const isDoubleTap = canLike && now - lastTapRef.current <= TAP_DECISION_MS;
+        const pending = pendingTapRef.current;
+        const doubleTap = latest.canLike && pending.at > 0 && now - pending.at <= MEDIA_TAP_PAIR_MS;
+        const pairedAttempt = pending.secondDown;
 
-        if (isDoubleTap) {
-            lastTapRef.current = 0;
-            openBlockUntilRef.current = now + OPEN_BLOCK_MS;
-            if (tapTimerRef.current) {
-                clearTimeout(tapTimerRef.current);
-                tapTimerRef.current = null;
-            }
-            triggerLike();
+        if (doubleTap) {
+            clearPendingTap();
+            reactionBurstUntilRef.current = now + MEDIA_REACTION_BURST_MS;
+            react();
             return;
         }
 
-        lastTapRef.current = now;
-        if (tapTimerRef.current) {
-            clearTimeout(tapTimerRef.current);
-            tapTimerRef.current = null;
-        }
-
-        if (now < openBlockUntilRef.current) {
-            lastTapRef.current = now;
-            openBlockUntilRef.current = now + OPEN_BLOCK_MS;
+        if (pairedAttempt) {
+            clearPendingTap();
             return;
         }
 
-        if (!disabled && typeof onOpen === 'function') {
-            tapTimerRef.current = setTimeout(() => {
-                tapTimerRef.current = null;
-                lastTapRef.current = 0;
-                onOpen();
-            }, TAP_DECISION_MS);
+        clearPendingTap();
+        if (!latest.canLike) {
+            open();
+            return;
         }
-    }, [canLike, disabled, onOpen, triggerLike]);
 
-    return useMemo(
+        const inReactionBurst = now <= reactionBurstUntilRef.current;
+        if (inReactionBurst) {
+            reactionBurstUntilRef.current = now + MEDIA_REACTION_BURST_MS;
+        }
+        startPendingTap(now, latest.canOpen && !inReactionBurst);
+    }, [clearPendingTap, open, react, startPendingTap]);
+
+    const holdPendingTap = useCallback(() => {
+        const latest = latestRef.current;
+        const pending = pendingTapRef.current;
+        if (!latest.canLike || !pending.at) {
+            return;
+        }
+
+        if (Date.now() - pending.at > MEDIA_TAP_PAIR_MS) {
+            clearPendingTap();
+            return;
+        }
+
+        if (pending.timeoutId) {
+            clearTimeout(pending.timeoutId);
+        }
+        pendingTapRef.current = { ...pending, secondDown: true, timeoutId: null };
+    }, [clearPendingTap]);
+
+    const cancelHeldTap = useCallback(() => {
+        if (pendingTapRef.current.secondDown) {
+            clearPendingTap();
+        }
+    }, [clearPendingTap]);
+
+    const tap = useMemo(
         () =>
-            Gesture.Tap()
-                .enabled(!disabled || canLike)
-                .maxDuration(240)
-                .maxDistance(18)
-                .runOnJS(true)
-                .onEnd((_event, success) => {
-                    if (success) {
-                        handleTap();
-                    }
-                }),
-        [canLike, disabled, handleTap]
+            blockGesture(
+                Gesture.Tap()
+                    .enabled(canLike || canOpen)
+                    .maxDuration(MEDIA_TAP_MAX_DURATION_MS)
+                    .maxDistance(MEDIA_TAP_MAX_DISTANCE)
+                    .shouldCancelWhenOutside(false)
+                    .runOnJS(true)
+                    .onTouchesDown(holdPendingTap)
+                    .onEnd((_event, success) => {
+                        if (success) {
+                            handleTap();
+                        }
+                    })
+                    .onFinalize((_event, success) => {
+                        if (!success) {
+                            cancelHeldTap();
+                        }
+                    }),
+                blockExternalGestures
+            ),
+        [blockExternalGestures, cancelHeldTap, canLike, canOpen, handleTap, holdPendingTap]
     );
+
+    return useMemo(() => {
+        if (canLike || canOpen) {
+            return tap;
+        }
+        return disabledTapGesture();
+    }, [canLike, canOpen, tap]);
 }

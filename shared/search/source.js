@@ -1,7 +1,8 @@
+import { SEARCH_DEBOUNCE_MS } from '../config.js';
 import { parseQuery } from './query.js';
 import { mergeProfiles } from './merge.js';
 
-const DEBOUNCE_MS = 300;
+const DEBOUNCE_MS = SEARCH_DEBOUNCE_MS;
 
 // A "source" wires a parser + a remote fetcher + result caching for the
 // generic search hook. The profile source is the only one we have today;

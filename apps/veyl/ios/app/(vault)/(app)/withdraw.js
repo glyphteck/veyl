@@ -3,8 +3,8 @@ import { Alert, Keyboard, Pressable, Text, TextInput, View } from 'react-native'
 import { router, useLocalSearchParams } from 'expo-router';
 import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import { PiggyBank, ScanQrCode } from 'lucide-react-native';
-import { toSats, toDisplay, renderMoney } from '@glyphteck/shared/utils';
-import { COOPERATIVE_EXIT_FLAT_FEE_SATS, COOPERATIVE_EXIT_TX_VBYTES, getWithdrawalFeeRisk } from '@glyphteck/shared/wallet/fees';
+import { toSats, toDisplay } from '@glyphteck/shared/utils';
+import { COOPERATIVE_EXIT_FLAT_FEE_SATS, COOPERATIVE_EXIT_TX_VBYTES, formatOnchainFeeAmount, getWithdrawalFeeRisk } from '@glyphteck/shared/wallet/fees';
 import { isAddressOnNetwork, isMainnet } from '@glyphteck/shared/network';
 
 import { useBitcoin } from '@/providers/bitcoinprovider';
@@ -25,10 +25,6 @@ function balanceToSats(balance) {
     const value = Number(balance);
     if (!Number.isFinite(value) || value < 0) return 0n;
     return BigInt(Math.floor(value));
-}
-
-function formatSatsLabel(value, moneyFormat, price) {
-    return renderMoney(String(value), moneyFormat || 'sats', price);
 }
 
 export default function Withdraw() {
@@ -116,7 +112,7 @@ export default function Withdraw() {
     const canSubmit = validSats > 0n && addressOnNetwork && !isSubmitting;
     const canSetMax = balanceSats != null && balanceSats > 0n && !isSubmitting;
     const hasFeeEstimate = feeAmountSats != null;
-    const feeText = hasFeeEstimate ? formatSatsLabel(feeAmountSats, settings?.moneyFormat, bitcoin.price) : 'updating';
+    const feeText = formatOnchainFeeAmount(feeEstimate, settings?.moneyFormat, bitcoin.price);
     const feeColor = withdrawalFeeRisk?.high ? theme.destructive : theme.foreground;
     const buttonLabel = isSubmitting ? 'withdrawing...' : buttonFeedback || 'withdraw';
     const lockRoute = useCallback((ms = 1200) => {

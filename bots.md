@@ -29,8 +29,9 @@ When enabled, a bot:
 - mirrors all incoming chat messages (text, attachments) back to the sender
 - pays any incoming payment request if funded, then sends a mirrored request back for the same amount
 - replies with an underfunded message if it can't afford a request
-- appends an encrypted read receipt for the latest viewed peer message without changing the chat preview
-- ignores encrypted control payloads such as read receipts and reactions
+- appends encrypted read receipt and hidden-message checkpoint controls for the latest processed peer message before sending its mirrored reply, without changing the chat preview
+- ignores encrypted control payloads such as read receipts, reactions, and hidden-message checkpoints
+- keeps message TTL dumb like the clients: new messages use the standard 21-day TTL, saved messages use `ttl: null`, and the runtime does not shorten TTL after read handling
 - accepts incoming transfers passively (balance updates automatically via Spark events)
 
 Guardrails:
@@ -65,11 +66,12 @@ Message handling:
 - text messages: decrypted and mirrored back
 - attachments: decrypted, re-encrypted under the bot's keys, uploaded as a fresh copy, and sent back
 - payment requests: paid if the bot has sufficient balance, original request patched with the tx id, then a mirrored request sent back for the same amount
-- read receipts: appended as encrypted `t: 'rr'` control messages and sent without updating `lastMsg`
-- reactions: encrypted `t: 'rxn'` control messages; skipped by the bot runtime instead of mirrored
+- read receipts: appended as encrypted `t: 'rr'` control messages before mirrored replies and sent without updating `lastMsg`
+- hidden checkpoints: appended as encrypted `t: 'hid'` control messages with the bot read receipt, because the headless runtime has no chat UI to keep those messages visible
+- reactions and incoming hidden checkpoints: encrypted control messages; skipped by the bot runtime instead of mirrored
 - incoming transfers: accepted passively — Spark claims them automatically and the runtime refreshes the balance snapshot
 
-Job serialization uses `queueMapJob` to ensure per-chat and per-wallet work runs sequentially without blocking other chats. The runtime also stores per-chat read checkpoints under `bots/{uid}/reads/{chatId}` and writes bot replies with deterministic message IDs derived from the source message, so a restart or retry cannot mirror the same source message into duplicate bot texts.
+Job serialization uses `queueMapJob` to ensure per-chat and per-wallet work runs sequentially without blocking other chats. The runtime also stores per-chat read checkpoints under `bots/{uid}/reads/{chatId}` and writes bot replies and bot-authored controls with deterministic message IDs derived from the source message, so a restart or retry cannot mirror the same source message into duplicate bot texts or duplicate bot read controls.
 
 ### Entry Point (`apps/veyl/bot/src/index.js`)
 
@@ -86,7 +88,7 @@ Reads and writes bot seed material to Google Cloud Secret Manager. All bot seeds
 
 ### Admin / Firebase (`apps/veyl/bot/src/admin.js`)
 
-Initializes `firebase-admin` for the bot process. Reads project config from `FIREBASE_CONFIG` and service account from `GOOGLE_SERVICE_ACCOUNT` environment variables, with sensible defaults. Exports `db`, `Timestamp`, `FieldValue`, and `projectId`.
+Initializes `firebase-admin` for the bot process from platform/default credentials plus `FIREBASE_CONFIG` when present. Exports `db`, `Timestamp`, `FieldValue`, and `projectId`.
 
 ### Provisioning (`apps/veyl/bot/src/newbot.js`)
 

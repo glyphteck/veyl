@@ -1,6 +1,7 @@
-import { requireAvatarStep } from '@/lib/routeguards';
+'use client';
 
-export default async function GetAvatarLayout({ children }) {
-    await requireAvatarStep();
-    return children;
+import { OnboardingGate } from '@/lib/routeguards';
+
+export default function GetAvatarLayout({ children }) {
+    return <OnboardingGate step="avatar">{children}</OnboardingGate>;
 }

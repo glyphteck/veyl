@@ -1,3 +1,4 @@
+import { CHAT_PAIR_CACHE_LIMIT } from '../config.js';
 import { closeChatPair, getChatId, hasMsgData, openChatPair, openMsg, resealMsgBody, sealMsg } from '../crypto/chat.js';
 import { orderChatKeys } from '../crypto/pair.js';
 import { putBotAttachment, readBotAttachment } from './storage.js';
@@ -6,7 +7,7 @@ import { openChatSettingsForPair } from '../chat/settings.js';
 import { cleanChatRetention, newMessageTtlMs, withMessageRetention } from '../chat/ttl.js';
 
 const pairCache = new Map();
-const MAX_PAIR_CACHE = 256;
+const MAX_PAIR_CACHE = CHAT_PAIR_CACHE_LIMIT;
 
 function getPairKey(chatPK, peerChatPK) {
     if (!chatPK || !peerChatPK) {
@@ -81,6 +82,23 @@ function makeUpdatedChatLastMsg(lastMsg, fields = {}) {
     };
 }
 
+function isAlreadyExists(error) {
+    const code = error?.code;
+    if (code === 6 || code === '6') {
+        return true;
+    }
+    const label = String(code ?? error?.details ?? error?.message ?? '').toUpperCase();
+    return label.includes('ALREADY_EXISTS') || /already exists/i.test(String(error?.message ?? ''));
+}
+
+export async function hasBotMsg(db, chatId, msgId) {
+    if (!db || !chatId || !msgId) {
+        return false;
+    }
+    const snap = await db.collection('chats').doc(chatId).collection('messages').doc(msgId).get();
+    return snap.exists;
+}
+
 export async function decryptBotMsg(msgData, userChatPK, userChatPrivKey, peerChatPK) {
     if (!hasMsgData(msgData) || !userChatPK || !userChatPrivKey || !peerChatPK) {
         return null;
@@ -118,9 +136,6 @@ export async function sendBotMsg(db, FieldValue, senderChatPK, senderChatPrivKey
     const rawBody = typeof body?.toUint8Array === 'function' ? Buffer.from(body.toUint8Array()) : body;
     const chatRef = db.collection('chats').doc(chatId);
     const msgRef = msgId ? chatRef.collection('messages').doc(msgId) : chatRef.collection('messages').doc();
-    if (msgId && (await msgRef.get()).exists) {
-        return { chatId, msgId, skipped: true };
-    }
     const msgData = {
         head,
         body: rawBody,
@@ -129,11 +144,22 @@ export async function sendBotMsg(db, FieldValue, senderChatPK, senderChatPrivKey
     };
 
     const batch = db.batch();
-    batch.set(msgRef, msgData);
+    if (msgId) {
+        batch.create(msgRef, msgData);
+    } else {
+        batch.set(msgRef, msgData);
+    }
     if (updateLastMsg) {
         batch.set(chatRef, { participants: sortedKeys, lastMsg: makeChatLastMsg(msgData), ts: FieldValue.serverTimestamp() }, { mergeFields: ['participants', 'lastMsg', 'ts'] });
     }
-    await batch.commit();
+    try {
+        await batch.commit();
+    } catch (error) {
+        if (msgId && isAlreadyExists(error)) {
+            return { chatId, msgId, skipped: true };
+        }
+        throw error;
+    }
 
     return { chatId, msgId: msgRef.id };
 }

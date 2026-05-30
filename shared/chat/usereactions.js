@@ -1,7 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { CHAT_REACTION_WRITE_DELAY_MS } from '../config.js';
 import { DEFAULT_REACTION_EMOJI, MAX_REACTIONS, getMsgReactions } from './messages.js';
+
+export const DEFAULT_REACTION_WRITE_DELAY_MS = CHAT_REACTION_WRITE_DELAY_MS;
 
 function msgKey(message) {
     return message?.cid || message?.id || null;
@@ -50,6 +53,43 @@ function withActorReaction(message, actor, reaction, chatPK, peerChatPK) {
     return orderReactions(reaction ? [...current, reaction] : current, chatPK, peerChatPK);
 }
 
+function latestMessageForKey(messageMap, id, fallback) {
+    return (id && messageMap?.get?.(id)) || fallback;
+}
+
+function clearWriteTimer(entry) {
+    if (entry?.timeoutId) {
+        clearTimeout(entry.timeoutId);
+        entry.timeoutId = null;
+    }
+}
+
+function clearWriteTimers(writes) {
+    for (const entry of writes?.values?.() || []) {
+        clearWriteTimer(entry);
+    }
+}
+
+function sentReactionCid(result) {
+    return typeof result?.cid === 'string' && result.cid ? result.cid : '';
+}
+
+function writeSettled(entry, desiredKey, messageMap) {
+    if (!entry) {
+        return true;
+    }
+    if (entry.writing) {
+        return false;
+    }
+    if (!entry.hasSent) {
+        return true;
+    }
+    if (entry.sentKey !== desiredKey) {
+        return false;
+    }
+    return !entry.sentCid || messageMap?.has?.(entry.sentCid);
+}
+
 export function useOptimisticMessageReactions({
     chatId,
     chatPK,
@@ -65,6 +105,7 @@ export function useOptimisticMessageReactions({
     const writesRef = useRef(new Map());
     const scopeRef = useRef(scopeKey);
     const messagesByKeyRef = useRef(new Map());
+    const flushWriteRef = useRef(null);
     const messageMap = useMemo(() => messagesByKey(messages), [messages]);
 
     useEffect(() => {
@@ -77,9 +118,12 @@ export function useOptimisticMessageReactions({
 
     useEffect(() => {
         scopeRef.current = scopeKey;
+        clearWriteTimers(writesRef.current);
         writesRef.current.clear();
         overridesRef.current = new Map();
         setOverrides(new Map());
+
+        return () => clearWriteTimers(writesRef.current);
     }, [scopeKey]);
 
     const setOverride = useCallback((id, reaction) => {
@@ -103,19 +147,57 @@ export function useOptimisticMessageReactions({
         });
     }, []);
 
+    const scheduleFlush = useCallback((id) => {
+        const entry = writesRef.current.get(id);
+        if (!entry) {
+            return;
+        }
+
+        clearWriteTimer(entry);
+        entry.timeoutId = setTimeout(() => {
+            const current = writesRef.current.get(id);
+            if (!current) {
+                return;
+            }
+            current.timeoutId = null;
+            flushWriteRef.current?.(id);
+        }, DEFAULT_REACTION_WRITE_DELAY_MS);
+    }, []);
+
+    const deleteWrite = useCallback(
+        (id) => {
+            clearWriteTimer(writesRef.current.get(id));
+            writesRef.current.delete(id);
+            clearOverride(id);
+        },
+        [clearOverride]
+    );
+
+    const reactionsForMessage = useCallback(
+        (message, overrideMap) => {
+            const id = msgKey(message);
+            const latest = latestMessageForKey(messagesByKeyRef.current, id, message);
+            if (id && overrideMap?.has?.(id)) {
+                return withActorReaction(latest, chatPK, overrideMap.get(id), chatPK, peerChatPK);
+            }
+            return chatReactions(latest, chatPK, peerChatPK);
+        },
+        [chatPK, peerChatPK]
+    );
+
     const flushWrite = useCallback(
         (id) => {
             const entry = writesRef.current.get(id);
             if (!entry || entry.writing || !chatId || !peerChatPK || typeof sendReaction !== 'function') {
                 return;
             }
+            clearWriteTimer(entry);
 
             const desired = entry.desired;
             const sentKey = reactionStateKey(desired);
             const target = entry.target || id;
             if (!target) {
-                writesRef.current.delete(id);
-                clearOverride(id);
+                deleteWrite(id);
                 return;
             }
 
@@ -124,7 +206,7 @@ export function useOptimisticMessageReactions({
             entry.scopeKey = scopeKey;
 
             sendReaction(peerChatPK, target, desired?.emoji ?? null)
-                .then(() => {
+                .then((result) => {
                     if (scopeRef.current !== entry.scopeKey) {
                         return;
                     }
@@ -133,16 +215,18 @@ export function useOptimisticMessageReactions({
                         return;
                     }
                     current.writing = false;
+                    current.hasSent = true;
+                    current.sentKey = sentKey;
+                    current.sentCid = sentReactionCid(result);
                     if (reactionStateKey(current.desired) !== sentKey) {
-                        flushWrite(id);
+                        scheduleFlush(id);
                         return;
                     }
 
                     const latest = messagesByKeyRef.current.get(id);
                     const latestReaction = latest ? actorReaction(chatReactions(latest, chatPK, peerChatPK), chatPK) : null;
-                    if (latest && reactionStateKey(latestReaction) === sentKey) {
-                        writesRef.current.delete(id);
-                        clearOverride(id);
+                    if (latest && reactionStateKey(latestReaction) === sentKey && writeSettled(current, sentKey, messagesByKeyRef.current)) {
+                        deleteWrite(id);
                     }
                 })
                 .catch((error) => {
@@ -155,17 +239,20 @@ export function useOptimisticMessageReactions({
                     }
                     current.writing = false;
                     if (reactionStateKey(current.desired) !== sentKey) {
-                        flushWrite(id);
+                        scheduleFlush(id);
                         return;
                     }
 
-                    writesRef.current.delete(id);
-                    clearOverride(id);
+                    deleteWrite(id);
                     onError?.(error);
                 });
         },
-        [chatId, chatPK, clearOverride, onError, peerChatPK, scopeKey, sendReaction]
+        [chatId, chatPK, deleteWrite, onError, peerChatPK, scheduleFlush, scopeKey, sendReaction]
     );
+
+    useEffect(() => {
+        flushWriteRef.current = flushWrite;
+    }, [flushWrite]);
 
     useEffect(() => {
         if (!overrides.size) {
@@ -178,18 +265,21 @@ export function useOptimisticMessageReactions({
             const message = messageMap.get(id);
             if (!message) {
                 nextOverrides.delete(id);
+                clearWriteTimer(writesRef.current.get(id));
                 writesRef.current.delete(id);
                 changed = true;
                 continue;
             }
 
             const latestReaction = actorReaction(chatReactions(message, chatPK, peerChatPK), chatPK);
-            if (reactionStateKey(latestReaction) === reactionStateKey(desired)) {
+            const desiredKey = reactionStateKey(desired);
+            if (reactionStateKey(latestReaction) === desiredKey) {
                 const entry = writesRef.current.get(id);
-                if (entry?.writing) {
+                if (!writeSettled(entry, desiredKey, messageMap)) {
                     continue;
                 }
                 nextOverrides.delete(id);
+                clearWriteTimer(entry);
                 writesRef.current.delete(id);
                 changed = true;
             }
@@ -203,13 +293,9 @@ export function useOptimisticMessageReactions({
 
     const getReactions = useCallback(
         (message) => {
-            const id = msgKey(message);
-            if (id && overrides.has(id)) {
-                return withActorReaction(message, chatPK, overrides.get(id), chatPK, peerChatPK);
-            }
-            return chatReactions(message, chatPK, peerChatPK);
+            return reactionsForMessage(message, overrides);
         },
-        [chatPK, overrides, peerChatPK]
+        [overrides, reactionsForMessage]
     );
 
     const toggleReaction = useCallback(
@@ -219,7 +305,8 @@ export function useOptimisticMessageReactions({
                 return [];
             }
 
-            const current = getReactions(message);
+            const latest = latestMessageForKey(messagesByKeyRef.current, id, message);
+            const current = reactionsForMessage(latest, overridesRef.current);
             const desired = actorReaction(current, chatPK) ? null : { emoji, user: chatPK };
             setOverride(id, desired);
 
@@ -230,10 +317,10 @@ export function useOptimisticMessageReactions({
                 desired,
                 writing: currentWrite?.writing === true,
             });
-            flushWrite(id);
-            return withActorReaction(message, chatPK, desired, chatPK, peerChatPK);
+            scheduleFlush(id);
+            return withActorReaction(latest, chatPK, desired, chatPK, peerChatPK);
         },
-        [chatPK, emoji, flushWrite, getReactions, peerChatPK, setOverride]
+        [chatPK, emoji, peerChatPK, reactionsForMessage, scheduleFlush, setOverride]
     );
 
     return {

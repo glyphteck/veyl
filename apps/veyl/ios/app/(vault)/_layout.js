@@ -12,6 +12,7 @@ import { useTheme } from '@/providers/themeprovider';
 import { useUser } from '@/providers/userprovider';
 import { useVault } from '@/providers/vaultprovider';
 import { mark } from '@/lib/diagnostics';
+import { stackScreenOptions } from '@/lib/stackoptions';
 
 function VaultContent() {
     const { theme } = useTheme();
@@ -56,14 +57,7 @@ function VaultContent() {
     }, [faceIDConfigured, localCache, lockState, router]);
 
     return (
-        <Stack
-            screenOptions={{
-                headerShown: false,
-                gestureEnabled: true,
-                fullScreenGestureEnabled: true,
-                contentStyle: { backgroundColor: theme?.background },
-            }}
-        >
+        <Stack screenOptions={stackScreenOptions(theme)}>
             <Stack.Protected guard={shouldShowFaceIdSetup}>
                 <Stack.Screen name="faceid" />
             </Stack.Protected>

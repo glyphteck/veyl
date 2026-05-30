@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { CHAT_LIST_LIVE_COUNT, CHAT_LIST_PAGE_SIZE } from '../config.js';
 import { getChatId } from '../crypto/chat.js';
 import { readCachedChats, writeCachedChats } from '../localdatacache.js';
 import {
@@ -26,7 +27,6 @@ import { collectMessageKeys } from './messagekeys.js';
 import { markChatsRead } from './read.js';
 import { CHAT_RETENTION_24H, normalizeChatSettings } from './ttl.js';
 import { getChatRowLastMsgKey as getRowLastMsgKey } from './ids.js';
-import { CHAT_LIST_LIVE_COUNT, CHAT_LIST_PAGE_SIZE } from './list/config.js';
 
 function markDiag(diag, label, data) {
     try {

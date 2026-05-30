@@ -1,9 +1,13 @@
 'use client';
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import {
+    RECENT_PEER_REFRESH_DELAY_MS,
+    RECENT_PEER_REFRESH_INTERVAL_MS,
+    RECENT_PEER_REFRESH_LIMIT,
+    RECENT_PEER_REFRESH_THROTTLE_MS,
+} from '../config.js';
 import { readCachedProfiles, writeCachedProfiles } from '../localdatacache.js';
-
-const RECENT_PEER_REFRESH_LIMIT = 50;
 
 function timeMs(value) {
     if (typeof value?.toMillis === 'function') {
@@ -365,7 +369,7 @@ export function createPeerProvider({ useChat, useUser, useTxData, useVault, peer
                 refreshRunningRef.current = true;
                 try {
                     if (cancelled) return;
-                    await updatePeers(recentPeerUids, { throttleMs: 120 });
+                    await updatePeers(recentPeerUids, { throttleMs: RECENT_PEER_REFRESH_THROTTLE_MS });
                 } finally {
                     refreshRunningRef.current = false;
                 }
@@ -373,10 +377,10 @@ export function createPeerProvider({ useChat, useUser, useTxData, useVault, peer
 
             const timeoutId = setTimeout(() => {
                 void run();
-            }, 250);
+            }, RECENT_PEER_REFRESH_DELAY_MS);
             const intervalId = setInterval(() => {
                 void run();
-            }, 5 * 60000);
+            }, RECENT_PEER_REFRESH_INTERVAL_MS);
 
             return () => {
                 cancelled = true;

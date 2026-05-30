@@ -1,9 +1,11 @@
 import { getMessageOrderMs } from '../state.js';
-import { CHAT_RETENTION_24H, CHAT_RETENTION_SEEN, cleanChatRetention, getMessageRetention, hasChatRetention, isTtlExpired, seenMessageTtlMs, withMessageRetention } from '../ttl.js';
+import { collectMessageKeys, indexMessagesByKey, messageHasKey, messageKeys } from '../messagekeys.js';
+import { CHAT_RETENTION_24H, CHAT_RETENTION_SEEN, cleanChatRetention, getMessageRetention, hasChatRetention, isTtlExpired, onSeenMessageTtlMs, seenMessageTtlMs, withMessageRetention } from '../ttl.js';
 import { isAttachmentMsg } from './files.js';
 import { hasText } from './text.js';
 import {
     DEFAULT_REACTION_EMOJI,
+    HIDDEN_CHECKPOINT_MSG_TYPE,
     HOLD_VISIBLE_KEY,
     MAX_REACTIONS,
     READ_RECEIPT_MSG_TYPE,
@@ -41,7 +43,7 @@ export function msgKey(msg) {
 }
 
 export function msgKeys(msg) {
-    return [...new Set([msgKey(msg), msg?.id, msg?.cid].filter(Boolean))];
+    return messageKeys(msg);
 }
 
 function messageOrderMs(message) {
@@ -50,7 +52,7 @@ function messageOrderMs(message) {
 }
 
 function hasAnyMsgKey(msg, keys) {
-    return !!(keys?.size && msgKeys(msg).some((key) => keys.has(key)));
+    return messageHasKey(msg, keys);
 }
 
 export function makeReadReceipt(target) {
@@ -83,6 +85,18 @@ export function isReactionMsg(msg) {
     return msg?.t === REACTION_MSG_TYPE && hasText(msg.target) && (msg.emoji == null || hasText(msg.emoji));
 }
 
+export function makeHiddenCheckpoint(target) {
+    const upto = String(target?.cid || target?.id || target || '').trim();
+    if (!upto) {
+        throw new Error('hidden checkpoint target required');
+    }
+    return { t: HIDDEN_CHECKPOINT_MSG_TYPE, upto };
+}
+
+export function isHiddenCheckpointMsg(msg) {
+    return msg?.t === HIDDEN_CHECKPOINT_MSG_TYPE && hasText(msg.upto);
+}
+
 export function makeRetentionSystemMsg(retention) {
     return {
         t: SYSTEM_MSG_TYPE,
@@ -110,7 +124,7 @@ export function getSystemMsgText(msg) {
 }
 
 export function isControlMsg(msg) {
-    return isReadReceiptMsg(msg) || isReactionMsg(msg);
+    return isReadReceiptMsg(msg) || isReactionMsg(msg) || isHiddenCheckpointMsg(msg);
 }
 
 export function isExpiredMsg(msg, now = Date.now()) {
@@ -360,6 +374,39 @@ function messageSeenAtMs(msg, receipts, byKey, chatPK, peerChatPK) {
     return seenAt;
 }
 
+function positiveMs(value) {
+    const ms = Number(value);
+    return Number.isFinite(ms) && ms > 0 ? ms : null;
+}
+
+export function getMessageSeenAtMs(messages, msg, chatPK, peerChatPK, now = Date.now()) {
+    if (!Array.isArray(messages) || !msg || !chatPK) {
+        return null;
+    }
+
+    const byKey = indexMessagesByKey(messages, { keep: 'last' });
+    const receipts = [];
+    for (const item of messages) {
+        if (isServerConfirmedMsg(item) && isReadReceiptMsg(item)) {
+            receipts.push(item);
+        }
+    }
+
+    const seenAt = messageSeenAtMs(msg, receipts, byKey, chatPK, peerChatPK);
+    if (seenAt == null && isPeerMsg(msg, chatPK) && canShowMsg(msg)) {
+        return now;
+    }
+    return seenAt;
+}
+
+export function getMessageUnsaveTtlMs(msg, messages, chatPK, peerChatPK, now = Date.now()) {
+    const seenAt = getMessageSeenAtMs(messages, msg, chatPK, peerChatPK, now);
+    if (seenAt != null) {
+        return getMessageRetention(msg) === CHAT_RETENTION_SEEN ? onSeenMessageTtlMs(seenAt) : seenMessageTtlMs(seenAt);
+    }
+    return positiveMs(msg?.savedTtl);
+}
+
 function isSeenHiddenMsg(msg, receipts, byKey, chatPK, peerChatPK, now) {
     if (!isServerConfirmedMsg(msg) || isControlMsg(msg) || isSystemMsg(msg) || !canShowMsg(msg) || msg.ttl == null) {
         return false;
@@ -380,13 +427,10 @@ export function getSeenHiddenMessages(messages, chatPK, peerChatPK, options = {}
 
     const keepKeys = options?.keepKeys instanceof Set ? options.keepKeys : new Set(Array.isArray(options?.keepKeys) ? options.keepKeys.filter(Boolean) : []);
     const now = Number.isFinite(options?.now) ? options.now : Date.now();
-    const byKey = new Map();
+    const byKey = indexMessagesByKey(messages, { keep: 'last' });
     const receipts = [];
 
     for (const msg of messages) {
-        for (const key of msgKeys(msg)) {
-            byKey.set(key, msg);
-        }
         if (isServerConfirmedMsg(msg) && isReadReceiptMsg(msg)) {
             receipts.push(msg);
         }
@@ -405,12 +449,7 @@ export function filterSeenMessages(messages, chatPK, peerChatPK, options = {}) {
         return messages || [];
     }
 
-    const hiddenKeys = new Set();
-    for (const msg of hidden) {
-        for (const key of msgKeys(msg)) {
-            hiddenKeys.add(key);
-        }
-    }
+    const hiddenKeys = collectMessageKeys(hidden);
 
     return (messages || []).filter((msg) => !hasAnyMsgKey(msg, hiddenKeys));
 }

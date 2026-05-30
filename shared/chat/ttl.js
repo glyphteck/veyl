@@ -1,5 +1,7 @@
 'use client';
 
+import { CHAT_SEEN_TTL_MS, CHAT_UNSAVED_TTL_MS, DAY_MS as CONFIG_DAY_MS } from '../config.js';
+
 export const CHAT_RETENTION_SEEN = 'seen';
 export const CHAT_RETENTION_24H = '24h';
 export const DEFAULT_CHAT_RETENTION = CHAT_RETENTION_24H;
@@ -9,9 +11,9 @@ export const CHAT_RETENTION_LABELS = Object.freeze({
     [CHAT_RETENTION_24H]: '24h after seen',
 });
 
-export const DAY_MS = 24 * 60 * 60 * 1000;
-export const DEFAULT_MESSAGE_TTL_MS = 21 * DAY_MS;
-export const SEEN_MESSAGE_TTL_MS = DAY_MS;
+export const DAY_MS = CONFIG_DAY_MS;
+export const DEFAULT_MESSAGE_TTL_MS = CHAT_UNSAVED_TTL_MS;
+export const SEEN_MESSAGE_TTL_MS = CHAT_SEEN_TTL_MS;
 
 export function hasChatRetention(value) {
     const retention = typeof value === 'string' ? value.trim() : '';
@@ -79,12 +81,4 @@ export function seenMessageTtlMs(now = Date.now()) {
 
 export function onSeenMessageTtlMs(now = Date.now()) {
     return now;
-}
-
-export function shouldShortenTtl(currentTtl, nextTtlMs) {
-    if (!Number.isFinite(nextTtlMs) || nextTtlMs <= 0) {
-        return false;
-    }
-    const currentMs = ttlMillis(currentTtl);
-    return currentMs != null && currentMs > nextTtlMs;
 }

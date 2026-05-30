@@ -29,6 +29,12 @@ Large work:
 
 Use [todo.md](todo.md) for todo folder policy, task-file shape, and cleanup rules. In short: `todo/` is for active large-feature coordination only, the folder contents are the active list, and implemented behavior belongs in durable docs instead of todo files.
 
+## Changelog
+
+Use [../CHANGELOG.md](../CHANGELOG.md) for shipped repo history. Update it before `bun push` or `bun merge`, after reviewing the intended diff and before creating the commit.
+
+For broad updates, add grouped bullets that name the main user-facing, backend, docs, and tooling changes. For narrow fixes, a short bugfix or cleanup entry is fine, but it still needs to mention the actual fix instead of saying only "bugfixes" or "updates".
+
 ## Branches And Worktrees
 
 Branch names follow the code naming rules: short, lowercase, task-specific, and no agent prefixes or namespace prefixes such as `codex/` or `codex-`.
@@ -77,7 +83,7 @@ Use the full lifecycle only for large feature implementation, broad behavior cha
 7. Review the implementation from a code-review stance and fix actionable issues.
 8. If product or device testing is needed, stop after review and clearly list what @zxrl should test.
 9. Once @zxrl confirms the behavior, review again if the tested behavior changed or exposed follow-up issues.
-10. Remove or trim the task file and move shipped behavior into durable docs where useful.
+10. Remove or trim the task file, move shipped behavior into durable docs where useful, and update `CHANGELOG.md`.
 11. After merge, delete merged and abandoned task branches and remove linked worktrees.
 
 ## Handoffs
@@ -86,6 +92,7 @@ Final handoff notes should name:
 
 - the task file, branch, and worktree if used
 - the main files changed
+- the changelog entry if the work was pushed or merged
 - validation performed, usually lint only unless the user asked for more
 - product or device testing still needed
 - any unrelated dirty files intentionally ignored

@@ -106,7 +106,7 @@ async function saveRememberChoice(uid, remember, account = null) {
 export async function logout({ remember = null, account = null } = {}) {
     const uid = auth.currentUser?.uid;
     await saveRememberChoice(uid, remember, account);
-    await Promise.allSettled([fetch('/api/session', { method: 'DELETE' }), signOut(auth)]);
+    await signOut(auth);
     if (typeof window !== 'undefined') {
         window.location.replace('/');
     }

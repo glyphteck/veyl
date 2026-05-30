@@ -23,7 +23,6 @@
         "echarts": "^6.1.0",
         "echarts-for-react": "^3.0.6",
         "firebase": "catalog:",
-        "firebase-admin": "^13.10.0",
         "lamejs": "^1.2.1",
         "lucide-react": "catalog:",
         "next": "catalog:",

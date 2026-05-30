@@ -6,10 +6,13 @@ import { lastAppTargetForPathname } from '@/lib/approute';
 import { useTheme } from '@/providers/themeprovider';
 import { useVault } from '@/providers/vaultprovider';
 import { mark } from '@/lib/diagnostics';
+import { stackScreenOptions } from '@/lib/stackoptions';
 
 export const unstable_settings = {
     initialRouteName: '(home)',
 };
+
+const SHEET_ROUTES = new Set(['userscan', 'fundwallet', 'fundinginfo', 'withdraw', 'withdrawalinfo', 'transfer', 'peerselector', 'sendphoto', 'sharemedia']);
 
 export default function AppLayout() {
     const { theme } = useTheme();
@@ -59,14 +62,7 @@ export default function AppLayout() {
     }, [lockState, saveCurrentRoute]);
 
     return (
-        <Stack
-            screenOptions={{
-                headerShown: false,
-                gestureEnabled: true,
-                fullScreenGestureEnabled: true,
-                contentStyle: { backgroundColor: theme?.background },
-            }}
-        >
+        <Stack screenOptions={stackScreenOptions(theme, SHEET_ROUTES)}>
             <Stack.Screen name="(home)" options={{ animationTypeForReplace: 'pop' }} />
             <Stack.Screen name="community" />
             <Stack.Screen name="exportwallet" />

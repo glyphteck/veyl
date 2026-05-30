@@ -103,13 +103,14 @@ export async function dropAvatar(storage, uid) {
     return removeFile(storage, avatarPath(uid));
 }
 
-export async function makeChatFileUpload(pair, cid, data, { slot = CHAT_SLOT, contentType = 'application/octet-stream', cacheControl = 'private, max-age=0, no-transform', stay = '' } = {}) {
+export async function makeChatFileUpload(pair, cid, data, { slot = CHAT_SLOT, contentType = 'application/octet-stream', cacheControl = 'private, max-age=0, no-transform', stay = '', stayKey = '' } = {}) {
     try {
         return await makeChatFileUploadPayload(pair, cid, data, {
             slot,
             contentType,
             cacheControl,
             stay,
+            stayKey,
         });
     } catch (error) {
         throw setErrorStage(error, 'encrypt', {

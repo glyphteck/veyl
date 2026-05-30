@@ -14,9 +14,7 @@ import { CHAT_RETENTION_24H, CHAT_RETENTION_SEEN, cleanChatRetention } from '@gl
 import { usePeer } from '@/components/providers/peerprovider';
 import { formatUserDisplay } from '@/lib/utils';
 import { chatUploadErrorMessage, getChatUploadFiles, queueChatFileMessages } from '@/lib/chatfiles';
-import { getFunctions } from '@/lib/firebase/firebaseclient';
 import { HandCoins, Copy, CircleArrowRight, CircleCheck, Clock3, Eye, Flag, Paperclip, Trash2, UserX } from 'lucide-react';
-import { httpsCallable } from 'firebase/functions';
 import { toast } from 'sonner';
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { useForm } from 'react-hook-form';
@@ -36,7 +34,7 @@ const RETENTION_OPTIONS = [
 
 export default function UserDetails({ data, close }) {
     const { uid, chatPK, chatBanned, blockPeer, isBlocked } = useUser();
-    const { chats, sendMessage, sendAttachment, dropChat, setChatTtl, startDeleteChat, finishDeleteChat, restoreDeletedChat } = useChat();
+    const { chats, sendMessage, sendAttachment, dropChat, deleteChat, setChatTtl, restoreDeletedChat } = useChat();
     const { openDialog } = useDialog();
     const { cloaked } = useCloak();
     const { peerByUid, updatePeer, dropPeer } = usePeer();
@@ -254,11 +252,7 @@ export default function UserDetails({ data, close }) {
             confirmIcon: <Trash2 className="size-4" />,
             onCancel: () => openDialog('userdetails', { user }),
             onConfirm: () => {
-                startDeleteChat?.(chatId, { keepSelected: true });
-                void httpsCallable(getFunctions(), 'deleteChat')({ chatId })
-                    .then(() => {
-                        finishDeleteChat?.(chatId);
-                    })
+                void Promise.resolve(deleteChat?.(chatId, { keepSelected: true }))
                     .catch((error) => {
                         restoreDeletedChat?.(chatId);
                         console.error('delete chat failed', error);

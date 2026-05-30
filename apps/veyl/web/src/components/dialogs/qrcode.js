@@ -2,19 +2,12 @@
 import { useMemo } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { makeQr, qr } from '@glyphteck/shared/qrutils';
-import { FUNDING_TX_PREVIEW_VBYTES, STATIC_DEPOSIT_CLAIM_FEE_SATS } from '@glyphteck/shared/wallet/fees';
+import { FUNDING_TX_PREVIEW_VBYTES, STATIC_DEPOSIT_CLAIM_FEE_SATS, formatOnchainFeeAmount } from '@glyphteck/shared/wallet/fees';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/avatar';
 import { Button } from '@/components/button';
 import { useBitcoin } from '@/components/providers/bitcoinprovider';
 import { useDialog } from '@/components/providers/dialogprovider';
 import { useUser } from '@/components/providers/userprovider';
-import { renderMoney } from '@/lib/utils';
-
-function formatFeeAmount(value, moneyFormat, price) {
-    const amount = Number(value);
-    if (!Number.isFinite(amount)) return 'updating';
-    return renderMoney(Math.max(0, Math.ceil(amount)), moneyFormat || 'sats', price);
-}
 
 export default function QRCodeDialog({ data }) {
     const { avatar, username, active, settings } = useUser();
@@ -54,7 +47,7 @@ export default function QRCodeDialog({ data }) {
                         onClick={() => openDialog('fundinginfo', { fundingQr: data })}
                         title="funding fee info"
                     >
-                        <span className="min-w-0 truncate whitespace-nowrap">estimated fee: ~{formatFeeAmount(fundingFeePreview?.feeAmountSats, settings?.moneyFormat, bitcoin.price)}</span>
+                        <span className="min-w-0 truncate whitespace-nowrap">estimated fee: ~{formatOnchainFeeAmount(fundingFeePreview, settings?.moneyFormat, bitcoin.price)}</span>
                     </Button>
                 </div>
             ) : null}

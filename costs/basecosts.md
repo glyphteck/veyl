@@ -20,10 +20,17 @@ This model uses conservative Firestore multi-region-style rates. If Veyl's Fires
 | Firestore document read | $0.06 / 100,000 = `$0.0000006` |
 | Firestore document write | $0.18 / 100,000 = `$0.0000018` |
 | Firestore document delete | $0.02 / 100,000 = `$0.0000002` |
+| Firestore stored data | `nam5` example `$0.18 / GiB-month` |
 | Cloud Functions invocation | $0.40 / 1,000,000 = `$0.0000004` after free tier |
+| Cloud Storage stored data | current chat-media bucket is regional `US-CENTRAL1`; Standard storage is about `$0.020 / GiB-month` |
 | Cloud Storage Class A op | Standard regional `$0.005 / 1,000` = `$0.000005` |
 | Cloud Storage Class B op | Standard `$0.0004 / 1,000` = `$0.0000004` |
 | Cloud Storage delete op | free |
+
+Current project locations checked on 2026-05-29:
+
+- Firestore database: `nam5`.
+- Firebase Storage bucket: `glyphteck.firebasestorage.app`, regional `US-CENTRAL1`, storage class `REGIONAL`.
 
 ## Free quotas applied in README.md
 
@@ -33,14 +40,15 @@ This model uses conservative Firestore multi-region-style rates. If Veyl's Fires
 | Firestore writes | 20,000/day |
 | Firestore deletes | 20,000/day |
 | Cloud Functions invocations | 2,000,000/month |
+| Auth monthly active users | 50,000/month |
 
-Storage operation free quotas are not applied because Firebase Storage bucket billing depends on project/bucket setup and location. The model counts Storage operations at paid unit cost and leaves stored/downloaded bytes separate.
+Storage operation free quotas are not applied because Firebase Storage bucket billing depends on project/bucket setup and location. The model counts Storage operations at paid unit cost, includes stored bytes from the default avatar/media assumptions, and leaves downloaded bytes separate.
 
 ## Auth
 
-Custom-token sign-ins are tracked as Auth monthly active users. The base monthly totals do not include Auth MAU because the project billing mode must be confirmed.
+Custom-token sign-ins are tracked as Auth monthly active users. The monthly totals in [README.md](README.md) assume Identity Platform-style paid Auth after the free MAU quota.
 
-If billed under Identity Platform, a conservative simple estimate is:
+A conservative simple estimate is:
 
 - first 50,000 MAU free,
 - then about `$0.0055` per MAU-month before volume discounts.

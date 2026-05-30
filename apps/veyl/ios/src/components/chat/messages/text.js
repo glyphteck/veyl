@@ -3,6 +3,7 @@ import { useTheme } from '@/providers/themeprovider';
 import { bubbleTint } from '@/lib/messages';
 import { getEmojiTextInfo } from '@glyphteck/shared/utils';
 import { splitLinks } from '@glyphteck/shared/chat/messages';
+import { useMessageGestureBlockers } from '@/components/chat/messagegesturecontext';
 import GlassView from '@/components/glass/glassview';
 import Menu from '@/components/menu';
 import ReactionTray from './reactiontray';
@@ -56,8 +57,9 @@ export function TextBubble({ msg, fromPeer = false, compact = false, singleLine 
 }
 
 export default function TextMessage({ msg, fromPeer = false, menuItems, menuId, reactions = [], reactionUsers, reactionPreviewInset = 0 }) {
+    const blockExternalGestures = useMessageGestureBlockers();
     return (
-        <Menu id={menuId} items={menuItems} previewBottomInset={reactionPreviewInset}>
+        <Menu id={menuId} items={menuItems} blockExternalGestures={blockExternalGestures} previewBottomInset={reactionPreviewInset}>
             <ReactionTray reactions={reactions} users={reactionUsers} fromPeer={fromPeer}>
                 <TextBubble msg={msg} fromPeer={fromPeer} />
             </ReactionTray>

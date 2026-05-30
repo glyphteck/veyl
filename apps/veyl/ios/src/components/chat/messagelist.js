@@ -28,13 +28,12 @@ import { copyMessageImage, copyMessageText, saveMessageFile, saveMessageImage } 
 import { cancelPendingMsgFileLoads } from '@/lib/msgimagecache';
 import { stageShareMedia } from '@/lib/sharemedia';
 import { functions, storage } from '@/lib/firebase';
-import { canReplyToMsg, canShareAttachmentMsg, canShowMsg, collapseSystemMessages, getLatestReadOutgoingReceipt, isPeerMsg, isReadReceiptMsg, isSystemMsg, setReqTx } from '@glyphteck/shared/chat/messages';
+import { canReplyToMsg, canShareAttachmentMsg, canShowMsg, collapseSystemMessages, getLatestReadOutgoingReceipt, getMessageUnsaveTtlMs, isPeerMsg, isSystemMsg, setReqTx } from '@glyphteck/shared/chat/messages';
 import { useOptimisticMessageReactions } from '@glyphteck/shared/chat/usereactions';
 import { makeFileId, reportEvidencePath } from '@glyphteck/shared/files';
 import { buildReportFields, getReportAttachmentMeta } from '@glyphteck/shared/report';
 import { formatTimeHHMM } from '@glyphteck/shared/utils';
 import { getMessageOrderMs } from '@glyphteck/shared/chat/state';
-import { CHAT_RETENTION_SEEN, getMessageRetention, onSeenMessageTtlMs, seenMessageTtlMs } from '@glyphteck/shared/chat/ttl';
 
 const NEWEST_MESSAGE_GAP = 8;
 const SCROLL_BOTTOM_SHOW_MIN_DISTANCE = 360;
@@ -251,81 +250,6 @@ function isSavedForeverMsg(msg) {
 
 function canToggleSaveForeverMsg(msg) {
     return !!(msg?.id && !String(msg.id).startsWith('local:') && !msg.pending && !msg.failed && !isSystemMsg(msg));
-}
-
-function positiveMs(value) {
-    const ms = Number(value);
-    return Number.isFinite(ms) && ms > 0 ? ms : null;
-}
-
-function getSavedTtlMs(msg) {
-    return positiveMs(msg?.savedTtl);
-}
-
-function messageOrderMs(message) {
-    const ms = getMessageOrderMs(message);
-    return Number.isFinite(ms) ? ms : null;
-}
-
-function readReceiptFromRecipient(receipt, msg, chatPK, peerChatPK) {
-    const messageFromPeer = isPeerMsg(msg, chatPK);
-    const receiptFromPeer = isPeerMsg(receipt, chatPK);
-    return messageFromPeer ? !receiptFromPeer : receiptFromPeer && (!peerChatPK || receipt?.s === peerChatPK);
-}
-
-function readReceiptCoversMessage(receipt, msg, byKey, chatPK) {
-    const targetKey = typeof receipt?.upto === 'string' ? receipt.upto.trim() : '';
-    if (!targetKey) {
-        return false;
-    }
-    if (targetKey === getMsgKey(msg)) {
-        return true;
-    }
-
-    const target = byKey.get(targetKey);
-    if (target && isPeerMsg(target, chatPK) !== isPeerMsg(msg, chatPK)) {
-        return false;
-    }
-
-    const messageMs = messageOrderMs(msg);
-    const targetMs = messageOrderMs(target) ?? messageOrderMs({ cid: targetKey }) ?? messageOrderMs(receipt);
-    return messageMs != null && targetMs != null && messageMs <= targetMs;
-}
-
-function getMessageSeenAtMs(messages, msg, chatPK, peerChatPK, now = Date.now()) {
-    const byKey = new Map();
-    for (const item of messages || []) {
-        for (const key of getMsgKeys(item)) {
-            byKey.set(key, item);
-        }
-    }
-
-    let seenAt = null;
-    for (const receipt of messages || []) {
-        if (!receipt?.id || String(receipt.id).startsWith('local:') || receipt.pending || receipt.failed || !isReadReceiptMsg(receipt) || !readReceiptFromRecipient(receipt, msg, chatPK, peerChatPK)) {
-            continue;
-        }
-        if (!readReceiptCoversMessage(receipt, msg, byKey, chatPK)) {
-            continue;
-        }
-        const receiptMs = messageOrderMs(receipt);
-        if (receiptMs != null && (seenAt == null || receiptMs < seenAt)) {
-            seenAt = receiptMs;
-        }
-    }
-
-    if (seenAt == null && isPeerMsg(msg, chatPK) && canShowMsg(msg)) {
-        return now;
-    }
-    return seenAt;
-}
-
-function getUnsaveTtlMs(msg, messages, chatPK, peerChatPK, now = Date.now()) {
-    const seenAt = getMessageSeenAtMs(messages, msg, chatPK, peerChatPK, now);
-    if (seenAt != null) {
-        return getMessageRetention(msg) === CHAT_RETENTION_SEEN ? onSeenMessageTtlMs(seenAt) : seenMessageTtlMs(seenAt);
-    }
-    return getSavedTtlMs(msg);
 }
 
 function hasMsgText(msg) {
@@ -712,7 +636,7 @@ export default function MessageList({
             });
 
             try {
-                await deleteMessage(chatId, msg.id);
+                await deleteMessage(chatId, msg);
                 removeMessage(msg.id);
             } catch (error) {
                 console.warn('delete message failed', error);
@@ -779,7 +703,7 @@ export default function MessageList({
             const key = getMsgKey(msg);
             const saved = isSavedForeverMsg(msg);
             const targetSaved = !saved;
-            const unsaveTtlMs = saved ? getUnsaveTtlMs(msg, messagesAsc, chatPK, peerChatPK) : null;
+            const unsaveTtlMs = saved ? getMessageUnsaveTtlMs(msg, messagesAsc, chatPK, peerChatPK) : null;
 
             if (key) {
                 setSavingForeverMessages((prev) => new Map(prev).set(key, targetSaved));
@@ -1044,6 +968,7 @@ export default function MessageList({
             chatPK,
             chatPad,
             chatTitle,
+            getOptimisticReactions,
             getMenuItems,
             handleLike,
             handlePay,
@@ -1091,9 +1016,10 @@ export default function MessageList({
                                 contentInsetAdjustmentBehavior="never"
                                 keyboardDismissMode={KEYBOARD_DISMISS_MODE}
                                 keyboardShouldPersistTaps="handled"
-                                initialNumToRender={10}
-                                maxToRenderPerBatch={6}
-                                windowSize={5}
+                                extraData={getOptimisticReactions}
+                                initialNumToRender={20}
+                                maxToRenderPerBatch={10}
+                                windowSize={3}
                                 removeClippedSubviews={false}
                                 scrollEnabled={!menuActive}
                                 onScroll={handleListScroll}

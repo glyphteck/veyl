@@ -25,6 +25,10 @@ export function hasStoredFileRef(msg) {
     }
 }
 
+export function hasMediaStay(msg) {
+    return hasText(msg?.stay) && hasText(msg?.stayKey);
+}
+
 function hasFileRef(msg) {
     return hasLocalFileRef(msg) || hasStoredFileRef(msg);
 }
@@ -71,7 +75,7 @@ export function getAttachmentCaption(msg) {
 }
 
 export function isExpiredAttachmentMsg(msg, now = Date.now()) {
-    return isAttachmentMsgType(msg?.t) && !hasText(msg?.stay) && Number.isFinite(msg?.x) && msg.x <= now;
+    return isAttachmentMsgType(msg?.t) && !hasMediaStay(msg) && Number.isFinite(msg?.x) && msg.x <= now;
 }
 
 export function getImageAspect(msg, fallback = 4 / 3) {
@@ -109,6 +113,7 @@ export function makeAttachment(t, file) {
         ...(Number.isFinite(file?.d) ? { d: Math.max(0, Math.trunc(file.d)) } : {}),
         ...(Number.isFinite(file?.x) ? { x: Math.max(0, Math.trunc(file.x)) } : {}),
         ...(hasText(file?.stay) ? { stay: String(file.stay).trim() } : {}),
+        ...(hasText(file?.stay) && hasText(file?.stayKey) ? { stayKey: String(file.stayKey).trim() } : {}),
         ...(file?.n ? { n: String(file.n) } : {}),
         ...(typeof file?.c === 'string' && file.c.trim() ? { c: file.c.trim() } : {}),
     };

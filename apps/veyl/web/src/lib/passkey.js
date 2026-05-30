@@ -117,14 +117,6 @@ export async function passkeyLogin({ uid, onPrompt } = {}) {
 
         await signInWithCustomToken(auth, token);
 
-        // Get ID token and create session cookie
-        const idToken = await auth.currentUser.getIdToken();
-        await fetch('/api/session', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ idToken }),
-        });
-
         return { success: true };
     } catch (error) {
         throw normalizeLoginError(error);
@@ -159,14 +151,6 @@ export async function passkeyRegister({ label: providedLabel } = {}) {
         });
 
         await signInWithCustomToken(auth, token);
-
-        // Get ID token and create session cookie
-        const idToken = await auth.currentUser.getIdToken();
-        await fetch('/api/session', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ idToken }),
-        });
 
         return { success: true };
     } catch (error) {

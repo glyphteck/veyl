@@ -1,6 +1,7 @@
-import { requirePasswordStep } from '@/lib/routeguards';
+'use client';
 
-export default async function GetPasswordLayout({ children }) {
-    await requirePasswordStep();
-    return children;
+import { OnboardingGate } from '@/lib/routeguards';
+
+export default function GetPasswordLayout({ children }) {
+    return <OnboardingGate step="password">{children}</OnboardingGate>;
 }

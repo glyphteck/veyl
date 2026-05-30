@@ -19,7 +19,6 @@ export const MESSAGE_ROW_EXIT_CLEARANCE_PX = 1;
 export const MESSAGE_ROW_ENTER_SCALE = 0.2;
 export const MESSAGE_ROW_ENTER_OFFSET_Y = 10;
 export const MESSAGE_ROW_EXIT_SCALE = 0.01;
-export const LIKE_BLOCK_MS = 320;
 export const MESSAGE_ROW_PADDING_TOP = 4;
 export const MESSAGE_ROW_PADDING_BOTTOM = 8;
 export const RECEIPT_STAMP_BOTTOM = 7;

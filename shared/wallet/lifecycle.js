@@ -1,11 +1,17 @@
 import { useCallback, useEffect, useRef } from 'react';
 
+import {
+    WALLET_ACTIVE_CLAIM_POLL_MS,
+    WALLET_MIN_BOOT_TX_COVERAGE_MS,
+    WALLET_TRANSFER_POLL_MS,
+    WALLET_UPDATE_RATE_LIMIT_MS,
+} from '../config.js';
 import { markDiag, markDone } from './diag.js';
 
-const RATE_LIMIT = 5 * 1000;
-const POLL_TXS_RATE = 10 * 1000;
-const ACTIVE_CLAIM_RATE = 20 * 1000;
-const MIN_BOOT_TX_COVERAGE_MS = 24 * 60 * 60 * 1000;
+const RATE_LIMIT = WALLET_UPDATE_RATE_LIMIT_MS;
+const POLL_TXS_RATE = WALLET_TRANSFER_POLL_MS;
+const ACTIVE_CLAIM_RATE = WALLET_ACTIVE_CLAIM_POLL_MS;
+const MIN_BOOT_TX_COVERAGE_MS = WALLET_MIN_BOOT_TX_COVERAGE_MS;
 const WALLET_EVENTS = Object.freeze({
     balance: 'balance:update',
     tokenBalance: 'token-balance:update',

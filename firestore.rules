@@ -122,12 +122,9 @@ service cloud.firestore {
     }
 
     function initialTtlValueAllowed(value) {
-      return value == null
-        || (
-          value is timestamp
-          && value >= request.time
-          && value <= maxInitialTtl()
-        );
+      return value is timestamp
+        && value >= request.time
+        && value <= maxInitialTtl();
     }
 
     function chatTsAllowed(value) {
@@ -177,16 +174,6 @@ service cloud.firestore {
         && mapGet(newLast, 'ttl') == mapGet(oldLast, 'ttl');
     }
 
-    function lastMsgTtlShortenAllowed(newLast, oldLast) {
-      return lastMsgValueAllowed(newLast)
-        && oldLast is map
-        && mapGet(newLast, 'head') == mapGet(oldLast, 'head')
-        && mapGet(newLast, 'body') == mapGet(oldLast, 'body')
-        && mapGet(oldLast, 'ttl') is timestamp
-        && mapGet(newLast, 'ttl') is timestamp
-        && mapGet(newLast, 'ttl') <= mapGet(oldLast, 'ttl');
-    }
-
     function lastMsgPermanentAllowed(newLast, oldLast) {
       return lastMsgValueAllowed(newLast)
         && oldLast is map
@@ -211,7 +198,6 @@ service cloud.firestore {
       return newLast == null
         || lastMsgFreshSendAllowed(newLast)
         || lastMsgBodyUpdateAllowed(newLast, oldLast)
-        || lastMsgTtlShortenAllowed(newLast, oldLast)
         || lastMsgPermanentAllowed(newLast, oldLast)
         || lastMsgTemporaryAllowed(newLast, oldLast);
     }
@@ -293,12 +279,6 @@ service cloud.firestore {
         && request.resource.data.ts == resource.data.ts;
     }
 
-    function messageTtlShortenAllowed() {
-      return mapGet(resource.data, 'ttl') is timestamp
-        && mapGet(request.resource.data, 'ttl') is timestamp
-        && mapGet(request.resource.data, 'ttl') <= mapGet(resource.data, 'ttl');
-    }
-
     function messagePermanentAllowed() {
       return mapGet(resource.data, 'ttl') is timestamp
         && mapGet(request.resource.data, 'ttl') == null;
@@ -312,7 +292,7 @@ service cloud.firestore {
     function messageUpdateAllowed() {
       let changed = request.resource.data.diff(resource.data).affectedKeys();
       return changed.hasOnly(['body'])
-        || (changed.hasOnly(['ttl']) && (messageTtlShortenAllowed() || messagePermanentAllowed() || messageTemporaryAllowed()));
+        || (changed.hasOnly(['ttl']) && (messagePermanentAllowed() || messageTemporaryAllowed()));
     }
 
     function messageCreateAllowed() {

@@ -5,7 +5,7 @@
 - Accounts are company-wide.
 - Passkeys are rooted at `glyphteck.com`.
 - Local dev hosts should stay inside the `glyphteck.com` RP scope.
-- When changing auth, check whether root-domain well-known files, Firebase Functions, session cookies, and client passkey code also need updates.
+- When changing auth, check whether root-domain well-known files, Firebase Functions, web client route gates, and client passkey code also need updates.
 
 ## Vault And Secrets
 
@@ -29,14 +29,16 @@
 - Message payload shape is cross-platform and backend-sensitive.
 - Chat IDs are derived from participant chat public keys.
 - Messages are encrypted before storage.
-- User read receipts and reactions are encrypted append-only control payloads in the message stream (`t: 'rr'` and `t: 'rxn'`). Do not add plaintext per-user read state or reaction state to chat docs.
+- User read receipts, reactions, and hidden checkpoints are encrypted control payloads in the message stream (`t: 'rr'`, `t: 'rxn'`, and `t: 'hid'`). Do not add plaintext per-user read state, reaction state, hidden state, active-chat state, or retention mode to chat docs.
 - Chat docs should only carry participants, an independent recency timestamp, the encrypted latest visible-message preview plus its `ttl`, and encrypted retention settings. Do not reintroduce plaintext read markers or plaintext chat preferences.
 - Chat messages and other expiring backend records use a `ttl` timestamp field for deletion naming. `ttl: null` means the item is permanent unless another cleanup path deletes it.
 - Chat retention settings are `seen` and `24h`; missing settings mean `24h`. Store them as encrypted chat settings because only participant clients need the value. Permanent storage is per-message, not a chat-wide retention setting.
 - Never use `lastMsgTime`; `chat.ts` is the chat-row recency source of truth. `lastMsg` is only an encrypted preview plus `ttl` and can be removed when it is unreadable without changing chat ordering.
-- Individual messages can be saved by changing `ttl` from a timestamp to `null` and unsaved by setting a fresh `ttl`; automatic TTL shortening must not change messages that are already saved. Saved media messages carry encrypted random stays, while Firestore stores only opaque per-file stay counts so one unsaved message releases the Storage hold only after no saved message still points at the same object.
+- Individual messages can be saved by changing `ttl` from a timestamp to `null` and unsaved by setting a fresh temporary `ttl`. Backend-visible message TTL stays dumb: new messages use the standard 21-day TTL and read handling must not shorten plaintext TTL. Client-side visibility and smart deletion are derived only after decrypting read receipts, retention payloads, and hidden checkpoints. Saved media messages carry encrypted random stays plus stay keys, while Firestore stores only opaque per-file stay counts and stay-key hashes so one unsaved message releases the Storage hold only after no saved message still points at the same object.
 - Chat media uses opaque `media/{id}/main` Storage paths plus a 21-day lifecycle rule on `media/`. Do not reintroduce `chatmedia/{chatId}/...` paths or Storage metadata containing chat ids, message ids, user ids, usernames, or permanence state. Permanent media keeps the same path; Firestore stay counts are the source of truth, and a Cloud Storage temporary hold is only the derived lifecycle block.
+- Because media stays are encrypted message-body state, app UI must delete whole chats and accounts through shared flows that collect stays before the server removes opaque message docs and release those holds after the delete succeeds.
 - Message rendering must be resolution-gated: do not render a message before its encrypted payload and remote attachment source resolve. Drop unresolvable messages from visible lists and render replies to missing targets as the local unavailable preview.
+- Do not broadly compact read receipts; older receipt timestamps define first-seen time for `24h after seen`.
 - When changing chat media, check shared code, web, iOS, Storage rules, and any report/deletion behavior.
 
 ## Wallet

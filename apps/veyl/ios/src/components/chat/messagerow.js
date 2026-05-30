@@ -1,5 +1,5 @@
 import { Text, View } from 'react-native';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import * as Haptics from 'expo-haptics';
 import { Reply } from 'lucide-react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
@@ -12,7 +12,6 @@ import { getSystemMsgText } from '@glyphteck/shared/chat/messages';
 import { getMessageOrderMs } from '@glyphteck/shared/chat/state';
 import { formatTimeHHMM } from '@glyphteck/shared/utils';
 import {
-    LIKE_BLOCK_MS,
     MESSAGE_ROW_DROP_MS,
     MESSAGE_ROW_EASING,
     MESSAGE_ROW_ENTER_OFFSET_Y,
@@ -107,11 +106,8 @@ export function MessageRow({ chatPad, msg, rowState = 'present', fromPeer = fals
     const appear = useSharedValue(rowState === 'entering' ? 0 : 1);
     const exit = useSharedValue(0);
     const exitDistance = useSharedValue(0);
-    const [swipeBlocked, setSwipeBlocked] = useState(false);
     const exitContentLayoutRef = useRef(null);
     const exitTargetLayoutRef = useRef(null);
-    const likeBlockedRef = useRef(false);
-    const likeBlockTimerRef = useRef(null);
     const stamp = useMemo(() => getMsgStamp(msg), [msg?.cid, msg?.id, msg?.ts]);
     const dropped = rowState === 'leaving';
     const entering = rowState === 'entering';
@@ -121,37 +117,26 @@ export function MessageRow({ chatPad, msg, rowState = 'present', fromPeer = fals
     const hasPan = canReply;
     const replyIconLeft = fromPeer;
     const { onRowLayout, dropStyle } = useDropRow(dropped);
+    const actionRef = useRef({ canLike, canReply, msg, onLike, onReply });
+
+    actionRef.current = { canLike, canReply, msg, onLike, onReply };
+
     const triggerReply = useCallback(() => {
-        Haptics.selectionAsync().catch(() => {});
-        onReply?.(msg);
-    }, [msg, onReply]);
-    const triggerLike = useCallback(() => {
-        Haptics.selectionAsync().catch(() => {});
-        onLike?.(msg);
-    }, [msg, onLike]);
-    const blockLike = useCallback((duration = LIKE_BLOCK_MS) => {
-        if (likeBlockTimerRef.current) {
-            clearTimeout(likeBlockTimerRef.current);
-            likeBlockTimerRef.current = null;
+        const latest = actionRef.current;
+        if (!latest.canReply || typeof latest.onReply !== 'function') {
+            return;
         }
-        likeBlockedRef.current = true;
-        likeBlockTimerRef.current = setTimeout(() => {
-            likeBlockTimerRef.current = null;
-            likeBlockedRef.current = false;
-        }, duration);
+        Haptics.selectionAsync().catch(() => {});
+        latest.onReply(latest.msg);
     }, []);
-
-    useEffect(
-        () => () => {
-            if (likeBlockTimerRef.current) {
-                clearTimeout(likeBlockTimerRef.current);
-                likeBlockTimerRef.current = null;
-            }
-            likeBlockedRef.current = false;
-        },
-        []
-    );
-
+    const triggerLike = useCallback(() => {
+        const latest = actionRef.current;
+        if (!latest.canLike || typeof latest.onLike !== 'function') {
+            return;
+        }
+        Haptics.selectionAsync().catch(() => {});
+        latest.onLike(latest.msg);
+    }, []);
     const replyStyle = useAnimatedStyle(() => {
         const reveal = clamp((Math.abs(reply.value) - REPLY_ICON_DELAY) / 42, 0, 1);
         return {
@@ -218,7 +203,7 @@ export function MessageRow({ chatPad, msg, rowState = 'present', fromPeer = fals
 
     const replyGesture = useMemo(() => {
         const gesture = Gesture.Pan()
-            .enabled(canReply && !swipeBlocked)
+            .enabled(canReply)
             .activeOffsetX(fromPeer ? 4 : -4)
             .failOffsetY([-10, 10])
             .failOffsetX(fromPeer ? -4 : 4);
@@ -242,7 +227,7 @@ export function MessageRow({ chatPad, msg, rowState = 'present', fromPeer = fals
                 'worklet';
                 reply.value = withSpring(0, REPLY_SPRING);
             });
-    }, [canReply, fromPeer, reply, swipeBlocked, timeGesture, triggerReply]);
+    }, [canReply, fromPeer, reply, timeGesture, triggerReply]);
 
     const likeGesture = useMemo(
         () =>
@@ -253,7 +238,7 @@ export function MessageRow({ chatPad, msg, rowState = 'present', fromPeer = fals
                 .maxDistance(18)
                 .runOnJS(true)
                 .onEnd((_event, success) => {
-                    if (success && !likeBlockedRef.current) {
+                    if (success) {
                         triggerLike();
                     }
                 }),
@@ -272,7 +257,7 @@ export function MessageRow({ chatPad, msg, rowState = 'present', fromPeer = fals
         return tapGesture;
     }, [hasPan, replyGesture, tapGesture]);
 
-    const gestureValue = useMemo(() => ({ blockLike, setSwipeBlocked }), [blockLike, setSwipeBlocked]);
+    const gestureValue = useMemo(() => ({ likeGesture: tapGesture, replyGesture: hasPan ? replyGesture : null, timeGesture: timeGesture || null }), [hasPan, replyGesture, tapGesture, timeGesture]);
     const renderedChildren = typeof children === 'function' ? children({ onExitTargetLayout: handleExitTargetLayout }) : children;
     const content = <MessageGestureProvider value={gestureValue}>{renderedChildren}</MessageGestureProvider>;
     const contentOriginStyle = useMemo(() => ({ transformOrigin: fromPeer ? 'left bottom' : 'right bottom' }), [fromPeer]);

@@ -1,8 +1,9 @@
+import { CHAT_PAIR_CACHE_LIMIT } from '../config.js';
 import { closeChatPair, openChatPair } from '../crypto/chat.js';
 import { orderChatKeys } from '../crypto/pair.js';
 
 const pairCache = new Map();
-const MAX_PAIR_CACHE = 256;
+const MAX_PAIR_CACHE = CHAT_PAIR_CACHE_LIMIT;
 
 function getChatPairKey(chatPK, peerChatPK) {
     if (!chatPK || !peerChatPK) return null;

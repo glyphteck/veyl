@@ -1,4 +1,6 @@
-export function createMessageViewCache(limit = 30) {
+import { CHAT_MESSAGE_VIEW_CACHE_SIZE } from '../../../config.js';
+
+export function createMessageViewCache(limit = CHAT_MESSAGE_VIEW_CACHE_SIZE) {
     const views = new Map();
     const active = new Map();
     let owner = '';

@@ -20,11 +20,14 @@ function isAvatarImageLoaded(src) {
 }
 
 const Avatar = React.forwardRef(function Avatar({ className, active = false, selected = null, bot = false, children, ...props }, ref) {
-    const [status, setStatus] = React.useState('idle');
+    const [imageState, setImageState] = React.useState({ status: 'idle', srcKey: '' });
+    const setStatus = React.useCallback((status, srcKey = '') => {
+        setImageState((current) => (current.status === status && current.srcKey === srcKey ? current : { status, srcKey }));
+    }, []);
     const selectable = selected != null;
 
     return (
-        <AvatarContext.Provider value={{ status, setStatus, bot }}>
+        <AvatarContext.Provider value={{ status: imageState.status, srcKey: imageState.srcKey, setStatus, bot }}>
             <div ref={ref} className={cn('avatar shadow-sm relative flex size-10 shrink-0 overflow-visible rounded-full', className)} {...props}>
                 <Dot show={active} type="active" vectorMask className="size-full" maskTargetClassName="relative size-full overflow-hidden rounded-full">
                     {children}
@@ -42,14 +45,15 @@ const AvatarImage = React.forwardRef(function AvatarImage({ className, src, alt 
     const setStatus = avatar?.setStatus;
     const imgRef = React.useRef(null);
     const srcKey = getAvatarImageKey(src);
+    const loaded = avatar?.status === 'loaded' && avatar?.srcKey === srcKey;
 
     React.useEffect(() => {
         if (!srcKey) {
-            setStatus?.('error');
+            setStatus?.('error', srcKey);
             return;
         }
         if (loadedAvatarSrcs.has(srcKey)) {
-            setStatus?.('loaded');
+            setStatus?.('loaded', srcKey);
             return;
         }
 
@@ -57,14 +61,14 @@ const AvatarImage = React.forwardRef(function AvatarImage({ className, src, alt 
         if (img?.complete) {
             if (img.naturalWidth > 0) {
                 loadedAvatarSrcs.add(srcKey);
-                setStatus?.('loaded');
+                setStatus?.('loaded', srcKey);
             } else {
-                setStatus?.('error');
+                setStatus?.('error', srcKey);
             }
             return;
         }
 
-        setStatus?.('loading');
+        setStatus?.('loading', srcKey);
     }, [setStatus, srcKey]);
 
     if (!srcKey) {
@@ -82,7 +86,7 @@ const AvatarImage = React.forwardRef(function AvatarImage({ className, src, alt 
                     ref.current = node;
                 }
             }}
-            className={cn('aspect-square size-full select-none pointer-events-none', avatar?.status !== 'loaded' && 'hidden', className)}
+            className={cn('pointer-events-none absolute inset-0 size-full select-none object-cover transition-opacity duration-200 ease-out', loaded ? 'opacity-100' : 'opacity-0', className)}
             draggable={false}
             height={40}
             src={srcKey}
@@ -90,11 +94,11 @@ const AvatarImage = React.forwardRef(function AvatarImage({ className, src, alt 
             width={40}
             onLoad={(event) => {
                 loadedAvatarSrcs.add(srcKey);
-                setStatus?.('loaded');
+                setStatus?.('loaded', srcKey);
                 onLoad?.(event);
             }}
             onError={(event) => {
-                setStatus?.('error');
+                setStatus?.('error', srcKey);
                 onError?.(event);
             }}
             {...props}
@@ -122,11 +126,13 @@ const StaticAvatar = React.forwardRef(function StaticAvatar({ className, src, st
 
     return (
         <span ref={ref} className={cn('relative flex size-full items-center justify-center overflow-hidden rounded-full bg-background', className)} style={style} {...props}>
-            {!loaded ? fallback : null}
+            <span className={cn('absolute inset-0 flex items-center justify-center transition-opacity duration-200 ease-out', loaded ? 'opacity-0' : 'opacity-100')} aria-hidden>
+                {fallback}
+            </span>
             <Image
                 alt=""
                 aria-hidden="true"
-                className="absolute inset-0 size-full object-cover"
+                className="absolute inset-0 size-full object-cover transition-opacity duration-200 ease-out"
                 draggable={false}
                 height={40}
                 src={srcKey}
@@ -147,13 +153,10 @@ const StaticAvatar = React.forwardRef(function StaticAvatar({ className, src, st
 
 const AvatarFallback = React.forwardRef(function AvatarFallback({ className, children, ...props }, ref) {
     const avatar = React.useContext(AvatarContext);
-
-    if (avatar?.status === 'loaded') {
-        return null;
-    }
+    const hidden = avatar?.status === 'loaded';
 
     return (
-        <div ref={ref} className={cn(' bg-background flex size-full items-center justify-center overflow-hidden rounded-full', className)} {...props}>
+        <div ref={ref} className={cn('pointer-events-none absolute inset-0 flex size-full items-center justify-center overflow-hidden rounded-full bg-background transition-opacity duration-200 ease-out', hidden ? 'opacity-0' : 'opacity-100', className)} {...props}>
             {children ?? (avatar?.bot ? <Bot className="size-[70%] stroke-2" aria-hidden /> : <UserRound className="mt-[25%] size-full stroke-2" aria-hidden />)}
         </div>
     );

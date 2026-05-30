@@ -9,6 +9,7 @@ function buildAttachmentMessage(type, file, meta = {}) {
         k: file.k,
         ...(Number.isFinite(file?.x) ? { x: file.x } : {}),
         ...(typeof file?.stay === 'string' && file.stay ? { stay: file.stay } : {}),
+        ...(typeof file?.stay === 'string' && file.stay && typeof file?.stayKey === 'string' && file.stayKey ? { stayKey: file.stayKey } : {}),
         ...pickAttachmentMeta(meta),
     };
 }
@@ -21,6 +22,7 @@ export async function putBotAttachment(bucket, pair, cid, type, data, meta = {})
     const upload = await makeChatFileUploadPayload(pair, cid, data, {
         contentType: meta?.mimeType || 'application/octet-stream',
         stay: typeof meta?.stay === 'string' ? meta.stay : '',
+        stayKey: typeof meta?.stayKey === 'string' ? meta.stayKey : '',
     });
 
     const file = bucket.file(upload.path);

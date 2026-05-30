@@ -1,14 +1,17 @@
-import { requireSession } from '@/lib/routeguards';
+'use client';
+
+import { AuthGate } from '@/lib/routeguards';
 import { BitcoinProvider } from '@/components/providers/bitcoinprovider';
 import { AuthDialogHost, DialogProvider } from '@/components/providers/dialogprovider';
 
-export default async function AuthenticatedLayout({ children }) {
-    await requireSession();
+export default function AuthenticatedLayout({ children }) {
     return (
-        <DialogProvider>
-            <BitcoinProvider>
-                <AuthDialogHost>{children}</AuthDialogHost>
-            </BitcoinProvider>
-        </DialogProvider>
+        <AuthGate>
+            <DialogProvider>
+                <BitcoinProvider>
+                    <AuthDialogHost>{children}</AuthDialogHost>
+                </BitcoinProvider>
+            </DialogProvider>
+        </AuthGate>
     );
 }

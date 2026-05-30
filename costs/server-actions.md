@@ -39,7 +39,7 @@ Admin SDK reads and writes bypass Firestore and Storage Security Rules. Client S
 | `dropPush` | callable | push token removal |
 | `submitReport` | callable | user/message reporting |
 | `setMediaSaved` | callable | permanent media hold bookkeeping |
-| `onChatMessage` | Firestore trigger | push resolver for every new message doc |
+| `onChatMessage` | Firestore trigger | push resolver for parent chat preview updates |
 | `setBotPower` | callable | admin bot enable/disable |
 
 ## Firestore and Storage rules cost model
@@ -133,8 +133,7 @@ Web-only follow-up:
 
 - `signInWithCustomToken`.
 - ID token fetch.
-- `POST /api/session`, which creates a session cookie through Admin Auth.
-- No Firestore reads/writes in the session route.
+- No Next.js session-cookie route.
 
 ### Existing passkey login
 
@@ -473,26 +472,26 @@ Code:
 
 Current constants:
 
-- `TOP_CHAT_WARM_COUNT = 2`.
+- `TOP_CHAT_WARM_COUNT = 1`.
 - `EAGER_CHAT_WARM_COUNT = 1`.
-- `CHAT_WARM_BATCH_SIZE = 25`.
+- `CHAT_WARM_BATCH_SIZE = 20`.
+- `MSG_QUERY_MAX_DOCS = 60`.
 - media warming disabled.
 
 Each warmed chat:
 
-- attaches latest message listener.
-- `messageQueryLimit(25) = 25 * 3 + 8 = 83`.
-- costs up to 83 message `FR`.
+- attaches an adaptive latest message listener.
+- starts with 20 latest message docs and expands only if the client cannot resolve 20 post-retention readable messages.
+- caps foreground reads at 60 docs for control-heavy, hidden, expired, or unavailable-message spans.
+- costs 20 message `FR` in normal chats and up to 60 `FR` at the cap.
 - rule estimate: about 3 `RR`.
 - no Storage media bytes because media warming is disabled.
 
 Session maximum from warming:
 
-- immediate warm 1 chat: up to 83 `FR`.
-- delayed second warm: up to 83 more `FR`.
-- total up to 166 message `FR`.
+- immediate warm 1 chat: normally 20 `FR`, capped at 60 `FR`.
 
-Opening the chat route later uses page size 40 and can re-read messages at the larger limit.
+Opening the chat route later uses the same 20-readable-message target.
 
 ### Peer/profile refresh
 
@@ -520,7 +519,7 @@ Web:
 - blocked query: `max(1, B)` `FR`.
 - bitcoin listener: 1 `FR`.
 - chat list: `max(1, C15)` `FR`.
-- message warming: `W * up to 83` `FR`, where `W <= 2`.
+- message warming: normally 20 `FR`, capped at 60 `FR`.
 - presence active: 1 `FW`.
 - bitcoin while mounted: 1 `FR` per minute.
 
@@ -531,7 +530,7 @@ iOS:
 - blocked query: `max(1, B)` `FR`.
 - bitcoin listener: 1 `FR`.
 - chat list: `max(1, C15)` `FR`.
-- message warming: `W * up to 83` `FR`.
+- message warming: normally 20 `FR`, capped at 60 `FR`.
 - presence active: 1 `FW`.
 - bitcoin while mounted: 1 `FR` per minute.
 - push registration can add costs if token/device state changes.
@@ -553,9 +552,10 @@ Client batch:
 - sets/merges parent `chats/{chatId}` with `participants`, `lastMsg`, `ts`: 1 `FW`.
 - rules estimate: about 3 `RR` for message create with parent after-write state.
 
-Trigger:
+Parent chat trigger:
 
-- every message create runs `onChatMessage`: 1 `FN`.
+- every parent chat preview update runs `onChatMessage`: 1 `FN`.
+- control messages do not update the parent chat preview, so they do not run this trigger.
 - `resolveChatActors`:
   - sender profile query by chatPK, `limit(2)`: at least 1 `FR`.
   - receiver profile query by chatPK, `limit(2)`: at least 1 `FR`.
@@ -564,15 +564,14 @@ Trigger:
   - receiver moderation: 1 `FR`.
   - receiver blocked-sender doc: 1 `FR`.
   - receiver push docs query: `max(1, P)` `FR`.
-  - parent chat doc: 1 `FR`.
 
 Base trigger reads:
 
-- `6 + max(1, P)` `FR`.
+- `5 + max(1, P)` `FR`.
 
 If receiver has no registered push docs:
 
-- push query still has query minimum, so trigger total is 7 `FR`.
+- push query still has query minimum, so trigger total is 6 `FR`.
 
 Push delivery:
 
@@ -615,7 +614,7 @@ Long text is converted to file attachment:
   - 2 `FW`.
   - about 3 `RR`.
   - 1 `FN`.
-  - `6 + max(1, P)` trigger `FR`.
+  - `5 + max(1, P)` trigger `FR`.
 
 ### Image/audio/video/file
 
@@ -632,7 +631,7 @@ Send:
 - write message doc: 1 `FW`.
 - write parent chat `lastMsg`/`ts`: 1 `FW`.
 - Firestore rules estimate: about 3 `RR`.
-- trigger: 1 `FN` and `6 + max(1, P)` `FR`.
+- trigger: 1 `FN` and `5 + max(1, P)` `FR`.
 - stored bytes apply.
 
 Download/read media:
@@ -659,7 +658,7 @@ Expiring media:
   - 2 `FW`.
   - about 3 `RR`.
   - 1 `FN`.
-  - `6 + max(1, P_target)` trigger `FR`.
+  - `5 + max(1, P_target)` trigger `FR`.
 
 Permanent media:
 
@@ -688,17 +687,10 @@ Client:
 - no parent chat last-message write.
 - rules estimate: about 3 `RR`.
 
-Trigger:
+Push:
 
-- still runs `onChatMessage`: 1 `FN`.
-- current code resolves actors, moderation, block, push docs, and chat before checking non-preview status.
-- cost: `6 + max(1, P)` `FR`.
-- usually no push is sent because `chat.lastMsg.head.cid !== receipt.cid`.
-
-Optimization:
-
-- read parent chat first and skip if cid is not current `lastMsg`.
-- this would cut read-receipt/reaction trigger reads to roughly one chat read before return.
+- does not update parent chat `lastMsg` or `ts`.
+- does not run `onChatMessage`.
 
 ### Reaction
 
@@ -708,9 +700,8 @@ Same as read receipt:
 
 - 1 `FW`.
 - about 3 `RR`.
-- 1 `FN`.
-- `6 + max(1, P)` trigger `FR`.
-- usually skipped as non-preview after reads.
+- no `FN`.
+- no push-trigger reads.
 
 ### Chat retention change
 
@@ -723,7 +714,7 @@ Steps:
 - sends system message with `updateLastMsg: false`:
   - message doc write: 1 `FW`.
   - message create rules: about 3 `RR`.
-  - trigger: 1 `FN`, `6 + max(1, P)` `FR`.
+  - no push trigger because parent chat `lastMsg` does not change.
 
 ## Opening and reading chats
 
@@ -738,13 +729,12 @@ Code:
 Costs:
 
 - if chat row missing, read parent chat: 1 `FR`.
-- latest message listener page size 40:
-  - `messageQueryLimit(40) = 128`.
-  - up to 128 message `FR`, minimum 1.
+- latest message listener targets 20 post-retention readable messages:
+  - starts at 20 latest message docs.
+  - doubles the active listener limit until 20 post-retention readable messages resolve or the 60-doc foreground cap is reached.
+  - costs 20 message `FR` in normal chats and up to 60 `FR` in control-heavy spans.
   - rules estimate about 3 `RR`.
-- after ready, one older prefetch:
-  - up to 129 message `FR`.
-  - rules estimate about 3 `RR`.
+- no automatic older prefetch after open.
 - media bytes are not loaded unless rendered/read and missing local cache.
 - seeing latest peer message can schedule read receipt.
 
@@ -752,7 +742,9 @@ Costs:
 
 Code: `shared/chat/messages/query.js`.
 
-- page size 40 older fetch reads up to 129 docs.
+- older fetches target 20 post-retention readable messages.
+- one-off reads start with 20 older docs and keep fetching older chunks only if fewer than 20 post-retention readable messages resolve.
+- each older load is capped at 60 docs for control-heavy, hidden, expired, or unavailable-message spans.
 - minimum 1 `FR`.
 - rules estimate about 3 `RR`.
 
@@ -848,6 +840,10 @@ Code: `deleteMsg`.
 
 Steps:
 
+- if deleting a saved media message, client first runs the unsave path:
+  - reseals message body without `stay`: 1 `FR` + 1 `FW`.
+  - restores a temporary `ttl`: 1 parent chat `FR` + 1 message `FW`, plus parent `lastMsg.ttl` write if applicable.
+  - calls `setMediaSaved(false)`, which deletes the stay and may clear the Storage temporary hold when stay count reaches zero.
 - reads parent chat: 1 `FR`.
 - reads message doc: 1 `FR`.
 - deletes message doc: 1 `FD`.
@@ -864,7 +860,8 @@ Code:
 
 - `makeMsgPermanent`.
 - `makeMsgTemporary`.
-- `updateSeenMsgTtls`.
+- `listenToLatestMsgs` / `loadOlderMsgs` client expired-message cleanup.
+- Firestore TTL policy on collection group `messages`, field `ttl`.
 
 Shape:
 
@@ -872,6 +869,33 @@ Shape:
 - write each message ttl update: one `FW` per item.
 - if affected message is current lastMsg, update parent chat: 1 `FW`.
 - rules for each message update and parent update apply.
+
+Active clients keep backend TTL dumb:
+
+- new messages start with the fixed 21-day TTL,
+- saving forever sets message `ttl = null`,
+- unsaving restores a temporary TTL,
+- read handling and hidden-message checkpoints do not shorten plaintext TTL.
+
+Expired message cleanup:
+
+- message queries inspect `ttl` before filtering expired docs out of the rendered batch.
+- if `ttl` expired more than 60 seconds ago, the client batches deletes for already-read docs.
+- client delete cost: 1 `FD` per expired doc, plus message-delete rules reads for the batch request.
+- native Firestore TTL is the backup path when no client sees the expired doc in time; TTL deletes still count as document deletes.
+
+Smart hidden-message cleanup:
+
+- clients append encrypted `hid` checkpoint control messages after their UI has released read-hidden messages.
+- if both participants' hidden checkpoints cover an unsaved received display message, the recipient client may batch delete that message doc.
+
+Control-message compaction:
+
+- clients compact only after decrypting the opaque message stream.
+- safe deletes include superseded reactions, duplicate read receipts with the same sender and target, old hidden checkpoints covered by a newer checkpoint from the same sender, and retention setting rows replaced before any display message used them.
+- full read-receipt compaction is intentionally avoided because older receipt timestamps are the first-seen clock for `24h after seen` retention.
+- if a smart-deleted message is current `lastMsg`, the client clears parent `lastMsg`: 1 `FW`.
+- media objects are not deleted by smart message cleanup; unsaved media ages out through the Storage lifecycle rule.
 
 ## Delete chat
 
@@ -890,7 +914,7 @@ Steps:
   - `M` `FD`.
 - deletes parent chat:
   - 1 `FD`.
-- media blobs are intentionally kept.
+- before the callable, the client scans decryptable message docs for saved media stays; after a successful delete, it calls `setMediaSaved(false)` for each collected stay. Media blobs are intentionally kept and unsaved media ages out through Storage lifecycle.
 - Admin SDK bypasses rules.
 
 Formula:
@@ -912,6 +936,7 @@ Steps:
   - queries `chats where participants array-contains chatPK`: `max(1, C)` `FR`.
   - recursively deletes each chat doc and all message docs.
   - Firestore charges deletes for deleted docs and may do internal reads/listing for recursive enumeration.
+- before the callable, the client scans decryptable account chats for saved media stays; after a successful delete, it releases those stays with `setMediaSaved(false)`.
 - recursively deletes `users/{uid}`:
   - deletes user doc and subcollections such as `blocked` and `push`.
   - recursive enumeration can add reads/listing.
@@ -1157,10 +1182,11 @@ Per active bot session:
 The user's outbound message pays the normal send cost. The bot runtime then pays its own Admin SDK costs:
 
 - bot chat listener receives changed parent chat: 1 `FR`.
-- reads bot read cursor `bots/{botUid}/reads/{chatId}`: 1 `FR`.
+- reads bot read cursor `bots/{botUid}/reads/{chatId}` on runtime cache miss: 1 `FR`.
 - queries new messages after cursor:
   - `max(1, new message count)` `FR`.
   - if initial query empty but parent recency indicates new message, retries after 250 ms, adding another query minimum.
+- if the batch has no peer-authored docs, advances the bot read cursor and skips chat settings decrypt, peer profile resolution, moderation, blocking, receipts, and replies.
 - resolves peer by chatPK on cache miss:
   - query `profiles where chatPK == peerChatPK limit 2`: at least 1 `FR`.
 - checks moderation/blocking:
@@ -1168,30 +1194,30 @@ The user's outbound message pays the normal send cost. The bot runtime then pays
   - `users/{botUid}/blocked/{peerUid}`: 1 `FR`.
   - `users/{peerUid}/blocked/{botUid}`: 1 `FR`.
   - `moderation/{botUid}`: 1 `FR`.
-- writes bot read cursor: 1 `FW`, possibly more than once while processing multiple messages.
-- if bot sends read receipt:
-  - writes one message doc: 1 `FW`.
-  - triggers `onChatMessage`: 1 `FN`, `6 + max(1, P_user)` `FR`.
+- writes bot read cursor once per advanced message batch: 1 `FW`.
+- if bot sends read receipt and hidden checkpoint:
+  - writes two message docs: 2 `FW`.
+  - read-receipt and hidden-checkpoint control messages do not update parent chat `lastMsg` and do not trigger push.
 - if bot replies with text/request:
-  - deterministic msg id existence check: 1 `FR`.
+  - deterministic message create, with no existence pre-read.
   - writes message doc and parent chat: 2 `FW`.
-  - triggers `onChatMessage`: 1 `FN`, `6 + max(1, P_user)` `FR`.
+  - triggers `onChatMessage`: 1 `FN`, `5 + max(1, P_user)` `FR`.
 - if bot mirrors attachment:
+  - deterministic mirror message preflight before reading media: 1 `FR`.
   - downloads user media: 1 `SB` plus bytes.
   - uploads mirrored media: 1 `SA` plus bytes.
   - sends bot media message as above.
 - if bot pays request:
+  - deterministic mirrored-request preflight before Spark transfer: 1 `FR`.
   - Spark transfer external.
   - patches user's request: 1 message `FR`, 1 message `FW`, 1 parent chat `FR`, maybe 1 parent chat `FW`.
   - sends bot request/message back.
 
 ## Cost hotspots found
 
-1. Read receipts and reactions pay full push-trigger resolver reads even though they are non-preview messages.
-2. Chat warming reads up to 166 messages per unlock before explicit chat open.
-3. Chat open route can read 128 recent messages plus 129 older-prefetch messages.
-4. `bitcoin/current` updates fan out to every mounted client once per minute.
-5. Push registration has query-minimum reads even when no stale docs exist.
-6. Peer refresh can read up to 50 profile docs per refresh interval.
-7. Account deletion recursively deletes chat/message trees and user subcollections, which is acceptable for rare deletion but expensive for chat-heavy users.
-8. Media bytes are mostly user-driven; media warming is disabled, which avoids hidden Storage download costs.
+1. Control-heavy or mostly hidden chats can force adaptive latest-message listeners and older loads up to the 60-doc cap.
+2. `bitcoin/current` updates fan out to every mounted client once per minute.
+3. Push registration has query-minimum reads even when no stale docs exist.
+4. Peer refresh can read up to 50 profile docs per refresh interval.
+5. Account deletion recursively deletes chat/message trees and user subcollections, which is acceptable for rare deletion but expensive for chat-heavy users.
+6. Media bytes are mostly user-driven; media warming is disabled, which avoids hidden Storage download costs.

@@ -5,7 +5,7 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { useMenu } from '@/providers/menuprovider';
 
 const START_SCALE = 0.01;
-export const MENU_LONG_PRESS_MS = 220;
+export const MENU_LONG_PRESS_MS = 420;
 const KEYBOARD_DISMISS_FALLBACK_MS = 320;
 
 let nextId = 0;
@@ -20,11 +20,18 @@ function insetStyle(value) {
     return inset > 0 ? { paddingBottom: inset, marginBottom: -inset } : undefined;
 }
 
+function blockGesture(gesture, blockExternalGestures) {
+    const gestures = (Array.isArray(blockExternalGestures) ? blockExternalGestures : [blockExternalGestures]).filter(Boolean);
+    return gestures.length ? gesture.blocksExternalGesture(...gestures) : gesture;
+}
+
 export default function Menu({
     id,
     children,
     items,
     onHold,
+    contentGesture,
+    blockExternalGestures,
     disabled = false,
     longScale = 0.96,
     activeStyle,
@@ -40,6 +47,7 @@ export default function Menu({
     const openFrameRef = useRef(null);
     const keyboardHideRef = useRef(null);
     const activeRef = useRef(false);
+    const latestRef = useRef(null);
     const menuId = id || idRef.current;
 
     const list = useMemo(() => (Array.isArray(items) ? items.filter(Boolean) : []), [items]);
@@ -104,8 +112,9 @@ export default function Menu({
 
     const measureAndOpen = useCallback(() => {
         openFrameRef.current = null;
+        const latest = latestRef.current;
 
-        if (!hostRef.current?.measureInWindow) {
+        if (!latest?.open || !hostRef.current?.measureInWindow) {
             releaseRef.current();
             return;
         }
@@ -117,16 +126,16 @@ export default function Menu({
             }
 
             layoutRef.current = { width, height };
-            open({
-                id: menuId,
+            latest.open({
+                id: latest.menuId,
                 anchor: { x, y, width, height },
-                items: list,
-                render,
+                items: latest.list,
+                render: latest.render,
                 release: releaseRef.current,
-                longScale,
+                longScale: latest.longScale,
             });
         });
-    }, [list, longScale, menuId, open, render]);
+    }, []);
 
     const scheduleOpen = useCallback(() => {
         const queueMeasure = () => {
@@ -173,33 +182,44 @@ export default function Menu({
     }, [measureAndOpen]);
 
     const handleLongPress = useCallback(() => {
-        if (!canHold) {
+        const latest = latestRef.current;
+        if (!latest?.canHold) {
             return;
         }
 
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
 
-        if (!hasMenu) {
-            onHold?.();
+        if (!latest.hasMenu) {
+            latest.onHold?.();
             return;
         }
 
         scheduleOpen();
-    }, [canHold, hasMenu, onHold, scheduleOpen]);
+    }, [scheduleOpen]);
+
+    latestRef.current = { canHold, hasMenu, list, longScale, menuId, onHold, open, render };
 
     const longPressGesture = useMemo(() => {
         if (!holdTarget) {
             return null;
         }
 
-        return Gesture.LongPress()
-            .enabled(canHold)
-            .minDuration(MENU_LONG_PRESS_MS)
-            .maxDistance(18)
-            .runOnJS(true)
-            .onStart(handleLongPress);
-    }, [canHold, handleLongPress, holdTarget]);
-
+        return blockGesture(
+            Gesture.LongPress()
+                .enabled(canHold)
+                .minDuration(MENU_LONG_PRESS_MS)
+                .maxDistance(18)
+                .runOnJS(true)
+                .onStart(handleLongPress),
+            blockExternalGestures
+        );
+    }, [blockExternalGestures, canHold, handleLongPress, holdTarget]);
+    const gesture = useMemo(() => {
+        if (longPressGesture && contentGesture) {
+            return Gesture.Exclusive(contentGesture, longPressGesture);
+        }
+        return longPressGesture || contentGesture || null;
+    }, [contentGesture, longPressGesture]);
     releaseRef.current = () => {};
 
     if (children == null) {
@@ -222,5 +242,5 @@ export default function Menu({
         </View>
     );
 
-    return longPressGesture ? <GestureDetector gesture={longPressGesture}>{content}</GestureDetector> : content;
+    return gesture ? <GestureDetector gesture={gesture}>{content}</GestureDetector> : content;
 }

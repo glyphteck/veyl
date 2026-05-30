@@ -6,8 +6,7 @@ import { useIsFocused } from 'expo-router/react-navigation';
 import { Check } from 'lucide-react-native';
 import QRCode from 'react-native-qrcode-svg';
 import { makeQr, qr } from '@glyphteck/shared/qrutils';
-import { FUNDING_TX_PREVIEW_VBYTES, STATIC_DEPOSIT_CLAIM_FEE_SATS } from '@glyphteck/shared/wallet/fees';
-import { renderMoney } from '@glyphteck/shared/utils';
+import { FUNDING_TX_PREVIEW_VBYTES, STATIC_DEPOSIT_CLAIM_FEE_SATS, formatOnchainFeeAmount } from '@glyphteck/shared/wallet/fees';
 
 import Icon from '@/components/icon';
 import { usePop } from '@/lib/pop';
@@ -16,12 +15,6 @@ import { useBitcoin } from '@/providers/bitcoinprovider';
 import { useTheme } from '@/providers/themeprovider';
 import { useUser } from '@/providers/userprovider';
 import { useWallet } from '@/providers/walletprovider';
-
-function formatFeeAmount(value, moneyFormat, price) {
-    const amount = Number(value);
-    if (!Number.isFinite(amount)) return 'updating';
-    return renderMoney(Math.max(0, Math.ceil(amount)), moneyFormat || 'sats', price);
-}
 
 export default function FundWalletScreen() {
     const { theme } = useTheme();
@@ -140,7 +133,7 @@ export default function FundWalletScreen() {
             <Pressable {...feeHelpTap.props} accessibilityRole="button" accessibilityLabel="funding fee info" hitSlop={8} style={{ alignSelf: 'stretch', paddingBottom: 4 }}>
                 <Animated.View style={{ alignSelf: 'flex-start', maxWidth: '100%', transform: [{ scale: feeHelpTap.scale }] }}>
                     <Text numberOfLines={1} style={{ color: theme.foreground, fontSize: 17, fontWeight: '900' }}>
-                        estimated fee: ~{formatFeeAmount(fundingFeePreview?.feeAmountSats, settings?.moneyFormat, bitcoin.price)}
+                        estimated fee: ~{formatOnchainFeeAmount(fundingFeePreview, settings?.moneyFormat, bitcoin.price)}
                     </Text>
                 </Animated.View>
             </Pressable>

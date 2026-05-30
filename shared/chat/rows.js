@@ -1,4 +1,5 @@
 import { collection, query, where, orderBy, onSnapshot, doc, getDocsFromServer, getDocFromServer, limit, startAfter } from 'firebase/firestore';
+import { CHAT_LIST_PAGE_SIZE } from '../config.js';
 import { openMsg } from '../crypto/chat.js';
 import { canShowMsg, canStoreMsg, isControlMsg } from './messages.js';
 import { openChatSettingsForPair } from './settings.js';
@@ -87,18 +88,8 @@ function chatListQuery(db, userChatPK, count, cursor) {
     if (cursor) {
         base.push(startAfter(cursor));
     }
-    base.push(limit(cleanPositiveInt(count, 20)));
+    base.push(limit(cleanPositiveInt(count, CHAT_LIST_PAGE_SIZE)));
     return query(collection(db, 'chats'), ...base);
-}
-
-function chatParticipantQuery(db, userChatPK) {
-    return query(collection(db, 'chats'), where('participants', 'array-contains', userChatPK));
-}
-
-function isIndexUnavailableError(error) {
-    const code = String(error?.code || '').toLowerCase();
-    const message = String(error?.message || '').toLowerCase();
-    return code.includes('failed-precondition') && message.includes('index');
 }
 
 function normalizeChatLastMsg(msgData, message) {
@@ -123,51 +114,35 @@ export function isChatUnseenForUser(chatData, userChatPK) {
 }
 
 export function listenToChats(db, userChatPK, userPrivKey, onUpdate, onError, options = {}) {
-    const pageSize = cleanPositiveInt(options?.limitCount ?? options?.pageSize ?? options?.count, 20);
+    const pageSize = cleanPositiveInt(options?.limitCount ?? options?.pageSize ?? options?.count, CHAT_LIST_PAGE_SIZE);
     const cache = new Map();
     let run = 0;
-    let unsub = null;
-    let usingFallback = false;
 
-    const listen = (q, fallback = false) =>
-        onSnapshot(
-            q,
-            (snap) => {
-                if (snap.metadata?.hasPendingWrites) {
-                    return;
-                }
-                const runId = ++run;
-                void handleChats(db, snap.docs, userChatPK, userPrivKey, cache)
-                    .then(({ chats, peers, deletingChatIds }) => {
-                        if (runId === run) {
-                            onUpdate(chats, peers, {
-                                deletingChatIds,
-                                cursor: fallback ? null : (snap.docs[snap.docs.length - 1] ?? null),
-                                hasMore: fallback ? false : snap.docs.length >= pageSize,
-                                fallback,
-                            });
-                        }
-                    })
-                    .catch((error) => {
-                        if (runId === run) {
-                            onError?.(error);
-                        }
-                    });
-            },
-            (error) => {
-                if (!fallback && !usingFallback && isIndexUnavailableError(error)) {
-                    usingFallback = true;
-                    run += 1;
-                    cache.clear();
-                    unsub?.();
-                    unsub = listen(chatParticipantQuery(db, userChatPK), true);
-                    return;
-                }
-                onError?.(error);
+    const unsub = onSnapshot(
+        chatListQuery(db, userChatPK, pageSize),
+        (snap) => {
+            if (snap.metadata?.hasPendingWrites) {
+                return;
             }
-        );
-
-    unsub = listen(chatListQuery(db, userChatPK, pageSize));
+            const runId = ++run;
+            void handleChats(db, snap.docs, userChatPK, userPrivKey, cache)
+                .then(({ chats, peers, deletingChatIds }) => {
+                    if (runId === run) {
+                        onUpdate(chats, peers, {
+                            deletingChatIds,
+                            cursor: snap.docs[snap.docs.length - 1] ?? null,
+                            hasMore: snap.docs.length >= pageSize,
+                        });
+                    }
+                })
+                .catch((error) => {
+                    if (runId === run) {
+                        onError?.(error);
+                    }
+                });
+        },
+        onError
+    );
     return () => unsub?.();
 }
 
@@ -182,7 +157,7 @@ export async function loadMoreChats(db, userChatPK, userPrivKey, cursor, pageSiz
         };
     }
 
-    const count = cleanPositiveInt(pageSize, 20);
+    const count = cleanPositiveInt(pageSize, CHAT_LIST_PAGE_SIZE);
     const snap = await getDocsFromServer(chatListQuery(db, userChatPK, count, cursor));
     const result = await handleChats(db, snap.docs, userChatPK, userPrivKey, new Map(), { prune: false });
     return {

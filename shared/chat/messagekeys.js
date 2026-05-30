@@ -1,4 +1,4 @@
-import { getMessageKey } from './state.js';
+import { getMessageKey, getMessageOrderMs } from './state.js';
 
 export function keySet(value) {
     if (value instanceof Set) {
@@ -7,30 +7,21 @@ export function keySet(value) {
     return new Set(Array.isArray(value) ? value.filter(Boolean) : []);
 }
 
+export function messageKeys(message) {
+    if (typeof message === 'string') {
+        const key = message.trim();
+        return key ? [key] : [];
+    }
+    return [...new Set([getMessageKey(message), message?.id, message?.cid].map((key) => (typeof key === 'string' ? key.trim() : '')).filter(Boolean))];
+}
+
 export function addMessageKeys(keys, message) {
     if (!keys || !message) {
         return;
     }
 
-    if (typeof message === 'string') {
-        const key = message.trim();
-        if (key) {
-            keys.add(key);
-        }
-        return;
-    }
-
-    const key = getMessageKey(message);
-    const id = typeof message.id === 'string' ? message.id.trim() : '';
-    const cid = typeof message.cid === 'string' ? message.cid.trim() : '';
-    if (key) {
+    for (const key of messageKeys(message)) {
         keys.add(key);
-    }
-    if (id) {
-        keys.add(id);
-    }
-    if (cid) {
-        keys.add(cid);
     }
 }
 
@@ -39,10 +30,7 @@ export function messageHasKey(message, keys) {
         return false;
     }
 
-    const key = getMessageKey(message);
-    const id = typeof message.id === 'string' ? message.id.trim() : '';
-    const cid = typeof message.cid === 'string' ? message.cid.trim() : '';
-    return !!((key && keys.has(key)) || (id && keys.has(id)) || (cid && keys.has(cid)));
+    return messageKeys(message).some((key) => keys.has(key));
 }
 
 export function collectMessageKeys(messages) {
@@ -51,4 +39,27 @@ export function collectMessageKeys(messages) {
         addMessageKeys(keys, message);
     }
     return keys;
+}
+
+export function indexMessagesByKey(messages, { keep = 'first' } = {}) {
+    const byKey = new Map();
+    const replace = keep === 'last';
+    for (const message of messages || []) {
+        for (const key of messageKeys(message)) {
+            if (key && (replace || !byKey.has(key))) {
+                byKey.set(key, message);
+            }
+        }
+    }
+    return byKey;
+}
+
+export function targetMessageMs(target, byKey) {
+    const key = typeof target === 'string' ? target.trim() : '';
+    if (!key) {
+        return null;
+    }
+    const message = byKey?.get?.(key);
+    const ms = getMessageOrderMs(message ?? { cid: key });
+    return Number.isFinite(ms) ? ms : null;
 }

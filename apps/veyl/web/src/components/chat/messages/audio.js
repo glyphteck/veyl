@@ -8,18 +8,8 @@ import { clear, play } from '@/lib/media';
 import { getAudioCacheKey, loadAudioObjectUrl, releaseAudio, retainAudio } from '@/components/chat/audiocache';
 import { getAttachmentCaption, getAttachmentTitle, isExpiredAttachmentMsg } from '@glyphteck/shared/chat/messages';
 import { useCloak } from '@glyphteck/shared/providers/cloakprovider';
+import { formatDuration } from '@glyphteck/shared/utils';
 import { stopClick } from './utils';
-
-function fmtTime(value) {
-    if (!Number.isFinite(value) || value <= 0) {
-        return '0:00';
-    }
-
-    const total = Math.floor(value);
-    const mins = Math.floor(total / 60);
-    const secs = String(total % 60).padStart(2, '0');
-    return `${mins}:${secs}`;
-}
 
 export default function AudioMessage({ msg, peerChatPK, fromPeer = false }) {
     const { readMessageFile } = useChat();
@@ -155,7 +145,7 @@ export default function AudioMessage({ msg, peerChatPK, fromPeer = false }) {
 
     const disabled = loading || !!error || !src;
     const max = duration > 0 ? duration : 0;
-    const timeLabel = loading ? 'loading...' : error || `${fmtTime(time)} / ${fmtTime(duration)}`;
+    const timeLabel = loading ? 'loading...' : error || `${formatDuration(time, { hours: false })} / ${formatDuration(duration, { hours: false })}`;
 
     return (
         <div className={`flex min-w-0 w-xs max-w-full items-center gap-3 rounded-round ${bubbleBg(fromPeer)} pl-4 pr-4 py-3 shadow-sm`}>

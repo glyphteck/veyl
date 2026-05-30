@@ -1,5 +1,7 @@
-export const MIN_PASSWORD = 12;
-export const MAX_PASSWORD = 64;
+import { PASSWORD_MAX_CHARS, PASSWORD_MIN_CHARS } from './config.js';
+
+export const MIN_PASSWORD = PASSWORD_MIN_CHARS;
+export const MAX_PASSWORD = PASSWORD_MAX_CHARS;
 export const rules = [
     `Use ${MIN_PASSWORD} to ${MAX_PASSWORD} characters.`,
     'Most visible letters, numbers, symbols, and emoji are allowed.',

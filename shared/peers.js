@@ -346,9 +346,13 @@ export function createPeersApi({ db, storage, getStorage, network }) {
         return chunks.map((chunk) => getDocs(query(collection(db, 'profiles'), where(queryField, 'in', chunk), limit(chunk.length))));
     }
 
+    function uniqueLookupKeys(keys) {
+        return [...new Set((keys || []).filter(Boolean))];
+    }
+
     async function loadProfiles(walletPKs, chatPKs) {
-        const uncachedWalletPKs = (walletPKs || []).filter((key) => key && !walletToUid.has(key));
-        const uncachedChatPKs = (chatPKs || []).filter((key) => key && !chatToUid.has(key));
+        const uncachedWalletPKs = uniqueLookupKeys(walletPKs).filter((key) => !walletToUid.has(key));
+        const uncachedChatPKs = uniqueLookupKeys(chatPKs).filter((key) => !chatToUid.has(key));
 
         if (uncachedWalletPKs.length === 0 && uncachedChatPKs.length === 0) return;
 

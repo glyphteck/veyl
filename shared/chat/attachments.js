@@ -1,7 +1,8 @@
 'use client';
 
-import { CHAT_FILE_SIZE_LIMIT_ENABLED, MAX_CHAT_FILE_BYTES } from './filepayload.js';
+import { CHAT_FILE_SIZE_LIMIT_ENABLED, MAX_CHAT_FILE_BYTES, makeChatFileTooLargeError } from './filepayload.js';
 import { makeTxtFileName } from './messages.js';
+import { ATTACHMENT_CACHE_FALLBACK_DELAY_MS, ATTACHMENT_CACHE_IDLE_TIMEOUT_MS } from '../config.js';
 import { encoder } from '../crypto/core.js';
 import { writeCachedMedia } from '../localdatacache.js';
 
@@ -27,13 +28,7 @@ export function getAttachmentByteSize(attachment) {
 }
 
 export function makeAttachmentTooLargeError(size) {
-    const error = new Error('file too large');
-    error.code = 'file-too-large';
-    error.maxBytes = MAX_CHAT_FILE_BYTES;
-    if (Number.isFinite(size)) {
-        error.size = size;
-    }
-    return error;
+    return makeChatFileTooLargeError(size);
 }
 
 export function checkAttachmentSize(attachment) {
@@ -125,10 +120,10 @@ export function saveMedia(cache, message, data, meta = {}) {
     };
 
     if (typeof globalThis.requestIdleCallback === 'function') {
-        globalThis.requestIdleCallback(run, { timeout: 2500 });
+        globalThis.requestIdleCallback(run, { timeout: ATTACHMENT_CACHE_IDLE_TIMEOUT_MS });
         return;
     }
-    setTimeout(run, 250);
+    setTimeout(run, ATTACHMENT_CACHE_FALLBACK_DELAY_MS);
 }
 
 export function getAttachmentType(attachment = {}) {

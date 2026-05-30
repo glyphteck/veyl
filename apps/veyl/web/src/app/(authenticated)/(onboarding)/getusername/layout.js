@@ -1,6 +1,7 @@
-import { requireUsernameStep } from '@/lib/routeguards';
+'use client';
 
-export default async function GetUsernameLayout({ children }) {
-    await requireUsernameStep();
-    return children;
+import { OnboardingGate } from '@/lib/routeguards';
+
+export default function GetUsernameLayout({ children }) {
+    return <OnboardingGate step="username">{children}</OnboardingGate>;
 }

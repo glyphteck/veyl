@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { WALLET_RECENT_TRANSFER_LIMIT, WALLET_TRANSFER_FETCH_THROTTLE_MS, WALLET_TRANSFER_PAGE_LIMIT } from '../config.js';
 import { readCachedTransferState, writeCachedTransferState } from '../localdatacache.js';
 import { markDiag, markDone, markError } from './diag.js';
 
-export const RECENT_TRANSFER_LIMIT = 100;
-export const TRANSFER_PAGE_LIMIT = 100;
+export const RECENT_TRANSFER_LIMIT = WALLET_RECENT_TRANSFER_LIMIT;
+export const TRANSFER_PAGE_LIMIT = WALLET_TRANSFER_PAGE_LIMIT;
 const INITIAL_TRANSFER_LIMIT = RECENT_TRANSFER_LIMIT;
-const TRANSFER_FETCH_THROTTLE_MS = 150;
+const TRANSFER_FETCH_THROTTLE_MS = WALLET_TRANSFER_FETCH_THROTTLE_MS;
 const FINAL_TRANSFER_STATUSES = new Set(['TRANSFER_STATUS_COMPLETED', 'TRANSFER_STATUS_EXPIRED', 'TRANSFER_STATUS_RETURNED', 'UNRECOGNIZED']);
 
 export function isPendingTransfer(tx) {

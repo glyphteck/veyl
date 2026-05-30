@@ -7,6 +7,7 @@ import { useTheme } from '@/providers/themeprovider';
 import { warmMessageDownload } from '@/lib/chatdownloads';
 import { bubbleTint } from '@/lib/messages';
 import { formatAttachmentSize, getAttachmentCaption, getAttachmentTitle } from '@glyphteck/shared/chat/messages';
+import { useMessageGestureBlockers } from '@/components/chat/messagegesturecontext';
 import GlassView from '@/components/glass/glassview';
 import Icon from '@/components/icon';
 import Menu from '@/components/menu';
@@ -17,6 +18,7 @@ const ATTACHMENT_LONG_SCALE = 0.9;
 export default function AttachmentMessage({ msg, peerChatPK, fromPeer = false, menuItems, menuId, reactions = [], reactionUsers, reactionPreviewInset = 0 }) {
     const { theme } = useTheme();
     const { readMessageFile } = useChat();
+    const blockExternalGestures = useMessageGestureBlockers();
     const focused = useIsFocused();
     const title = getAttachmentTitle(msg);
     const caption = getAttachmentCaption(msg);
@@ -30,7 +32,7 @@ export default function AttachmentMessage({ msg, peerChatPK, fromPeer = false, m
     }, [focused, msg?.k, msg?.m, msg?.p, msg?.t, msg?.z, peerChatPK, readMessageFile]);
 
     return (
-        <Menu id={menuId} items={menuItems} longScale={ATTACHMENT_LONG_SCALE} previewBottomInset={reactionPreviewInset}>
+        <Menu id={menuId} items={menuItems} longScale={ATTACHMENT_LONG_SCALE} blockExternalGestures={blockExternalGestures} previewBottomInset={reactionPreviewInset}>
             <ReactionTray reactions={reactions} users={reactionUsers} fromPeer={fromPeer}>
                 <GlassView
                     glassEffectStyle="clear"

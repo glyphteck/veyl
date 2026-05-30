@@ -1,28 +1,11 @@
 'use client';
 
-import { COOPERATIVE_EXIT_FLAT_FEE_SATS, COOPERATIVE_EXIT_TX_VBYTES } from '@glyphteck/shared/wallet/fees';
+import { COOPERATIVE_EXIT_FLAT_FEE_SATS, COOPERATIVE_EXIT_TX_VBYTES, formatOnchainFeeAmount, formatOnchainFeeFormula } from '@glyphteck/shared/wallet/fees';
 import { Button } from '@/components/button';
 import { Card } from '@/components/card';
 import { useBitcoin } from '@/components/providers/bitcoinprovider';
 import { useDialog } from '@/components/providers/dialogprovider';
 import { useUser } from '@/components/providers/userprovider';
-import { renderMoney } from '@/lib/utils';
-
-function formatWholeNumber(value) {
-    return String(value).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-}
-
-function formatSats(value) {
-    if (value == null) return 'updating';
-    return `${formatWholeNumber(value)} ${value === 1 ? 'sat' : 'sats'}`;
-}
-
-function formatFeeRate(value) {
-    const rate = Number(value);
-    if (!Number.isFinite(rate)) return 'updating';
-    const rounded = Math.round(rate * 1000) / 1000;
-    return `${rounded >= 10 ? formatWholeNumber(Math.round(rounded)) : String(rounded)} sat/vB`;
-}
 
 export default function WithdrawalInfo({ data, close }) {
     const bitcoin = useBitcoin();
@@ -34,9 +17,8 @@ export default function WithdrawalInfo({ data, close }) {
         baseSats: COOPERATIVE_EXIT_FLAT_FEE_SATS,
     });
     const fee = estimate?.success ? estimate.onchainEstimate : null;
-    const feeFormula = `${fee?.vbytes ?? COOPERATIVE_EXIT_TX_VBYTES} vB x ${formatFeeRate(fee?.feeRateSatsPerVbyte)} + ${formatSats(COOPERATIVE_EXIT_FLAT_FEE_SATS)}`;
-    const feeAmount = Number(fee?.feeAmountSats);
-    const feeDisplay = Number.isFinite(feeAmount) ? renderMoney(Math.max(0, Math.ceil(feeAmount)), settings?.moneyFormat || 'sats', bitcoin.price) : 'updating';
+    const feeFormula = formatOnchainFeeFormula(fee, { vbytes: COOPERATIVE_EXIT_TX_VBYTES, baseSats: COOPERATIVE_EXIT_FLAT_FEE_SATS });
+    const feeDisplay = formatOnchainFeeAmount(fee, settings?.moneyFormat || 'sats', bitcoin.price);
     const back = () => {
         if (data?.withdraw) {
             openDialog('withdraw', data.withdraw);

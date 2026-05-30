@@ -4,7 +4,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { Search, Trash2 } from 'lucide-react-native';
-import { httpsCallable } from 'firebase/functions';
 import ReAnimated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { scheduleOnRN } from 'react-native-worklets';
@@ -21,7 +20,6 @@ import Icon from '@/components/icon';
 import { getMainMenuHeight } from '@/components/mainmenu';
 import SearchInput from '@/components/search';
 import { useTap } from '@/lib/tap';
-import { functions } from '@/lib/firebase';
 import { formatFullDateTime, formatUserDisplay } from '@glyphteck/shared/utils';
 import { getChatId } from '@glyphteck/shared/crypto/chat';
 import { getPeerChatPKFromChatId } from '@glyphteck/shared/chat/ids';
@@ -206,7 +204,7 @@ export default function ChatList() {
     const { theme } = useTheme();
     const router = useRouter();
     const insets = useSafeAreaInsets();
-    const { chats, isChatDataReady, hasMoreChats, loadingMoreChats, loadMoreChats, startDeleteChat, restoreDeletedChat } = useChat();
+    const { chats, isChatDataReady, hasMoreChats, loadingMoreChats, loadMoreChats, deleteChat, restoreDeletedChat } = useChat();
     const { chatPK, blockedSet, chatBanned } = useUser();
     const { peers, peerByChatPK, isBlockedChatPK, isPeerDataReady } = usePeer() || {};
     const { searching, results, query, search: runSearch, clearSearch } = useSearch('profiles');
@@ -294,11 +292,7 @@ export default function ChatList() {
                     text: 'delete',
                     style: 'destructive',
                     onPress: () => {
-                        startDeleteChat?.(chatId);
-                        httpsCallable(
-                            functions,
-                            'deleteChat'
-                        )({ chatId }).catch((err) => {
+                        Promise.resolve(deleteChat?.(chatId)).catch((err) => {
                             restoreDeletedChat?.(chatId);
                             console.warn('deleteChat failed', err);
                         });
@@ -306,7 +300,7 @@ export default function ChatList() {
                 },
             ]);
         },
-        [restoreDeletedChat, startDeleteChat]
+        [deleteChat, restoreDeletedChat]
     );
 
     const lockRoute = useCallback((ms = 1200) => {

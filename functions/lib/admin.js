@@ -8,27 +8,14 @@ function readFirebaseConfig() {
     }
 }
 
-function readServiceAccount() {
-    try {
-        return process.env.GOOGLE_SERVICE_ACCOUNT ? JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT) : null;
-    } catch {
-        return null;
-    }
-}
-
 function initAdmin() {
     const firebaseConfig = readFirebaseConfig();
-    const serviceAccount = readServiceAccount();
     const projectId = process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT || firebaseConfig?.projectId || 'glyphteck';
     const storageBucket = firebaseConfig?.storageBucket || 'glyphteck.firebasestorage.app';
     const options = { projectId, storageBucket };
 
     // Local ADC user creds can fail against Firebase Auth without a quota project.
     process.env.GOOGLE_CLOUD_QUOTA_PROJECT ||= projectId;
-
-    if (serviceAccount) {
-        options.credential = admin.credential.cert(serviceAccount);
-    }
 
     admin.initializeApp(options);
 }

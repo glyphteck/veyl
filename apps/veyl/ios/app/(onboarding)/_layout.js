@@ -3,6 +3,9 @@ import { useTheme } from '@/providers/themeprovider';
 import { useUser } from '@/providers/userprovider';
 import { useVault } from '@/providers/vaultprovider';
 import { hasCurrentCommunityRules } from '@/lib/community';
+import { stackScreenOptions } from '@/lib/stackoptions';
+
+const SHEET_ROUTES = new Set(['passwordrules']);
 
 export default function OnboardingLayout() {
     const { theme } = useTheme();
@@ -18,14 +21,7 @@ export default function OnboardingLayout() {
     const needsPassword = hasUsername && hasAvatarEntry && acceptedRules && !hasSeed;
 
     return (
-        <Stack
-            screenOptions={{
-                headerShown: false,
-                gestureEnabled: true,
-                fullScreenGestureEnabled: true,
-                contentStyle: { backgroundColor: theme?.background },
-            }}
-        >
+        <Stack screenOptions={stackScreenOptions(theme, SHEET_ROUTES)}>
             <Stack.Protected guard={!hasUsername}>
                 <Stack.Screen name="getusername" />
             </Stack.Protected>

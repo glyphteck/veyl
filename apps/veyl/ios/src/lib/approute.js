@@ -1,17 +1,5 @@
 export const DEFAULT_APP_HREF = '/chat';
 
-export function hrefForLastAppRoute(route) {
-    if (route === '/camera') return '/camera';
-    if (route === '/wallet') return '/wallet';
-    return DEFAULT_APP_HREF;
-}
-
-export function tabForLastAppRoute(route) {
-    if (route === '/camera') return 'camera';
-    if (route === '/wallet') return 'wallet';
-    return 'chat';
-}
-
 function focusedRoutePathForNavigationState(state) {
     let current = state;
     let route = null;

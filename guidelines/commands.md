@@ -59,7 +59,9 @@ bun merge
 
 Both commands prompt in the terminal. Use the arrow keys and Enter to choose the version bump. Text prompts collect the commit message and merge PR number when omitted. After the required inputs are collected, the workflow runs quietly and prints the pushed commit id when it succeeds.
 
-Before running either workflow, inspect the staged or intended diff and choose a concise, specific commit message that reflects the real change. Avoid vague messages like `update` unless the user explicitly requests that exact message.
+Before running either workflow, inspect the staged or intended diff, update [../CHANGELOG.md](../CHANGELOG.md), and choose a concise, specific commit message that reflects the real change. Avoid vague messages like `update` unless the user explicitly requests that exact message.
+
+Changelog entries carry the context that no single commit message can. Broad pushes should group the major product, backend, docs, and tooling changes. Small pushes can use one short bugfix or cleanup bullet, but the bullet still has to say what was fixed or cleaned up.
 
 The workflows preserve the old task behavior while suppressing routine command output:
 

@@ -1,6 +1,6 @@
 {
     "name": "veyl",
-    "version": "4.13.3",
+    "version": "4.14.0",
     "private": true,
     "workspaces": {
         "packages": [
@@ -48,12 +48,12 @@
     },
     "dependencies": {
         "@buildonspark/spark-sdk": "^0.8.1",
-        "@noble/ciphers": "catalog:",
-        "@noble/curves": "catalog:",
-        "@noble/hashes": "catalog:",
-        "@scure/bip39": "catalog:",
-        "bech32": "catalog:",
-        "firebase": "catalog:"
+        "@noble/ciphers": "^2.2.0",
+        "@noble/curves": "^2.2.0",
+        "@noble/hashes": "^2.2.0",
+        "@scure/bip39": "^2.2.0",
+        "bech32": "^2.0.0",
+        "firebase": "^12.14.0"
     },
     "overrides": {
         "firebase": "catalog:",
@@ -65,7 +65,7 @@
     },
     "devDependencies": {
         "@eslint/js": "^10.0.1",
-        "eslint": "^10.4.0",
+        "eslint": "^10.4.1",
         "eslint-plugin-react-hooks": "^7.1.1",
         "globals": "^17.6.0"
     }

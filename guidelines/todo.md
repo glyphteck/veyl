@@ -1,6 +1,6 @@
 # Todo Guidelines
 
-`todo/` is an active planning and coordination area for large features, broad behavior changes, major architecture work, and collision-prone refactors. It is not a changelog, release index, or place to preserve completed work.
+`todo/` is an active planning and coordination area for large features, broad behavior changes, major architecture work, and collision-prone refactors. It is not a changelog, release index, or place to preserve completed work. Shipped repo history belongs in [../CHANGELOG.md](../CHANGELOG.md).
 
 Small updates, narrow bugfixes, copy changes, targeted UI tweaks, and obvious cleanup usually do not need a todo file.
 

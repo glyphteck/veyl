@@ -28,6 +28,7 @@ Before starting feature work in this repo:
 - Work in the current branch by default. Do not create, switch, or rename git branches unless the user explicitly asks for branch work or the concurrent-agent collision rule below applies.
 - When creating branches, never use agent prefixes or namespace prefixes like `codex/`, `codex-`, or similar. Branch names should be as short as possible; prefer a meaningful single word when one is clear, using the naming rules in [guidelines/code.md](guidelines/code.md).
 - When running repo push or merge workflows, use a specific commit message that describes the actual changes being committed. Do not use vague defaults like `update` unless the user explicitly asks for that exact message.
+- Before running repo push or merge workflows, update [CHANGELOG.md](CHANGELOG.md). Broad updates need grouped, concrete bullets; narrow fixes can use one short bugfix or cleanup entry, but it must still name the actual change.
 - Veyl wallet/backend data is pre-production unless the user says otherwise. Do not add legacy wallet/account compatibility or migrations by default; prefer the clean current architecture. Still ask before destructive live backend data deletion.
 - Do not use `todo/` to list completed work. When a task is done, delete its task file or trim it to only unresolved work, then document implemented behavior directly in README, AGENTS, or focused docs.
 - Do not create `todo/README.md` or any central todo index. Todo folder policy belongs in [guidelines/todo.md](guidelines/todo.md), and the folder contents are the active list.
@@ -51,6 +52,7 @@ Detailed workflow rules live in [guidelines/workflow.md](guidelines/workflow.md)
 - [guidelines/packages.md](guidelines/packages.md): package installs, upgrades, lockfiles, Expo SDK bumps, and native rebuild rules
 - [guidelines/commands.md](guidelines/commands.md): install, run, build, bot, and local host commands
 - [guidelines/code.md](guidelines/code.md): naming, code structure, refactors, shared-vs-client rules
+- [guidelines/chat.md](guidelines/chat.md): encrypted chat lifecycle, retention, deletion, compaction, media, and module ownership
 - [guidelines/navigation.md](guidelines/navigation.md): fast paths into auth, vault, wallet, chat, search, bots, and backend
 - [guidelines/uistyling.md](guidelines/uistyling.md): web and iOS UI styling rules
 - [guidelines/validation.md](guidelines/validation.md): validation policy and files to avoid
@@ -62,7 +64,7 @@ Use the smallest relevant guideline set after reading the product context:
 
 - Repo workflow, planning, branch, todo, or worktree work: read `guidelines/workflow.md`, `guidelines/todo.md`, `guidelines/repo.md`, `guidelines/code.md`, `guidelines/commands.md`, and `guidelines/validation.md`.
 - Package, dependency, framework, Expo SDK, or lockfile work: read `guidelines/packages.md`, `guidelines/commands.md`, and `guidelines/validation.md`.
-- Chat work: read `repo.md`, `code.md`, `navigation.md`, and `security.md`.
+- Chat work: read `chat.md`, `repo.md`, `code.md`, `navigation.md`, and `security.md`.
 - UI or styling work: read `code.md` and `uistyling.md`.
 - Bot work: read `guidelines/bots.md` and the root [bots.md](bots.md).
 - Local run or build work: read `commands.md` and `validation.md`.

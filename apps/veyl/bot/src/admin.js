@@ -8,26 +8,13 @@ function readFirebaseConfig() {
     }
 }
 
-function readServiceAccount() {
-    try {
-        return process.env.GOOGLE_SERVICE_ACCOUNT ? JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT) : null;
-    } catch {
-        return null;
-    }
-}
-
 function initAdmin() {
     const firebaseConfig = readFirebaseConfig();
-    const serviceAccount = readServiceAccount();
     const projectId = process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT || firebaseConfig?.projectId || 'glyphteck';
     const storageBucket = firebaseConfig?.storageBucket || 'glyphteck.firebasestorage.app';
     const options = { projectId, storageBucket };
 
     process.env.GOOGLE_CLOUD_QUOTA_PROJECT ||= projectId;
-
-    if (serviceAccount) {
-        options.credential = admin.credential.cert(serviceAccount);
-    }
 
     admin.initializeApp(options);
 }

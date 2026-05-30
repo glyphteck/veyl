@@ -22,6 +22,7 @@ import { useTheme } from '@/providers/themeprovider';
 import { useUser } from '@/providers/userprovider';
 import { useVault } from '@/providers/vaultprovider';
 import { defaultSettings, SEND_ON_SCAN_ENABLED } from '@glyphteck/shared/settings';
+import { formatBytes } from '@glyphteck/shared/utils';
 import Constants from 'expo-constants';
 
 const MONEY_FORMATS = ['btc', 'sats', 'usd'];
@@ -98,11 +99,7 @@ function timerLabel(value) {
 }
 
 function formatCacheSize(bytes) {
-    const value = Number(bytes) || 0;
-    if (value < 1024) return `${value} B`;
-    if (value < 1024 * 1024) return `${(value / 1024).toFixed(value < 10 * 1024 ? 1 : 0)} KB`;
-    if (value < 1024 * 1024 * 1024) return `${(value / 1024 / 1024).toFixed(value < 10 * 1024 * 1024 ? 1 : 0)} MB`;
-    return `${(value / 1024 / 1024 / 1024).toFixed(1)} GB`;
+    return formatBytes(bytes, { fallback: '0 B', minValue: 0 });
 }
 
 function SectionDivider() {

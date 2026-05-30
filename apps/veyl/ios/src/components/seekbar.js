@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 
-export default function SeekBar({ progress = 0, disabled = false, onSeek, onDragStart, onDragEnd, trackColor, fillColor, height = 28, barHeight = 4, seekOnStart = true, align = 'center', style }) {
+export default function SeekBar({ progress = 0, disabled = false, onSeek, blockExternalGestures, trackColor, fillColor, height = 28, barHeight = 4, seekOnStart = true, align = 'center', style }) {
     const widthRef = useRef(0);
     const [drag, setDrag] = useState(null);
     const shown = drag == null ? progress : drag;
@@ -28,28 +28,29 @@ export default function SeekBar({ progress = 0, disabled = false, onSeek, onDrag
 
     const endDrag = useCallback(() => {
         setDrag(null);
-        onDragEnd?.();
-    }, [onDragEnd]);
+    }, []);
 
-    const pan = useMemo(
-        () =>
-            Gesture.Pan()
-                .enabled(!disabled)
-                .minDistance(0)
-                .shouldCancelWhenOutside(false)
-                .runOnJS(true)
-                .onBegin((event) => {
-                    onDragStart?.();
-                    if (seekOnStart) {
-                        seek(event.x);
-                    }
-                })
-                .onUpdate((event) => {
+    const pan = useMemo(() => {
+        let gesture = Gesture.Pan()
+            .enabled(!disabled)
+            .minDistance(0)
+            .shouldCancelWhenOutside(false)
+            .runOnJS(true)
+            .onBegin((event) => {
+                if (seekOnStart) {
                     seek(event.x);
-                })
-                .onFinalize(endDrag),
-        [disabled, endDrag, onDragStart, seek, seekOnStart]
-    );
+                }
+            })
+            .onUpdate((event) => {
+                seek(event.x);
+            })
+            .onFinalize(endDrag);
+        const gestures = (Array.isArray(blockExternalGestures) ? blockExternalGestures : [blockExternalGestures]).filter(Boolean);
+        if (gestures.length) {
+            gesture = gesture.blocksExternalGesture(...gestures);
+        }
+        return gesture;
+    }, [blockExternalGestures, disabled, endDrag, seek, seekOnStart]);
 
     return (
         <GestureDetector gesture={pan}>

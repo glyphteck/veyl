@@ -33,6 +33,7 @@
 - Prefer existing patterns over new architecture.
 - If web and shared already solve a problem, do not invent a third approach.
 - If a change belongs in `shared`, put it there instead of duplicating the same logic in web and iOS.
+- Put arbitrary shared logic knobs in `shared/config.js`: batch sizes, fetch caps, cache budgets, upload limits, debounce intervals, retention durations, polling cadences, and profile/search limits. Keep protocol constants, schema versions, and UI styling/animation values next to their owners unless a dedicated config pass moves them.
 - For structured data, use structured APIs or parsers instead of ad hoc string manipulation when reasonable.
 - Keep lint rules production-oriented. They should catch undefined names, blocked browser prompts, and hook-order mistakes without enforcing broad style churn.
 - Do not silence lint unless the exception is narrow and still correct. Remove stale eslint-disable comments when the rule no longer reports.
@@ -56,5 +57,7 @@ Use [workflow.md](workflow.md) for the detailed task-file, branch, worktree, han
 
 - When touching auth, remember accounts are company-wide and passkeys are rooted at `glyphteck.com`.
 - When touching encrypted chat, treat payload shape changes as cross-platform and backend-sensitive.
+- When touching chat lifecycle, keep the shared module as the source of truth for retention, read visibility, save/unsave TTL restoration, hidden checkpoints, auto-delete, and compaction. Do not duplicate those calculations in web and iOS message lists.
+- Chat/account deletion UI must use shared provider flows, not direct callable invocations, so encrypted saved-media stays can be collected before server-side message deletion and released afterward.
 - When touching wallet code, remember that boot, address derivation, transfer history, and peer analytics are spread across vault, wallet, and tx data providers.
 - When touching bots, start with deterministic scripted behavior and normal account primitives.

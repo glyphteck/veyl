@@ -1,14 +1,6 @@
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { db, FieldValue, OK } from '../../lib/admin.js';
 
-function chunk(items, size) {
-    const chunks = [];
-    for (let index = 0; index < items.length; index += size) {
-        chunks.push(items.slice(index, index + size));
-    }
-    return chunks;
-}
-
 export const deleteChat = onCall(async (context) => {
     if (!context.auth?.uid) throw new HttpsError('unauthenticated', 'auth');
     const uid = context.auth.uid;
@@ -37,21 +29,9 @@ export const deleteChat = onCall(async (context) => {
         { merge: true }
     );
 
-    const msgSnap = await chatRef.collection('messages').get();
-    const staleDocs = msgSnap.docs;
-
-    for (const docs of chunk(staleDocs, 400)) {
-        const batch = db.batch();
-        for (const docSnap of docs) {
-            batch.delete(docSnap.ref);
-        }
-        await batch.commit();
-    }
-
     // Keep media blobs in Storage. Shared attachment messages can reference
     // these immutable objects from other chats after this chat is deleted.
-
-    await chatRef.delete();
+    await db.recursiveDelete(chatRef);
 
     return OK;
 });

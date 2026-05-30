@@ -1,9 +1,10 @@
 import { useCallback, useRef } from 'react';
 
+import { WALLET_AUTO_CLAIM_MAX_FEE_SATS, WALLET_CLAIM_PAGE_SIZE } from '../config.js';
 import { markDiag, markDone } from './diag.js';
 
-const AUTO_CLAIM_MAX_FEE_SATS = 5000;
-const CLAIM_PAGE_SIZE = 100;
+const AUTO_CLAIM_MAX_FEE_SATS = WALLET_AUTO_CLAIM_MAX_FEE_SATS;
+const CLAIM_PAGE_SIZE = WALLET_CLAIM_PAGE_SIZE;
 
 async function getAddressDepositUtxos(wallet, getFundingAddress) {
     const address = await getFundingAddress();

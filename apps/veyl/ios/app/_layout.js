@@ -18,9 +18,12 @@ import { auth } from '@/lib/firebase';
 import { hasCurrentCommunityRules } from '@/lib/community';
 import { KeyboardRootProvider } from '@/components/keyboardscroll';
 import { installDiagnostics, mark } from '@/lib/diagnostics';
+import { stackScreenOptions } from '@/lib/stackoptions';
 
 installDiagnostics();
 void SplashScreen.preventAutoHideAsync();
+
+const SHEET_ROUTES = new Set(['quicklogin']);
 
 const SAFE_ROUTES = new Set([
     '/',
@@ -118,14 +121,7 @@ function AppContent() {
 
     return (
         <View style={{ flex: 1, backgroundColor: theme.background }} onTouchStart={touch}>
-            <Stack
-                screenOptions={{
-                    headerShown: false,
-                    gestureEnabled: true,
-                    fullScreenGestureEnabled: true,
-                    contentStyle: { backgroundColor: theme?.background },
-                }}
-            >
+            <Stack screenOptions={stackScreenOptions(theme, SHEET_ROUTES)}>
                 <Stack.Protected guard={showLogin}>
                     <Stack.Screen name="login" />
                     <Stack.Screen

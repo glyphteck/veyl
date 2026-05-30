@@ -1,30 +1,32 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, Text, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Text, View } from 'react-native';
+import * as Haptics from 'expo-haptics';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
+import { scheduleOnRN } from 'react-native-worklets';
 import { Pause, Play } from 'lucide-react-native';
 import { useChat } from '@/providers/chatprovider';
 import { useAudio, useAudioState } from '@/providers/audioprovider';
 import { useTheme } from '@/providers/themeprovider';
 import { getCachedMessageFileUri, resolveMessageFileUri } from '@/lib/chatdownloads';
-import { useTap } from '@/lib/tap';
 import { bubbleTint } from '@/lib/messages';
-import { useMessageGesture } from '@/components/chat/messagegesturecontext';
+import { useMessageGestureBlockers } from '@/components/chat/messagegesturecontext';
 import { getAttachmentCaption, getAttachmentTitle } from '@glyphteck/shared/chat/messages';
+import { formatDuration } from '@glyphteck/shared/utils';
 import GlassView from '@/components/glass/glassview';
 import Icon from '@/components/icon';
 import Menu from '@/components/menu';
 import SeekBar from '@/components/seekbar';
 import ReactionTray from './reactiontray';
 
-function fmtTime(value) {
-    if (!Number.isFinite(value) || value <= 0) {
-        return '0:00';
-    }
-
-    const total = Math.floor(value);
-    const mins = Math.floor(total / 60);
-    const secs = String(total % 60).padStart(2, '0');
-    return `${mins}:${secs}`;
-}
+const PLAY_TAP_SCALE = 0.9;
+const PLAY_TAP_MAX_DURATION_MS = 240;
+const PLAY_TAP_MAX_DISTANCE = 18;
+const PLAY_TAP_SPRING = {
+    mass: 0.5,
+    stiffness: 350,
+    damping: 18,
+};
 
 function normalizeUri(uri) {
     if (typeof uri !== 'string' || !uri) {
@@ -38,7 +40,8 @@ export default function AudioMessage({ msg, peerChatPK, fromPeer = false, menuIt
     const { readMessageFile } = useChat();
     const { kind, key: audioKey, play, pause, seek } = useAudio();
     const { status: audioStatus } = useAudioState();
-    const { blockLike, setSwipeBlocked } = useMessageGesture();
+    const blockExternalGestures = useMessageGestureBlockers({ includeLike: true });
+    const playScale = useSharedValue(1);
     const initialUri = normalizeUri(getCachedMessageFileUri(msg, peerChatPK));
     const [uri, setUri] = useState(() => initialUri);
     const [loading, setLoading] = useState(() => msg?.t === 'mp3' && !initialUri && !!msg?.p && !!msg?.k);
@@ -52,7 +55,10 @@ export default function AudioMessage({ msg, peerChatPK, fromPeer = false, menuIt
     const currentTime = Number.isFinite(status?.currentTime) ? status.currentTime : 0;
     const progress = duration > 0 ? Math.max(0, Math.min(1, currentTime / duration)) : 0;
     const disabled = loading || !!error || !uri;
-    const timeLabel = loading ? 'loading...' : error || `${fmtTime(currentTime)} / ${fmtTime(duration)}`;
+    const timeLabel = loading ? 'loading...' : error || `${formatDuration(currentTime, { hours: false })} / ${formatDuration(duration, { hours: false })}`;
+    const latestRef = useRef({ active, currentTime, disabled, duration, key, pause, play, seek, status, title, uri });
+
+    latestRef.current = { active, currentTime, disabled, duration, key, pause, play, seek, status, title, uri };
 
     useEffect(() => {
         let cancelled = false;
@@ -97,23 +103,23 @@ export default function AudioMessage({ msg, peerChatPK, fromPeer = false, menuIt
         };
     }, [msg?.k, msg?.localUri, msg?.m, msg?.p, msg?.t, peerChatPK, readMessageFile]);
 
-    const toggle = useCallback(() => {
-        if (disabled) {
+    const pressPlay = useCallback(() => {
+        const latest = latestRef.current;
+        if (latest.disabled) {
+            return;
+        }
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Soft).catch(() => {});
+
+        if (latest.active && latest.status?.playing) {
+            latest.pause({ kind: 'audio', key: latest.key });
             return;
         }
 
-        if (active && status?.playing) {
-            pause({ kind: 'audio', key });
-            return;
+        latest.play({ kind: 'audio', key: latest.key, uri: latest.uri, title: latest.title });
+        if (latest.active && (latest.status?.didJustFinish || (latest.duration > 0 && latest.currentTime >= latest.duration))) {
+            latest.seek(0);
         }
-
-        play({ kind: 'audio', key, uri, title });
-        if (active && (status?.didJustFinish || (duration > 0 && currentTime >= duration))) {
-            seek(0);
-        }
-    }, [active, currentTime, disabled, duration, key, pause, play, seek, status?.didJustFinish, status?.playing, title, uri]);
-
-    const playTap = useTap({ onPress: toggle, disabled });
+    }, []);
 
     const handleSeek = useCallback(
         (nextProgress) => {
@@ -124,22 +130,38 @@ export default function AudioMessage({ msg, peerChatPK, fromPeer = false, menuIt
         },
         [active, disabled, duration, seek]
     );
-    const blockSwipe = useCallback(() => setSwipeBlocked(true), [setSwipeBlocked]);
-    const releaseSwipe = useCallback(() => setSwipeBlocked(false), [setSwipeBlocked]);
-    const playProps = useMemo(
-        () => ({
-            ...playTap.props,
-            onPressIn: (event) => {
-                blockLike();
-                playTap.props.onPressIn?.(event);
-            },
-        }),
-        [blockLike, playTap.props]
-    );
+    const playGesture = useMemo(() => {
+        let gesture = Gesture.Tap()
+            .enabled(!disabled)
+            .maxDuration(PLAY_TAP_MAX_DURATION_MS)
+            .maxDistance(PLAY_TAP_MAX_DISTANCE)
+            .hitSlop(10)
+            .onTouchesDown(() => {
+                'worklet';
+                playScale.value = withSpring(PLAY_TAP_SCALE, PLAY_TAP_SPRING);
+            })
+            .onFinalize(() => {
+                'worklet';
+                playScale.value = withSpring(1, PLAY_TAP_SPRING);
+            })
+            .onEnd((_event, success) => {
+                'worklet';
+                if (success) {
+                    scheduleOnRN(pressPlay);
+                }
+            });
+        if (blockExternalGestures.length) {
+            gesture = gesture.blocksExternalGesture(...blockExternalGestures);
+        }
+        return gesture;
+    }, [blockExternalGestures, disabled, playScale, pressPlay]);
+    const playStyle = useAnimatedStyle(() => ({
+        transform: [{ scale: playScale.value }],
+    }));
     const icon = useMemo(() => (active && status?.playing ? Pause : Play), [active, status?.playing]);
 
     return (
-        <Menu id={menuId} items={menuItems} previewBottomInset={reactionPreviewInset}>
+        <Menu id={menuId} items={menuItems} blockExternalGestures={blockExternalGestures} previewBottomInset={reactionPreviewInset}>
             <ReactionTray reactions={reactions} users={reactionUsers} fromPeer={fromPeer}>
                 <GlassView
                     glassEffectStyle="clear"
@@ -155,9 +177,11 @@ export default function AudioMessage({ msg, peerChatPK, fromPeer = false, menuIt
                         gap: 12,
                     }}
                 >
-                    <Pressable {...playProps} hitSlop={10} accessibilityState={{ disabled }} style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center', opacity: disabled ? 0.45 : 1 }}>
-                        {loading ? <ActivityIndicator color={theme.foreground} size="small" /> : <Icon icon={icon} color={theme.foreground} size={28} fill={theme.foreground} strokeWidth={0} />}
-                    </Pressable>
+                    <GestureDetector gesture={playGesture}>
+                        <Animated.View accessible accessibilityRole="button" accessibilityState={{ disabled }} onAccessibilityTap={pressPlay} style={[{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center', opacity: disabled ? 0.45 : 1 }, playStyle]}>
+                            {loading ? <ActivityIndicator color={theme.foreground} size="small" /> : <Icon icon={icon} color={theme.foreground} size={28} fill={theme.foreground} strokeWidth={0} />}
+                        </Animated.View>
+                    </GestureDetector>
                     <View style={{ flex: 1, minWidth: 0, alignSelf: 'stretch', justifyContent: 'center' }}>
                         <View style={{ minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                             <Text numberOfLines={1} style={{ flex: 1, minWidth: 0, color: theme.foreground, fontSize: 16, fontWeight: '900' }}>
@@ -167,7 +191,7 @@ export default function AudioMessage({ msg, peerChatPK, fromPeer = false, menuIt
                                 {timeLabel}
                             </Text>
                         </View>
-                        <SeekBar progress={progress} disabled={disabled} onSeek={handleSeek} onDragStart={blockSwipe} onDragEnd={releaseSwipe} trackColor={theme.border} fillColor={theme.foreground} style={{ marginTop: 3 }} seekOnStart={false} />
+                        <SeekBar progress={progress} disabled={disabled} onSeek={handleSeek} blockExternalGestures={blockExternalGestures} trackColor={theme.border} fillColor={theme.foreground} style={{ marginTop: 3 }} seekOnStart={false} />
                         {caption ? <Text style={{ marginTop: 8, color: theme.foreground, fontSize: 15, fontWeight: '500' }}>{caption}</Text> : null}
                     </View>
                 </GlassView>

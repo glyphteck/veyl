@@ -1,8 +1,12 @@
-import { requireAdmin } from '@/lib/routeguards';
+'use client';
+
+import { AdminGate } from '@/lib/routeguards';
 import { AdminProvider } from '@/components/providers/adminprovider';
 
-export default async function AdminLayout({ children }) {
-    await requireAdmin();
-
-    return <AdminProvider>{children}</AdminProvider>;
+export default function AdminLayout({ children }) {
+    return (
+        <AdminGate>
+            <AdminProvider>{children}</AdminProvider>
+        </AdminGate>
+    );
 }

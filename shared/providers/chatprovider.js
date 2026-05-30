@@ -2,6 +2,8 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { getChatId } from '../crypto/chat.js';
+import { CHAT_READ_RECEIPT_WRITE_DELAY_MS } from '../config.js';
+import { getPeerChatPKFromChatId } from '../chat/ids.js';
 import {
     getAttachmentType,
     makeChatUnavailableError,
@@ -15,7 +17,10 @@ import { useChatSend } from '../chat/actions/send.js';
 import { useChatSettings } from '../chat/actions/settings.js';
 import { useChatMessageSessions } from '../chat/messages/session/index.js';
 import { useChatList } from '../chat/usechatlist.js';
+import { hasStoredFileRef, isAttachmentMsgType } from '../chat/messages.js';
 import {
+    collectAccountSavedMediaStays as collectAccountSavedMediaStaysShared,
+    collectSavedMediaStays as collectSavedMediaStaysShared,
     listenToLatestMsgs as listenToLatestMessagesShared,
     MSG_BATCH_SIZE,
 } from '../chat/messages/query.js';
@@ -26,10 +31,12 @@ import {
 } from '../chat/rows.js';
 import {
     deleteMsg as deleteMessageShared,
+    deleteMsgs as deleteMessagesShared,
     makeMsgPermanent as makeMessagePermanentShared,
     makeMsgTemporary as makeMessageTemporaryShared,
     readMsgMedia as readMessageFileShared,
     sendReadReceipt as sendReadReceiptShared,
+    sendHiddenCheckpoint as sendHiddenCheckpointShared,
     sendReaction as sendReactionShared,
     sendMsg as sendMessageShared,
     setChatRetention as setChatRetentionShared,
@@ -39,8 +46,38 @@ import {
 } from '../chat/messages/write.js';
 import { sortMessages } from '../chat/state.js';
 
-export const DEFAULT_READ_RECEIPT_WRITE_DELAY_MS = 1200;
+export const DEFAULT_READ_RECEIPT_WRITE_DELAY_MS = CHAT_READ_RECEIPT_WRITE_DELAY_MS;
 export const DEFAULT_MSG_BATCH_SIZE = MSG_BATCH_SIZE;
+
+function getMessageDeleteId(messageOrId) {
+    if (typeof messageOrId === 'string') {
+        return messageOrId;
+    }
+    return typeof messageOrId?.id === 'string' ? messageOrId.id : '';
+}
+
+function resolveDeleteMessage(localByChat, chatId, messageOrId) {
+    if (messageOrId && typeof messageOrId === 'object') {
+        return messageOrId;
+    }
+
+    const id = getMessageDeleteId(messageOrId);
+    if (!id) {
+        return null;
+    }
+    return (localByChat?.get?.(chatId) || []).find((message) => message?.id === id || message?.cid === id) ?? null;
+}
+
+function hasSavedMediaStay(message) {
+    return (
+        isAttachmentMsgType(message?.t) &&
+        hasStoredFileRef(message) &&
+        typeof message?.stay === 'string' &&
+        message.stay.trim().length > 0 &&
+        typeof message?.stayKey === 'string' &&
+        message.stayKey.trim().length > 0
+    );
+}
 
 export function createChat({ db, storage, getStorage, uploadAttachment: uploadAttachmentImpl, uploadImage: uploadImageImpl, readMessageFile: readMessageFileImpl, setMediaSaved: setMediaSavedImpl, finishDeletingChat: finishDeletingChatImpl }) {
     if (!db) {
@@ -61,6 +98,9 @@ export function createChat({ db, storage, getStorage, uploadAttachment: uploadAt
         sendReaction(senderPubkey, senderPrivkey, receiverChatPK, target, emoji, options) {
             return sendReactionShared(db, senderPubkey, senderPrivkey, receiverChatPK, target, emoji, options);
         },
+        sendHiddenCheckpoint(senderPubkey, senderPrivkey, receiverChatPK, target, options) {
+            return sendHiddenCheckpointShared(db, senderPubkey, senderPrivkey, receiverChatPK, target, options);
+        },
         setChatTtl(chatId, senderPubkey, senderPrivkey, peerChatPK, retention) {
             return setChatRetentionShared(db, chatId, senderPubkey, senderPrivkey, peerChatPK, retention);
         },
@@ -70,11 +110,17 @@ export function createChat({ db, storage, getStorage, uploadAttachment: uploadAt
         makeMessageTemporary(chatId, messages, ttlMs) {
             return makeMessageTemporaryShared(db, chatId, messages, ttlMs);
         },
-        setMediaSaved(path, stayId, saved) {
+        setMediaSaved(path, stayId, stayKey, saved) {
             if (typeof setMediaSavedImpl === 'function') {
-                return setMediaSavedImpl(path, stayId, saved);
+                return setMediaSavedImpl(path, stayId, stayKey, saved);
             }
             return Promise.resolve(false);
+        },
+        collectSavedMediaStays(chatId, senderPubkey, senderPrivkey, peerChatPK) {
+            return collectSavedMediaStaysShared(db, chatId, senderPubkey, senderPrivkey, peerChatPK);
+        },
+        collectAccountSavedMediaStays(senderPubkey, senderPrivkey) {
+            return collectAccountSavedMediaStaysShared(db, senderPubkey, senderPrivkey);
         },
         finishDeletingChat(chatId) {
             if (typeof finishDeletingChatImpl === 'function') {
@@ -112,6 +158,9 @@ export function createChat({ db, storage, getStorage, uploadAttachment: uploadAt
         },
         deleteMessage(chatId, msgId) {
             return deleteMessageShared(db, chatId, msgId);
+        },
+        deleteMessages(chatId, messages) {
+            return deleteMessagesShared(db, chatId, messages);
         },
         readMessageFile(userChatPK, userPrivKey, peerChatPK, message) {
             if (typeof readMessageFileImpl === 'function') {
@@ -209,6 +258,7 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
             startDeleteChat,
             restoreDeletedChat,
             finishDeleteChat,
+            deleteChat,
             dropChat,
             wasChatDeletedLocally,
             ackDeletedChat,
@@ -216,6 +266,7 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
         } = useChatDelete({
             chat,
             chatPK,
+            chatPrivateKey,
             localCache,
             setSelectedChat,
             setLocalByChat,
@@ -458,15 +509,6 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
             },
             [chat, chatBanned, chatPrivateKey]
         );
-        const deleteMessage = useCallback(
-            (chatId, msgId) => {
-                if (chatBanned) {
-                    throw makeChatUnavailableError();
-                }
-                return chat.deleteMessage(chatId, msgId);
-            },
-            [chat, chatBanned]
-        );
         const {
             makeMessagePermanent,
             makeMessageTemporary,
@@ -480,6 +522,63 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
             chatPrivateKey,
             localCache,
         });
+        const deleteMessage = useCallback(
+            async (chatId, messageOrId) => {
+                if (chatBanned) {
+                    throw makeChatUnavailableError();
+                }
+
+                const msgId = getMessageDeleteId(messageOrId);
+                if (!msgId) {
+                    return false;
+                }
+
+                const message = resolveDeleteMessage(localByChatRef.current, chatId, messageOrId);
+                if (hasSavedMediaStay(message)) {
+                    await makeMessageTemporary(chatId, message);
+                }
+
+                return chat.deleteMessage(chatId, msgId);
+            },
+            [chat, chatBanned, localByChatRef, makeMessageTemporary]
+        );
+        const deleteMessages = useCallback(
+            async (chatId, messages) => {
+                if (chatBanned) {
+                    throw makeChatUnavailableError();
+                }
+                return chat.deleteMessages(chatId, messages);
+            },
+            [chat, chatBanned]
+        );
+        const collectAccountSavedMediaStays = useCallback(() => {
+            if (!chatPK || !chatPrivateKey || typeof chat.collectAccountSavedMediaStays !== 'function') {
+                return Promise.resolve([]);
+            }
+            return chat.collectAccountSavedMediaStays(chatPK, chatPrivateKey).catch(() => []);
+        }, [chat, chatPK, chatPrivateKey]);
+        const releaseSavedMediaStays = useCallback(
+            (stays) => {
+                if (!Array.isArray(stays) || !stays.length || typeof chat.setMediaSaved !== 'function') {
+                    return Promise.resolve([]);
+                }
+                return Promise.allSettled(stays.map((stay) => chat.setMediaSaved(stay.path, stay.stayId, stay.stayKey, false)));
+            },
+            [chat]
+        );
+        const markMessagesHidden = useCallback(
+            (chatId, target) => {
+                if (chatBanned) {
+                    throw makeChatUnavailableError();
+                }
+                const peerChatPK = getPeerChatPKFromChatId(chatId, chatPK);
+                if (!chatPK || !chatPrivateKey || !peerChatPK || !target) {
+                    throw makeChatUnavailableError();
+                }
+                return chat.sendHiddenCheckpoint(chatPK, chatPrivateKey, peerChatPK, target, sendOptionsForPeer(peerChatPK));
+            },
+            [chat, chatBanned, chatPK, chatPrivateKey, sendOptionsForPeer]
+        );
         const getMessages = useCallback((chatId) => (isChatPendingDelete(chatId) ? [] : sortMessages(localByChat.get(chatId) ?? [])), [isChatPendingDelete, localByChat]);
 
         const value = useMemo(
@@ -495,6 +594,7 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
                 selectedChatId,
                 selectChat,
                 dropChat,
+                deleteChat,
                 startDeleteChat,
                 finishDeleteChat,
                 restoreDeletedChat,
@@ -514,6 +614,10 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
                 updateMessage,
                 sendReaction,
                 deleteMessage,
+                deleteMessages,
+                collectAccountSavedMediaStays,
+                releaseSavedMediaStays,
+                markMessagesHidden,
                 setChatTtl,
                 makeMessagePermanent,
                 makeMessageTemporary,
@@ -549,6 +653,7 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
                 selectedChatId,
                 selectChat,
                 dropChat,
+                deleteChat,
                 startDeleteChat,
                 finishDeleteChat,
                 restoreDeletedChat,
@@ -568,6 +673,10 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
                 updateMessage,
                 sendReaction,
                 deleteMessage,
+                deleteMessages,
+                collectAccountSavedMediaStays,
+                releaseSavedMediaStays,
+                markMessagesHidden,
                 setChatTtl,
                 makeMessagePermanent,
                 makeMessageTemporary,

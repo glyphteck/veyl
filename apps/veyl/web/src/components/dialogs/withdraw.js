@@ -15,19 +15,13 @@ import { useWallet } from '@/components/providers/walletprovider';
 import { useUser } from '@/components/providers/userprovider';
 import { useCloak } from '@glyphteck/shared/providers/cloakprovider';
 import { toSats, toDisplay, truncateAddress, renderMoney } from '@/lib/utils';
-import { COOPERATIVE_EXIT_FLAT_FEE_SATS, COOPERATIVE_EXIT_TX_VBYTES, getWithdrawalFeeRisk } from '@glyphteck/shared/wallet/fees';
+import { COOPERATIVE_EXIT_FLAT_FEE_SATS, COOPERATIVE_EXIT_TX_VBYTES, formatOnchainFeeAmount, getWithdrawalFeeRisk } from '@glyphteck/shared/wallet/fees';
 import { isAddressOnNetwork, isMainnet } from '@glyphteck/shared/network';
 import { toast } from 'sonner';
 
 function balanceToSats(balance) {
     const value = Number(balance ?? 0);
     return Number.isFinite(value) && value > 0 ? BigInt(Math.floor(value)) : 0n;
-}
-
-function formatFeeAmount(value, moneyFormat, price) {
-    const amount = Number(value);
-    if (!Number.isFinite(amount)) return 'updating';
-    return renderMoney(Math.max(0, Math.ceil(amount)), moneyFormat || 'sats', price);
 }
 
 const MONEY_UNITS = ['sats', 'btc', 'usd'];
@@ -130,7 +124,7 @@ export default function Withdraw({ data, close }) {
         [balanceSats, enteredSats, feeAmountSats]
     );
     const feeWarning = withdrawalFeeRisk?.high;
-    const feeText = feeAmountSats != null ? formatFeeAmount(feeAmountSats, settings?.moneyFormat, bitcoin.price) : 'updating';
+    const feeText = formatOnchainFeeAmount(feeEstimate, settings?.moneyFormat, bitcoin.price);
     const buttonFeedback = amountAboveBalance ? 'amount is above your balance' : '';
 
     const setUnit = useCallback(

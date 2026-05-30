@@ -163,25 +163,43 @@ function findSpawnPoint(nodes, width, height, now) {
     return null;
 }
 
+function nearestLiveNodes(liveNodes, current, count) {
+    const nearest = [];
+
+    liveNodes.forEach((other) => {
+        if (other.index === current.index) return;
+
+        const item = {
+            index: other.index,
+            distance: Math.hypot(other.node.x - current.node.x, other.node.y - current.node.y),
+        };
+        const insertAt = nearest.findIndex((near) => item.distance < near.distance);
+        const targetIndex = insertAt < 0 ? nearest.length : insertAt;
+
+        if (nearest.length < count || targetIndex < count) {
+            nearest.splice(targetIndex, 0, item);
+            if (nearest.length > count) nearest.length = count;
+        }
+    });
+
+    return nearest;
+}
+
 function buildGraph(nodes, maxEdgeDistance) {
     const adjacency = Array.from({ length: nodes.length }, () => new Map());
     const liveNodes = nodes.map((node, index) => ({ node, index })).filter(({ node }) => canReceiveNewPath(node));
     const neighborCount = Math.max(3, Math.min(7, Math.round(liveNodes.length / 18)));
 
     liveNodes.forEach(({ node, index }) => {
-        const nearest = liveNodes
-            .map((other) => ({
-                index: other.index,
-                distance: Math.hypot(other.node.x - node.x, other.node.y - node.y),
-            }))
-            .filter((other) => other.index !== index)
-            .sort((a, b) => a.distance - b.distance);
+        const nearest = nearestLiveNodes(liveNodes, { node, index }, neighborCount);
 
-        nearest.slice(0, neighborCount).forEach((other) => connect(adjacency, nodes, index, other.index, maxEdgeDistance));
+        nearest.forEach((other) => connect(adjacency, nodes, index, other.index, maxEdgeDistance));
 
-        if (nearest.length > neighborCount && Math.random() > 0.45) {
-            const farIndex = neighborCount + Math.floor(Math.random() * (nearest.length - neighborCount));
-            connect(adjacency, nodes, index, nearest[farIndex].index, maxEdgeDistance);
+        if (liveNodes.length - 1 > nearest.length && Math.random() > 0.45) {
+            const nearestIndexes = new Set(nearest.map((other) => other.index));
+            const farNodes = liveNodes.filter((other) => other.index !== index && !nearestIndexes.has(other.index));
+            const farNode = farNodes[Math.floor(Math.random() * farNodes.length)];
+            if (farNode) connect(adjacency, nodes, index, farNode.index, maxEdgeDistance);
         }
     });
 

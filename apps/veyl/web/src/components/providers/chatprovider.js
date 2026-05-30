@@ -15,8 +15,8 @@ import { clearAudioCache } from '@/components/chat/audiocache';
 const chat = createChat({
     db,
     getStorage,
-    async setMediaSaved(path, stayId, saved) {
-        await httpsCallable(getFunctions(), 'setMediaSaved')({ path, stayId, saved });
+    async setMediaSaved(path, stayId, stayKey, saved) {
+        await httpsCallable(getFunctions(), 'setMediaSaved')({ path, stayId, stayKey, saved });
         return true;
     },
     async finishDeletingChat(chatId) {

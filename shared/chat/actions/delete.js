@@ -4,11 +4,13 @@ import { useCallback, useRef } from 'react';
 import { getChatId } from '../../crypto/chat.js';
 import { dropCachedChat } from '../../localdatacache.js';
 import { filterPendingDeleteChats, getLastChat, sameChats, sameLastChat, setLocalChats } from '../chats.js';
+import { getPeerChatPKFromChatId } from '../ids.js';
 import { clearReadWrite } from '../read.js';
 
 export function useChatDelete({
     chat,
     chatPK,
+    chatPrivateKey,
     localCache,
     setSelectedChat,
     setLocalByChat,
@@ -254,6 +256,53 @@ export function useChatDelete({
         [clearDeletedChatState, finishPendingDeleteWait, lastServerChatsRef, listActionsRef, setSelectedChat]
     );
 
+    const releaseSavedMediaStays = useCallback(
+        async (stays) => {
+            if (!Array.isArray(stays) || !stays.length || typeof chat?.setMediaSaved !== 'function') {
+                return;
+            }
+
+            await Promise.allSettled(stays.map((stay) => chat.setMediaSaved(stay.path, stay.stayId, stay.stayKey, false)));
+        },
+        [chat]
+    );
+
+    const collectSavedMediaStays = useCallback(
+        async (chatId) => {
+            if (!chatId || !chatPK || !chatPrivateKey || typeof chat?.collectSavedMediaStays !== 'function') {
+                return [];
+            }
+            const peerChatPK = getPeerChatPKFromChatId(chatId, chatPK);
+            if (!peerChatPK) {
+                return [];
+            }
+            return chat.collectSavedMediaStays(chatId, chatPK, chatPrivateKey, peerChatPK).catch(() => []);
+        },
+        [chat, chatPK, chatPrivateKey]
+    );
+
+    const deleteChat = useCallback(
+        async (chatId, options = {}) => {
+            if (!chatId || typeof chat?.finishDeletingChat !== 'function') {
+                return false;
+            }
+
+            startDeleteChat(chatId, options);
+            const savedMediaStays = await collectSavedMediaStays(chatId);
+            try {
+                await chat.finishDeletingChat(chatId);
+                finishDeleteChat(chatId);
+            } catch (error) {
+                restoreDeletedChat(chatId);
+                throw error;
+            }
+
+            void releaseSavedMediaStays(savedMediaStays);
+            return true;
+        },
+        [chat, collectSavedMediaStays, finishDeleteChat, releaseSavedMediaStays, restoreDeletedChat, startDeleteChat]
+    );
+
     const wasChatDeletedLocally = useCallback((chatId) => !!chatId && locallyDeletedChatIdsRef.current.has(chatId), []);
 
     const ackDeletedChat = useCallback((chatId) => {
@@ -293,6 +342,7 @@ export function useChatDelete({
         startDeleteChat,
         restoreDeletedChat,
         finishDeleteChat,
+        deleteChat,
         dropChat,
         wasChatDeletedLocally,
         ackDeletedChat,

@@ -1,6 +1,7 @@
 import { Image as ExpoImage } from 'expo-image';
 import * as FileSystem from 'expo-file-system/legacy';
 import { Buffer } from 'buffer';
+import { imageExtension } from '@glyphteck/shared/image';
 
 const CACHE_DIR = FileSystem.cacheDirectory ? `${FileSystem.cacheDirectory}avatar-image-cache/` : null;
 const MAX_AVATAR_BYTES = 8 * 1024 * 1024;
@@ -20,14 +21,6 @@ function hashUrl(url) {
         hash = Math.imul(hash, 0x01000193);
     }
     return `${(hash >>> 0).toString(16).padStart(8, '0')}-${text.length.toString(36)}`;
-}
-
-function imageExtension(bytes) {
-    if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'jpg';
-    if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return 'png';
-    if (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46) return 'gif';
-    if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46 && bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50) return 'webp';
-    return 'img';
 }
 
 async function ensureDir() {

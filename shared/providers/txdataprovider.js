@@ -1,11 +1,10 @@
 'use client';
 
 import { createContext, useContext, useMemo, useRef } from 'react';
+import { DAY_MS, HOUR_MS } from '../config.js';
 
 const formatDay = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const formatHour = (d) => String(d.getHours()).padStart(2, '0');
-const DAY_MS = 24 * 60 * 60 * 1000;
-const HOUR_MS = 60 * 60 * 1000;
 const timeMs = (value) => {
     if (typeof value?.toMillis === 'function') {
         const ms = value.toMillis();
@@ -239,7 +238,7 @@ export function createTxDataProvider({ useWallet, useUser }) {
                 today.setHours(0, 0, 0, 0);
                 const series = [];
                 let runningBalance = Number(balance);
-                const daysSinceFirst = aggregatedData.firstDate ? Math.ceil((today.getTime() - aggregatedData.firstDate.getTime()) / (1000 * 60 * 60 * 24)) : 0;
+                const daysSinceFirst = aggregatedData.firstDate ? Math.ceil((today.getTime() - aggregatedData.firstDate.getTime()) / DAY_MS) : 0;
                 const coveredDays = txHistoryComplete ? days : coveredUnitsSince(oldestTxMs, DAY_MS, today.getTime());
                 const actualDays = Math.min(days, daysSinceFirst + 1, coveredDays);
 
@@ -268,7 +267,7 @@ export function createTxDataProvider({ useWallet, useUser }) {
                 const series = [];
                 let runningBalance = Number(balance);
                 const today = formatDay(now);
-                const yesterday = formatDay(new Date(now.getTime() - 24 * 60 * 60 * 1000));
+                const yesterday = formatDay(new Date(now.getTime() - DAY_MS));
                 const coveredHours = txHistoryComplete ? hours : coveredUnitsSince(oldestTxMs, HOUR_MS, now.getTime());
                 const actualHours = Math.min(hours, coveredHours);
 
@@ -328,7 +327,7 @@ export function createTxDataProvider({ useWallet, useUser }) {
                 if (timeRange === 'today') {
                     cutoffDate.setHours(0, 0, 0, 0);
                 } else if (timeRange === '24h') {
-                    cutoffDate.setTime(cutoffDate.getTime() - 24 * 60 * 60 * 1000);
+                    cutoffDate.setTime(cutoffDate.getTime() - DAY_MS);
                 } else if (typeof timeRange === 'number') {
                     cutoffDate.setDate(cutoffDate.getDate() - timeRange);
                 } else {

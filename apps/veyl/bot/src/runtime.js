@@ -1,10 +1,10 @@
 import { BOT_MODE, BOT_UNDERFUNDED_TEXT } from '@glyphteck/shared/bot/events';
 import { bootBotAccount, closeBotAccount } from '@glyphteck/shared/bot/account';
-import { clearBotChatPairCache, decryptBotChatSettings, decryptBotMsg, readBotMsgAttachment, sendBotMsg, updateBotMsg, uploadBotAttachmentMsg } from '@glyphteck/shared/bot/chat';
+import { clearBotChatPairCache, decryptBotChatSettings, decryptBotMsg, hasBotMsg, readBotMsgAttachment, sendBotMsg, updateBotMsg, uploadBotAttachmentMsg } from '@glyphteck/shared/bot/chat';
 import { getBotBalance, mirrorBotTransfer } from '@glyphteck/shared/bot/wallet';
-import { isControlMsg, isSystemMsg, makeReadReceipt, makeReq, makeTxt, setReqTx } from '@glyphteck/shared/chat/messages';
+import { isControlMsg, isSystemMsg, makeHiddenCheckpoint, makeReadReceipt, makeReq, makeTxt, setReqTx } from '@glyphteck/shared/chat/messages';
 import { makeCid } from '@glyphteck/shared/chat/state';
-import { CHAT_RETENTION_24H, CHAT_RETENTION_SEEN, getMessageRetention, onSeenMessageTtlMs, seenMessageTtlMs, shouldShortenTtl } from '@glyphteck/shared/chat/ttl';
+import { BOT_REPLY_AFTER_READ_DELAY_MS } from '@glyphteck/shared/config';
 import { resolveNetwork } from '@glyphteck/shared/network';
 import { resolveWalletPK } from '@glyphteck/shared/wallet/keys';
 import { SparkWallet, SparkWalletEvent } from '@buildonspark/spark-sdk';
@@ -581,15 +581,27 @@ export class BotRuntime {
     }
 
     async readChatMs(session, chatId) {
-        const snap = await this.readRef(session, chatId).get().catch(() => null);
-        return tsMs(snap?.data()?.readAt);
+        if (session.chatRead?.has(chatId)) {
+            return tsMs(session.chatRead.get(chatId));
+        }
+        let snap;
+        try {
+            snap = await this.readRef(session, chatId).get();
+        } catch {
+            return 0;
+        }
+        const readMs = tsMs(snap?.data()?.readAt);
+        setLimitedMap(session.chatRead, chatId, readMs, MAX_BOT_READ_CACHE);
+        return readMs;
     }
 
     async ackChat(session, chatId, readMs) {
         if (!chatId || !Number.isFinite(readMs) || readMs <= 0) {
             return;
         }
-        setLimitedMap(session.chatRead, chatId, readMs, MAX_BOT_READ_CACHE);
+        if (tsMs(session.chatRead?.get(chatId)) >= readMs) {
+            return;
+        }
         await this.readRef(session, chatId).set(
             {
                 readAt: Timestamp.fromMillis(readMs),
@@ -597,6 +609,7 @@ export class BotRuntime {
             },
             { merge: true }
         );
+        setLimitedMap(session.chatRead, chatId, readMs, MAX_BOT_READ_CACHE);
     }
 
     async getSession(bot) {
@@ -731,20 +744,13 @@ export class BotRuntime {
         if (!peerChatPK) {
             return;
         }
-        const settings = await decryptBotChatSettings(chat?.settings, session.chatPK, session.chatPrivKey, peerChatPK);
-        if (!settings) {
-            return;
-        }
-        const retention = settings.retention;
 
         const chatRecencyMs = tsMs(chat?.ts);
         if (!chatRecencyMs) {
             return;
         }
 
-        const localReadMs = tsMs(session.chatRead?.get(chat.id));
-        const storedReadMs = await this.readChatMs(session, chat.id);
-        const sinceMs = Math.max(session.resumeAtMs, localReadMs, storedReadMs);
+        const sinceMs = Math.max(session.resumeAtMs, await this.readChatMs(session, chat.id));
         if (chatRecencyMs <= sinceMs) {
             return;
         }
@@ -760,26 +766,21 @@ export class BotRuntime {
             return;
         }
 
-        const peer = await this.resolvePeerByChatPK(peerChatPK);
-        if (!peer?.uid) {
-            return;
-        }
-
         const latestMs = tsMs(msgsSnap.docs[msgsSnap.docs.length - 1]?.data()?.ts);
-        const [peerBanned, botBlockedPeer, peerBlockedBot, botBanned] = await Promise.all([
-            isChatBanned(peer.uid),
-            isBlocked(session.uid, peer.uid),
-            isBlocked(peer.uid, session.uid),
-            isChatBanned(session.uid),
-        ]);
-
-        if (peer?.bot || peerBanned || botBlockedPeer || peerBlockedBot || botBanned) {
+        const hasPeerDocs = msgsSnap.docs.some((msgSnap) => msgSnap.data()?.head?.from === peerChatPK);
+        if (!hasPeerDocs) {
             await this.ackChat(session, chat.id, latestMs);
             return;
         }
 
+        const settings = await decryptBotChatSettings(chat?.settings, session.chatPK, session.chatPrivKey, peerChatPK);
+        if (!settings) {
+            return;
+        }
+        const retention = settings.retention;
         let readMs = sinceMs;
-        let receiptTarget = null;
+        const replies = [];
+        let receipt = null;
 
         for (const msgSnap of msgsSnap.docs) {
             if (session.closing) {
@@ -792,52 +793,83 @@ export class BotRuntime {
 
             if (senderChatPK !== peerChatPK) {
                 readMs = Math.max(readMs, msgMs);
-                await this.ackChat(session, chat.id, readMs);
                 continue;
             }
 
-            const viewed = await this.handleChatMessage(
+            const context = {
+                chatId: chat.id,
+                msgId: msgSnap.id,
+                msgTs: msgData?.ts,
+                peerChatPK,
+                retention,
+            };
+            const msg = await this.readChatMessage(
                 session,
-                {
-                    chatId: chat.id,
-                    msgId: msgSnap.id,
-                    msgTs: msgData?.ts,
-                    peerUid: peer.uid,
-                    peerChatPK,
-                    peerWalletPK: resolveWalletPK(peer, SPARK_NETWORK),
-                    retention,
-                },
+                context,
                 msgData
             );
-            if (viewed?.seen) {
-                const seenRetention = viewed.retention;
-                receiptTarget = msgData?.head?.cid || msgSnap.id;
-                if (seenRetention === CHAT_RETENTION_24H || seenRetention === CHAT_RETENTION_SEEN) {
-                    const seenTtlMs = seenRetention === CHAT_RETENTION_SEEN ? onSeenMessageTtlMs() : seenMessageTtlMs();
-                    if (shouldShortenTtl(msgData?.ttl, seenTtlMs)) {
-                        const ttl = Timestamp.fromMillis(seenTtlMs);
-                        await msgSnap.ref.update({ ttl }).catch(() => {});
-                        if (chat?.lastMsg?.head?.cid && chat.lastMsg.head.cid === msgData?.head?.cid) {
-                            await chat.ref.update({ lastMsg: { head: chat.lastMsg.head, body: chat.lastMsg.body, ttl } }).catch(() => {});
-                        }
-                    }
-                }
+            if (msg) {
+                replies.push({ context, msg });
+                receipt = {
+                    context,
+                    target: msgData?.head?.cid || msgSnap.id,
+                };
             }
 
             readMs = Math.max(readMs, msgMs);
-            await this.ackChat(session, chat.id, readMs);
         }
 
-        if (receiptTarget) {
-            await this.sendReadReceipt(session, peerChatPK, receiptTarget, retention).catch((error) => {
+        if (!replies.length) {
+            await this.ackChat(session, chat.id, readMs);
+            return;
+        }
+
+        const peer = await this.resolvePeerByChatPK(peerChatPK);
+        if (!peer?.uid) {
+            return;
+        }
+
+        const [peerBanned, botBlockedPeer, peerBlockedBot, botBanned] = await Promise.all([
+            isChatBanned(peer.uid),
+            isBlocked(session.uid, peer.uid),
+            isBlocked(peer.uid, session.uid),
+            isChatBanned(session.uid),
+        ]);
+
+        if (peer?.bot || peerBanned || botBlockedPeer || peerBlockedBot || botBanned) {
+            await this.ackChat(session, chat.id, latestMs);
+            return;
+        }
+
+        if (receipt) {
+            await this.sendReadReceipt(session, peerChatPK, receipt.target, retention, receipt.context).catch((error) => {
                 console.warn('bot read receipt failed', chat.id, statusMessage(error));
             });
+            await this.sendHiddenCheckpoint(session, peerChatPK, receipt.target, retention, receipt.context).catch((error) => {
+                console.warn('bot hidden checkpoint failed', chat.id, statusMessage(error));
+            });
+        }
+
+        if (BOT_REPLY_AFTER_READ_DELAY_MS > 0) {
+            await sleep(BOT_REPLY_AFTER_READ_DELAY_MS);
+        }
+
+        const peerWalletPK = resolveWalletPK(peer, SPARK_NETWORK);
+        for (const item of replies) {
+            if (session.closing) {
+                return;
+            }
+            await this.replyToChatMessage(session, {
+                ...item.context,
+                peerUid: peer.uid,
+                peerWalletPK,
+            }, item.msg);
         }
 
         await this.ackChat(session, chat.id, readMs);
     }
 
-    async handleChatMessage(session, context, msgData) {
+    async readChatMessage(session, context, msgData) {
         const msg = await decryptBotMsg(msgData, session.chatPK, session.chatPrivKey, context.peerChatPK);
         if (!msg) {
             return null;
@@ -847,22 +879,28 @@ export class BotRuntime {
             return null;
         }
 
-        const seen = { seen: true, retention: getMessageRetention(msg) };
+        return msg;
+    }
 
+    async replyToChatMessage(session, context, msg) {
         if (msg.t === 'req') {
             await this.handleRequest(session, context, msg);
-            return seen;
+            return;
         }
 
         if (hasAttachment(msg)) {
+            const msgId = botReplyId(context, 'file');
+            if (await hasBotMsg(db, context.chatId, msgId)) {
+                return;
+            }
             const body = await readBotMsgAttachment(this.bucket, session.chatPK, session.chatPrivKey, context.peerChatPK, msg);
             await uploadBotAttachmentMsg(db, FieldValue, this.bucket, session.chatPK, session.chatPrivKey, context.peerChatPK, {
                 cid: botReplyCid(context, 'file'),
                 type: msg.t,
                 data: body,
                 meta: attachmentMeta(msg),
-            }, { msgId: botReplyId(context, 'file'), retention: context.retention });
-            return seen;
+            }, { msgId, retention: context.retention });
+            return;
         }
 
         await this.sendPayload(session, context.peerChatPK, cleanPayload(msg), {
@@ -870,7 +908,6 @@ export class BotRuntime {
             msgId: botReplyId(context, 'reply'),
             retention: context.retention,
         });
-        return seen;
     }
 
     async handleRequest(session, context, msg) {
@@ -879,6 +916,9 @@ export class BotRuntime {
             throw new Error('request amount missing');
         }
         if (msg?.tx) {
+            return;
+        }
+        if (await hasBotMsg(db, context.chatId, botReplyId(context, 'req'))) {
             return;
         }
 
@@ -932,7 +972,8 @@ export class BotRuntime {
         }, { ...(options.msgId ? { msgId: options.msgId } : {}), retention: options.retention });
     }
 
-    async sendReadReceipt(session, peerChatPK, target, retention) {
+    async sendReadReceipt(session, peerChatPK, target, retention, context = {}) {
+        const msgId = botReplyId(context, 'rr');
         return sendBotMsg(
             db,
             FieldValue,
@@ -944,7 +985,24 @@ export class BotRuntime {
                 cid: makeCid(),
                 s: session.chatPK,
             },
-            { updateLastMsg: false, retention }
+            { updateLastMsg: false, retention, ...(msgId ? { msgId } : {}) }
+        );
+    }
+
+    async sendHiddenCheckpoint(session, peerChatPK, target, retention, context = {}) {
+        const msgId = botReplyId(context, 'hid');
+        return sendBotMsg(
+            db,
+            FieldValue,
+            session.chatPK,
+            session.chatPrivKey,
+            peerChatPK,
+            {
+                ...makeHiddenCheckpoint(target),
+                cid: makeCid(),
+                s: session.chatPK,
+            },
+            { updateLastMsg: false, retention, ...(msgId ? { msgId } : {}) }
         );
     }
 }

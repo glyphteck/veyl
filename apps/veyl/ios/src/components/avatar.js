@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useId, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Animated as RNAnimated, Pressable, StyleSheet, View } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import Animated, { useAnimatedProps, useSharedValue, withTiming } from 'react-native-reanimated';
@@ -11,6 +11,8 @@ import { prefetchAvatarImage, readAvatarImageCache, subscribeAvatarImageCache } 
 
 const AVATAR_ANIMATION_MS = 160;
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
+const AnimatedG = Animated.createAnimatedComponent(G);
+const AnimatedSvgImage = Animated.createAnimatedComponent(SvgImage);
 const loadedSourceKeys = new Set();
 
 export function getAvatarSourceKey(source) {
@@ -62,24 +64,28 @@ function useCachedAvatarSource(sourceKey) {
     return cachedSource;
 }
 
+function FadingExpoAvatarImage({ source, sourceKey, size, pointerEvents, contentFit, opacity, onLoad, onError }) {
+    return (
+        <RNAnimated.View pointerEvents={pointerEvents} style={[StyleSheet.absoluteFillObject, { opacity }]}>
+            <ExpoImage
+                pointerEvents={pointerEvents}
+                source={source}
+                recyclingKey={sourceKey}
+                cachePolicy="memory-disk"
+                transition={0}
+                contentFit={contentFit}
+                style={{ width: size, height: size }}
+                onLoad={onLoad}
+                onError={onError}
+            />
+        </RNAnimated.View>
+    );
+}
+
 export function StaticAvatar({ source, size = 52, style, pointerEvents, contentFit = 'cover', bot = false, glyphColor, glyphScale = 1 }) {
     const { theme } = useTheme();
     const resolvedGlyphColor = glyphColor ?? theme.foreground;
-    const { sourceKey, imageSource, cachedSource } = useAvatarImageSource(source);
-    const [loadedKey, setLoadedKey] = useState(() => (sourceKey && loadedSourceKeys.has(sourceKey) ? sourceKey : ''));
-    const imageLoaded = !!sourceKey && (loadedKey === sourceKey || !!cachedSource);
-
-    useEffect(() => {
-        if (!sourceKey) {
-            setLoadedKey('');
-            return;
-        }
-        if (loadedSourceKeys.has(sourceKey)) {
-            setLoadedKey(sourceKey);
-            return;
-        }
-        setLoadedKey('');
-    }, [sourceKey]);
+    const { sourceKey, imageSource } = useAvatarImageSource(source);
 
     if (!sourceKey) {
         return (
@@ -93,28 +99,78 @@ export function StaticAvatar({ source, size = 52, style, pointerEvents, contentF
     }
 
     return (
-        <View pointerEvents={pointerEvents} style={[{ width: size, height: size, borderRadius: size / 2, overflow: 'hidden', backgroundColor: theme.background }, style]}>
-            {!imageLoaded ? (
+        <StaticAvatarImageLayer
+            key={sourceKey}
+            sourceKey={sourceKey}
+            source={imageSource}
+            size={size}
+            style={style}
+            pointerEvents={pointerEvents}
+            contentFit={contentFit}
+            bot={bot}
+            glyphColor={resolvedGlyphColor}
+            glyphScale={glyphScale}
+            backgroundColor={theme.background}
+        />
+    );
+}
+
+function StaticAvatarImageLayer({ source, sourceKey, size, style, pointerEvents, contentFit, bot, glyphColor, glyphScale, backgroundColor }) {
+    const imageProgress = useRef(new RNAnimated.Value(isAvatarSourceLoaded(sourceKey) ? 1 : 0)).current;
+    const fallbackOpacity = useMemo(
+        () =>
+            imageProgress.interpolate({
+                inputRange: [0, 1],
+                outputRange: [1, 0],
+            }),
+        [imageProgress]
+    );
+    const animateImageProgress = useCallback(
+        (toValue, duration = AVATAR_ANIMATION_MS) => {
+            imageProgress.stopAnimation();
+            RNAnimated.timing(imageProgress, {
+                toValue,
+                duration,
+                useNativeDriver: true,
+            }).start();
+        },
+        [imageProgress]
+    );
+    const handleImageLoad = useCallback(() => {
+        if (!sourceKey) return;
+        const wasLoaded = isAvatarSourceLoaded(sourceKey);
+        loadedSourceKeys.add(sourceKey);
+        animateImageProgress(1, wasLoaded ? 0 : AVATAR_ANIMATION_MS);
+    }, [animateImageProgress, sourceKey]);
+    const handleImageError = useCallback(() => {
+        if (sourceKey) {
+            loadedSourceKeys.delete(sourceKey);
+        }
+        animateImageProgress(0);
+    }, [animateImageProgress, sourceKey]);
+
+    useEffect(() => {
+        imageProgress.stopAnimation();
+        imageProgress.setValue(isAvatarSourceLoaded(sourceKey) ? 1 : 0);
+    }, [imageProgress, sourceKey]);
+
+    return (
+        <View pointerEvents={pointerEvents} style={[{ width: size, height: size, borderRadius: size / 2, overflow: 'hidden', backgroundColor }, style]}>
+            <RNAnimated.View pointerEvents={pointerEvents} style={[StyleSheet.absoluteFillObject, { opacity: fallbackOpacity }]}>
                 <Svg width={size} height={size} pointerEvents={pointerEvents}>
-                    <Rect x="0" y="0" width={size} height={size} fill={theme.background} />
-                    <AvatarGlyph bot={bot} size={size} color={resolvedGlyphColor} glyphScale={glyphScale} />
+                    <Rect x="0" y="0" width={size} height={size} fill={backgroundColor} />
+                    <AvatarGlyph bot={bot} size={size} color={glyphColor} glyphScale={glyphScale} />
                 </Svg>
-            ) : null}
-            <ExpoImage
+            </RNAnimated.View>
+            <FadingExpoAvatarImage
+                source={source}
+                sourceKey={sourceKey}
+                size={size}
                 pointerEvents={pointerEvents}
-                source={imageSource}
-                recyclingKey={sourceKey}
-                cachePolicy="memory-disk"
-                transition={0}
                 contentFit={contentFit}
-                style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, width: size, height: size, opacity: imageLoaded ? 1 : 0 }}
-                onLoad={() => {
-                    loadedSourceKeys.add(sourceKey);
-                    setLoadedKey(sourceKey);
-                }}
-                onError={() => {
-                    setLoadedKey('');
-                }}
+                opacity={imageProgress}
+                onLoad={handleImageLoad}
+                onError={handleImageError}
             />
         </View>
     );
@@ -147,11 +203,45 @@ function AvatarGlyph({ bot, size, color, glyphScale = 1 }) {
     );
 }
 
-const AvatarImage = memo(
-    function AvatarImage({ href, size, loaded, onLoad }) {
-        return <SvgImage href={href} x="0" y="0" width={size} height={size} preserveAspectRatio="xMidYMid slice" opacity={loaded ? 1 : 0} onLoad={onLoad} />;
+const AvatarImageLayer = memo(
+    function AvatarImageLayer({ href, size, loaded, alreadyLoaded, onLoad, showFallback, bot, color, glyphScale }) {
+        const progress = useSharedValue(loaded && alreadyLoaded ? 1 : 0);
+        const imageProps = useAnimatedProps(() => ({
+            opacity: progress.value,
+        }));
+        const fallbackProps = useAnimatedProps(() => ({
+            opacity: 1 - progress.value,
+        }));
+
+        useEffect(() => {
+            if (!loaded) {
+                progress.value = 0;
+                return;
+            }
+            progress.value = withTiming(1, { duration: AVATAR_ANIMATION_MS });
+        }, [loaded, progress]);
+
+        return (
+            <>
+                {showFallback ? (
+                    <AnimatedG animatedProps={fallbackProps}>
+                        <AvatarGlyph bot={bot} size={size} color={color} glyphScale={glyphScale} />
+                    </AnimatedG>
+                ) : null}
+                <AnimatedSvgImage animatedProps={imageProps} href={href} x="0" y="0" width={size} height={size} preserveAspectRatio="xMidYMid slice" onLoad={onLoad} />
+            </>
+        );
     },
-    (prev, next) => prev.href === next.href && prev.size === next.size && prev.loaded === next.loaded && prev.onLoad === next.onLoad
+    (prev, next) =>
+        prev.href === next.href &&
+        prev.size === next.size &&
+        prev.loaded === next.loaded &&
+        prev.alreadyLoaded === next.alreadyLoaded &&
+        prev.onLoad === next.onLoad &&
+        prev.showFallback === next.showFallback &&
+        prev.bot === next.bot &&
+        prev.color === next.color &&
+        prev.glyphScale === next.glyphScale
 );
 
 function getMaskId(id) {
@@ -285,7 +375,8 @@ export default function Avatar({
     const id = useId();
     const { sourceKey, imageSource, cachedSource } = useAvatarImageSource(source);
     const [loadedKey, setLoadedKey] = useState(() => (sourceKey && loadedSourceKeys.has(sourceKey) ? sourceKey : ''));
-    const imageLoaded = !!sourceKey && (assumeImageLoaded || !!cachedSource || loadedKey === sourceKey);
+    const alreadyLoaded = !!sourceKey && (assumeImageLoaded || loadedSourceKeys.has(sourceKey));
+    const imageLoaded = !!sourceKey && (alreadyLoaded || !!cachedSource || loadedKey === sourceKey);
     const dot = useMemo(() => getAvatarAdornmentMetrics(size), [size]);
     const maskItems = useMemo(() => [active ? { key: 'active', ...dot } : null, ...maskAdornments].map(normalizeMaskAdornment).filter(Boolean), [active, dot, maskAdornments]);
     const selectable = selected != null;
@@ -350,8 +441,22 @@ export default function Avatar({
                 </Defs>
                 <G mask={`url(#${maskId})`}>
                     <Rect x="0" y="0" width={size} height={size} fill={theme.background} />
-                    {!hideFallbackUntilLoaded || !sourceKey || imageLoaded ? <AvatarGlyph bot={bot} size={size} color={resolvedGlyphColor} glyphScale={glyphScale} /> : null}
-                    {sourceKey ? <AvatarImage href={imageSource} size={size} loaded={imageLoaded} onLoad={handleImageLoad} /> : null}
+                    {sourceKey ? (
+                        <AvatarImageLayer
+                            key={sourceKey}
+                            href={imageSource}
+                            size={size}
+                            loaded={imageLoaded}
+                            alreadyLoaded={alreadyLoaded}
+                            onLoad={handleImageLoad}
+                            showFallback={!hideFallbackUntilLoaded}
+                            bot={bot}
+                            color={resolvedGlyphColor}
+                            glyphScale={glyphScale}
+                        />
+                    ) : (
+                        <AvatarGlyph bot={bot} size={size} color={resolvedGlyphColor} glyphScale={glyphScale} />
+                    )}
                     {selectable ? <AnimatedCircle animatedProps={selectedProps} cx={size / 2} cy={size / 2} r={selectedRadius} fill="none" stroke={theme.active} strokeWidth={selectedStroke} /> : null}
                 </G>
             </Svg>

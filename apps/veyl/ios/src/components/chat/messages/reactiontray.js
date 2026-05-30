@@ -14,7 +14,6 @@ export const REACTION_MARK_BOTTOM = -20;
 const REACTION_BORDER = 3;
 export const REACTION_SPACE = 20;
 const REACTION_ANIMATION_MS = 160;
-const REACTION_ROW_ANIMATION_MS = REACTION_ANIMATION_MS;
 const REACTION_AVATAR = 16;
 const REACTION_CONTENT_H = REACTION_AVATAR;
 const REACTION_EMOJI_SIZE = 12;
@@ -172,28 +171,25 @@ export default function ReactionTray({ children, reactions, users, fromPeer = fa
     const groupsKey = groups.map(groupStateKey).join('|');
     const active = groups.length > 0;
     const [items, setItems] = useState(() => makeItems(groups));
-    const [trayVisible, setTrayVisible] = useState(active);
-    const trayVisibleRef = useRef(active);
-    const previousActive = useRef(active);
-    const entryTimerRef = useRef(null);
-    const exitTimerRef = useRef(null);
+    const [present, setPresent] = useState(active);
+    const presentRef = useRef(active);
+    const desiredActiveRef = useRef(active);
+    const phaseRef = useRef(active ? 'open' : 'idle');
+    const phaseTimerRef = useRef(null);
+    const syncPhaseRef = useRef(null);
     const rowSpace = useSharedValue(active ? REACTION_SPACE : 0);
     const trayScale = useSharedValue(active ? 1 : TRAY_CLOSED_SCALE);
 
-    const setTrayVisibleState = useCallback((visible) => {
-        trayVisibleRef.current = visible;
-        setTrayVisible(visible);
+    const clearPhaseTimer = useCallback(() => {
+        if (phaseTimerRef.current) {
+            clearTimeout(phaseTimerRef.current);
+            phaseTimerRef.current = null;
+        }
     }, []);
 
-    const clearTimers = useCallback(() => {
-        if (entryTimerRef.current) {
-            clearTimeout(entryTimerRef.current);
-            entryTimerRef.current = null;
-        }
-        if (exitTimerRef.current) {
-            clearTimeout(exitTimerRef.current);
-            exitTimerRef.current = null;
-        }
+    const setPresentState = useCallback((nextPresent) => {
+        presentRef.current = nextPresent;
+        setPresent(nextPresent);
     }, []);
 
     useEffect(() => {
@@ -255,55 +251,105 @@ export default function ReactionTray({ children, reactions, users, fromPeer = fa
         });
     }, [groupsKey]);
 
-    useEffect(() => {
-        clearTimers();
+    const startOpeningSpace = useCallback(() => {
+        clearPhaseTimer();
         const timing = { duration: REACTION_ANIMATION_MS, easing: Easing.out(Easing.cubic) };
-        const rowTiming = { duration: REACTION_ROW_ANIMATION_MS, easing: Easing.out(Easing.cubic) };
-        if (active) {
-            const wasActive = previousActive.current;
-            previousActive.current = true;
-            rowSpace.value = withTiming(REACTION_SPACE, rowTiming);
-            if (wasActive) {
-                setTrayVisibleState(true);
-                trayScale.value = withTiming(1, timing);
-                return undefined;
+        phaseRef.current = 'opening-space';
+        rowSpace.value = withTiming(REACTION_SPACE, timing);
+        phaseTimerRef.current = setTimeout(() => {
+            phaseTimerRef.current = null;
+            if (phaseRef.current !== 'opening-space') {
+                return;
             }
-            setTrayVisibleState(false);
-            trayScale.value = TRAY_CLOSED_SCALE;
-            entryTimerRef.current = setTimeout(() => {
-                entryTimerRef.current = null;
-                setTrayVisibleState(true);
-                trayScale.value = TRAY_CLOSED_SCALE;
-                requestAnimationFrame(() => {
-                    trayScale.value = withTiming(1, timing);
-                });
-            }, REACTION_ROW_ANIMATION_MS);
-            return undefined;
-        }
-        if (!previousActive.current) {
-            rowSpace.value = withTiming(0, rowTiming);
-            setTrayVisibleState(false);
-            setItems([]);
-            return undefined;
-        }
-        previousActive.current = false;
-        if (!trayVisibleRef.current) {
-            setTrayVisibleState(false);
-            setItems([]);
-            rowSpace.value = withTiming(0, rowTiming);
-            return undefined;
-        }
-        trayScale.value = withTiming(TRAY_CLOSED_SCALE, timing);
-        exitTimerRef.current = setTimeout(() => {
-            exitTimerRef.current = null;
-            setTrayVisibleState(false);
-            setItems([]);
-            rowSpace.value = withTiming(0, rowTiming);
+            phaseRef.current = 'space-open';
+            syncPhaseRef.current?.();
         }, REACTION_ANIMATION_MS);
-        return undefined;
-    }, [active, clearTimers, rowSpace, setTrayVisibleState, trayScale]);
+    }, [clearPhaseTimer, rowSpace]);
 
-    useEffect(() => clearTimers, [clearTimers]);
+    const startOpeningTray = useCallback(() => {
+        clearPhaseTimer();
+        const timing = { duration: REACTION_ANIMATION_MS, easing: Easing.out(Easing.cubic) };
+        phaseRef.current = 'opening-tray';
+        if (!presentRef.current) {
+            trayScale.value = TRAY_CLOSED_SCALE;
+            setPresentState(true);
+        }
+        trayScale.value = withTiming(1, timing);
+        phaseTimerRef.current = setTimeout(() => {
+            phaseTimerRef.current = null;
+            if (phaseRef.current !== 'opening-tray') {
+                return;
+            }
+            phaseRef.current = 'open';
+            syncPhaseRef.current?.();
+        }, REACTION_ANIMATION_MS);
+    }, [clearPhaseTimer, setPresentState, trayScale]);
+
+    const startClosingTray = useCallback(() => {
+        clearPhaseTimer();
+        const timing = { duration: REACTION_ANIMATION_MS, easing: Easing.out(Easing.cubic) };
+        phaseRef.current = 'closing-tray';
+        trayScale.value = withTiming(TRAY_CLOSED_SCALE, timing);
+        phaseTimerRef.current = setTimeout(() => {
+            phaseTimerRef.current = null;
+            if (phaseRef.current !== 'closing-tray') {
+                return;
+            }
+            setPresentState(false);
+            phaseRef.current = 'space-open';
+            syncPhaseRef.current?.();
+        }, REACTION_ANIMATION_MS);
+    }, [clearPhaseTimer, setPresentState, trayScale]);
+
+    const startClosingSpace = useCallback(() => {
+        clearPhaseTimer();
+        const timing = { duration: REACTION_ANIMATION_MS, easing: Easing.out(Easing.cubic) };
+        phaseRef.current = 'closing-space';
+        rowSpace.value = withTiming(0, timing);
+        phaseTimerRef.current = setTimeout(() => {
+            phaseTimerRef.current = null;
+            if (phaseRef.current !== 'closing-space') {
+                return;
+            }
+            phaseRef.current = 'idle';
+            setItems([]);
+        }, REACTION_ANIMATION_MS);
+    }, [clearPhaseTimer, rowSpace]);
+
+    const syncPhase = useCallback(() => {
+        const desiredActive = desiredActiveRef.current;
+        const phase = phaseRef.current;
+
+        if (desiredActive) {
+            if (phase === 'idle' || phase === 'closing-space') {
+                startOpeningSpace();
+                return;
+            }
+            if (phase === 'space-open' || phase === 'closing-tray') {
+                startOpeningTray();
+            }
+            return;
+        }
+
+        if (phase === 'open' || phase === 'opening-tray') {
+            startClosingTray();
+            return;
+        }
+        if (phase === 'space-open' || phase === 'opening-space') {
+            startClosingSpace();
+        }
+    }, [startClosingSpace, startClosingTray, startOpeningSpace, startOpeningTray]);
+
+    useEffect(() => {
+        syncPhaseRef.current = syncPhase;
+    }, [syncPhase]);
+
+    useEffect(() => {
+        desiredActiveRef.current = active;
+        syncPhase();
+    }, [active, syncPhase]);
+
+    useEffect(() => clearPhaseTimer, [clearPhaseTimer]);
 
     useEffect(() => {
         if (!items.some((item) => item.exiting || item.users.some((user) => user.exiting))) {
@@ -324,7 +370,7 @@ export default function ReactionTray({ children, reactions, users, fromPeer = fa
     }, [items]);
 
     const renderItems = useMemo(() => (items.length ? items : active ? makeItems(groups) : []), [active, groups, items]);
-    const present = trayVisible && renderItems.length > 0;
+    const showTray = present && renderItems.length > 0;
     const spacerStyle = useAnimatedStyle(() => ({
         height: rowSpace.value,
     }));
@@ -345,7 +391,7 @@ export default function ReactionTray({ children, reactions, users, fromPeer = fa
         >
             {children}
             <Animated.View pointerEvents="none" style={spacerStyle} />
-            {present && (
+            {showTray && (
                 <Animated.View
                     pointerEvents="box-none"
                     style={[

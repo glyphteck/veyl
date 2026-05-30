@@ -1,7 +1,12 @@
-import { UserVaultProvider } from '@/components/providers/uservaultprovider';
-import { requireVaultReady } from '@/lib/routeguards';
+'use client';
 
-export default async function VaultLayout({ children }) {
-    await requireVaultReady();
-    return <UserVaultProvider>{children}</UserVaultProvider>;
+import { UserVaultProvider } from '@/components/providers/uservaultprovider';
+import { VaultReadyGate } from '@/lib/routeguards';
+
+export default function VaultLayout({ children }) {
+    return (
+        <VaultReadyGate>
+            <UserVaultProvider>{children}</UserVaultProvider>
+        </VaultReadyGate>
+    );
 }

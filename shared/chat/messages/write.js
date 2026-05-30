@@ -2,15 +2,16 @@ import { collection, doc, serverTimestamp, updateDoc, writeBatch, getDoc, getDoc
 import { getChatId, resealMsgBody, sealMsg } from '../../crypto/chat.js';
 import { orderChatKeys } from '../../crypto/pair.js';
 import { putAttachment, putFile, putImg, putMp3, putMp4, readMsgFile } from '../media.js';
-import { makeReaction, makeReadReceipt, makeRetentionSystemMsg } from '../messages.js';
+import { makeHiddenCheckpoint, makeReaction, makeReadReceipt, makeRetentionSystemMsg } from '../messages.js';
 import { sealChatSettingsForPair } from '../settings.js';
 import { getOwnChatPKFromChatId } from '../ids.js';
 import { getCachedPair } from '../pairs.js';
 import { makeCid } from '../state.js';
-import { cleanChatRetention, newMessageTtlMs, seenMessageTtlMs, shouldShortenTtl, withMessageRetention } from '../ttl.js';
-import { toMillis } from '../time.js';
+import { cleanChatRetention, newMessageTtlMs, withMessageRetention } from '../ttl.js';
+import { CHAT_DELETE_WRITE_BATCH_SIZE, CHAT_TTL_WRITE_BATCH_SIZE } from '../../config.js';
 
-const TTL_WRITE_BATCH_SIZE = 1;
+const TTL_WRITE_BATCH_SIZE = CHAT_TTL_WRITE_BATCH_SIZE;
+const DELETE_WRITE_BATCH_SIZE = CHAT_DELETE_WRITE_BATCH_SIZE;
 
 function makeTtl(value) {
     if (value == null) {
@@ -41,10 +42,6 @@ function makeUpdatedChatLastMsg(lastMsg, fields = {}) {
         body: fields.body ?? lastMsg?.body,
         ttl: 'ttl' in fields ? fields.ttl : (lastMsg?.ttl ?? null),
     };
-}
-
-function getSeenTtl(ttlMs = seenMessageTtlMs()) {
-    return makeTtl(ttlMs);
 }
 
 async function getServerSnap(ref) {
@@ -123,16 +120,23 @@ export async function sendReaction(db, senderPubkey, senderPrivkey, receiverChat
     return sendMsg(db, senderPubkey, senderPrivkey, receiverChatPK, reaction, { updateLastMsg: false, ...options });
 }
 
-function messageTtlUpdateItems(messages, ttl) {
-    const nextTtlMs = toMillis(ttl, null);
+export async function sendHiddenCheckpoint(db, senderPubkey, senderPrivkey, receiverChatPK, target, options = {}) {
+    const checkpoint = {
+        ...makeHiddenCheckpoint(target),
+        cid: makeCid(),
+        s: senderPubkey,
+    };
+    return sendMsg(db, senderPubkey, senderPrivkey, receiverChatPK, checkpoint, { updateLastMsg: false, ...options });
+}
+
+function messageMutationItems(messages, { allowString = false, include = () => true } = {}) {
     const seen = new Set();
+    const list = Array.isArray(messages) ? messages : [messages];
     const items = [];
-    for (const message of messages || []) {
-        const id = typeof message?.id === 'string' ? message.id.trim() : '';
-        if (!id || id.startsWith('local:') || seen.has(id) || message.pending || message.failed) {
-            continue;
-        }
-        if (!shouldShortenTtl(message.ttl, nextTtlMs)) {
+    for (const message of list || []) {
+        const stringMessage = typeof message === 'string';
+        const id = stringMessage ? (allowString ? message.trim() : '') : typeof message?.id === 'string' ? message.id.trim() : '';
+        if (!id || id.startsWith('local:') || seen.has(id) || message?.pending || message?.failed || !include(message)) {
             continue;
         }
         seen.add(id);
@@ -142,73 +146,18 @@ function messageTtlUpdateItems(messages, ttl) {
         });
     }
     return items;
+}
+
+function messageDeleteItems(messages) {
+    return messageMutationItems(messages, { allowString: true });
 }
 
 function messagePermanentUpdateItems(messages) {
-    const seen = new Set();
-    const list = Array.isArray(messages) ? messages : [messages];
-    const items = [];
-    for (const message of list || []) {
-        const id = typeof message?.id === 'string' ? message.id.trim() : '';
-        if (!id || id.startsWith('local:') || seen.has(id) || message.pending || message.failed || message.ttl == null) {
-            continue;
-        }
-        seen.add(id);
-        items.push({
-            id,
-            cid: typeof message?.cid === 'string' ? message.cid : '',
-        });
-    }
-    return items;
+    return messageMutationItems(messages, { include: (message) => message?.ttl != null });
 }
 
 function messageTemporaryUpdateItems(messages) {
-    const seen = new Set();
-    const list = Array.isArray(messages) ? messages : [messages];
-    const items = [];
-    for (const message of list || []) {
-        const id = typeof message?.id === 'string' ? message.id.trim() : '';
-        if (!id || id.startsWith('local:') || seen.has(id) || message.pending || message.failed || message.ttl != null) {
-            continue;
-        }
-        seen.add(id);
-        items.push({
-            id,
-            cid: typeof message?.cid === 'string' ? message.cid : '',
-        });
-    }
-    return items;
-}
-
-export async function updateSeenMsgTtls(db, chatId, messages, ttlMs = seenMessageTtlMs()) {
-    if (!db || !chatId || !Array.isArray(messages) || !messages.length) {
-        return 0;
-    }
-
-    const ttl = getSeenTtl(ttlMs);
-    const items = messageTtlUpdateItems(messages, ttl);
-    if (!items.length) {
-        return 0;
-    }
-
-    const chatRef = doc(db, 'chats', chatId);
-    const lastMsg = chatLastMsg(await getServerSnap(chatRef));
-    const lastCid = chatLastCid(lastMsg);
-    const updateLastMsg = !!lastCid && items.some((item) => item.cid && item.cid === lastCid);
-
-    for (let index = 0; index < items.length; index += TTL_WRITE_BATCH_SIZE) {
-        const batch = writeBatch(db);
-        const chunk = items.slice(index, index + TTL_WRITE_BATCH_SIZE);
-        for (const item of chunk) {
-            batch.update(doc(db, 'chats', chatId, 'messages', item.id), { ttl });
-        }
-        await batch.commit();
-    }
-    if (updateLastMsg) {
-        await syncChatLastMsgBestEffort(chatRef, lastMsg, { ttl });
-    }
-
-    return items.length;
+    return messageMutationItems(messages, { include: (message) => message?.ttl == null });
 }
 
 export async function makeMsgTemporary(db, chatId, messages, ttlMs = newMessageTtlMs()) {
@@ -216,7 +165,7 @@ export async function makeMsgTemporary(db, chatId, messages, ttlMs = newMessageT
         return 0;
     }
 
-    const ttl = getSeenTtl(ttlMs);
+    const ttl = makeTtl(ttlMs);
     const items = messageTemporaryUpdateItems(messages);
     if (!ttl || !items.length) {
         return 0;
@@ -415,6 +364,38 @@ export async function deleteMsg(db, chatId, msgId) {
 
     await batch.commit();
     return true;
+}
+
+export async function deleteMsgs(db, chatId, messages) {
+    if (!db || !chatId) {
+        return 0;
+    }
+
+    const items = messageDeleteItems(messages);
+    if (!items.length) {
+        return 0;
+    }
+
+    const chatRef = doc(db, 'chats', chatId);
+    const lastMsg = chatLastMsg(await getServerSnap(chatRef));
+    const lastCid = chatLastCid(lastMsg);
+    const updateLastMsg = !!lastCid && items.some((item) => item.cid && item.cid === lastCid);
+    let lastMsgUpdated = false;
+
+    for (let index = 0; index < items.length; index += DELETE_WRITE_BATCH_SIZE) {
+        const batch = writeBatch(db);
+        const chunk = items.slice(index, index + DELETE_WRITE_BATCH_SIZE);
+        for (const item of chunk) {
+            batch.delete(doc(db, 'chats', chatId, 'messages', item.id));
+        }
+        if (updateLastMsg && !lastMsgUpdated) {
+            batch.update(chatRef, { lastMsg: deleteField() });
+            lastMsgUpdated = true;
+        }
+        await batch.commit();
+    }
+
+    return items.length;
 }
 
 export async function readMsgMedia(storage, userChatPK, userPrivKey, peerChatPK, msg) {

@@ -23,6 +23,7 @@ import { useTheme } from '@/providers/themeprovider';
 import { useUser } from '@/providers/userprovider';
 import { useVault } from '@/providers/vaultprovider';
 import { useWallet } from '@/providers/walletprovider';
+import { useChat } from '@/providers/chatprovider';
 import { renderMoney } from '@glyphteck/shared/utils';
 import { verifyVaultPassword } from '@/lib/crypto/seed';
 
@@ -42,6 +43,7 @@ export default function DeleteAccountScreen() {
     const buttonColor = theme.background;
     const router = useRouter();
     const { encSeed, localCache, lock } = useVault();
+    const { collectAccountSavedMediaStays, releaseSavedMediaStays } = useChat();
     const { uid, settings, clearAvatar } = useUser();
     const bitcoin = useBitcoin();
     const { balance } = useWallet();
@@ -147,8 +149,10 @@ export default function DeleteAccountScreen() {
         setIsDeleting(true);
 
         try {
+            const savedMediaStays = await collectAccountSavedMediaStays?.();
             await dropPush({ uid }).catch(() => {});
             await httpsCallable(functions, 'deleteAccount')();
+            await releaseSavedMediaStays?.(savedMediaStays)?.catch(() => {});
             await localCache?.clear?.().catch(() => {});
             clearAvatar?.();
             await clearFaceIdPassword(uid).catch(() => {});
@@ -162,7 +166,7 @@ export default function DeleteAccountScreen() {
                 setIsDeleting(false);
             }
         }
-    }, [clearAvatar, isDeleting, isVerified, localCache, lock, uid]);
+    }, [clearAvatar, collectAccountSavedMediaStays, isDeleting, isVerified, localCache, lock, releaseSavedMediaStays, uid]);
 
     const WarningCopy = () => (
         <GlassView glassEffectStyle="clear" tintColor={theme.background} style={{ borderRadius: 24, paddingHorizontal: 18, paddingVertical: 18, gap: 12 }}>

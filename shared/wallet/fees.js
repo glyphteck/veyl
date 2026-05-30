@@ -1,3 +1,5 @@
+import { formatMoney } from '../formatmoney.js';
+
 export const DEFAULT_EXIT_SPEED = 'MEDIUM';
 export const EXIT_SPEEDS = Object.freeze(['SLOW', 'MEDIUM', 'FAST']);
 export const COOPERATIVE_EXIT_TX_VBYTES = 250;
@@ -210,6 +212,43 @@ export function normalizeOnchainFeeEstimate({ bitcoin, feeRate, speed = DEFAULT_
         source: feeRate == null ? (bitcoin?.fees?.source ?? null) : 'manual',
         updatedAtIso: bitcoin?.fees?.updatedAtIso ?? null,
     };
+}
+
+function formatWholeNumber(value) {
+    return String(value).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+
+export function formatSatsAmount(value, { fallback = 'updating', roundUp = true } = {}) {
+    const amount = Number(value);
+    if (!Number.isFinite(amount)) {
+        return fallback;
+    }
+    const sats = Math.max(0, roundUp ? Math.ceil(amount) : Math.round(amount));
+    return `${formatWholeNumber(sats)} ${sats === 1 ? 'sat' : 'sats'}`;
+}
+
+export function formatFeeRateSatsPerVbyte(value, { fallback = 'updating', precision = 3 } = {}) {
+    const rate = Number(value);
+    if (!Number.isFinite(rate)) {
+        return fallback;
+    }
+    const scale = 10 ** Math.max(0, Number(precision) || 0);
+    const rounded = Math.round(rate * scale) / scale;
+    const formatted = rounded >= 10 ? formatWholeNumber(Math.round(rounded)) : String(rounded);
+    return `${formatted} sat/vB`;
+}
+
+export function formatOnchainFeeFormula(fee, { vbytes, baseSats = 0, feeRatePrecision = 3 } = {}) {
+    const expectedVbytes = fee?.vbytes ?? vbytes;
+    return `${expectedVbytes} vB x ${formatFeeRateSatsPerVbyte(fee?.feeRateSatsPerVbyte, { precision: feeRatePrecision })} + ${formatSatsAmount(baseSats)}`;
+}
+
+export function formatOnchainFeeAmount(fee, moneyFormat, btcPrice, { fallback = 'updating' } = {}) {
+    const amount = Number(typeof fee === 'number' ? fee : fee?.feeAmountSats);
+    if (!Number.isFinite(amount)) {
+        return fallback;
+    }
+    return formatMoney(Math.max(0, Math.ceil(amount)), moneyFormat || 'sats', btcPrice);
 }
 
 function getPositiveCount(value, fallback = 1) {

@@ -18,6 +18,7 @@ import { stageShareMedia } from '@/lib/sharemedia';
 import { usePop } from '@/lib/pop';
 import { useTap } from '@/lib/tap';
 import { canShareAttachmentMsg, getImageAspect } from '@glyphteck/shared/chat/messages';
+import { formatDuration } from '@glyphteck/shared/utils';
 import Icon from '@/components/icon';
 
 const DISMISS_DISTANCE = 240;
@@ -172,18 +173,6 @@ function getMediaOrientation(item, aspect) {
         return aspect >= LANDSCAPE_ASPECT_MIN ? 'landscape' : 'portrait';
     }
     return item?.orientation === 'landscape' ? 'landscape' : 'portrait';
-}
-
-function formatTime(seconds) {
-    const safe = Math.max(0, Math.floor(Number.isFinite(seconds) ? seconds : 0));
-    const minutes = Math.floor(safe / 60);
-    const rest = safe % 60;
-    if (minutes < 60) {
-        return `${minutes}:${String(rest).padStart(2, '0')}`;
-    }
-    const hours = Math.floor(minutes / 60);
-    const hourMinutes = minutes % 60;
-    return `${hours}:${String(hourMinutes).padStart(2, '0')}:${String(rest).padStart(2, '0')}`;
 }
 
 function setPlayerProps(player, props) {
@@ -529,7 +518,7 @@ function VideoSlide({ active, item, rect, registerVideo, onReady, playAllowed, m
                 <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, bottom: LINE_H + 10, alignItems: 'center' }}>
                     <View style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, backgroundColor: alpha(theme.background, 78) }}>
                         <Text style={{ color: theme.foreground, fontSize: 13, fontWeight: '800', fontVariant: ['tabular-nums'] }}>
-                            {formatTime(shownTime)} / {formatTime(duration)}
+                            {formatDuration(shownTime)} / {formatDuration(duration)}
                         </Text>
                     </View>
                 </View>
@@ -606,7 +595,7 @@ function ActionIconButton({ children, disabled = false, onPress }) {
     );
 }
 
-export function FullscreenRail({ activeIndex, items, onCloseComplete, onMove }) {
+export function FullscreenRail({ activeIndex, items, onCloseComplete, onCloseStart, onMove }) {
     const { theme } = useTheme();
     const router = useRouter();
     const { width: screenW, height: screenH } = useWindowDimensions();
@@ -641,6 +630,7 @@ export function FullscreenRail({ activeIndex, items, onCloseComplete, onMove }) 
     const mediaShownRef = useRef(false);
     const pendingRailTargetRef = useRef(null);
     const [shown, setShown] = useState(false);
+    const [closing, setClosing] = useState(false);
     const [saving, setSaving] = useState(false);
     const [savedId, setSavedId] = useState(null);
     const [muted, setMuted] = useState(false);
@@ -714,6 +704,8 @@ export function FullscreenRail({ activeIndex, items, onCloseComplete, onMove }) 
             return;
         }
         closingRef.current = true;
+        setClosing(true);
+        onCloseStart?.();
         if (firstFrameTimerRef.current) {
             clearTimeout(firstFrameTimerRef.current);
             firstFrameTimerRef.current = null;
@@ -737,7 +729,7 @@ export function FullscreenRail({ activeIndex, items, onCloseComplete, onMove }) 
             onCloseComplete();
             afterClose?.();
         }, CLOSE_UNMOUNT_MS);
-    }, [backdropOpacity, mediaOpacity, mediaRadius, muteOpacity, onCloseComplete, openScale, saveOpacity, swipeProgress]);
+    }, [backdropOpacity, mediaOpacity, mediaRadius, muteOpacity, onCloseComplete, onCloseStart, openScale, saveOpacity, swipeProgress]);
 
     useEffect(() => {
         openScale.value = 0.01;
@@ -748,6 +740,7 @@ export function FullscreenRail({ activeIndex, items, onCloseComplete, onMove }) 
         saveOpacity.value = 1;
         mediaShownRef.current = false;
         closingRef.current = false;
+        setClosing(false);
         setShown(false);
         backdropOpacity.value = withTiming(1, BACKDROP_IN_TIMING);
         firstFrameTimerRef.current = setTimeout(showMedia, FIRST_FRAME_FALLBACK_MS);
@@ -1054,7 +1047,7 @@ export function FullscreenRail({ activeIndex, items, onCloseComplete, onMove }) 
     const shareDisabled = !canShareAttachmentMsg(activeItem.msg);
 
     return (
-        <View style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, zIndex: 100 }}>
+        <View pointerEvents={closing ? 'none' : 'auto'} style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, zIndex: 100 }}>
             <Animated.View pointerEvents="none" style={[{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 }, backdropStyle]}>
                 <BlurView tint="default" intensity={88} style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 }} />
                 <View style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: alpha(theme.background, 22) }} />

@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { collection, deleteDoc, doc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
 import { avatarPath, getFileUrl, readFile } from '../files.js';
+import { BAN_REFRESH_GRACE_MS } from '../config.js';
 import { COMMUNITY_RULES_DATE, COMMUNITY_RULES_VERSION } from '../community.js';
 import { defaultSettings, writeUserSettings } from '../settings.js';
 import { resolveWalletPK } from '../wallet/keys.js';
@@ -529,7 +530,7 @@ export function createUserProvider({ auth, db, storage, getStorage, network, ava
                 () => {
                     setUser((prevUser) => ({ ...prevUser }));
                 },
-                Math.max(untilMs - Date.now(), 0) + 50
+                Math.max(untilMs - Date.now(), 0) + BAN_REFRESH_GRACE_MS
             );
 
             return () => clearTimeout(timerId);

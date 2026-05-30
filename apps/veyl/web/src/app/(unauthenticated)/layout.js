@@ -1,6 +1,7 @@
-import { redirectIfSession } from '@/lib/routeguards';
+'use client';
 
-export default async function UnauthenticatedLayout({ children }) {
-    await redirectIfSession();
-    return children;
+import { GuestGate } from '@/lib/routeguards';
+
+export default function UnauthenticatedLayout({ children }) {
+    return <GuestGate>{children}</GuestGate>;
 }
