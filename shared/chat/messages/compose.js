@@ -1,5 +1,5 @@
 import { canShowMsg, isSystemMsg } from './control.js';
-import { retentionPatch } from './retention.js';
+import { retentionPatch } from '../ttl.js';
 import { getMessageKey } from '../state.js';
 
 export function setReply(msg, replyId) {

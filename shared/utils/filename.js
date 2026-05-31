@@ -1,4 +1,4 @@
-import { randomBytes, toHex } from './crypto/core.js';
+import { randomBytes, toHex } from '../crypto/core.js';
 
 export function cleanExtension(ext = 'bin') {
     return String(ext || 'bin').replace(/^\./, '').trim().toLowerCase() || 'bin';

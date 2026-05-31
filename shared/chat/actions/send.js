@@ -9,7 +9,7 @@ import { usePendingSendQueue } from './pending.js';
 import { newMediaStayId, newMediaStayKey, requireMediaSaved } from './save.js';
 import { getPeerChatPKFromChatId } from '../ids.js';
 import { getMessageKey, makeCid, sortMessages } from '../state.js';
-import { cleanChatRetention, getMessageRetention, hasChatRetention, withMessageRetention } from '../ttl.js';
+import { getMessageRetention, retentionPatch, withMessageRetention } from '../ttl.js';
 import { cleanText } from '../../utils/text.js';
 import { makeTimestamp } from '../../utils/time.js';
 
@@ -20,10 +20,6 @@ export const LOCAL_SENT = Object.freeze({ pending: false, failed: false });
 function replyPatch(message) {
     const replyId = cleanText(message?.r);
     return replyId ? { r: replyId } : {};
-}
-
-function retentionPatch(message) {
-    return hasChatRetention(message?.retention) ? { retention: cleanChatRetention(message.retention) } : {};
 }
 
 function patchCid(message, cid, patch) {

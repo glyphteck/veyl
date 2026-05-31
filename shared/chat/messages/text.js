@@ -1,5 +1,5 @@
 import { MAX_TXT_CHARS } from './types.js';
-import { retentionPatch } from './retention.js';
+import { retentionPatch } from '../ttl.js';
 import { cleanText } from '../../utils/text.js';
 
 const DOMAIN_LABEL_PATTERN = '[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?';

@@ -1,6 +1,6 @@
 import { formatAttachmentSize, hasStoredFileRef, isPngMsg } from '@veyl/shared/chat/messages';
 import { cleanText } from '@veyl/shared/utils/text';
-import { saveBytes, saveUrl } from './download';
+import { saveBytes, saveUrl } from '../download';
 
 const HOVER_SAVE_MSG_TYPES = ['img', 'mp3', 'mp4'];
 

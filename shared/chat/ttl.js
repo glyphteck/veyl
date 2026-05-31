@@ -39,6 +39,10 @@ export function getMessageRetention(message, fallback = DEFAULT_CHAT_RETENTION) 
     return cleanChatRetention(fallback);
 }
 
+export function retentionPatch(message) {
+    return hasChatRetention(message?.retention) ? { retention: cleanChatRetention(message.retention) } : {};
+}
+
 export function withMessageRetention(message, retention = DEFAULT_CHAT_RETENTION) {
     if (!message || typeof message !== 'object' || Array.isArray(message)) {
         return message;
