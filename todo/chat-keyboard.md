@@ -11,9 +11,9 @@ Keep iOS current-chat keyboard handling responsive while avoiding `KeyboardGestu
 
 ## Write Boundary
 
-- `apps/veyl/ios/app/(vault)/(app)/chat/[peerchatpk]/index.js`
-- `apps/veyl/ios/app/(vault)/(app)/(home)/chat.js`
-- `apps/veyl/ios/src/components/chat/messagelist.js`
+- `apps/ios/app/(vault)/(app)/chat/[peerchatpk]/index.js`
+- `apps/ios/app/(vault)/(app)/(home)/chat.js`
+- `apps/ios/src/components/chat/messagelist.js`
 - any existing iOS keyboard primitive needed for this path
 
 ## Collision Notes

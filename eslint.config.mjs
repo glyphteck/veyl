@@ -3,11 +3,11 @@ import hooks from "eslint-plugin-react-hooks";
 import globals from "globals";
 
 const files = ["**/*.{js,jsx,mjs,cjs}"];
-const web = ["apps/veyl/web/**/*.{js,jsx,mjs}"];
-const ios = ["apps/veyl/ios/**/*.{js,jsx,mjs}"];
+const web = ["apps/web/**/*.{js,jsx,mjs}"];
+const ios = ["apps/ios/**/*.{js,jsx,mjs}"];
 const shared = ["shared/**/*.{js,jsx,mjs}"];
 const node = [
-    "apps/veyl/bot/**/*.{js,mjs,cjs}",
+    "apps/bot/**/*.{js,mjs,cjs}",
     "functions/**/*.{js,mjs,cjs}",
     "scripts/**/*.{js,mjs,cjs}",
     "*.config.{js,mjs,cjs}",
@@ -16,8 +16,8 @@ const node = [
 const appImportPaths = ["apps/*", "../apps/*", "../../apps/*", "../../../apps/*"];
 const functionsImportPaths = ["functions/*", "../functions/*", "../../functions/*", "../../../functions/*"];
 const scriptsImportPaths = ["scripts/*", "../scripts/*", "../../scripts/*", "../../../scripts/*"];
-const webImportPaths = ["apps/veyl/web/*", "../web/*", "../../web/*", "../../../web/*"];
-const iosImportPaths = ["apps/veyl/ios/*", "../ios/*", "../../ios/*", "../../../ios/*"];
+const webImportPaths = ["apps/web/*", "../web/*", "../../web/*", "../../../web/*"];
+const iosImportPaths = ["apps/ios/*", "../ios/*", "../../ios/*", "../../../ios/*"];
 
 export default [
     {
@@ -32,7 +32,7 @@ export default [
             "**/.expo/**",
             "**/dist/**",
             "**/coverage/**",
-            "apps/veyl/ios/ios/**"
+            "apps/ios/ios/**"
         ]
     },
     js.configs.recommended,

@@ -137,7 +137,7 @@ bun make lifecycle
 - `bun make ios reset` uninstalls the dev app before reinstalling it, which clears on-device app data and forces iOS to reprocess the current app identity.
 - `bun make ios test` installs the standalone test `test.veyl` build on `REGTEST` with bundle id `com.glyphteck.veyl.test`.
 - `bun make ios prod` installs the standalone production `veyl` build on `MAINNET` with bundle id `com.glyphteck.veyl`.
-- `bun make ios` is quiet by default: it prints phase lines, writes child command output under `apps/veyl/ios/ios/build/<scheme>/logs/<timestamp>/`, logs warning details to `*.warnings.log`, and prints the first failure details plus the full log path when a child command fails. Add `-v` or `--verbose` to also show full child command output.
+- `bun make ios` is quiet by default: it prints phase lines, writes child command output under `apps/ios/ios/build/<scheme>/logs/<timestamp>/`, logs warning details to `*.warnings.log`, and prints the first failure details plus the full log path when a child command fails. Add `-v` or `--verbose` to also show full child command output.
 - `bun dev mainnet` and `bun dev regtest` apply the selected network to web, iOS, and bot.
 
 ## iOS Production Builds
@@ -162,7 +162,7 @@ After the App Store Connect app record exists and the EAS build is ready, upload
 bun dev ios submit
 ```
 
-`bun dev ios submit` runs EAS Submit from `apps/veyl/ios` with the prod profile. It defaults to `--latest` and forwards extra EAS Submit flags, so a specific build still works with `bun dev ios submit --id <build-id>`. EAS Submit can use the preset non-secret values in `apps/veyl/ios/eas.json`, but the Apple account, App Store Connect app id, or API key still need to come from Apple.
+`bun dev ios submit` runs EAS Submit from `apps/ios` with the prod profile. It defaults to `--latest` and forwards extra EAS Submit flags, so a specific build still works with `bun dev ios submit --id <build-id>`. EAS Submit can use the preset non-secret values in `apps/ios/eas.json`, but the Apple account, App Store Connect app id, or API key still need to come from Apple.
 
 ## Local Web Hosts
 
@@ -188,7 +188,7 @@ Local root-site work belongs in the separate Website repo.
 
 Use [packages.md](packages.md) for package, Expo SDK, and native dependency rules.
 
-If native iOS dependencies change, the generated native project must be refreshed before judging runtime behavior. The normal local phone path is `bun make ios`, which runs clean Expo prebuild/config sync, builds, installs, and launches the dev client. A manual `pod install` inside `apps/veyl/ios/ios` can refresh pods for an already-generated native project, but it is not a replacement for the repo's prebuild/build path after Expo config or package changes.
+If native iOS dependencies change, the generated native project must be refreshed before judging runtime behavior. The normal local phone path is `bun make ios`, which runs clean Expo prebuild/config sync, builds, installs, and launches the dev client. A manual `pod install` inside `apps/ios/ios` can refresh pods for an already-generated native project, but it is not a replacement for the repo's prebuild/build path after Expo config or package changes.
 
 Do not run a manual app build by default after native package changes. Tell the user what changed and that they need to rebuild.
 
@@ -228,5 +228,5 @@ Use package filters or direct file linting for faster local checks:
 
 ```bash
 bun --filter @glyphteck/veyl-web lint
-bun x eslint apps/veyl/web/src/lib/example.js
+bun x eslint apps/web/src/lib/example.js
 ```

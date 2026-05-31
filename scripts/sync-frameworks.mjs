@@ -6,8 +6,8 @@ import { readFileSync, writeFileSync } from 'node:fs';
 
 const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const check = process.argv.includes('--check');
-const webApps = ['apps/veyl/web'];
-const iosAppDir = 'apps/veyl/ios';
+const webApps = ['apps/web'];
+const iosAppDir = 'apps/ios';
 const expoManagedPackages = [
     'react',
     'react-dom',

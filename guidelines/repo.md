@@ -8,9 +8,9 @@ This repo is the Veyl product workspace.
 
 Main app surfaces:
 
-- `apps/veyl/web`: the veyl web client
-- `apps/veyl/ios`: the veyl iOS client
-- `apps/veyl/bot`: the veyl bot runtime
+- `apps/web`: the veyl web client
+- `apps/ios`: the veyl iOS client
+- `apps/bot`: the veyl bot runtime
 
 Shared and backend packages:
 
@@ -28,7 +28,6 @@ The root repo uses Bun.
 The Bun workspace includes:
 
 - `apps/*`
-- `apps/*/*`
 - `shared`
 
 `functions/` is not part of the root Bun workspace. Install it separately with `npm install` inside `functions/`.
@@ -51,12 +50,12 @@ After a feature branch is merged, delete the merged branch and any abandoned pre
 
 ## Source Boundaries
 
-- Web routes live in `apps/veyl/web/src/app`; web UI, providers, dialogs, and local primitives live in `apps/veyl/web/src/components`; web-only logic lives in `apps/veyl/web/src/lib`.
+- Web routes live in `apps/web/src/app`; web UI, providers, dialogs, and local primitives live in `apps/web/src/components`; web-only logic lives in `apps/web/src/lib`.
 - Web `src/lib` is feature-folded into `admin`, `cache`, `chat`, `crypto`, `firebase`, `media`, `search`, and `user`, with small root platform helpers such as `passkey.js`, `routeguards.js`, `vault.js`, and `classes.js`.
-- iOS routes live in `apps/veyl/ios/app`; iOS UI lives in `apps/veyl/ios/src/components`; provider wiring lives in `apps/veyl/ios/src/providers`; iOS-only logic lives in `apps/veyl/ios/src/lib`.
+- iOS routes live in `apps/ios/app`; iOS UI lives in `apps/ios/src/components`; provider wiring lives in `apps/ios/src/providers`; iOS-only logic lives in `apps/ios/src/lib`.
 - iOS `src/lib` is feature-folded into `cache`, `camera`, `chat`, `crypto`, `navigation`, `search`, and `user`, with small root platform helpers.
 - Shared cross-platform product logic lives in `shared` as `@veyl/shared`. Generic helpers are under `shared/utils/*`; feature logic is under owner folders such as `shared/chat`, `shared/wallet`, `shared/search`, `shared/cache`, `shared/navigation`, and `shared/bot`.
-- Web UI no longer uses shadcn-generated primitive files. Keep Veyl-owned primitives under `apps/veyl/web/src/components`.
+- Web UI no longer uses shadcn-generated primitive files. Keep Veyl-owned primitives under `apps/web/src/components`.
 - Firebase Functions feature entrypoints live under `functions/passkey`, `functions/user`, `functions/chat`, `functions/wallet`, `functions/btc`, and `functions/admin`; deploy-local helpers live under `functions/lib`.
 - Repo tooling lives under `scripts`, with admin command helpers in `scripts/admin`.
 

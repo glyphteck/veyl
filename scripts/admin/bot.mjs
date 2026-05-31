@@ -18,8 +18,8 @@ import {
     BOT_BURST_DEFAULT_DELAY_MS,
 } from '@veyl/shared/config';
 import { resolveBotUid, setBotPowerState } from '../../functions/lib/bots.js';
-import { provisionBot } from '../../apps/veyl/bot/src/newbot.js';
-import { createSecretClient, deleteBotSeed } from '../../apps/veyl/bot/src/secrets.js';
+import { provisionBot } from '../../apps/bot/src/newbot.js';
+import { createSecretClient, deleteBotSeed } from '../../apps/bot/src/secrets.js';
 import { cliArgs, resolveUid } from './cli.mjs';
 import { timestampMs } from '@veyl/shared/utils/time';
 import { sleep } from '@veyl/shared/utils/async';

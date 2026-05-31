@@ -15,12 +15,12 @@ Keep current-chat route entry and route switching responsive when a chat has man
 - `shared/chat/usemessages.js`
 - `shared/chat/messages/session/`
 - `shared/providers/chatprovider.js`
-- `apps/veyl/ios/src/lib/chat/media.js`
-- `apps/veyl/ios/src/lib/chat/downloads.js`
-- `apps/veyl/ios/src/lib/cache/localdata.js`
-- `apps/veyl/ios/src/lib/chat/imagecache.js`
-- `apps/veyl/ios/src/lib/chat/useimage.js`
-- `apps/veyl/ios/src/components/chat/*`
+- `apps/ios/src/lib/chat/media.js`
+- `apps/ios/src/lib/chat/downloads.js`
+- `apps/ios/src/lib/cache/localdata.js`
+- `apps/ios/src/lib/chat/imagecache.js`
+- `apps/ios/src/lib/chat/useimage.js`
+- `apps/ios/src/components/chat/*`
 
 ## Finding
 

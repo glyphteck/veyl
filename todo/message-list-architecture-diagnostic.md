@@ -12,9 +12,9 @@ The immediate diagnostic case is `MsgDot`: it should be visually centered on the
 
 ## Write Boundary
 
-- `apps/veyl/ios/src/components/chat/messagelist.js`
-- `apps/veyl/ios/src/components/chat/receiptmark.js`
-- `apps/veyl/ios/src/components/chat/messages/*`
+- `apps/ios/src/components/chat/messagelist.js`
+- `apps/ios/src/components/chat/receiptmark.js`
+- `apps/ios/src/components/chat/messages/*`
 
 ## Questions
 

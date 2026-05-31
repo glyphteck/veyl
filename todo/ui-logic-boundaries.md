@@ -11,10 +11,10 @@ Review Veyl web and iOS `components/` and `lib/` folders and separate UI from no
 
 ## Write Boundary
 
-- `apps/veyl/web/src/components/**`
-- `apps/veyl/web/src/lib/**`
-- `apps/veyl/ios/src/components/**`
-- `apps/veyl/ios/src/lib/**`
+- `apps/web/src/components/**`
+- `apps/web/src/lib/**`
+- `apps/ios/src/components/**`
+- `apps/ios/src/lib/**`
 - focused shared helpers only when logic is duplicated across web and iOS
 
 ## Review Questions
@@ -35,4 +35,4 @@ Review Veyl web and iOS `components/` and `lib/` folders and separate UI from no
 
 ## Notes
 
-Use the web main menu split as a reference point: rendering stays in `components/dialogs/mainmenu.js`, while pure row-windowing, filtering, ordering, and formatting helpers can live in `apps/veyl/web/src/lib/mainmenu.js`.
+Use the web main menu split as a reference point: rendering stays in `components/dialogs/mainmenu.js`, while pure row-windowing, filtering, ordering, and formatting helpers can live in `apps/web/src/lib/mainmenu.js`.

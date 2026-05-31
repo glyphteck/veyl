@@ -8,9 +8,9 @@ This repo is the Veyl product workspace.
 
 It contains the Veyl app surfaces:
 
-- `apps/veyl/web`: the veyl web client
-- `apps/veyl/ios`: the veyl iOS client
-- `apps/veyl/bot`: the veyl bot runtime
+- `apps/web`: the veyl web client
+- `apps/ios`: the veyl iOS client
+- `apps/bot`: the veyl bot runtime
 
 The `glyphteck.com` company website lives in the separate Website repo. Veyl still depends on the company root domain for passkeys and public trust files.
 
@@ -148,9 +148,9 @@ The wrapper URL is intentional for veyl-specific actions. On iOS, the veyl web h
 - The durable payload is AES-GCM ciphertext with AAD bound to cache version, user id, and wallet network.
 - Chat media bytes are stored as separate AES-GCM media blobs with opaque local ids; the encrypted main payload stores the media index.
 - Chat message lists are not cached as durable state. Visible messages must come from server-confirmed Firestore reads; cached media bytes are used only after the server confirms the message document still exists.
-- iOS stores the encrypted main blob and media blobs in app document storage through `apps/veyl/ios/src/lib/cache/localdata.js`.
-- iOS also materializes decrypted media into a transient deterministic render-file cache under the app cache directory through `apps/veyl/ios/src/lib/chat/imagecache.js`. That URI layer is separate from the vaulted media blob cache and can be rebuilt from the vaulted bytes after unlock.
-- Web stores the encrypted main blob and media blobs in IndexedDB through `apps/veyl/web/src/lib/cache/localdata.js`.
+- iOS stores the encrypted main blob and media blobs in app document storage through `apps/ios/src/lib/cache/localdata.js`.
+- iOS also materializes decrypted media into a transient deterministic render-file cache under the app cache directory through `apps/ios/src/lib/chat/imagecache.js`. That URI layer is separate from the vaulted media blob cache and can be rebuilt from the vaulted bytes after unlock.
+- Web stores the encrypted main blob and media blobs in IndexedDB through `apps/web/src/lib/cache/localdata.js`.
 - Vaulted cache storage is scoped by uid and wallet network before encryption, so multiple accounts on one device keep separate encrypted cache slots instead of overwriting each other. The ciphertext AAD is also bound to uid and network.
 - Shared schema, crypto, timestamp revival, and cache helpers live in `shared/cache/localdata.js`.
 - The cache key is derived from the local master seed with a domain-separated label and is never stored in Keychain, SecureStore, IndexedDB, AsyncStorage, localStorage, or React state as raw key material.
@@ -173,7 +173,7 @@ The wrapper URL is intentional for veyl-specific actions. On iOS, the veyl web h
 - Chat keys are X25519-derived from the random client master seed and published once on the user's profile.
 - Messages are AES-GCM encrypted and stored as packed Firestore `Bytes`.
 - Attachments are encrypted separately and stored in Firebase Storage. Message docs store encrypted attachment references and metadata, not plaintext file bodies.
-- The iOS full-screen media viewer is owned by `apps/veyl/ios/src/providers/mediaviewerprovider.js`. Swipe navigation moves only the horizontal rail; vertical dismiss scale, opacity, rounding, and save-action fade are scoped to the active media slide so neighboring slides stay unscaled during exit.
+- The iOS full-screen media viewer is owned by `apps/ios/src/providers/mediaviewerprovider.js`. Swipe navigation moves only the horizontal rail; vertical dismiss scale, opacity, rounding, and save-action fade are scoped to the active media slide so neighboring slides stay unscaled during exit.
 - Chat IDs are derived from the two participant chat public keys.
 - Chat list rows and previously decrypted media hydrate from the vaulted local cache after unlock, then Firestore listeners reconcile fresh chat-row data. Chat docs carry participants, an independent recency timestamp (`ts`), encrypted retention settings, and an encrypted latest visible-message preview (`lastMsg`) so list ordering does not depend on a still-readable preview or one subcollection query per chat. Visible message lists still come from server-confirmed message reads, not the durable local cache.
 - Chat media files are stored as opaque encrypted Storage blobs under random `media/{id}/main` paths that do not encode chat ids, user ids, usernames, message ids, or permanence state. Unsaved media expires after 21 days through a Storage lifecycle rule on `media/`; saved media keeps the same object path and is protected with a Cloud Storage temporary hold derived from opaque Firestore media stay counts and hashed stay keys. Attachment messages carry the encrypted file capability needed to fetch and decrypt the blob, and shared attachment messages reuse that capability without copying saved state. Chat/message deletion is separate from Storage retention. Clients drop messages whose encrypted payload or attachment source cannot be resolved, remove their cached media, and render replies to missing messages with a local unavailable preview.
@@ -214,13 +214,13 @@ The wrapper URL is intentional for veyl-specific actions. On iOS, the veyl web h
 
 Current source folders are intentional:
 
-- `apps/veyl/web/src/app`: Next.js routes and route shells.
-- `apps/veyl/web/src/components`: visual web components, app providers, dialogs, and reusable UI primitives owned by Veyl. There is no shadcn `components.json` or `components/ui` layer.
-- `apps/veyl/web/src/lib`: web-only logic grouped by owner: `admin`, `cache`, `chat`, `crypto`, `firebase`, `media`, `search`, and `user`, plus small root platform helpers such as `passkey.js`, `routeguards.js`, `vault.js`, and `classes.js`.
-- `apps/veyl/ios/app`: Expo Router route files.
-- `apps/veyl/ios/src/components`: visual iOS components.
-- `apps/veyl/ios/src/providers`: iOS provider wiring around shared provider factories and native services.
-- `apps/veyl/ios/src/lib`: iOS-only logic grouped by owner: `cache`, `camera`, `chat`, `crypto`, `navigation`, `search`, and `user`, plus small root platform helpers.
+- `apps/web/src/app`: Next.js routes and route shells.
+- `apps/web/src/components`: visual web components, app providers, dialogs, and reusable UI primitives owned by Veyl. There is no shadcn `components.json` or `components/ui` layer.
+- `apps/web/src/lib`: web-only logic grouped by owner: `admin`, `cache`, `chat`, `crypto`, `firebase`, `media`, `search`, and `user`, plus small root platform helpers such as `passkey.js`, `routeguards.js`, `vault.js`, and `classes.js`.
+- `apps/ios/app`: Expo Router route files.
+- `apps/ios/src/components`: visual iOS components.
+- `apps/ios/src/providers`: iOS provider wiring around shared provider factories and native services.
+- `apps/ios/src/lib`: iOS-only logic grouped by owner: `cache`, `camera`, `chat`, `crypto`, `navigation`, `search`, and `user`, plus small root platform helpers.
 - `shared`: cross-platform product logic in the `@veyl/shared` package. Generic primitives live in `shared/utils/*`; feature logic lives in folders such as `shared/chat`, `shared/wallet`, `shared/search`, `shared/cache`, `shared/navigation`, and `shared/bot`.
 - `functions`: Firebase Functions package. Feature entrypoints live under `passkey`, `user`, `chat`, `wallet`, `btc`, and `admin`; deploy-local shared helpers live under `functions/lib`.
 - `scripts`: repo operations and local tooling. Admin CLI command helpers live under `scripts/admin`.
@@ -229,19 +229,19 @@ Current source folders are intentional:
 
 If you want the quickest path into the codebase, start here:
 
-- Web auth/session: `apps/veyl/web/src/lib/passkey.js`, `apps/veyl/web/src/lib/routeguards.js`
-- iOS auth: `apps/veyl/ios/src/lib/passkeys.js`
+- Web auth/session: `apps/web/src/lib/passkey.js`, `apps/web/src/lib/routeguards.js`
+- iOS auth: `apps/ios/src/lib/passkeys.js`
 - Vault boot: `shared/vault.js`
-- Vaulted local cache: `shared/cache/localdata.js`, `apps/veyl/ios/src/lib/cache/localdata.js`, `apps/veyl/web/src/lib/cache/localdata.js`
+- Vaulted local cache: `shared/cache/localdata.js`, `apps/ios/src/lib/cache/localdata.js`, `apps/web/src/lib/cache/localdata.js`
 - Seed crypto: `shared/crypto/seed.js`
 - Wallet provider factory: `shared/wallet/provider.js`
 - Chat provider factory: `shared/providers/chatprovider.js`
 - Chat message sessions and warming config: `shared/chat/messages/session/`
 - Chat transport, crypto, and messages: `shared/chat/rows.js`, `shared/chat/messages/query.js`, `shared/chat/messages/write.js`, `shared/crypto/chat.js`, `shared/chat/messages.js`
 - Chat user actions: `shared/chat/actions/`
-- Web chat render/cache helpers: `apps/veyl/web/src/lib/chat/*`
-- iOS chat media and render-file helpers: `apps/veyl/ios/src/lib/chat/*`
-- Search: `shared/search/*`, `apps/veyl/web/src/lib/search/usesearch.js`, `apps/veyl/ios/src/lib/search/usesearch.js`
+- Web chat render/cache helpers: `apps/web/src/lib/chat/*`
+- iOS chat media and render-file helpers: `apps/ios/src/lib/chat/*`
+- Search: `shared/search/*`, `apps/web/src/lib/search/usesearch.js`, `apps/ios/src/lib/search/usesearch.js`
 - Legal copy: `shared/legal.js`
 - Shared user, peer, and tx providers: `shared/providers/*`
 - Backend entrypoint: `functions/index.js`
@@ -262,7 +262,7 @@ Main Firestore collections:
 
 ## Local Development
 
-The repo root is a Bun workspace for app packages under `apps/*` and `apps/*/*`, plus the shared package under `shared`.
+The repo root is a Bun workspace for app packages under `apps/*`, plus the shared package under `shared`.
 
 `functions/` is separate and uses npm, not the root workspace.
 
@@ -316,7 +316,7 @@ If you need to override them manually, you still can:
 bun dev web --hostname <domains.veylDev> --experimental-https
 ```
 
-Root-domain auth files live in the separate Website repo. App-owned Veyl web shell files such as the global stylesheet, loading screen, theme wrapper, and notifications live under `apps/veyl/web/src/app/*` and `apps/veyl/web/src/components/*`.
+Root-domain auth files live in the separate Website repo. App-owned Veyl web shell files such as the global stylesheet, loading screen, theme wrapper, and notifications live under `apps/web/src/app/*` and `apps/web/src/components/*`.
 
 ### Run iOS
 
@@ -351,7 +351,7 @@ Use `bun make ios reset` after signing, associated-domain, or app-identity chang
 
 `bun make ios store` starts a cloud EAS App Store production build. After it finishes, `bun dev ios submit` submits the latest EAS iOS build to App Store Connect using the prod submit profile.
 
-If native iOS dependencies change, rebuild with the normal `bun make ios` path when device validation is needed. A manual `pod install` inside `apps/veyl/ios/ios` can refresh pods for an already-generated native project, but it is not a replacement for the repo's Expo prebuild/build path after package or config changes.
+If native iOS dependencies change, rebuild with the normal `bun make ios` path when device validation is needed. A manual `pod install` inside `apps/ios/ios` can refresh pods for an already-generated native project, but it is not a replacement for the repo's Expo prebuild/build path after package or config changes.
 
 ## Configuration
 
@@ -367,7 +367,7 @@ The Firebase client config is shared in `shared/firebaseconfig.js`.
 
 ## Bots
 
-Bots are normal veyl accounts backed by a separate Node runtime under `apps/veyl/bot`.
+Bots are normal veyl accounts backed by a separate Node runtime under `apps/bot`.
 
 The first bot is a deterministic account for Apple App Review on `domains.veylTest`. The bot runtime can mirror messages and attachments, pay payment requests when funded, append encrypted read receipts and hidden-message checkpoints for viewed incoming messages, and expose admin status/control through the web admin surface and `bun bot` CLI.
 

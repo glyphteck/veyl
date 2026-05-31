@@ -60,7 +60,7 @@ Use this guide for any change to encrypted chat, chat rows, message payloads, re
 - Whole-chat/account deletion and saved-media stay release: `shared/chat/actions/delete.js` plus saved-media stay collectors in `shared/chat/messages/query.js`.
 - Media payloads/cache helpers: `shared/chat/filepayload.js`, `shared/chat/media.js`, `shared/chat/attachments.js`, platform media adapters.
 - Push routing: `functions/chat/messagepush.js`.
-- Bot runtime: `apps/veyl/bot/src/runtime.js`; keep it updated with chat lifecycle changes.
+- Bot runtime: `apps/bot/src/runtime.js`; keep it updated with chat lifecycle changes.
 
 ## Rules
 

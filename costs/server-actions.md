@@ -98,8 +98,8 @@ Code:
 - `functions/passkey/register.js`
 - `functions/lib/passkey.js`
 - `functions/lib/userdoc.js`
-- web client `apps/veyl/web/src/lib/passkey.js`
-- iOS client `apps/veyl/ios/src/lib/passkeys.js`
+- web client `apps/web/src/lib/passkey.js`
+- iOS client `apps/ios/src/lib/passkeys.js`
 
 `passkeyRegisterOptions`:
 
@@ -193,7 +193,7 @@ Failure variants:
 
 Code:
 
-- `apps/veyl/web/src/lib/routeguards.js`
+- `apps/web/src/lib/routeguards.js`
 - authenticated layouts and onboarding layouts.
 
 `getOnboardingState(uid)` reads in parallel:
@@ -242,8 +242,8 @@ Failure variants:
 
 Code:
 
-- web `apps/veyl/web/src/lib/useractions.js`.
-- iOS `apps/veyl/ios/src/lib/avatarupload.js`.
+- web `apps/web/src/lib/user/actions.js`.
+- iOS `apps/ios/src/lib/avatarupload.js`.
 - shared `shared/files.js`.
 - `storage.rules`.
 - `firestore.rules`.
@@ -272,8 +272,8 @@ Delete avatar:
 
 Code:
 
-- web `apps/veyl/web/src/app/(authenticated)/(onboarding)/getpassword/page.js`.
-- iOS `apps/veyl/ios/app/(onboarding)/getpassword.js`.
+- web `apps/web/src/app/(authenticated)/(onboarding)/getpassword/page.js`.
+- iOS `apps/ios/app/(onboarding)/getpassword.js`.
 
 Flow:
 
@@ -288,7 +288,7 @@ Rules:
 
 Code:
 
-- web `apps/veyl/web/src/app/(authenticated)/(onboarding)/community/communityack.js`.
+- web `apps/web/src/app/(authenticated)/(onboarding)/community/communityack.js`.
 - shared `shared/providers/userprovider.js`.
 
 Flow:
@@ -303,7 +303,7 @@ Rules:
 
 Code:
 
-- `shared/vaultutils.js`.
+- `shared/vault.js`.
 - `functions/user/onboarding/setpks.js`.
 
 `setWalletPK` missing-key path:
@@ -421,8 +421,8 @@ This converts one global write/minute into one read/minute per mounted client.
 
 Code:
 
-- web `apps/veyl/web/src/components/providers/vaultprovider.js`.
-- iOS `apps/veyl/ios/src/providers/vaultprovider.js`.
+- web `apps/web/src/components/providers/vaultprovider.js`.
+- iOS `apps/ios/src/providers/vaultprovider.js`.
 
 Web:
 
@@ -973,8 +973,8 @@ Minimum-ish account with no chats/events/usernames/passkeys/routes still pays qu
 Code:
 
 - `functions/user/actions/push.js`.
-- iOS `apps/veyl/ios/src/lib/push.js`.
-- iOS `apps/veyl/ios/src/providers/pushprovider.js`.
+- iOS `apps/ios/src/lib/push.js`.
+- iOS `apps/ios/src/providers/pushprovider.js`.
 
 ### `setPush`
 
@@ -1154,7 +1154,7 @@ Costs:
 
 ### Bot runtime baseline
 
-Code: `apps/veyl/bot/src/runtime.js`.
+Code: `apps/bot/src/runtime.js`.
 
 Runtime lease:
 

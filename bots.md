@@ -52,7 +52,7 @@ Bots use the same UID-based systems as regular users:
 
 ## Implementation Components
 
-### Runtime (`apps/veyl/bot/src/runtime.js`)
+### Runtime (`apps/bot/src/runtime.js`)
 
 The core bot loop. `BotRuntime` is a long-lived process that:
 
@@ -73,11 +73,11 @@ Message handling:
 
 Job serialization uses `queueMapJob` to ensure per-chat and per-wallet work runs sequentially without blocking other chats. The runtime also stores per-chat read checkpoints under `bots/{uid}/reads/{chatId}` and writes bot replies and bot-authored controls with deterministic message IDs derived from the source message, so a restart or retry cannot mirror the same source message into duplicate bot texts or duplicate bot read controls.
 
-### Entry Point (`apps/veyl/bot/src/index.js`)
+### Entry Point (`apps/bot/src/index.js`)
 
 Starts the runtime process. Uses an atomic `.bot.lock` directory with a PID file to prevent duplicate local instances and a short Firestore lease at `runtimes/bot` to prevent two active runtimes against the same backend. A second runtime exits instead of stopping or replacing the active one. Handles `SIGINT`/`SIGTERM` for clean shutdown.
 
-### Secrets (`apps/veyl/bot/src/secrets.js`)
+### Secrets (`apps/bot/src/secrets.js`)
 
 Reads and writes bot seed material to Google Cloud Secret Manager. All bot seeds live in the single `veyl-bot-seeds` secret as a JSON `seeds` object keyed by username with base64-encoded seed bytes. Provides:
 
@@ -86,11 +86,11 @@ Reads and writes bot seed material to Google Cloud Secret Manager. All bot seeds
 - `ensureBotSeed` — read-or-create for provisioning
 - `deleteBotSeed` — remove the username's seed entry from the bundle
 
-### Admin / Firebase (`apps/veyl/bot/src/admin.js`)
+### Admin / Firebase (`apps/bot/src/admin.js`)
 
 Initializes `firebase-admin` for the bot process from platform/default credentials plus `FIREBASE_CONFIG` when present. Exports `db`, `Timestamp`, `FieldValue`, and `projectId`.
 
-### Provisioning (`apps/veyl/bot/src/newbot.js`)
+### Provisioning (`apps/bot/src/newbot.js`)
 
 One-time bot account setup. Creates or reuses the Auth user, writes all Firestore identity records (`users`, `profiles`, `usernames`, `bots`), and stores the seed in Secret Manager.
 

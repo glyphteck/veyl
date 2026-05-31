@@ -61,7 +61,7 @@ Headers and footers are usually absolute glass overlays. Account for safe areas 
 
 On iOS, "bottom sheet" means an Expo Router native sheet route. Add a `Stack.Screen` with `presentation: 'formSheet'`, `sheetGrabberVisible: true`, an intentional `sheetAllowedDetents` value, and the right `contentStyle` for that sheet. Use existing route-backed sheets such as `scan`, `transfer`, and `peerselector` as the model. Do not build local `Modal` or absolute-position fake sheet implementations unless the task explicitly asks for a non-route overlay.
 
-The iOS full-screen media viewer provider lives in `apps/veyl/ios/src/providers/mediaviewerprovider.js`, and its UI lives in `apps/veyl/ios/src/components/media/mediaviewer.js`. Providers should expose state/actions and mount the UI component, not own the full visual tree. Keep swipe navigation and vertical dismiss transforms separate: the rail owns horizontal translation, while exit scale, opacity, corner rounding, and save-action fade belong only to the active media slide. Neighboring slides should stay unscaled during dismiss previews.
+The iOS full-screen media viewer provider lives in `apps/ios/src/providers/mediaviewerprovider.js`, and its UI lives in `apps/ios/src/components/media/mediaviewer.js`. Providers should expose state/actions and mount the UI component, not own the full visual tree. Keep swipe navigation and vertical dismiss transforms separate: the rail owns horizontal translation, while exit scale, opacity, corner rounding, and save-action fade belong only to the active media slide. Neighboring slides should stay unscaled during dismiss previews.
 
 For new iOS UI, implement in this order:
 
@@ -75,7 +75,7 @@ For new iOS UI, implement in this order:
 
 ## web
 
-veyl web UI is Tailwind-first, rounded, shadowed, lightly blurred, and icon-driven. The base visual language lives in `apps/veyl/web/src/app/globals.css`.
+veyl web UI is Tailwind-first, rounded, shadowed, lightly blurred, and icon-driven. The base visual language lives in `apps/web/src/app/globals.css`.
 
 Use the existing primitives first:
 
@@ -131,9 +131,9 @@ Important explanatory, safety, and legal text should use `text-foreground`, not 
 
 Segmented controls use `ToggleGroup`: root is `shadow flex w-fit items-center rounded-full`; items are `h-9 min-w-9`, `font-black`, separated with left borders, and active state is `bg-foreground text-background`. Tabs follow the same full-pill segmented pattern.
 
-Menus and search surfaces should use the existing components. Dropdown items slide their first children on hover/focus. Main menu search is the app-wide navigation surface; keep it in `apps/veyl/web/src/components/dialogs/mainmenu.js` so it can stay lazy-mounted and virtualized.
+Menus and search surfaces should use the existing components. Dropdown items slide their first children on hover/focus. Main menu search is the app-wide navigation surface; keep it in `apps/web/src/components/dialogs/mainmenu.js` so it can stay lazy-mounted and virtualized.
 
-Web uses `160ms` as the Tailwind default transition duration in `apps/veyl/web/src/app/globals.css`. Do not add explicit `duration-[160ms]`, `duration-160`, `duration-150`, or `duration-200` classes for normal transitions; rely on `transition-*` alone. Use explicit durations only when the animation is intentionally outside the default, such as longer chart/camera transitions, toast lifetimes, custom JavaScript row animation constants, media playback, or loading spinners.
+Web uses `160ms` as the Tailwind default transition duration in `apps/web/src/app/globals.css`. Do not add explicit `duration-[160ms]`, `duration-160`, `duration-150`, or `duration-200` classes for normal transitions; rely on `transition-*` alone. Use explicit durations only when the animation is intentionally outside the default, such as longer chart/camera transitions, toast lifetimes, custom JavaScript row animation constants, media playback, or loading spinners.
 
 For new web UI, implement in this order:
 

@@ -10,7 +10,7 @@ import { MAX_USERNAME, isUsername, normalizeUsername } from '@veyl/shared/userna
 import { cleanText, sameText } from '@veyl/shared/utils/text';
 import admin, { db, projectId } from './admin.js';
 import { createSecretClient, ensureBotSeed } from './secrets.js';
-import { ensureUserDoc } from '../../../../functions/lib/userdoc.js';
+import { ensureUserDoc } from '../../../functions/lib/userdoc.js';
 
 async function resolveUid(username) {
     const [usernameSnap, botsSnap] = await Promise.all([

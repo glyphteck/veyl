@@ -28,7 +28,7 @@
 - Provider wrappers should stay thin. Put shared behavior in `shared` and keep app providers mostly responsible for platform wiring.
 - Avoid one-function files unless the function is reused across an ownership boundary, is a public module boundary, or names an important sub-concept inside a large system. Otherwise keep the helper near its caller.
 - Do not recreate deleted catch-all modules such as root `shared/utils.js`, `shared/localdatacache.js`, or flat app-level chat media helpers. Use the current feature folders.
-- Do not add shadcn-generated scaffolding back to the web app. Veyl-owned UI primitives live under `apps/veyl/web/src/components`.
+- Do not add shadcn-generated scaffolding back to the web app. Veyl-owned UI primitives live under `apps/web/src/components`.
 
 ## Language And Patterns
 

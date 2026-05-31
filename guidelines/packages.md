@@ -7,7 +7,7 @@ Use this guide for dependency installs, package upgrades, framework bumps, lockf
 The repo root is a Bun workspace. Workspace packages are:
 
 - `apps/*`
-- `apps/veyl/*`
+- `apps/*`
 - `shared`
 
 Run root workspace installs from the repo root:
@@ -70,10 +70,10 @@ If a native package changes, expect a native rebuild before judging runtime beha
 
 ## Expo And iOS
 
-Work from `apps/veyl/ios` for Expo commands:
+Work from `apps/ios` for Expo commands:
 
 ```bash
-cd apps/veyl/ios
+cd apps/ios
 bun x expo install --check
 bun x expo install --fix
 bun x expo-doctor
@@ -81,7 +81,7 @@ bun x expo-doctor
 
 Use `bun x expo install <package>` for Expo SDK packages so the version follows the installed SDK. After changing `expo`, run the root framework sync sequence from the repo root.
 
-This app uses dynamic config in `apps/veyl/ios/app.config.js`. Expo CLI cannot automatically write config plugin entries into dynamic config. When `expo install --fix` prints "Cannot automatically write to dynamic config", add only the plugin entries it requests by hand. In the SDK 56 upgrade, Expo requested these plugin entries:
+This app uses dynamic config in `apps/ios/app.config.js`. Expo CLI cannot automatically write config plugin entries into dynamic config. When `expo install --fix` prints "Cannot automatically write to dynamic config", add only the plugin entries it requests by hand. In the SDK 56 upgrade, Expo requested these plugin entries:
 
 - `expo-asset`
 - `expo-audio`
@@ -102,18 +102,18 @@ Do not keep direct app dependencies on `@react-navigation/*` unless app code tru
 
 `bun make ios` is the normal phone rebuild path for the dev client. It runs a clean prebuild, builds, installs `dev.veyl` on the configured phone, and does not start Metro. Use `bun dev ios` for the dev-client server. Use `bun make ios reset` after app identity, signing, associated-domain, or bundle-id changes when on-device state must be cleared.
 
-Generated native directories such as `apps/veyl/ios/ios/` are build output. Do not hand edit them unless the task is explicitly about generated native output. A manual `pod install` inside that directory can refresh pods for an already-generated native project, but it is not a replacement for the repo's prebuild/build path after Expo config or package changes.
+Generated native directories such as `apps/ios/ios/` are build output. Do not hand edit them unless the task is explicitly about generated native output. A manual `pod install` inside that directory can refresh pods for an already-generated native project, but it is not a replacement for the repo's prebuild/build path after Expo config or package changes.
 
-The Veyl iOS app's minimum supported iOS version is 26.5. Keep the `expo-build-properties` iOS deployment target at `26.5`. Some third-party podspecs can still declare a lower target even when the generated Podfile platform is correct; this repo uses `apps/veyl/ios/plugins/with-ios-pod-deployment-target.js` to raise generated Pod targets below 26.5 during prebuild. During the SDK 56 upgrade, `react-native-passkeys` compiled at iOS 15.1 and failed against `ExpoModulesCore` until the generated Pods project was normalized this way.
+The Veyl iOS app's minimum supported iOS version is 26.5. Keep the `expo-build-properties` iOS deployment target at `26.5`. Some third-party podspecs can still declare a lower target even when the generated Podfile platform is correct; this repo uses `apps/ios/plugins/with-ios-pod-deployment-target.js` to raise generated Pod targets below 26.5 during prebuild. During the SDK 56 upgrade, `react-native-passkeys` compiled at iOS 15.1 and failed against `ExpoModulesCore` until the generated Pods project was normalized this way.
 
-`@expo/ui` is intentionally excluded from iOS autolinking in `apps/veyl/ios/package.json`. Expo Router can bring it in transitively, but the Veyl app does not import the native `@expo/ui` package. During the SDK 56/Xcode 26.5 upgrade, its SwiftUI chart code failed to compile in `ChartView.swift`; excluding it from iOS autolinking removed the unused native pod from the generated project. After changing autolinking metadata, run a clean prebuild so stale pods are removed.
+`@expo/ui` is intentionally excluded from iOS autolinking in `apps/ios/package.json`. Expo Router can bring it in transitively, but the Veyl app does not import the native `@expo/ui` package. During the SDK 56/Xcode 26.5 upgrade, its SwiftUI chart code failed to compile in `ChartView.swift`; excluding it from iOS autolinking removed the unused native pod from the generated project. After changing autolinking metadata, run a clean prebuild so stale pods are removed.
 
-The iOS app target also carries linker unwind flags through `apps/veyl/ios/plugins/with-ios-linker-unwind-flags.js`. During the SDK 56/Xcode 26.5 rebuild, the final app link failed with compact-unwind personality limits while combining Swift, Rust, Objective-C, and C++ native code. Keep the plugin with SDK or native-linker upgrades unless the native dependency shape changes enough to prove it is no longer needed.
+The iOS app target also carries linker unwind flags through `apps/ios/plugins/with-ios-linker-unwind-flags.js`. During the SDK 56/Xcode 26.5 rebuild, the final app link failed with compact-unwind personality limits while combining Swift, Rust, Objective-C, and C++ native code. Keep the plugin with SDK or native-linker upgrades unless the native dependency shape changes enough to prove it is no longer needed.
 
 If an SDK or native-package upgrade fails because generated iOS files still point at old packages, regenerate the native project cleanly before retrying the phone build:
 
 ```bash
-cd apps/veyl/ios
+cd apps/ios
 VEYL_IOS_VARIANT=dev VEYL_LOCAL_IOS_BUILD=1 VEYL_ASSOCIATED_DOMAINS_MODE=developer EXPO_PUBLIC_NETWORK=REGTEST bun x expo prebuild -p ios --clean
 ```
 
@@ -133,7 +133,7 @@ When Doctor reports duplicates:
 4. Inspect autolinking if native selection looks suspicious:
 
 ```bash
-cd apps/veyl/ios
+cd apps/ios
 bun x expo-modules-autolinking search --platform ios --json
 ```
 

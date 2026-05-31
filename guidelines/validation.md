@@ -50,7 +50,7 @@ bun x eslint path/to/file.js
 Do not make hand edits in generated or vendor directories unless the task is explicitly about them:
 
 - `node_modules/`
-- `apps/veyl/web/.next/`
-- `apps/veyl/ios/.expo/`
-- `apps/veyl/ios/ios/Pods/`
-- `apps/veyl/ios/ios/build/`
+- `apps/web/.next/`
+- `apps/ios/.expo/`
+- `apps/ios/ios/Pods/`
+- `apps/ios/ios/build/`

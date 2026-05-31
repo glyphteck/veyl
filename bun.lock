@@ -20,7 +20,7 @@
         "globals": "^17.6.0",
       },
     },
-    "apps/veyl/bot": {
+    "apps/bot": {
       "name": "@glyphteck/veyl-bot",
       "version": "0.0.0",
       "dependencies": {
@@ -30,7 +30,7 @@
         "firebase-admin": "^13.10.0",
       },
     },
-    "apps/veyl/ios": {
+    "apps/ios": {
       "name": "@glyphteck/veyl-ios",
       "version": "2.7.5",
       "dependencies": {
@@ -104,7 +104,7 @@
         "typescript": "~6.0.3",
       },
     },
-    "apps/veyl/web": {
+    "apps/web": {
       "name": "@glyphteck/veyl-web",
       "version": "2.7.5",
       "dependencies": {
@@ -589,11 +589,11 @@
 
     "@veyl/shared": ["@veyl/shared@workspace:shared"],
 
-    "@glyphteck/veyl-bot": ["@glyphteck/veyl-bot@workspace:apps/veyl/bot"],
+    "@glyphteck/veyl-bot": ["@glyphteck/veyl-bot@workspace:apps/bot"],
 
-    "@glyphteck/veyl-ios": ["@glyphteck/veyl-ios@workspace:apps/veyl/ios"],
+    "@glyphteck/veyl-ios": ["@glyphteck/veyl-ios@workspace:apps/ios"],
 
-    "@glyphteck/veyl-web": ["@glyphteck/veyl-web@workspace:apps/veyl/web"],
+    "@glyphteck/veyl-web": ["@glyphteck/veyl-web@workspace:apps/web"],
 
     "@google-cloud/firestore": ["@google-cloud/firestore@7.11.6", "", { "dependencies": { "@opentelemetry/api": "1.9.1", "fast-deep-equal": "3.1.3", "functional-red-black-tree": "1.0.1", "google-gax": "4.6.1", "protobufjs": "7.5.7" } }, "sha512-EW/O8ktzwLfyWBOsNuhRoMi8lrC3clHM5LVFhGvO1HCsLozCOOXRAlHrYBoE6HL42Sc8yYMuCb2XqcnJ4OOEpw=="],
 

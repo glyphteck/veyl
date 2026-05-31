@@ -2,6 +2,10 @@
 
 Repo-level changes are listed newest first. Keep entries short and concrete. Broad pushes get grouped bullets, while narrow fixes can use one concise bugfix or cleanup bullet that still names the actual change.
 
+## 4.14.4 - 2026-05-31
+
+- Flattened app workspace paths from `apps/veyl/*` to `apps/*` and updated workspace config, scripts, docs, lint scopes, and moved-app relative paths.
+
 ## 4.14.3 - 2026-05-31
 
 - Reorganized shared, web, and iOS helpers around feature-owned folders for cache, chat, media, navigation, user, wallet, and generic primitives.

@@ -4,14 +4,14 @@ Start here when a task touches one of these areas.
 
 ## Auth And Onboarding
 
-- Web passkeys: `apps/veyl/web/src/lib/passkey.js`
-- iOS passkeys: `apps/veyl/ios/src/lib/passkeys.js`
+- Web passkeys: `apps/web/src/lib/passkey.js`
+- iOS passkeys: `apps/ios/src/lib/passkeys.js`
 - Passkey functions: `functions/passkey/register.js`, `functions/passkey/login.js`
 - Username onboarding: `functions/user/onboarding/setusername.js`
 - Public key onboarding: `functions/user/onboarding/setpks.js`
-- Web onboarding routes: `apps/veyl/web/src/app/(authenticated)/*`
-- iOS onboarding routes: `apps/veyl/ios/app/(onboarding)/*`
-- iOS stack options and route locks: `apps/veyl/ios/src/lib/navigation/*`
+- Web onboarding routes: `apps/web/src/app/(authenticated)/*`
+- iOS onboarding routes: `apps/ios/app/(onboarding)/*`
+- iOS stack options and route locks: `apps/ios/src/lib/navigation/*`
 - Root-domain auth files: separate Website repo under `public/.well-known/*`
 
 Forced auth, vault, and onboarding flows are route-guard owned. After a required write such as username, avatar, community acknowledgement, seed creation, auth, or unlock state changes, update the underlying state and let the guarded layout or protected stack choose the next route. Do not push or replace to the next concrete forced step from the completing screen; reserve explicit navigation for optional user actions and non-forced exits.
@@ -22,26 +22,26 @@ Forced auth, vault, and onboarding flows are route-guard owned. After a required
 - Shared vaulted local cache helpers: `shared/cache/localdata.js`
 - Seed crypto: `shared/crypto/seed.js`
 - Packed Firestore byte helpers: `shared/crypto/pack.js`
-- Web vault provider: `apps/veyl/web/src/components/providers/vaultprovider.js`
-- iOS vault provider: `apps/veyl/ios/src/providers/vaultprovider.js`
-- Web local cache adapter: `apps/veyl/web/src/lib/cache/localdata.js`
-- iOS local cache adapter: `apps/veyl/ios/src/lib/cache/localdata.js`
-- Web wallet export: `apps/veyl/web/src/components/dialogs/exportwallet.js`
-- iOS wallet export: `apps/veyl/ios/app/(vault)/(app)/exportwallet.js`
+- Web vault provider: `apps/web/src/components/providers/vaultprovider.js`
+- iOS vault provider: `apps/ios/src/providers/vaultprovider.js`
+- Web local cache adapter: `apps/web/src/lib/cache/localdata.js`
+- iOS local cache adapter: `apps/ios/src/lib/cache/localdata.js`
+- Web wallet export: `apps/web/src/components/dialogs/exportwallet.js`
+- iOS wallet export: `apps/ios/app/(vault)/(app)/exportwallet.js`
 
 ## Wallet
 
 - Shared wallet provider factory: `shared/wallet/provider.js`
 - Shared wallet primitives: `shared/wallet/fees.js`, `shared/wallet/keys.js`, `shared/wallet/spark.js`
-- Web wallet provider wrapper: `apps/veyl/web/src/components/providers/walletprovider.js`
-- iOS wallet provider wrapper: `apps/veyl/ios/src/providers/walletprovider.js`
+- Web wallet provider wrapper: `apps/web/src/components/providers/walletprovider.js`
+- iOS wallet provider wrapper: `apps/ios/src/providers/walletprovider.js`
 - Shared Bitcoin provider factory: `shared/providers/bitcoinprovider.js`
-- Web Bitcoin provider wrapper: `apps/veyl/web/src/components/providers/bitcoinprovider.js`
-- iOS Bitcoin provider wrapper: `apps/veyl/ios/src/providers/bitcoinprovider.js`
+- Web Bitcoin provider wrapper: `apps/web/src/components/providers/bitcoinprovider.js`
+- iOS Bitcoin provider wrapper: `apps/ios/src/providers/bitcoinprovider.js`
 - Shared tx aggregation: `shared/providers/txdataprovider.js`
-- Web withdraw dialog: `apps/veyl/web/src/components/dialogs/withdraw.js`
-- iOS withdraw route: `apps/veyl/ios/app/(vault)/(app)/withdraw.js`
-- Account deletion flows: `apps/veyl/web/src/components/dialogs/deleteaccount.js`, `apps/veyl/ios/app/(vault)/(app)/deleteaccount.js`
+- Web withdraw dialog: `apps/web/src/components/dialogs/withdraw.js`
+- iOS withdraw route: `apps/ios/app/(vault)/(app)/withdraw.js`
+- Account deletion flows: `apps/web/src/components/dialogs/deleteaccount.js`, `apps/ios/app/(vault)/(app)/deleteaccount.js`
 
 ## Chat
 
@@ -55,26 +55,26 @@ Forced auth, vault, and onboarding flows are route-guard owned. After a required
 - Shared chat read-receipt helpers: `shared/chat/read.js`
 - Shared chat list/cache state helpers: `shared/chat/chats.js`
 - Shared chat attachment/cache helpers: `shared/chat/attachments.js`
-- Web chat provider: `apps/veyl/web/src/components/providers/chatprovider.js`
-- iOS chat provider: `apps/veyl/ios/src/providers/chatprovider.js`
-- Web chat UI helpers: `apps/veyl/web/src/lib/chat/messages.js`
-- Web chat message/media runtime helpers: `apps/veyl/web/src/lib/chat/*`
-- iOS chat UI helpers: `apps/veyl/ios/src/lib/chat/messages.js`
-- iOS chat message hook wrapper: `apps/veyl/ios/src/lib/chat/usemessages.js`
-- iOS full-screen media viewer: `apps/veyl/ios/src/providers/mediaviewerprovider.js`
-- iOS full-screen media viewer UI: `apps/veyl/ios/src/components/media/mediaviewer.js`
-- iOS long-press menu provider: `apps/veyl/ios/src/providers/menuprovider.js`
-- iOS long-press menu portal UI: `apps/veyl/ios/src/components/menuportal.js`
-- iOS transient media render-file cache: `apps/veyl/ios/src/lib/chat/imagecache.js`
+- Web chat provider: `apps/web/src/components/providers/chatprovider.js`
+- iOS chat provider: `apps/ios/src/providers/chatprovider.js`
+- Web chat UI helpers: `apps/web/src/lib/chat/messages.js`
+- Web chat message/media runtime helpers: `apps/web/src/lib/chat/*`
+- iOS chat UI helpers: `apps/ios/src/lib/chat/messages.js`
+- iOS chat message hook wrapper: `apps/ios/src/lib/chat/usemessages.js`
+- iOS full-screen media viewer: `apps/ios/src/providers/mediaviewerprovider.js`
+- iOS full-screen media viewer UI: `apps/ios/src/components/media/mediaviewer.js`
+- iOS long-press menu provider: `apps/ios/src/providers/menuprovider.js`
+- iOS long-press menu portal UI: `apps/ios/src/components/menuportal.js`
+- iOS transient media render-file cache: `apps/ios/src/lib/chat/imagecache.js`
 
 Keep `shared/providers/chatprovider.js` focused on React provider orchestration. It owns chat-list wiring, pending local action state, read receipts, hidden checkpoints, and provider-level message session plumbing. Provider-owned current-message state lives in `shared/chat/messages/session/`: it keeps latest-message session entries, session-only remembered views, and recent-chat warming. `shared/chat/usemessages.js` should consume those provider-owned sessions as its initial visible list instead of attaching its own latest-message listener or carrying a separate route-built list cache, so opening a warmed chat does not double-subscribe or restart from an empty list. Warm sessions must not download attachment bytes; media rows may reuse in-memory render-file URIs, and video rows should render cached poster images instead of mounting live video elements just because a row appeared. Put outbound message shaping, optimistic local send state, retry payload helpers, reactions, save/unsave, whole-chat deletion, seen/read action scheduling, and settings mutations in `shared/chat/actions/`; put encrypted read-receipt primitives in `shared/chat/read.js`; put smart deletion, saved-media stay scans, and control compaction in `shared/chat/messages/`. Chat media is still evolving. Before changing payload shape, inspect both clients, bot runtime, rules, and shared chat code.
 
 ## Bots
 
-- Bot runtime: `apps/veyl/bot/src/runtime.js`
-- Bot entry point: `apps/veyl/bot/src/index.js`
-- Bot provisioning: `apps/veyl/bot/src/newbot.js`
-- Bot secrets: `apps/veyl/bot/src/secrets.js`
+- Bot runtime: `apps/bot/src/runtime.js`
+- Bot entry point: `apps/bot/src/index.js`
+- Bot provisioning: `apps/bot/src/newbot.js`
+- Bot secrets: `apps/bot/src/secrets.js`
 - Shared bot modules: `shared/bot/*`
 - Full bot doc: `bots.md`
 
@@ -83,8 +83,8 @@ Keep `shared/providers/chatprovider.js` focused on React provider orchestration.
 - Shared user provider: `shared/providers/userprovider.js`
 - Shared peer provider: `shared/providers/peerprovider.js`
 - Shared lookup/cache layer: `shared/peers.js`
-- Web wrapper: `apps/veyl/web/src/lib/peers.js`
-- iOS wrapper: `apps/veyl/ios/src/lib/peers.js`
+- Web wrapper: `apps/web/src/lib/peers.js`
+- iOS wrapper: `apps/ios/src/lib/peers.js`
 
 `usePeer()` exposes `recentPeers.all`, `recentPeers.wallet`, and `recentPeers.chat`. Use those lists for default recent-person pickers instead of locally sorting every cached peer; keep explicit profile search broad unless the surface requires a feature-specific key such as wallet or chat.
 
@@ -100,8 +100,8 @@ The search system is built around profile lookups. An input string is parsed int
 - Local profile match: `shared/search/match.js`
 - Result sort: `shared/search/sort.js`
 - Local + remote merge: `shared/search/merge.js`
-- Web search wrapper: `apps/veyl/web/src/lib/search/usesearch.js`
-- iOS search wrapper: `apps/veyl/ios/src/lib/search/usesearch.js`
+- Web search wrapper: `apps/web/src/lib/search/usesearch.js`
+- iOS search wrapper: `apps/ios/src/lib/search/usesearch.js`
 
 Conventions:
 
@@ -116,5 +116,5 @@ Conventions:
 - Firebase Functions entrypoint: `functions/index.js`
 - Firestore security rules: `firestore.rules`
 - Firebase Storage rules: `storage.rules`
-- Web client route gates: `apps/veyl/web/src/lib/routeguards.js`
-- veyl web shell files: `apps/veyl/web/src/*`
+- Web client route gates: `apps/web/src/lib/routeguards.js`
+- veyl web shell files: `apps/web/src/*`
