@@ -1,5 +1,7 @@
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { db, OK } from '../../lib/admin.js';
+import { HOUR_MS, limitCallable, uidLimitKey } from '../../lib/ratelimit.js';
+import { syncPushRouteForUid } from '../../lib/pushroute.js';
 
 const WALLET_NETWORKS = new Set(['MAINNET', 'REGTEST', 'TESTNET', 'SIGNET', 'LOCAL']);
 
@@ -13,6 +15,12 @@ function normalizeWalletNetwork(value) {
 
 export const setWalletPK = onCall(async (context) => {
     if (!context.auth?.uid) throw new HttpsError('unauthenticated', 'You must be authenticated.');
+    await limitCallable(context, {
+        name: 'set-wallet-pk-uid-hour',
+        key: uidLimitKey(context.auth.uid, 'set-wallet-pk'),
+        limit: 60,
+        windowMs: HOUR_MS,
+    });
     const walletPK = typeof context.data?.walletPK === 'string' ? context.data.walletPK.trim().toLowerCase() : '';
     const network = normalizeWalletNetwork(context.data?.network);
     if (!/^0[2-3][0-9a-f]{64}$/i.test(walletPK)) {
@@ -48,6 +56,12 @@ export const setWalletPK = onCall(async (context) => {
 
 export const setChatPK = onCall(async (context) => {
     if (!context.auth?.uid) throw new HttpsError('unauthenticated', 'You must be authenticated.');
+    await limitCallable(context, {
+        name: 'set-chat-pk-uid-hour',
+        key: uidLimitKey(context.auth.uid, 'set-chat-pk'),
+        limit: 60,
+        windowMs: HOUR_MS,
+    });
     const chatPK = typeof context.data?.chatPK === 'string' ? context.data.chatPK.trim().toLowerCase() : '';
 
     // sanity check: x25519 pubkey hex, 64 chars
@@ -75,5 +89,6 @@ export const setChatPK = onCall(async (context) => {
 
         tx.set(profileRef, { chatPK }, { merge: true });
     });
+    await syncPushRouteForUid(context.auth.uid);
     return OK;
 });

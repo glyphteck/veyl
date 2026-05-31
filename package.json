@@ -1,6 +1,6 @@
 {
     "name": "veyl",
-    "version": "4.14.5",
+    "version": "4.14.6",
     "private": true,
     "workspaces": {
         "packages": [
@@ -34,7 +34,9 @@
         "merge": "bun scripts/repo.mjs merge",
         "dev": "bun scripts/dev.mjs",
         "make": "bun scripts/make.mjs",
+        "map": "bun scripts/map.mjs",
         "dirty": "bun scripts/dirty.mjs",
+        "check:paths": "bun scripts/check-paths.mjs",
         "ban": "bun scripts/admin/ban.mjs",
         "nuke": "bun scripts/admin/nuke.mjs",
         "free": "bun scripts/admin/free.mjs",
@@ -46,6 +48,7 @@
         "check:frameworks": "bun scripts/sync-frameworks.mjs --check"
     },
     "dependencies": {
+        "@veyl/shared": "workspace:*",
         "@buildonspark/spark-sdk": "^0.8.1",
         "@noble/ciphers": "^2.2.0",
         "@noble/curves": "^2.2.0",

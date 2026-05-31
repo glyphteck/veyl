@@ -1,30 +1,29 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Animated as RNAnimated, Pressable, Text, View, useWindowDimensions } from 'react-native';
+import { View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
-import { Image } from 'expo-image';
-import { useEvent } from 'expo';
-import { useVideoPlayer, VideoView } from 'expo-video';
-import { useRouter } from 'expo-router';
-import { Check, Download, Play, Share2, Volume2, VolumeX } from 'lucide-react-native';
 import Animated, { Easing, cancelAnimation, useAnimatedStyle, useSharedValue, withDelay, withSpring, withTiming } from 'react-native-reanimated';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { Gesture } from 'react-native-gesture-handler';
 import { scheduleOnRN } from 'react-native-worklets';
-import { useAudio } from '@/providers/audioprovider';
 import { useTheme } from '@/providers/themeprovider';
 import { alpha } from '@/lib/colors';
-import { resolveMessageFileUri, saveMessageFile, saveMessageImage } from '@/lib/chat/downloads';
-import { stageShareMedia } from '@/lib/chat/share';
-import { usePop } from '@/lib/pop';
-import { useTap } from '@/lib/tap';
-import { canShareAttachmentMsg, getImageAspect } from '@veyl/shared/chat/messages';
-import { formatDuration } from '@veyl/shared/utils/time';
-import Icon from '@/components/icon';
+import {
+    clamp,
+    getGesturePoint,
+    getMediaAspect,
+    getMediaOrientation,
+    getMediaRect,
+    getViewerLayout,
+    isSliderHit,
+    pointToStage,
+    sliderProgress,
+} from '@/lib/media/mediaviewer';
+import { ACTION_ROW_GAP, ACTION_ROW_H, ViewerMenu } from './mediaviewer/menu';
+import { MediaSlider } from './mediaviewer/slider';
 
 const DISMISS_DISTANCE = 240;
 const DISMISS_VELOCITY = 1200;
 const SWIPE_VELOCITY = 900;
-const SWIPE_COMMIT_RATIO = 0.5;
 const PAN_MIN_DISTANCE = 2;
 const PAN_AXIS_LOCK = 2;
 const PAN_AXIS_RATIO = 1.15;
@@ -42,8 +41,6 @@ const MEDIA_IN_TIMING = { duration: MEDIA_IN_MS, easing: Easing.out(Easing.cubic
 const MEDIA_OUT_TIMING = { duration: MEDIA_OUT_MS, easing: Easing.out(Easing.cubic) };
 const BACKDROP_IN_TIMING = { duration: BACKDROP_IN_MS, easing: Easing.out(Easing.cubic) };
 const BACKDROP_OUT_TIMING = { duration: BACKDROP_OUT_MS, easing: Easing.out(Easing.cubic) };
-const SCRUB_SEEK_TOLERANCE = { toleranceBefore: 0.08, toleranceAfter: 0.08 };
-const EXACT_SEEK_TOLERANCE = { toleranceBefore: 0, toleranceAfter: 0 };
 const SNAP_SPRING = {
     mass: 0.28,
     stiffness: 420,
@@ -53,551 +50,14 @@ const MEDIA_LOCK_MIN_MS = 80;
 const MEDIA_LOCK_MAX_MS = 260;
 const MEDIA_LOCK_DISTANCE_MS = 90;
 const MUTE_FADE_OUT_DELAY_MS = 70;
-const LINE_H = 6;
-const SLIDER_SLOP = 32;
 const SLIDE_GAP = 16;
-const RENDER_RADIUS = 2;
-const ACTION_ROW_H = 48;
-const ACTION_ROW_GAP = 6;
 const EXIT_MEDIA_RADIUS = 64;
 const SWIPE_MEDIA_SCALE = 0.96;
 const SWIPE_MEDIA_RADIUS = 24;
 const SWIPE_MEDIA_DISTANCE = 18;
-const LANDSCAPE_ASPECT_MIN = 1.1;
-
-function clamp(value, min, max) {
-    'worklet';
-    return Math.max(min, Math.min(max, value));
-}
-
-function getMediaRect(stageW, stageH, aspect) {
-    const safeAspect = Number.isFinite(aspect) && aspect > 0 ? aspect : 16 / 9;
-    const widthByHeight = stageH * safeAspect;
-    const heightByWidth = stageW / safeAspect;
-    const width = widthByHeight <= stageW ? widthByHeight : stageW;
-    const height = widthByHeight <= stageW ? stageH : heightByWidth;
-
-    return {
-        left: Math.round((stageW - width) / 2),
-        top: Math.round((stageH - height) / 2),
-        width: Math.round(width),
-        height: Math.round(height),
-        lineTop: Math.max(0, Math.round(height - LINE_H)),
-    };
-}
-
-function getViewerLayout(screenW, screenH, aspect, orientation) {
-    if (orientation === 'landscape') {
-        const stageW = Math.max(screenW, screenH);
-        const stageH = Math.min(screenW, screenH);
-
-        return {
-            landscape: true,
-            rotate: '90deg',
-            screenW,
-            screenH,
-            stageW,
-            stageH,
-            stageLeft: Math.round((screenW - stageW) / 2),
-            stageTop: Math.round((screenH - stageH) / 2),
-        };
-    }
-
-    return {
-        landscape: false,
-        rotate: '0deg',
-        screenW,
-        screenH,
-        stageW: screenW,
-        stageH: screenH,
-        stageLeft: 0,
-        stageTop: 0,
-    };
-}
-
-function pointToStage(x, y, layout) {
-    'worklet';
-    if (!layout.landscape) {
-        return { x, y };
-    }
-
-    const cx = layout.stageLeft + layout.stageW / 2;
-    const cy = layout.stageTop + layout.stageH / 2;
-    const dx = x - cx;
-    const dy = y - cy;
-
-    return {
-        x: dy + layout.stageW / 2,
-        y: -dx + layout.stageH / 2,
-    };
-}
-
-function pointInMedia(point, rect) {
-    'worklet';
-    return point.x >= rect.left && point.x <= rect.left + rect.width && point.y >= rect.top && point.y <= rect.top + rect.height;
-}
-
-function isSliderHit(point, rect) {
-    'worklet';
-    if (point.x < rect.left || point.x > rect.left + rect.width) {
-        return false;
-    }
-    const y = point.y - rect.top;
-    return y >= rect.lineTop - SLIDER_SLOP && y <= rect.lineTop + LINE_H + SLIDER_SLOP;
-}
-
-function sliderProgress(point, rect) {
-    'worklet';
-    return clamp((point.x - rect.left) / rect.width, 0, 1);
-}
-
-function getGesturePoint(event) {
-    'worklet';
-    const touch = event?.allTouches?.[0] || event?.changedTouches?.[0];
-    return {
-        x: touch?.x ?? event.x,
-        y: touch?.y ?? event.y,
-    };
-}
-
-function getMediaAspect(item) {
-    const aspect = Number(item?.aspect);
-    if (Number.isFinite(aspect) && aspect > 0) {
-        return aspect;
-    }
-    return getImageAspect(item?.msg, item?.type === 'mp4' ? 16 / 9 : 4 / 3);
-}
-
-function getMediaOrientation(item, aspect) {
-    if (Number.isFinite(aspect) && aspect > 0) {
-        return aspect >= LANDSCAPE_ASPECT_MIN ? 'landscape' : 'portrait';
-    }
-    return item?.orientation === 'landscape' ? 'landscape' : 'portrait';
-}
-
-function setPlayerProps(player, props) {
-    try {
-        Object.assign(player, props);
-        return true;
-    } catch (error) {
-        console.warn('video player update failed', error);
-        return false;
-    }
-}
-
-function useResolvedMediaUri(item, label) {
-    const [uri, setUri] = useState(null);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState('');
-
-    useEffect(() => {
-        let cancelled = false;
-
-        setUri(null);
-        setLoading(true);
-        setError('');
-        resolveMessageFileUri(item.msg, item.peerChatPK, item.readMessageFile)
-            .then((nextUri) => {
-                if (cancelled) {
-                    return;
-                }
-                setUri(nextUri);
-                setLoading(false);
-            })
-            .catch((nextError) => {
-                if (cancelled) {
-                    return;
-                }
-                console.warn(`chat ${label} viewer load failed`, nextError);
-                setError(nextError?.message || `${label} unavailable`);
-                setLoading(false);
-            });
-
-        return () => {
-            cancelled = true;
-        };
-    }, [item.id, item.msg, item.peerChatPK, item.readMessageFile, label]);
-
-    return { uri, loading, error, setError };
-}
-
-function ImageSlide({ active, item, onReady }) {
-    const { theme } = useTheme();
-    const { uri, loading, error, setError } = useResolvedMediaUri(item, 'image');
-
-    if (uri && !error) {
-        return (
-            <Image
-                source={{ uri }}
-                style={{ width: '100%', height: '100%' }}
-                contentFit="contain"
-                enableLiveTextInteraction={false}
-                onLoad={active ? onReady : undefined}
-                onError={() => {
-                    setError('image unavailable');
-                    if (active) {
-                        onReady?.();
-                    }
-                }}
-            />
-        );
-    }
-
-    return (
-        <View style={{ width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' }}>
-            {loading ? <ActivityIndicator color={theme.foreground} /> : <Text style={{ color: theme.muted, fontSize: 14 }}>{error || 'image unavailable'}</Text>}
-        </View>
-    );
-}
-
-function VideoSlide({ active, item, rect, registerVideo, onReady, playAllowed, muted }) {
-    const { theme } = useTheme();
-    const { kind: activeAudioKind, key: activeAudioKey, play: playAudio, pause: pauseAudio, clear: clearAudio } = useAudio();
-    const { uri, loading, error } = useResolvedMediaUri(item, 'video');
-    const [dragPausing, setDragPausing] = useState(false);
-    const [pausedByUser, setPausedByUser] = useState(false);
-    const [playingIntent, setPlayingIntent] = useState(false);
-    const [sliding, setSliding] = useState(false);
-    const [slideTime, setSlideTime] = useState(null);
-    const pausedByUserRef = useRef(false);
-    const playingRef = useRef(false);
-    const seekFrameRef = useRef(null);
-    const seekProgressRef = useRef(null);
-    const player = useVideoPlayer(uri ? { uri } : null, (nextPlayer) => {
-        nextPlayer.loop = true;
-        nextPlayer.timeUpdateEventInterval = 0.02;
-        nextPlayer.audioMixingMode = 'mixWithOthers';
-        nextPlayer.volume = 1;
-        nextPlayer.muted = muted;
-    });
-    const timeUpdate = useEvent(player, 'timeUpdate', { currentTime: 0, bufferedPosition: 0, currentLiveTimestamp: null, currentOffsetFromLive: null });
-    const playingChange = useEvent(player, 'playingChange', { isPlaying: !!player.playing });
-    const sourceLoad = useEvent(player, 'sourceLoad', {
-        duration: Number.isFinite(item?.msg?.d) ? item.msg.d : 0,
-        videoSource: null,
-        availableSubtitleTracks: [],
-        availableAudioTracks: [],
-        videoTrack: null,
-    });
-    const statusChange = useEvent(player, 'statusChange', { status: player.status });
-    const duration =
-        Number.isFinite(sourceLoad?.duration) && sourceLoad.duration > 0 ? sourceLoad.duration : Number.isFinite(player.duration) ? player.duration : Number.isFinite(item?.msg?.d) ? item.msg.d : 0;
-    const currentTime = Number.isFinite(timeUpdate?.currentTime) ? timeUpdate.currentTime : Number.isFinite(player.currentTime) ? player.currentTime : 0;
-    const nativePlaying = !!(playingChange?.isPlaying || player.playing);
-    const audioOwnsPlayback = activeAudioKind === 'video' && activeAudioKey === item.id;
-    const playing = playingIntent || audioOwnsPlayback || (!pausedByUser && nativePlaying);
-    const shownTime = sliding && slideTime != null ? slideTime : currentTime;
-    const progress = duration > 0 ? clamp(shownTime / duration, 0, 1) : 0;
-    const busy = loading || statusChange?.status === 'loading';
-    const disabled = loading || !!error || !uri || statusChange?.status === 'error';
-    const showPlay = !disabled && !playing;
-
-    const queueSeek = useCallback(
-        (nextProgress) => {
-            if (!duration) {
-                return;
-            }
-
-            seekProgressRef.current = Math.max(0, Math.min(1, nextProgress));
-            if (seekFrameRef.current) {
-                return;
-            }
-            seekFrameRef.current = requestAnimationFrame(() => {
-                seekFrameRef.current = null;
-                const queued = seekProgressRef.current;
-                seekProgressRef.current = null;
-                if (queued == null) {
-                    return;
-                }
-                const nextTime = queued * duration;
-                setSlideTime(nextTime);
-                setPlayerProps(player, { currentTime: nextTime });
-            });
-        },
-        [duration, player]
-    );
-
-    const setScrubbing = useCallback(
-        (nextSliding) => {
-            setSliding(nextSliding);
-            if (!nextSliding) {
-                setSlideTime(null);
-            }
-            setPlayerProps(player, {
-                scrubbingModeOptions: { scrubbingModeEnabled: nextSliding },
-                seekTolerance: nextSliding ? SCRUB_SEEK_TOLERANCE : EXACT_SEEK_TOLERANCE,
-            });
-        },
-        [player]
-    );
-
-    const startPlayback = useCallback(() => {
-        if (!active || !uri || error) {
-            return;
-        }
-        try {
-            pausedByUserRef.current = false;
-            playingRef.current = true;
-            setDragPausing(false);
-            setPausedByUser(false);
-            setPlayingIntent(true);
-            setPlayerProps(player, {
-                loop: true,
-                seekTolerance: EXACT_SEEK_TOLERANCE,
-                scrubbingModeOptions: { scrubbingModeEnabled: false },
-                muted,
-                volume: 1,
-            });
-            playAudio({ kind: 'video', key: item.id, player });
-        } catch (nextError) {
-            console.warn('video play failed', nextError);
-        }
-    }, [active, error, item.id, muted, playAudio, player, uri]);
-
-    const pausePlayback = useCallback(
-        (byUser = true) => {
-            if (byUser) {
-                pausedByUserRef.current = true;
-                setPausedByUser(true);
-            }
-            playingRef.current = false;
-            setPlayingIntent(false);
-            pauseAudio({ kind: 'video', key: item.id, player });
-            clearAudio({ kind: 'video', key: item.id, player });
-        },
-        [clearAudio, item.id, pauseAudio, player]
-    );
-
-    const togglePlayback = useCallback(() => {
-        if (disabled || !playAllowed) {
-            return;
-        }
-        if (pausedByUserRef.current || pausedByUser) {
-            startPlayback();
-            return;
-        }
-        if (playingRef.current || audioOwnsPlayback || nativePlaying) {
-            pausePlayback(true);
-            return;
-        }
-        startPlayback();
-    }, [audioOwnsPlayback, disabled, nativePlaying, pausePlayback, pausedByUser, playAllowed, startPlayback]);
-
-    const pauseForDrag = useCallback(() => {
-        setDragPausing(true);
-        pausePlayback(false);
-    }, [pausePlayback]);
-
-    const cancelDrag = useCallback(() => {
-        setDragPausing(false);
-    }, []);
-
-    const startScrub = useCallback(
-        (nextProgress) => {
-            setScrubbing(true);
-            queueSeek(nextProgress);
-        },
-        [queueSeek, setScrubbing]
-    );
-
-    const moveScrub = useCallback(
-        (nextProgress) => {
-            queueSeek(nextProgress);
-        },
-        [queueSeek]
-    );
-
-    const endScrub = useCallback(() => {
-        setScrubbing(false);
-    }, [setScrubbing]);
-
-    const tap = useCallback(
-        (event, layout) => {
-            const point = pointToStage(event.x, event.y, layout);
-            if (!disabled && duration > 0 && isSliderHit(point, rect)) {
-                queueSeek(sliderProgress(point, rect));
-                return;
-            }
-            if (!disabled && pointInMedia(point, rect)) {
-                togglePlayback();
-            }
-        },
-        [disabled, duration, queueSeek, rect, togglePlayback]
-    );
-
-    useEffect(() => {
-        if (!active) {
-            pausedByUserRef.current = false;
-            playingRef.current = false;
-            pausePlayback(false);
-            setDragPausing(false);
-            setPausedByUser(false);
-            setPlayingIntent(false);
-            setScrubbing(false);
-        }
-    }, [active, pausePlayback, setScrubbing]);
-
-    useEffect(() => {
-        if (!active && uri) {
-            pausePlayback(false);
-        }
-    }, [active, pausePlayback, uri]);
-
-    useEffect(() => {
-        if (!playingIntent || !activeAudioKind || audioOwnsPlayback) {
-            return;
-        }
-        playingRef.current = false;
-        setPlayingIntent(false);
-    }, [activeAudioKind, audioOwnsPlayback, playingIntent]);
-
-    useEffect(() => {
-        if (active && !playAllowed) {
-            pausePlayback(false);
-        }
-    }, [active, pausePlayback, playAllowed]);
-
-    useEffect(() => {
-        setPlayerProps(player, { muted });
-    }, [muted, player]);
-
-    useEffect(() => {
-        if (!active) {
-            return undefined;
-        }
-        return registerVideo({
-            startScrub,
-            moveScrub,
-            endScrub,
-            pauseForDrag,
-            cancelDrag,
-            tap,
-        });
-    }, [active, cancelDrag, endScrub, moveScrub, pauseForDrag, registerVideo, startScrub, tap]);
-
-    useEffect(
-        () => () => {
-            if (seekFrameRef.current) {
-                cancelAnimationFrame(seekFrameRef.current);
-                seekFrameRef.current = null;
-            }
-            clearAudio({ kind: 'video', key: item.id, player });
-        },
-        [clearAudio, item.id, player]
-    );
-
-    return (
-        <>
-            {uri && !error ? (
-                <VideoView
-                    player={player}
-                    pointerEvents="none"
-                    nativeControls={false}
-                    contentFit="contain"
-                    fullscreenOptions={{ enable: false }}
-                    allowsVideoFrameAnalysis={false}
-                    onFirstFrameRender={active ? onReady : undefined}
-                    style={{ width: '100%', height: '100%' }}
-                />
-            ) : (
-                <View style={{ width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' }}>
-                    {loading ? <ActivityIndicator color={theme.foreground} /> : <Text style={{ color: theme.muted, fontSize: 14 }}>{error || 'video unavailable'}</Text>}
-                </View>
-            )}
-            {busy && uri && !error ? (
-                <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }}>
-                    <ActivityIndicator color={theme.foreground} />
-                </View>
-            ) : null}
-            {showPlay ? (
-                <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }}>
-                    <Icon icon={Play} color="#fff" size={54} fill="#fff" strokeWidth={0} />
-                </View>
-            ) : null}
-            {active && sliding ? (
-                <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, bottom: LINE_H + 10, alignItems: 'center' }}>
-                    <View style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, backgroundColor: alpha(theme.background, 78) }}>
-                        <Text style={{ color: theme.foreground, fontSize: 13, fontWeight: '800', fontVariant: ['tabular-nums'] }}>
-                            {formatDuration(shownTime)} / {formatDuration(duration)}
-                        </Text>
-                    </View>
-                </View>
-            ) : null}
-            {uri && !error ? (
-                <View
-                    pointerEvents="none"
-                    style={{ position: 'absolute', left: 0, top: rect.lineTop, width: '100%', height: LINE_H, backgroundColor: alpha(theme.foreground, 22), overflow: 'hidden' }}
-                >
-                    <View style={{ width: `${progress * 100}%`, height: '100%', backgroundColor: theme.foreground }} />
-                </View>
-            ) : null}
-        </>
-    );
-}
-
-function MediaSlide({ active, item, screenW, screenH, mediaStyle, swipeStyle, registerVideo, onReady, playAllowed, muted }) {
-    const aspect = getMediaAspect(item);
-    const layout = useMemo(() => getViewerLayout(screenW, screenH, aspect, getMediaOrientation(item, aspect)), [aspect, item, screenH, screenW]);
-    const rect = getMediaRect(layout.stageW, layout.stageH, aspect);
-
-    return (
-        <View
-            style={{
-                position: 'absolute',
-                left: layout.stageLeft,
-                top: layout.stageTop,
-                width: layout.stageW,
-                height: layout.stageH,
-                transform: [{ rotate: layout.rotate }],
-            }}
-        >
-            <Animated.View
-                style={[
-                    {
-                        position: 'absolute',
-                        left: rect.left,
-                        top: rect.top,
-                        width: rect.width,
-                        height: rect.height,
-                    },
-                    swipeStyle,
-                ]}
-            >
-                <Animated.View style={[{ width: '100%', height: '100%' }, active ? mediaStyle : null]}>
-                    {item.type === 'mp4' ? (
-                        <VideoSlide active={active} item={item} rect={rect} registerVideo={registerVideo} onReady={onReady} playAllowed={playAllowed} muted={muted} />
-                    ) : (
-                        <ImageSlide active={active} item={item} onReady={onReady} />
-                    )}
-                </Animated.View>
-            </Animated.View>
-        </View>
-    );
-}
-
-function ActionIconButton({ children, disabled = false, onPress }) {
-    const tap = useTap({ disabled, onPress, hapticOut: 'soft' });
-
-    return (
-        <Pressable {...tap.props} disabled={disabled} hitSlop={12}>
-            <RNAnimated.View
-                style={{
-                    width: ACTION_ROW_H,
-                    height: ACTION_ROW_H,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    transform: [{ scale: tap.scale }],
-                }}
-            >
-                {children}
-            </RNAnimated.View>
-        </Pressable>
-    );
-}
 
 export function FullscreenRail({ activeIndex, items, onCloseComplete, onCloseStart, onMove }) {
     const { theme } = useTheme();
-    const router = useRouter();
     const { width: screenW, height: screenH } = useWindowDimensions();
     const insets = useSafeAreaInsets();
     const activeItem = items[activeIndex] || null;
@@ -609,7 +69,6 @@ export function FullscreenRail({ activeIndex, items, onCloseComplete, onCloseSta
     const activeMediaLayout = useMemo(() => getViewerLayout(screenW, mediaH, activeAspect, getMediaOrientation(activeItem, activeAspect)), [activeAspect, activeItem, mediaH, screenW]);
     const activeRect = getMediaRect(activeMediaLayout.stageW, activeMediaLayout.stageH, activeAspect);
     const slideW = screenW + SLIDE_GAP;
-    const visibleItems = useMemo(() => items.map((item, index) => ({ item, index })).filter(({ index }) => Math.abs(index - activeIndex) <= RENDER_RADIUS), [activeIndex, items]);
     const openScale = useSharedValue(0.01);
     const backdropOpacity = useSharedValue(0);
     const mediaOpacity = useSharedValue(0);
@@ -631,14 +90,9 @@ export function FullscreenRail({ activeIndex, items, onCloseComplete, onCloseSta
     const pendingRailTargetRef = useRef(null);
     const [shown, setShown] = useState(false);
     const [closing, setClosing] = useState(false);
-    const [saving, setSaving] = useState(false);
-    const [savedId, setSavedId] = useState(null);
     const [muted, setMuted] = useState(false);
-    const mutePop = usePop({ show: activeIsVideo, from: 0.58, enterBounce: 16, exitDuration: MEDIA_OUT_MS });
     const canPrevious = activeIndex > 0;
     const canNext = activeIndex >= 0 && activeIndex < items.length - 1;
-    const saved = !!activeItem && savedId === activeItem.id;
-    const saveDisabled = saving || saved || !activeItem;
 
     const activeMediaStyle = useAnimatedStyle(
         () => ({
@@ -773,7 +227,6 @@ export function FullscreenRail({ activeIndex, items, onCloseComplete, onCloseSta
             railX.value = target;
             panStartX.value = target;
         }
-        setSavedId(null);
         mediaRadius.value = 0;
         swipeProgress.value = withTiming(0, MEDIA_OUT_TIMING);
         saveOpacity.value = 1;
@@ -808,35 +261,6 @@ export function FullscreenRail({ activeIndex, items, onCloseComplete, onCloseSta
         },
         [onMove]
     );
-    const saveActiveMedia = useCallback(async () => {
-        if (saveDisabled || !activeItem) {
-            return;
-        }
-
-        setSaving(true);
-        try {
-            if (activeItem.type === 'img') {
-                await saveMessageImage(activeItem.msg, activeItem.peerChatPK, activeItem.readMessageFile);
-            } else {
-                await saveMessageFile(activeItem.msg, activeItem.peerChatPK, activeItem.readMessageFile);
-            }
-            setSavedId(activeItem.id);
-        } catch (error) {
-            console.warn('viewer media save failed', error);
-        } finally {
-            setSaving(false);
-        }
-    }, [activeItem, saveDisabled]);
-    const shareActiveMedia = useCallback(() => {
-        if (!activeItem?.msg || !canShareAttachmentMsg(activeItem.msg)) {
-            return;
-        }
-        const params = stageShareMedia(activeItem.msg);
-        if (!params) {
-            return;
-        }
-        router.push({ pathname: '/sharemedia', params });
-    }, [activeItem, router]);
     const toggleMuted = useCallback(() => {
         setMuted((current) => !current);
     }, []);
@@ -851,7 +275,7 @@ export function FullscreenRail({ activeIndex, items, onCloseComplete, onCloseSta
                     const point = pointToStage(touch.x, touch.y, activeMediaLayout);
                     panStartedOnSlider.value = activeIsVideo && isSliderHit(point, activeRect);
                 })
-                .onBegin((event) => {
+                .onBegin(() => {
                     'worklet';
                     cancelAnimation(railX);
                     panStartX.value = railX.value;
@@ -996,10 +420,12 @@ export function FullscreenRail({ activeIndex, items, onCloseComplete, onCloseSta
             activeIsVideo,
             activeMediaLayout,
             activeRect,
+            activeIndex,
             canNext,
             canPrevious,
             close,
             endScrub,
+            items.length,
             mediaOpacity,
             mediaRadius,
             moveScrub,
@@ -1044,8 +470,6 @@ export function FullscreenRail({ activeIndex, items, onCloseComplete, onCloseSta
         return null;
     }
 
-    const shareDisabled = !canShareAttachmentMsg(activeItem.msg);
-
     return (
         <View pointerEvents={closing ? 'none' : 'auto'} style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, zIndex: 100 }}>
             <Animated.View pointerEvents="none" style={[{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 }, backdropStyle]}>
@@ -1053,67 +477,30 @@ export function FullscreenRail({ activeIndex, items, onCloseComplete, onCloseSta
                 <View style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: alpha(theme.background, 22) }} />
             </Animated.View>
             <View style={{ flex: 1, paddingTop: topPad, paddingBottom: bottomPad }}>
-                <GestureDetector gesture={mediaGesture}>
-                    <View style={{ width: screenW, height: mediaH, overflow: 'visible' }}>
-                        <Animated.View style={[{ width: screenW, height: mediaH, overflow: 'visible' }, railStyle]}>
-                            {visibleItems.map(({ item, index }) => (
-                                <View
-                                    key={item.id}
-                                    style={{
-                                        position: 'absolute',
-                                        left: index * slideW,
-                                        top: 0,
-                                        width: screenW,
-                                        height: mediaH,
-                                        overflow: 'visible',
-                                    }}
-                                >
-                                    <MediaSlide
-                                        active={index === activeIndex}
-                                        item={item}
-                                        screenW={screenW}
-                                        screenH={mediaH}
-                                        mediaStyle={activeMediaStyle}
-                                        swipeStyle={swipeMediaStyle}
-                                        registerVideo={registerVideo}
-                                        onReady={showMedia}
-                                        playAllowed={shown}
-                                        muted={muted}
-                                    />
-                                </View>
-                            ))}
-                        </Animated.View>
-                    </View>
-                </GestureDetector>
-                <View
-                    style={{
-                        height: ACTION_ROW_H,
-                        marginTop: ACTION_ROW_GAP,
-                        paddingHorizontal: 18,
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        gap: 10,
-                    }}
-                >
-                    <Animated.View pointerEvents={mutePop.pointerEvents} style={muteStyle}>
-                        <RNAnimated.View style={mutePop.childStyle}>
-                            <ActionIconButton onPress={toggleMuted} disabled={!activeIsVideo}>
-                                <Icon icon={muted ? VolumeX : Volume2} size={24} color={theme.foreground} />
-                            </ActionIconButton>
-                        </RNAnimated.View>
-                    </Animated.View>
-                    <Animated.View style={saveStyle}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: ACTION_ROW_GAP }}>
-                            <ActionIconButton onPress={shareActiveMedia} disabled={shareDisabled}>
-                                <Icon icon={Share2} size={24} color={theme.foreground} />
-                            </ActionIconButton>
-                            <ActionIconButton onPress={saveActiveMedia} disabled={saveDisabled}>
-                                {saving ? <ActivityIndicator color={theme.foreground} /> : <Icon icon={saved ? Check : Download} size={24} color={theme.foreground} />}
-                            </ActionIconButton>
-                        </View>
-                    </Animated.View>
-                </View>
+                <MediaSlider
+                    activeIndex={activeIndex}
+                    gesture={mediaGesture}
+                    items={items}
+                    mediaH={mediaH}
+                    mediaStyle={activeMediaStyle}
+                    muted={muted}
+                    onReady={showMedia}
+                    playAllowed={shown}
+                    railStyle={railStyle}
+                    registerVideo={registerVideo}
+                    screenW={screenW}
+                    slideW={slideW}
+                    swipeStyle={swipeMediaStyle}
+                />
+                <ViewerMenu
+                    activeIsVideo={activeIsVideo}
+                    activeItem={activeItem}
+                    muted={muted}
+                    muteStyle={muteStyle}
+                    onToggleMuted={toggleMuted}
+                    saveStyle={saveStyle}
+                    theme={theme}
+                />
             </View>
         </View>
     );

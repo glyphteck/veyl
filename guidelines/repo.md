@@ -38,7 +38,7 @@ Repo-level automation lives in root `scripts/` and is exposed through Bun script
 
 Multi-agent planning, todo task files, branch/worktree decisions, handoffs, and cleanup live in [workflow.md](workflow.md). In short: stay on the current branch for small work, ignore unrelated dirty files, use one `todo/` task file for large or collision-prone work, and create a short branch plus linked worktree only when isolation materially lowers collision risk. If a worktree is used, record its path and branch in the task file. Do not use agent prefixes.
 
-After a feature branch is merged, delete the merged branch and any abandoned predecessor branches. Then document the shipped behavior in durable docs such as `README.md`, `AGENTS.md`, or the focused guideline file, matching the cleanup expected for completed work that started in `todo/`.
+After a feature branch is merged, delete the merged branch and any abandoned predecessor branches. Then document the shipped behavior in the focused durable doc that owns it, matching the cleanup expected for completed work that started in `todo/`. Update `README.md` only when the human overview changes, and update `AGENTS.md` only when repo-wide agent rules change.
 
 ## Working Assumptions
 

@@ -6,6 +6,18 @@ import {
 } from '../config.js';
 import { lowerText } from '../utils/text.js';
 
+export const BOT_BURST_EXCLUDED_USERNAMES = Object.freeze(['review']);
+export const BOT_BURST_TEXT_WEIGHT = 85;
+export const BOT_BURST_REQUEST_WEIGHT = 15;
+export const BOT_BURST_REQUEST_MIN_SATS = 1000;
+export const BOT_BURST_REQUEST_MAX_SATS = 1_000_000;
+export const BOT_BURST_REQUEST_AMOUNT_BUCKETS = Object.freeze([
+    { min: 1000, max: 9999, step: 100, weight: 15 },
+    { min: 10000, max: 99999, step: 1000, weight: 65 },
+    { min: 100000, max: 299999, step: 5000, weight: 15 },
+    { min: 300000, max: 1_000_000, step: 10000, weight: 5 },
+]);
+
 export function cleanBurstCount(value, name = 'burst count') {
     const count = Number(value ?? BOT_BURST_DEFAULT_COUNT);
     if (!Number.isInteger(count) || count <= 0 || count > BOT_BURST_MAX_COUNT) {
@@ -24,7 +36,7 @@ export function cleanBurstDelayMs(value, { name = 'burst delay', text = false } 
 }
 
 function parseDelayText(value) {
-    const raw = lowerText(value);
+    const raw = lowerText(String(value ?? ''));
     if (raw.endsWith('ms')) {
         return Number(raw.slice(0, -2));
     }

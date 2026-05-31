@@ -49,11 +49,11 @@ export default function WalletPage() {
     }
 
     return (
-        <div className="h-full flex gap-2">
-            <div className="min-w-[19rem] flex-1 block sm:block md:hidden lg:block">
+        <div className="flex h-full min-h-0 gap-2">
+            <div className="block min-h-0 min-w-[19rem] flex-1 sm:block md:hidden lg:block">
                 <RecentTxList />
             </div>
-            <div className="flex-4 hidden md:block">
+            <div className="hidden min-h-0 flex-4 md:block">
                 <WalletDashboard />
             </div>
         </div>

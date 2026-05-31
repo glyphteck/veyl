@@ -9,8 +9,9 @@ import { lowerText } from '@veyl/shared/utils/text';
 
 const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
-const verbose = args.includes('verbose');
-const filteredArgs = args.filter((arg) => arg !== 'verbose');
+const verboseFlags = new Set(['-v', '--verbose']);
+const verbose = args.some((arg) => verboseFlags.has(arg));
+const filteredArgs = args.filter((arg) => !verboseFlags.has(arg));
 const [rawTarget, ...rest] = filteredArgs;
 const devFlags = new Set(['clear', 'tunnel', 'mainnet', 'regtest']);
 const target = !rawTarget || devFlags.has(rawTarget) ? 'dev' : rawTarget;
@@ -28,9 +29,9 @@ const ansi = {
 const commands = {
     web: ['bun', resolve(rootDir, 'scripts', 'web.mjs'), 'veyl'],
     ios: ['bun', resolve(rootDir, 'scripts', 'ios.mjs'), 'veyl'],
-    bot: ['bun', '--cwd', resolve(rootDir, 'apps', 'veyl', 'bot'), 'src/index.js'],
+    bot: ['bun', '--cwd', resolve(rootDir, 'apps', 'bot'), 'src/index.js'],
 };
-const iosDir = resolve(rootDir, 'apps', 'veyl', 'ios');
+const iosDir = resolve(rootDir, 'apps', 'ios');
 const devPorts = ['3000', '8081'];
 const tags = {
     ios: paint('[ios]', ansi.blue),
@@ -121,7 +122,9 @@ function isIosStartupNoise(line) {
         || /^Expo Autolinking module resolution enabled$/i.test(line)
         || /^Starting Metro Bundler$/i.test(line)
         || /^Waiting on /i.test(line)
-        || /^Logs for your project will appear below\.$/i.test(line);
+        || /^Logs for your project will appear below\.$/i.test(line)
+        || /^\|?\s*\(node:\d+\) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set\./.test(line)
+        || /^\|?\s*\(Use `node --trace-warnings \.\.\.` to show where the warning was created\)/.test(line);
 }
 
 function isWarning(line) {
@@ -273,10 +276,12 @@ function format(name, rawLine) {
 
     if (botReady) {
         runningBots.add(botReady);
+        return null;
     }
 
     if (botClosed) {
         runningBots.delete(botClosed);
+        return explicit(name, paint(`@${botClosed} stopped`, ansi.yellow));
     }
 
     if (name === 'web' && /^✓ Ready in\b/.test(line)) {
@@ -306,6 +311,11 @@ function format(name, rawLine) {
 
     if (name === 'ios' && isIosStartupNoise(line)) {
         return null;
+    }
+
+    if (name === 'bot' && /^bot runtime started\b/.test(line)) {
+        lineState.delete(name);
+        return explicit(name, paint(line, ansi.green));
     }
 
     if (name === 'web') {
@@ -365,7 +375,7 @@ function format(name, rawLine) {
     }
 
     lineState.delete(name);
-    return `${tag(name)} ${line}`;
+    return null;
 }
 
 function pipe(name, stream, target) {
@@ -570,7 +580,7 @@ if (target === 'dev') {
 }
 
 if (!commands[target]) {
-    console.error('Usage: bun dev [verbose] [web|ios|bot] [...args]');
+    console.error('Usage: bun dev [-v|--verbose] [web|ios|bot] [...args]');
     process.exit(1);
 }
 
@@ -597,7 +607,17 @@ if (target === 'ios' && rest[0] === 'submit') {
 
 const [command, ...commandArgs] = commandLine;
 const env = verbose ? { ...process.env, VEYL_VERBOSE: '1' } : process.env;
-const child = run(command, commandArgs, { cwd, env });
+const shouldFilterOutput = !verbose && !(target === 'ios' && rest[0] === 'submit');
+const child = run(command, commandArgs, {
+    cwd,
+    env,
+    stdio: shouldFilterOutput ? ['inherit', 'pipe', 'pipe'] : 'inherit',
+});
+
+if (shouldFilterOutput) {
+    pipe(target, child.stdout, process.stdout);
+    pipe(target, child.stderr, process.stderr);
+}
 
 child.on('exit', (code, signal) => {
     process.exitCode = code ?? (signal ? 1 : 0);

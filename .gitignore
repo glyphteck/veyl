@@ -49,7 +49,7 @@ build/
 
 # bot runtime
 *.pid
-apps/veyl/bot/.bot.lock/
+apps/bot/.bot.lock/
 
 # Firebase/backend local build and emulator output
 .firebase/

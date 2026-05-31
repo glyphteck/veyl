@@ -4,6 +4,32 @@ import { isAddressOnNetwork } from '../network.js';
 import { cleanText } from '../utils/text.js';
 import { DEFAULT_EXIT_SPEED, getExitSpeed, getWithdrawalFeeAmountSats, normalizeWithdrawalFeeQuote, toSafeNonNegativeSats, toSafeSats } from './fees.js';
 
+function getWithdrawalReview({ feeQuote, exitSpeed, amountSats, onchainAddress, deductFeeFromWithdrawalAmount = true }) {
+    const safeExitSpeed = getExitSpeed(exitSpeed);
+    const feeQuoteId = feeQuote?.id ?? null;
+    const feeAmountSats = getWithdrawalFeeAmountSats(feeQuote, safeExitSpeed);
+    if (!feeQuoteId || feeAmountSats == null) {
+        throw new Error('withdrawal fee quote unavailable');
+    }
+
+    const sparkFees = normalizeWithdrawalFeeQuote(feeQuote);
+    return {
+        kind: 'cooperative_exit',
+        onchainAddress,
+        amountSats,
+        exitSpeed: safeExitSpeed,
+        deductFeeFromWithdrawalAmount,
+        feeQuote,
+        feeQuoteId,
+        feeAmountSats,
+        fees: {
+            spark: sparkFees,
+        },
+        sparkFees,
+        expiresAt: sparkFees?.expiresAt ?? feeQuote.expiresAt ?? null,
+    };
+}
+
 export function useWithdrawal({ wallet, network, updateWalletData }) {
     const quoteWithdrawalFees = useCallback(
         async ({ onchainAddress, amountSats } = {}) => {
@@ -42,6 +68,34 @@ export function useWithdrawal({ wallet, network, updateWalletData }) {
             }
         },
         [wallet, network]
+    );
+
+    const prepareWithdrawal = useCallback(
+        async ({ onchainAddress, amountSats, exitSpeed = DEFAULT_EXIT_SPEED, deductFeeFromWithdrawalAmount = true } = {}) => {
+            const quoted = await quoteWithdrawalFees({ onchainAddress, amountSats });
+            if (!quoted.success) {
+                return quoted;
+            }
+
+            try {
+                const withdrawal = getWithdrawalReview({
+                    feeQuote: quoted.feeQuote,
+                    exitSpeed,
+                    amountSats: quoted.amountSats,
+                    onchainAddress: quoted.onchainAddress,
+                    deductFeeFromWithdrawalAmount,
+                });
+
+                return {
+                    success: true,
+                    withdrawal,
+                    ...withdrawal,
+                };
+            } catch (error) {
+                return { success: false, error };
+            }
+        },
+        [quoteWithdrawalFees]
     );
 
     const withdrawFunds = useCallback(
@@ -104,8 +158,28 @@ export function useWithdrawal({ wallet, network, updateWalletData }) {
         [wallet, network, quoteWithdrawalFees, updateWalletData]
     );
 
+    const confirmWithdrawal = useCallback(
+        async (withdrawal) => {
+            if (!withdrawal) {
+                return { success: false, error: new Error('withdrawal review missing') };
+            }
+
+            return withdrawFunds({
+                onchainAddress: withdrawal.onchainAddress,
+                amountSats: withdrawal.amountSats,
+                exitSpeed: withdrawal.exitSpeed,
+                feeQuoteId: withdrawal.feeQuoteId,
+                feeAmountSats: withdrawal.feeAmountSats,
+                deductFeeFromWithdrawalAmount: withdrawal.deductFeeFromWithdrawalAmount,
+            });
+        },
+        [withdrawFunds]
+    );
+
     return {
         quoteWithdrawalFees,
+        prepareWithdrawal,
+        confirmWithdrawal,
         withdrawFunds,
     };
 }

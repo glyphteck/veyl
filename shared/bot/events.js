@@ -7,10 +7,13 @@ export const BOT_RUNTIME_DOC_ID = 'bot';
 export const BOT_RUNTIME_LEASE_MS = 45000;
 export const BOT_RUNTIME_ACTIONS = 'actions';
 export const BOT_ACTION_TYPE_BURST = 'burst';
+export const BOT_ACTION_TYPE_FUND_BOTS = 'fund-bots';
+export const BOT_ACTION_TYPE_TRANSFER_BURST = 'transfer-burst';
 export const BOT_ACTION_STATUS_QUEUED = 'queued';
 export const BOT_ACTION_STATUS_RUNNING = 'running';
 export const BOT_ACTION_STATUS_DONE = 'done';
 export const BOT_ACTION_STATUS_ERROR = 'error';
+export const BOT_ACTION_STATUS_CANCELLED = 'cancelled';
 
 export function botSeedKey(username) {
     const name = lowerText(username);

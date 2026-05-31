@@ -2,373 +2,147 @@
   <img src="shared/logos/wallet.png" alt="veyl" width="256">
 </p>
 
-<h1 align="center">veyl</h1>
+<h1 align="center"><big>veyl</big></h1>
 
-This repo is the Veyl product workspace.
+Veyl lets people own their money and chat privately in one app. It combines a self-custodial Spark Bitcoin wallet with end-to-end encrypted 1:1 messaging, so payments, payment requests, files, and conversations can live in the same private flow instead of being split across apps.
 
-It contains the Veyl app surfaces:
+The repo is built around one seed-backed vault. A user signs in with a passkey, creates an encrypted vault, and unlocks local seed material that derives both wallet and chat keys. Glyphteck stores encrypted app data and public profile metadata, but the vault password and wallet/chat secrets stay client-side.
 
-- `apps/web`: the veyl web client
-- `apps/ios`: the veyl iOS client
-- `apps/bot`: the veyl bot runtime
+The company website and root-domain trust files live in the separate Website repo. Veyl still depends on `glyphteck.com` for passkeys, app links, and public trust surfaces.
 
-The `glyphteck.com` company website lives in the separate Website repo. Veyl still depends on the company root domain for passkeys and public trust files.
+## What Is Here
 
-Shared domains, origins, product links, local host names, passkey origins, app-link domains, and CORS origins are defined in `shared/links.js`. The generated reference is [links.md](links.md).
+- `apps/web`: Next.js web client.
+- `apps/ios`: Expo / React Native iOS client.
+- `apps/bot`: Node bot runtime.
+- `shared`: cross-platform product logic imported as `@veyl/shared`.
+- `functions`: Firebase Functions package. It is not part of the Bun workspace.
+- `guidelines`: focused agent and maintainer docs.
+- `todo`: active large-task coordination files only.
 
-Shared logic limits, batch sizes, cache budgets, upload caps, debounce intervals, and polling cadences live in `shared/config.js`. Keep new arbitrary product knobs there instead of scattering literals through domain modules.
+Shared domains, product links, local host names, passkey origins, app-link domains, and CORS origins live in `shared/links.js`; the generated reference is [links.md](links.md). Shared logic limits, cache budgets, upload caps, debounce intervals, and polling cadences live in `shared/config.js`.
 
-## Agent Guidelines
+## Product Shape
 
-Agent-facing repo rules live in [AGENTS.md](AGENTS.md) and [guidelines/](guidelines/). Start with [AGENTS.md](AGENTS.md), read [guidelines/workflow.md](guidelines/workflow.md) for task sizing, todo, branch, worktree, handoff, and cleanup rules, then read the focused guideline files that match the task.
+The main product loop is simple:
 
-Chat architecture rules live in [guidelines/chat.md](guidelines/chat.md). Keep that guide current when changing message lifecycle, retention, deletion, compaction, media, push routing, or bot chat behavior.
+1. Sign in or register with a passkey.
+2. Pick a username and create a vault password.
+3. Unlock the encrypted local vault.
+4. Use the derived wallet key for Bitcoin payments.
+5. Use the derived chat key for encrypted 1:1 chat.
 
-Repo-level shipped changes live in [CHANGELOG.md](CHANGELOG.md). Update it before repo push or merge workflows so broad updates have more context than a commit message.
+Current major surfaces:
 
-## Accounts
+- company-wide passkey accounts rooted at `glyphteck.com`
+- username and avatar onboarding
+- password-encrypted vault seed
+- Spark wallet balance, transfers, funding, withdraw, and L1 claim flows
+- encrypted 1:1 chat with payment requests, read receipts, reactions, retention, and attachments
+- vaulted local cache for fast unlock hydration
+- iOS push notifications for new chat messages
+- admin, report, moderation, and bot support surfaces
 
-Accounts are company-wide.
+## Start Here
 
-Passkeys are rooted at `glyphteck.com` and are intended to work across company subdomains. A user should be able to make an account once and use it across:
+This README is only the human overview. Detailed mechanics live in focused docs:
 
-- veyl main
-- veyl test
-- local development hosts inside the `glyphteck.com` RP scope
+- Agent rules: [AGENTS.md](AGENTS.md)
+- Fast architecture map: [guidelines/map.md](guidelines/map.md) or `bun map`
+- Repo shape and product model: [guidelines/repo.md](guidelines/repo.md)
+- Workflow, todos, branches, and worktrees: [guidelines/workflow.md](guidelines/workflow.md)
+- Commands: [guidelines/commands.md](guidelines/commands.md)
+- Validation policy: [guidelines/validation.md](guidelines/validation.md)
+- Code and naming rules: [guidelines/code.md](guidelines/code.md)
+- Navigation and feature entrypoints: [guidelines/navigation.md](guidelines/navigation.md)
+- Chat system: [guidelines/chat.md](guidelines/chat.md)
+- Security model: [guidelines/security.md](guidelines/security.md)
+- Package and native dependency rules: [guidelines/packages.md](guidelines/packages.md)
+- Bot model: [bots.md](bots.md) and [guidelines/bots.md](guidelines/bots.md)
+- Legal and App Review context: [legal.md](legal.md), [review.md](review.md), [guidelines/apple-review.md](guidelines/apple-review.md)
 
-The root-domain passkey setup is shared so there is one account model across the company surface area.
+Run this before broad repo crawls:
 
-## Product Model
-
-veyl combines three things in one app:
-
-- passkey-first account access
-- a locally unlocked Bitcoin wallet powered by Spark
-- end-to-end encrypted 1:1 chat
-
-At a high level:
-
-1. Register or sign in with a passkey.
-2. Pick a username and optionally upload an avatar.
-3. Create a vault password.
-4. Encrypt a random master seed and store only the encrypted blob in Firestore.
-5. Unlock locally with the password.
-6. Derive:
-    - a wallet seed for Spark
-    - a chat keypair for encrypted messaging
-7. Use veyl to send Bitcoin directly and message the counterparty over encrypted chat.
-
-## What Exists
-
-- Company-wide account access via passkeys
-- Username onboarding
-- Optional avatar upload
-- Password-encrypted vault seed
-- Spark wallet boot, balance, transfers, funding address, withdraw, and L1 claim flow
-- Custom encrypted 1:1 chat over Firestore
-- Encrypted chat read receipts and retention controls
-- Payment request messages inside chat
-- Encrypted chat attachments for images, audio, video, and generic files
-- Vaulted local cache for chat rows, chat media bytes, peer profiles, and wallet transaction history on iOS and web
-- User settings such as money format and autolock
-- Network-aware withdrawal guardrails for scans, QR routes, withdraw forms, and the shared wallet withdraw function
-- Account deletion warnings that surface withdrawable balances and point users to withdraw/export paths before deletion
-- Push notifications for new chat messages on iOS
-
-Current chat payloads:
-
-- `t: 'txt'` for text
-- `t: 'req'` for payment requests
-- `t: 'img'` for images
-- `t: 'mp3'` for audio
-- `t: 'mp4'` for video
-- `t: 'file'` for generic attachments
-- `t: 'rr'` for encrypted read-receipt control payloads
-- `t: 'rxn'` for encrypted reaction control payloads
-- `t: 'hid'` for encrypted hidden-message checkpoint control payloads
-- `t: 'sys'` with `sys: 'retention'` for encrypted retention setting rows
-
-Chat system contract:
-
-- Message docs carry `{ head, body, ts, ttl }`. `head.from` and `head.cid` are plaintext routing/order metadata; `body` is encrypted. `ttl` is the Firestore TTL field.
-- New unsaved messages start with a fixed 21-day TTL. Saved messages use `ttl: null`. The backend TTL is dumb and is not shortened when a message is read.
-- Chat docs carry participants, independent recency `ts`, encrypted latest visible preview `lastMsg`, and encrypted `settings`. `lastMsg` contains only `{ head, body, ttl }`; chat-list ordering uses `chat.ts`, so deleting or failing to decrypt the preview does not reorder chats.
-- Chat retention settings are encrypted `cfg` payloads in `chat.settings`. Missing settings mean `24h after seen`; the other supported setting is `on seen`. The backend only validates encrypted envelope shape.
-- New message payloads carry the encrypted retention mode active at send time. Clients use encrypted read receipts to hide `on seen` messages after the viewer releases them and `24h after seen` messages after the first covering receipt is 24 hours old.
-- Clients write encrypted hidden checkpoints only after their UI has released hidden messages. A recipient client may delete an unsaved received display message only after both participants' hidden checkpoints cover it. Firestore TTL remains the backup cleanup path.
-- Read receipts, reactions, hidden checkpoints, and retention rows are encrypted stream payloads. They do not expose plaintext read/reaction/retention/hidden state to chat docs.
-- Message lists resolve decryptability and attachment availability before rendering. Messages that cannot be decrypted, parsed, fetched, or opened are dropped from the visible list and their cached media is removed. Replies to missing messages render the local unavailable preview: `this message is no longer available`.
-- Latest and older message fetches target 20 post-retention readable rows and cap foreground overfetch at 60 message docs when the newest span is noisy, hidden, expired, or unavailable.
-- Attachments are encrypted before upload and stored as opaque file references plus encrypted keys/metadata in message payloads. Forwarding reuses the stored encrypted file capability instead of reuploading bytes.
-- Chat media uses random `media/{id}/main` Storage paths with no chat id, user id, username, message id, or permanence state in the path or object metadata. Unsaved media expires through the 21-day Storage lifecycle rule in `storage.lifecycle.json`.
-- Saved media keeps the same Storage object. The message payload carries an encrypted random `stay` plus `stayKey`, while Firestore stores only opaque `mediaStays/{mediaId}` stay counts and a hash of the stay key. `setMediaSaved` updates the Cloud Storage temporary hold only when the count crosses zero.
-- Whole-chat and account deletion are app-provider mediated: clients collect decryptable saved media stays before the server deletes opaque chats, then release those stays after successful deletion. App UI should not call the `deleteChat` function directly.
-- Sending one captured photo to multiple people uploads the encrypted bytes once, then sends separate encrypted message payloads that point at the same Storage object and decryption key.
-- After a client decrypts an attachment, it can store the bytes as encrypted device-local vaulted media cache entries. The durable cache remains server-authoritative for message existence: cached media is used only after the message doc still resolves, and expired/unavailable media paths are ignored by preload/render caches.
-
-## Architecture
-
-### QR codes
-
-veyl-specific QR codes are HTTPS wrappers at `/qr` on the active veyl web host. Use `shared/qr.js` to write and read them; do not emit raw `veyl:` strings or base64 JSON payloads.
-
-Current QR structures:
-
-- User: `${links.veyl}/qr?u=<username>`
-- Payment request: `${links.veyl}/qr?r=<walletPK>&a=<sats>` (`a` is optional)
-- Bitcoin funding address: `bitcoin:<address>`
-
-For user QR codes, the username is the scanned account id. Do not encode Firebase UIDs in user QR codes.
-
-The wrapper URL is intentional for veyl-specific actions. On iOS, the veyl web hosts are app links, so a system Camera scan opens veyl when it is installed. Without the app, the website can send mobile users to the download page, and desktop users go through the normal web auth/unlock path. Bitcoin funding QR codes intentionally stay standard `bitcoin:` URIs so external wallets can scan them directly.
-
-### Identity and auth
-
-- Firebase Auth is the auth backend.
-- Passkey registration and login are handled by Firebase Functions using `fido2-lib`.
-- `glyphteck.com` is the canonical passkey root and serves the root-domain well-known files.
-- Web uses Firebase client auth as its session source. Next.js route guards are client-side UX gates; Firestore rules, Storage rules, and callable Functions remain the backend enforcement boundary.
-- Web and iOS both use the Firebase JS SDK config from `shared/firebaseconfig.js`. Keep the Firebase project to one app registration named `veyl` unless the iOS app moves to a native Firebase SDK path that needs a native iOS app registration.
-- The shared Firebase API key must not use browser referrer or iOS bundle-id application restrictions because iOS uses the JS SDK over REST. Keep API target restrictions on the key instead.
-
-### Vault and key derivation
-
-- A random master seed is created on the client.
-- The seed is encrypted with the user password and stored in `seeds/{uid}`.
-- Unlock happens locally.
-- The unlocked seed is split into:
-    - a wallet seed
-    - a chat seed
-    - a local data-cache key
-
-### Vaulted local cache
-
-- iOS and web keep a device-local encrypted cache for chat rows, decrypted chat media bytes, peer profiles, and wallet transaction history.
-- The cache is a vault feature. It is opened only after the vault seed is decrypted and is closed when the vault locks.
-- The durable payload is AES-GCM ciphertext with AAD bound to cache version, user id, and wallet network.
-- Chat media bytes are stored as separate AES-GCM media blobs with opaque local ids; the encrypted main payload stores the media index.
-- Chat message lists are not cached as durable state. Visible messages must come from server-confirmed Firestore reads; cached media bytes are used only after the server confirms the message document still exists.
-- iOS stores the encrypted main blob and media blobs in app document storage through `apps/ios/src/lib/cache/localdata.js`.
-- iOS also materializes decrypted media into a transient deterministic render-file cache under the app cache directory through `apps/ios/src/lib/chat/imagecache.js`. That URI layer is separate from the vaulted media blob cache and can be rebuilt from the vaulted bytes after unlock.
-- Web stores the encrypted main blob and media blobs in IndexedDB through `apps/web/src/lib/cache/localdata.js`.
-- Vaulted cache storage is scoped by uid and wallet network before encryption, so multiple accounts on one device keep separate encrypted cache slots instead of overwriting each other. The ciphertext AAD is also bound to uid and network.
-- Shared schema, crypto, timestamp revival, and cache helpers live in `shared/cache/localdata.js`.
-- The cache key is derived from the local master seed with a domain-separated label and is never stored in Keychain, SecureStore, IndexedDB, AsyncStorage, localStorage, or React state as raw key material.
-- Wallet balance is not cached as authoritative state. Unlock may render cached transaction history immediately, but spendable balance still comes from fresh Spark balance calls and wallet events.
-- Account deletion clears the durable local cache before sign-out.
-
-### Wallet
-
-- Wallet behavior is built around `@buildonspark/spark-sdk`.
-- Peer payments use the other user’s stored wallet key for the active wallet network.
-- The app also tracks funding addresses, claims on-chain deposits, withdrawals, balance, and transfer history.
-- Spark Bitcoin privacy mode is enabled by default for unlocked wallets, hiding Bitcoin activity from public read-only Spark lookups while keeping the owner wallet fully usable in veyl. The dormant `ghostWallet` setting remains in private user settings for now, but it is not exposed in the app UI. Spark privacy mode does not currently hide token transactions.
-- Wallet push notifications and Spark webhook registration are not active. Veyl does not store static funding addresses by default, and static Bitcoin deposit APNs are paused unless they become an explicit opt-in feature because reliable offline deposit alerts require server-side address watching. The client remains the only deposit-claim executor.
-- Withdrawal flows must reject addresses that do not match the active wallet network. That check exists in scanner/QR entry points, form disabled states, and the shared wallet withdraw function.
-- Transaction history hydrates from the vaulted local cache on unlock, then Spark pagination fetches recent pages until it reaches a stable cached transfer boundary. Balance remains live-only.
-
-### Chat
-
-- Chat is a custom encrypted 1:1 system on top of Firestore.
-- Chat keys are X25519-derived from the random client master seed and published once on the user's profile.
-- Messages are AES-GCM encrypted and stored as packed Firestore `Bytes`.
-- Attachments are encrypted separately and stored in Firebase Storage. Message docs store encrypted attachment references and metadata, not plaintext file bodies.
-- The iOS full-screen media viewer is owned by `apps/ios/src/providers/mediaviewerprovider.js`. Swipe navigation moves only the horizontal rail; vertical dismiss scale, opacity, rounding, and save-action fade are scoped to the active media slide so neighboring slides stay unscaled during exit.
-- Chat IDs are derived from the two participant chat public keys.
-- Chat list rows and previously decrypted media hydrate from the vaulted local cache after unlock, then Firestore listeners reconcile fresh chat-row data. Chat docs carry participants, an independent recency timestamp (`ts`), encrypted retention settings, and an encrypted latest visible-message preview (`lastMsg`) so list ordering does not depend on a still-readable preview or one subcollection query per chat. Visible message lists still come from server-confirmed message reads, not the durable local cache.
-- Chat media files are stored as opaque encrypted Storage blobs under random `media/{id}/main` paths that do not encode chat ids, user ids, usernames, message ids, or permanence state. Unsaved media expires after 21 days through a Storage lifecycle rule on `media/`; saved media keeps the same object path and is protected with a Cloud Storage temporary hold derived from opaque Firestore media stay counts and hashed stay keys. Attachment messages carry the encrypted file capability needed to fetch and decrypt the blob, and shared attachment messages reuse that capability without copying saved state. Chat/message deletion is separate from Storage retention. Clients drop messages whose encrypted payload or attachment source cannot be resolved, remove their cached media, and render replies to missing messages with a local unavailable preview.
-- Peer profiles may hydrate from the vaulted local cache for immediate UI, but profile refreshes still re-read `profiles/{uid}` for recent or directly opened people. Avatar image URLs are the heavy cached work: `profiles/{uid}.avatar` is a single version field, set to the Storage object generation when a profile picture exists and `null` when it is removed. Clients compare that version before resolving a new Storage URL, so unchanged avatars keep a stable image source.
-- The current user's own avatar image also has a tiny unlocked cache keyed by uid and `profiles/{uid}.avatar` because `UserProvider` sits above the vault and unlock/profile chrome can render it before the vault cache opens. That unlocked cache stores only public avatar image bytes and version by default; sign-out/no-auth purges non-remembered entries, and auth switches prune every other non-remembered self-avatar entry. If a user opts into quick login, the remembered-account cache may also keep that account's uid, public username, avatar pointer, and login timestamps so the login screen can show the account shortcut. It does not store settings, wallet keys, chat keys, chats, transactions, decrypted media, or other vault data.
-- On iOS and web, chat warming keeps small bounded in-memory latest-message batches for the most recent chats after unlock. Opening a warmed chat uses that provider-owned message batch as the initial message list instead of attaching a second latest-message listener or rendering an empty list first. The first chat row is warmed first, but unlock navigation does not wait for warming. Warming does not download attachment bytes; media rows reuse local render/cache entries when present and otherwise fetch media only from the normal render or user path after the message doc is server-confirmed. These message batches are never written to the vaulted local cache and are cleared on lock/session teardown.
-- Read receipts are encrypted `t: 'rr'` control messages written to `chats/{chatId}/messages`. Clients derive read state after decrypting the stream, and outgoing message UI renders the latest peer receipt with the peer avatar.
-- Reactions are encrypted `t: 'rxn'` control messages written to `chats/{chatId}/messages`. Each reaction payload targets a visible message and is scoped by the sender's chat public key. Clients derive the current reaction state from the latest reaction payload per participant, then render the reacting user's already-loaded avatar beside the emoji.
-- Hidden checkpoints are encrypted `t: 'hid'` control messages written to `chats/{chatId}/messages`. They let clients compact message history by deleting unsaved received display messages only after both participants' clients have released those messages from the UI.
-- Message maintenance is client-side after decrypting the opaque stream. Clients may delete expired TTL docs, mutually hidden received display messages, superseded reactions, duplicate read receipts, old hidden checkpoints, and retention setting rows that were replaced before any display message used them.
-
-### Backend and data
-
-- Firebase Functions handle passkeys, onboarding writes, settings writes, push token registration, chat message push routing, account deletion, reports, and scheduled BTC metadata refreshes.
-- Firestore stores user state, public profiles, encrypted seeds, chats, messages, usernames, cached bitcoin metadata, and passkey records.
-- Firebase Storage stores avatars and chat or report file blobs.
-
-## Repo Layout
-
-```txt
-.
-├── apps
-│   └── veyl
-│       ├── bot   Node bot runtime
-│       ├── ios   Expo / React Native veyl client
-│       └── web   Next.js veyl client
-├── shared        Shared workspace package `@veyl/shared`
-├── functions     Firebase Functions package (separate npm package)
-├── firestore.rules
-├── firebase.json
-├── guidelines    Focused agent guidance by task area
-├── todo         Active planning task files; policy lives in guidelines/todo.md
-├── AGENTS.md
-└── README.md
+```bash
+bun map
 ```
 
-## Source Boundaries
+Use this after file moves, package path changes, or import-heavy refactors:
 
-Current source folders are intentional:
-
-- `apps/web/src/app`: Next.js routes and route shells.
-- `apps/web/src/components`: visual web components, app providers, dialogs, and reusable UI primitives owned by Veyl. There is no shadcn `components.json` or `components/ui` layer.
-- `apps/web/src/lib`: web-only logic grouped by owner: `admin`, `cache`, `chat`, `crypto`, `firebase`, `media`, `search`, and `user`, plus small root platform helpers such as `passkey.js`, `routeguards.js`, `vault.js`, and `classes.js`.
-- `apps/ios/app`: Expo Router route files.
-- `apps/ios/src/components`: visual iOS components.
-- `apps/ios/src/providers`: iOS provider wiring around shared provider factories and native services.
-- `apps/ios/src/lib`: iOS-only logic grouped by owner: `cache`, `camera`, `chat`, `crypto`, `navigation`, `search`, and `user`, plus small root platform helpers.
-- `shared`: cross-platform product logic in the `@veyl/shared` package. Generic primitives live in `shared/utils/*`; feature logic lives in folders such as `shared/chat`, `shared/wallet`, `shared/search`, `shared/cache`, `shared/navigation`, and `shared/bot`.
-- `functions`: Firebase Functions package. Feature entrypoints live under `passkey`, `user`, `chat`, `wallet`, `btc`, and `admin`; deploy-local shared helpers live under `functions/lib`.
-- `scripts`: repo operations and local tooling. Admin CLI command helpers live under `scripts/admin`.
-
-## Main Entry Points
-
-If you want the quickest path into the codebase, start here:
-
-- Web auth/session: `apps/web/src/lib/passkey.js`, `apps/web/src/lib/routeguards.js`
-- iOS auth: `apps/ios/src/lib/passkeys.js`
-- Vault boot: `shared/vault.js`
-- Vaulted local cache: `shared/cache/localdata.js`, `apps/ios/src/lib/cache/localdata.js`, `apps/web/src/lib/cache/localdata.js`
-- Seed crypto: `shared/crypto/seed.js`
-- Wallet provider factory: `shared/wallet/provider.js`
-- Chat provider factory: `shared/providers/chatprovider.js`
-- Chat message sessions and warming config: `shared/chat/messages/session/`
-- Chat transport, crypto, and messages: `shared/chat/rows.js`, `shared/chat/messages/query.js`, `shared/chat/messages/write.js`, `shared/crypto/chat.js`, `shared/chat/messages.js`
-- Chat user actions: `shared/chat/actions/`
-- Web chat render/cache helpers: `apps/web/src/lib/chat/*`
-- iOS chat media and render-file helpers: `apps/ios/src/lib/chat/*`
-- Search: `shared/search/*`, `apps/web/src/lib/search/usesearch.js`, `apps/ios/src/lib/search/usesearch.js`
-- Legal copy: `shared/legal.js`
-- Shared user, peer, and tx providers: `shared/providers/*`
-- Backend entrypoint: `functions/index.js`
-- Security model: `firestore.rules`
-
-## Data Model
-
-Main Firestore collections:
-
-- `users/{uid}`: private settings and per-user data
-- `profiles/{uid}`: public profile info such as username, wallet/chat public keys, presence, and `avatar` as a Storage-generation version number or `null`
-- `seeds/{uid}`: encrypted master seed
-- `usernames/{username}`: username reservation
-- `chats/{chatId}`: 1:1 chat metadata, including participants, row recency, encrypted settings, and encrypted last message preview
-- `chats/{chatId}/messages/{messageId}`: encrypted display/control payloads with a dumb 21-day-or-saved TTL
-- `bitcoin/current`: public cached BTC price, block height, and compact fee-rate tiers watched by the app-level Bitcoin provider
-- `passkeys/{credentialId}`: stored passkey credentials
+```bash
+bun check:paths
+```
 
 ## Local Development
 
-The repo root is a Bun workspace for app packages under `apps/*`, plus the shared package under `shared`.
-
-`functions/` is separate and uses npm, not the root workspace.
-
-Package install, upgrade, lockfile, Expo SDK, and native rebuild rules live in [guidelines/packages.md](guidelines/packages.md).
-
-### Install
+Install root workspace packages:
 
 ```bash
 bun install
+```
+
+Install Firebase Functions separately:
+
+```bash
 cd functions && npm install
 ```
 
-### Run web
+Common commands:
 
 ```bash
 bun dev web
-bun dev web mainnet
-bun dev web regtest
+bun dev ios
+bun dev bot
+bun make ios
+bun make rules
+bun make fns
+bun dirty
+bun lint
 ```
 
-### Repo workflows
-
-Repository push and merge workflows are Bun CLI commands, not VS Code tasks:
+Repo push and merge workflows are Bun scripts, not editor tasks:
 
 ```bash
 bun push
 bun merge
 ```
 
-These commands prompt in the terminal, including arrow/Enter selection for version bumps and text prompts for required values. After the required inputs are collected, the workflow runs quietly and prints the pushed commit id when it succeeds. See [guidelines/commands.md](guidelines/commands.md) for flags and non-interactive examples.
-
-Local web development uses hosted-style custom domains so local passkeys stay in the same `glyphteck.com` RP scope.
-
-Map the local hosts from `shared/links.js` / [links.md](links.md) in `/etc/hosts`:
-
-```txt
-127.0.0.1 <domains.veylDev>
-```
-
-Then run the web app:
-
-```bash
-bun dev web
-```
-
-The launcher applies the configured Veyl hostname, port, and HTTPS flags automatically.
-
-If you need to override them manually, you still can:
-
-```bash
-bun dev web --hostname <domains.veylDev> --experimental-https
-```
-
-Root-domain auth files live in the separate Website repo. App-owned Veyl web shell files such as the global stylesheet, loading screen, theme wrapper, and notifications live under `apps/web/src/app/*` and `apps/web/src/components/*`.
-
-### Run iOS
-
-```bash
-bun dev ios
-bun dev ios mainnet
-bun dev ios regtest
-bun dev ios tunnel
-bun dev ios submit
-bun make ios
-bun make ios test
-bun make ios prod
-bun make ios store
-bun make backend
-bun make db
-bun make rules
-bun make cors
-bun make fns
-```
-
-`bun make ios` prebuilds, builds, and installs the Expo dev-client build on the configured device. The dev app is `dev.veyl`, uses bundle id `com.glyphteck.veyl.dev`, runs on `REGTEST`, and is effectively `test.veyl` with Expo dev tooling for live reload and rebundling.
-
-`bun dev ios` starts that Expo server in dev-client mode.
-
-Local iOS make commands use Expo only for prebuild/config sync, then build with `xcodebuild` and install with `devicectl` to avoid Expo's device-install hang.
-
-Use `bun make ios reset` after signing, associated-domain, or app-identity changes. It uninstalls the target app before reinstalling, so it clears that app's on-device data.
-
-`bun make ios test` prebuilds, builds, and installs the standalone test build on the configured device. The test app is `test.veyl`, uses bundle id `com.glyphteck.veyl.test`, runs on `REGTEST`, and does not require the Expo server after install.
-
-`bun make ios prod` prebuilds, builds, and installs the standalone production build on the configured device. The prod app is `veyl`, uses bundle id `com.glyphteck.veyl`, runs on `MAINNET`, and does not require the Expo server after install.
-
-`bun make ios store` starts a cloud EAS App Store production build. After it finishes, `bun dev ios submit` submits the latest EAS iOS build to App Store Connect using the prod submit profile.
-
-If native iOS dependencies change, rebuild with the normal `bun make ios` path when device validation is needed. A manual `pod install` inside `apps/ios/ios` can refresh pods for an already-generated native project, but it is not a replacement for the repo's Expo prebuild/build path after package or config changes.
+Before `bun push` or `bun merge`, update [CHANGELOG.md](CHANGELOG.md) with the actual change. The workflow bumps the root version, stages, commits, and pushes the current `HEAD` to `main` and `regtest`.
 
 ## Configuration
 
-Important environment and config points:
+Important public environment inputs:
 
-- `NEXT_PUBLIC_NETWORK`: web wallet network selection, typically `MAINNET` or `REGTEST`
-- `NEXT_PUBLIC_VEYL_VARIANT`: web app variant for branding, one of `dev`, `test`, or `prod`; local web runs default to `dev` regardless of wallet network
-- `EXPO_PUBLIC_EAS_PROJECT_ID` or `EXPO_PROJECT_ID`: optional iOS EAS project override
+- `NEXT_PUBLIC_NETWORK`: web wallet network, usually `MAINNET` or `REGTEST`
+- `NEXT_PUBLIC_VEYL_VARIANT`: web branding variant, `dev`, `test`, or `prod`
+- `EXPO_PUBLIC_EAS_PROJECT_ID` / `EXPO_PROJECT_ID`: optional iOS EAS project override
 
-Veyl has separate environment artwork: `dev` uses `shared/logos/walletdev.png` and `shared/logos/dev.icon`, `test` uses `shared/logos/wallettest.png` and `shared/logos/test.icon`, and `prod` uses `shared/logos/wallet.png` and `shared/logos/veyl.icon`.
+Veyl has separate dev, test, and prod artwork under `shared/logos`. Firebase client config is shared in `shared/firebaseconfig.js`.
 
-The Firebase client config is shared in `shared/firebaseconfig.js`.
+## Validation
 
-## Bots
+Lint is the default verification during agent work:
 
-Bots are normal veyl accounts backed by a separate Node runtime under `apps/bot`.
+```bash
+bun --filter @glyphteck/veyl-web lint
+bun --filter @glyphteck/veyl-ios lint
+bun --filter @glyphteck/veyl-bot lint
+bun --filter @veyl/shared lint
+cd functions && npm run lint
+```
 
-The first bot is a deterministic account for Apple App Review on `domains.veylTest`. The bot runtime can mirror messages and attachments, pay payment requests when funded, append encrypted read receipts and hidden-message checkpoints for viewed incoming messages, and expose admin status/control through the web admin surface and `bun bot` CLI.
+Do not run builds, typechecks, tests, formatters, or broad verification commands unless the task asks for them. Backend deployable surfaces are complete only after deploying the changed target.
 
-The later goal is to move bot operation from local/manual runtime management into dedicated hosted infrastructure with stronger scale, budget, lifecycle, and worker controls. AI-powered bot behavior is a later layer on top of the account model.
+## Planning
+
+Active large-task plans live in `todo/`. Completed work belongs in durable docs or [CHANGELOG.md](CHANGELOG.md), not in todo files.
+
+Use Git for the actual diff:
+
+```bash
+git status --short
+bun dirty
+git diff -- path/to/file
+```
+
+Use a todo file for coordination and handoff context. Use a short branch plus linked worktree only when parallel implementation or many-file overlap makes the main checkout risky.

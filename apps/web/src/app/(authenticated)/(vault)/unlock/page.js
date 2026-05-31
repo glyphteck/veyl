@@ -12,7 +12,7 @@ import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Input } from '@/components/input';
 import { Controller, useForm } from 'react-hook-form';
-import { Lock, LockOpen, Loader, AlertCircle, Eye, EyeOff, ShieldUser } from 'lucide-react';
+import { Lock, Unlock, Loader, AlertCircle, Eye, EyeOff, ShieldUser } from 'lucide-react';
 import { Button } from '@/components/button';
 import { logout } from '@/lib/user/actions';
 import { yieldToUi } from '@veyl/shared/utils/async';
@@ -27,11 +27,30 @@ const passwordSchema = z.object({
 const lockLabels = {
     unlocking: 'unlocking',
     decrypting: 'decrypting vault',
+    'seed-decrypted': 'vault decrypted',
     deriving: 'deriving keys',
     wallet: 'opening wallet',
     chat: 'opening chat',
     launching: 'launching app',
 };
+
+const unlockIconCrossfadeMs = 500;
+const unlockIconTransition = { transitionDuration: `${unlockIconCrossfadeMs}ms` };
+
+function UnlockInputIcon({ decrypted, error }) {
+    return (
+        <span className="pointer-events-none relative flex size-5 select-none items-center justify-center" aria-hidden="true">
+            <Lock
+                className={`absolute inset-0 size-5 transition-opacity ease-out ${decrypted ? 'opacity-0' : 'opacity-100'} ${error ? 'text-destructive' : ''}`}
+                style={unlockIconTransition}
+            />
+            <Unlock
+                className={`absolute inset-0 size-5 text-active transition-opacity ease-out ${decrypted ? 'opacity-100' : 'opacity-0'}`}
+                style={unlockIconTransition}
+            />
+        </span>
+    );
+}
 
 export default function UnlockPage() {
     const { unlock, lockState } = useVault();
@@ -41,6 +60,7 @@ export default function UnlockPage() {
     const [status, setStatus] = useState('idle');
     const [showPassword, setShowPassword] = useState(false);
     const [userMenuOpen, setUserMenuOpen] = useState(false);
+    const [seedDecrypted, setSeedDecrypted] = useState(false);
     const username = user?.username;
     const isUnlocked = lockState === 'unlocked';
     const isOpeningChats = isUnlocked && !isChatDataReady;
@@ -60,6 +80,14 @@ export default function UnlockPage() {
     });
 
     const togglePasswordVisibility = () => setShowPassword((prev) => !prev);
+    const animateUnlockIcon = useCallback(
+        () =>
+            new Promise((resolve) => {
+                setSeedDecrypted(true);
+                setTimeout(resolve, unlockIconCrossfadeMs);
+            }),
+        []
+    );
     const openUserQr = useCallback(() => {
         const qrData = makeUserQr(username);
         if (!qrData) return;
@@ -93,14 +121,16 @@ export default function UnlockPage() {
     }, [disabled, openUserQr]);
 
     const onSubmit = async ({ password: raw }) => {
+        setSeedDecrypted(false);
         setStatus('loading');
         await yieldToUi();
         const password = normalizePassword(raw);
         if (!isPassword(password)) return;
         if (!auth.currentUser?.uid) return;
         try {
-            await unlock(password);
+            await unlock(password, { onSeedDecrypted: animateUnlockIcon });
         } catch {
+            setSeedDecrypted(false);
             setStatus('error');
             setTimeout(() => {
                 setStatus('idle');
@@ -145,7 +175,7 @@ export default function UnlockPage() {
                                 aria-describedby="unlock-password-help"
                                 aria-invalid={fieldState.invalid}
                                 ref={field.ref}
-                                start={disabled ? <LockOpen className="pointer-events-none select-none" /> : <Lock className="pointer-events-none select-none" />}
+                                start={<UnlockInputIcon decrypted={seedDecrypted} error={showError} />}
                                 end={
                                     !showPending ? (
                                         <Button

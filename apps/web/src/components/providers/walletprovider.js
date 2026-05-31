@@ -8,6 +8,7 @@ import { useCloak } from '@veyl/shared/providers/cloakprovider';
 import { useUser } from '@/components/providers/userprovider';
 import { toast } from 'sonner';
 import { Copy } from 'lucide-react';
+import { mark } from '@/lib/diagnostics';
 
 function useWalletExtras({ fundingAddress, getFundingAddress }) {
     const { cloaked } = useCloak();
@@ -44,11 +45,18 @@ function useWalletSettings() {
     return settings;
 }
 
+function useWalletIdentity() {
+    const { walletPK } = useUser();
+    return useMemo(() => ({ walletPK }), [walletPK]);
+}
+
 const { WalletProvider, useWallet } = createWalletProvider({
     useVault,
     network: resolveNetwork({ NEXT_PUBLIC_NETWORK: process.env.NEXT_PUBLIC_NETWORK }),
     useWalletExtras,
     useWalletSettings,
+    useWalletIdentity,
+    diag: mark,
 });
 
 export { WalletProvider, useWallet };

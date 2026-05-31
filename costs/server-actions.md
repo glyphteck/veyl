@@ -551,27 +551,31 @@ Client batch:
 - writes `chats/{chatId}/messages/{msgId}`: 1 `FW`.
 - sets/merges parent `chats/{chatId}` with `participants`, `lastMsg`, `ts`: 1 `FW`.
 - rules estimate: about 3 `RR` for message create with parent after-write state.
+- established-chat bursts coalesce parent writes at queue drain. Queued sends write message docs first; when the queue clears, the client syncs the latest parent chat row once per affected chat.
 
 Parent chat trigger:
 
 - every parent chat preview update runs `onChatMessage`: 1 `FN`.
 - control messages do not update the parent chat preview, so they do not run this trigger.
-- `resolveChatActors`:
-  - sender profile query by chatPK, `limit(2)`: at least 1 `FR`.
-  - receiver profile query by chatPK, `limit(2)`: at least 1 `FR`.
+- receiver push route:
+  - `pushRoutes/{receiverChatPK}`: 1 `FR`.
+  - if the route is missing or has no active push docs, the trigger stops here.
+- sender route/profile:
+  - `pushRoutes/{senderChatPK}`: 1 `FR`.
+  - sender profile query by chatPK is only a fallback when the route is missing or lacks username.
 - push eligibility reads:
   - sender moderation: 1 `FR`.
   - receiver moderation: 1 `FR`.
   - receiver blocked-sender doc: 1 `FR`.
   - receiver push docs query: `max(1, P)` `FR`.
 
-Base trigger reads:
+Base trigger reads for active-push receivers:
 
 - `5 + max(1, P)` `FR`.
 
-If receiver has no registered push docs:
+If the receiver has no active push route:
 
-- push query still has query minimum, so trigger total is 6 `FR`.
+- trigger total is 1 `FR`.
 
 Push delivery:
 

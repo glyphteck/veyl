@@ -21,13 +21,27 @@ Small work:
 Large work:
 
 - Examples: feature implementation, broad behavior change, major architecture work, large refactor, cross-platform chat/wallet changes, or many-file UI restructuring.
-- Read `README.md`, all focused guideline files that apply, and the related source surfaces before deciding the implementation path.
+- Read `README.md`, [map.md](map.md), the focused guideline files that match the task, and the related source surfaces before deciding the implementation path.
 - Create one task file under `todo/` before implementation if another agent may need to understand the work.
 - Consider a branch and linked worktree when parallel work or file overlap makes the main checkout risky.
 
 ## Todo Task Files
 
 Use [todo.md](todo.md) for todo folder policy, task-file shape, and cleanup rules. In short: `todo/` is for active large-feature coordination only, the folder contents are the active list, and implemented behavior belongs in durable docs instead of todo files.
+
+## Tracking Your Own Work
+
+Use Git for the actual diff:
+
+```bash
+git status --short
+bun dirty
+git diff -- path/to/file
+```
+
+Todo files are coordination records. They are useful for intent, write boundaries, branch/worktree paths, collision notes, and handoff state, but they do not isolate work or prove what changed.
+
+Branches and worktrees are isolation tools. Use them only when parallel work, long-running implementation, or many-file overlap makes the current checkout risky. For small fixes, stay in the current checkout and keep the diff narrow.
 
 ## Changelog
 
@@ -74,8 +88,8 @@ If a worktree was manually deleted, use `git worktree prune` after confirming no
 
 Use the full lifecycle only for large feature implementation, broad behavior changes, major architecture work, or large refactors.
 
-1. Read `README.md` for product and architecture context.
-2. Read every file under `guidelines/`, then reread the focused guideline files that match the task.
+1. Read `README.md` for the human product overview.
+2. Read [map.md](map.md), then read only the focused guideline files that match the task.
 3. Crawl related source files, shared modules, providers, routes, rules, backend surfaces, and docs before deciding the approach.
 4. Stage the implementation plan in a dedicated `todo/` file.
 5. If needed, create a short task branch and linked worktree, then record both in the task file.

@@ -10,6 +10,7 @@
         "@noble/curves": "^2.2.0",
         "@noble/hashes": "^2.2.0",
         "@scure/bip39": "^2.2.0",
+        "@veyl/shared": "workspace:*",
         "bech32": "^2.0.0",
         "firebase": "^12.14.0",
       },
@@ -25,8 +26,8 @@
       "version": "0.0.0",
       "dependencies": {
         "@buildonspark/spark-sdk": "catalog:",
-        "@veyl/shared": "workspace:*",
         "@google-cloud/secret-manager": "^6.1.2",
+        "@veyl/shared": "workspace:*",
         "firebase-admin": "^13.10.0",
       },
     },
@@ -36,9 +37,9 @@
       "dependencies": {
         "@azure/core-asynciterator-polyfill": "^1.0.2",
         "@buildonspark/spark-sdk": "catalog:",
-        "@veyl/shared": "workspace:*",
         "@react-native-async-storage/async-storage": "2.2.0",
         "@react-native-masked-view/masked-view": "0.3.2",
+        "@veyl/shared": "workspace:*",
         "bech32": "catalog:",
         "buffer": "^6.0.3",
         "expo": "~56.0.8",
@@ -109,10 +110,10 @@
       "version": "2.7.5",
       "dependencies": {
         "@buildonspark/spark-sdk": "catalog:",
-        "@veyl/shared": "workspace:*",
         "@hookform/resolvers": "^5.4.0",
         "@noble/hashes": "catalog:",
         "@tailwindcss/postcss": "catalog:",
+        "@veyl/shared": "workspace:*",
         "bech32": "catalog:",
         "clsx": "^2.1.1",
         "echarts": "^6.1.0",
@@ -587,8 +588,6 @@
 
     "@firebase/webchannel-wrapper": ["@firebase/webchannel-wrapper@1.0.6", "", {}, "sha512-Vr/Mqu79dMwGRAyGbJ4uN4+BtXB3/mRTdzetD1daWNeG8QaWuzhhbG77GltO5c0yYmYls8i250iX73624GJd7Q=="],
 
-    "@veyl/shared": ["@veyl/shared@workspace:shared"],
-
     "@glyphteck/veyl-bot": ["@glyphteck/veyl-bot@workspace:apps/bot"],
 
     "@glyphteck/veyl-ios": ["@glyphteck/veyl-ios@workspace:apps/ios"],
@@ -1046,6 +1045,8 @@
     "@unrs/resolver-binding-win32-ia32-msvc": ["@unrs/resolver-binding-win32-ia32-msvc@1.11.1", "", { "os": "win32", "cpu": "ia32" }, "sha512-DCEI6t5i1NmAZp6pFonpD5m7i6aFrpofcp4LA2i8IIq60Jyo28hamKBxNrZcyOwVOZkgsRp9O2sXWBWP8MnvIQ=="],
 
     "@unrs/resolver-binding-win32-x64-msvc": ["@unrs/resolver-binding-win32-x64-msvc@1.11.1", "", { "os": "win32", "cpu": "x64" }, "sha512-lrW200hZdbfRtztbygyaq/6jP6AKE8qQN2KvPcJ+x7wiD038YtnYtZ82IMNJ69GJibV7bwL3y9FgK+5w/pYt6g=="],
+
+    "@veyl/shared": ["@veyl/shared@workspace:shared"],
 
     "@xmldom/xmldom": ["@xmldom/xmldom@0.8.13", "", {}, "sha512-KRYzxepc14G/CEpEGc3Yn+JKaAeT63smlDr+vjB8jRfgTBBI9wRj/nkQEO+ucV8p8I9bfKLWp37uHgFrbntPvw=="],
 

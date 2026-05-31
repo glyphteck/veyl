@@ -53,11 +53,24 @@ export function toHex(value) {
     return Array.from(toBytes(value)).map((byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
-export function fromHex(hex, label = 'hex') {
-    if (typeof hex !== 'string' || !/^[0-9a-fA-F]{64}$/.test(hex)) {
+export function fromHexBytes(hex, label = 'hex') {
+    if (typeof hex !== 'string' || hex.length % 2 !== 0 || !/^[0-9a-fA-F]*$/.test(hex)) {
         throw new Error(`Invalid ${label} hex`);
     }
-    return new Uint8Array(hex.match(/.{1,2}/g).map((byte) => parseInt(byte, 16)));
+
+    const out = new Uint8Array(hex.length / 2);
+    for (let i = 0; i < out.length; i += 1) {
+        out[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+    }
+    return out;
+}
+
+export function fromHex(hex, label = 'hex') {
+    const bytes = fromHexBytes(hex, label);
+    if (bytes.length !== 32) {
+        throw new Error(`Invalid ${label} hex`);
+    }
+    return bytes;
 }
 
 export function cleanBytes(...values) {

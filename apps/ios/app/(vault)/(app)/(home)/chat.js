@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Animated, FlatList, Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { Search, Trash2 } from 'lucide-react-native';
-import ReAnimated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
+import ReAnimated, { Easing, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { scheduleOnRN } from 'react-native-worklets';
 import { mergeProfiles } from '@veyl/shared/search/merge';
@@ -25,15 +25,20 @@ import { formatUserDisplay } from '@veyl/shared/profile';
 import { formatFullDateTime } from '@veyl/shared/utils/time';
 import { getChatId } from '@veyl/shared/crypto/chat';
 import { getChatPeerPK } from '@veyl/shared/chat/ids';
+import { getMovedRowBatch, sameListIds } from '@veyl/shared/chat/listanimation';
 import { getMsgPreview } from '@veyl/shared/chat/messages';
 import { lowerText } from '@veyl/shared/utils/text';
 
 const SEARCH_BAR_HEIGHT = 42;
 const HEADER_BOTTOM_PADDING = 8;
+const CHAT_ROW_HEIGHT = 71;
 const DELETE_DRAG = 24;
 const DELETE_HINT_W = 60;
 const DELETE_TRIGGER = 80;
 const DELETE_ICON_DELAY = 20;
+const CHAT_ROW_APPEAR_MS = 320;
+const CHAT_ROW_PHASE_MS = CHAT_ROW_APPEAR_MS / 2;
+const CHAT_ROW_APPEAR_FROM = 0.98;
 const DELETE_SPRING = {
     mass: 0.16,
     stiffness: 200,
@@ -43,6 +48,16 @@ const DELETE_SPRING = {
 function clamp(value, min, max) {
     'worklet';
     return Math.min(Math.max(value, min), max);
+}
+
+function easeOutCubic(value) {
+    'worklet';
+    const t = clamp(value, 0, 1);
+    return 1 - Math.pow(1 - t, 3);
+}
+
+function getItemIds(items) {
+    return (items || []).map((item) => item?.id).filter(Boolean);
 }
 
 function rubberBand(value, dimension) {
@@ -58,7 +73,12 @@ function revealDelete(value) {
     return DELETE_DRAG + rubberBand(value - DELETE_DRAG, DELETE_HINT_W);
 }
 
-function ChatRow({ onPress, onDelete, title, subtitle, rightLabel, isUnseen, avatarSource, isActive, isBot, isLast = false }) {
+const StableChatAvatar = memo(function StableChatAvatar({ active, bot, uri }) {
+    const source = useMemo(() => (uri ? { uri } : null), [uri]);
+    return <Avatar source={source} active={active} bot={bot} />;
+});
+
+function ChatRow({ onPress, onDelete, title, subtitle, rightLabel, isUnseen, avatarUri, isActive, isBot, isLast = false, contentStyle = null, slotStyle = null }) {
     const { theme } = useTheme();
     const swipe = useSharedValue(0);
     const deleteFired = useSharedValue(false);
@@ -139,7 +159,7 @@ function ChatRow({ onPress, onDelete, title, subtitle, rightLabel, isUnseen, ava
             }}
         >
             <Animated.View style={{ transform: [{ scale: pressFeedback.scale }] }}>
-                <Avatar source={avatarSource} active={isActive} bot={isBot} />
+                <StableChatAvatar uri={avatarUri} active={isActive} bot={isBot} />
             </Animated.View>
             <View style={{ flex: 1, justifyContent: hasSubtitle ? 'flex-start' : 'center' }}>
                 <View style={{ flexDirection: 'row', alignItems: hasSubtitle ? 'baseline' : 'center', justifyContent: 'space-between', gap: 12 }}>
@@ -163,15 +183,15 @@ function ChatRow({ onPress, onDelete, title, subtitle, rightLabel, isUnseen, ava
 
     if (typeof onDelete !== 'function') {
         return (
-            <View style={{ overflow: 'hidden' }}>
-                {rowContent}
+            <ReAnimated.View style={[{ overflow: 'hidden' }, slotStyle]}>
+                <ReAnimated.View style={contentStyle}>{rowContent}</ReAnimated.View>
                 {!isLast ? <View pointerEvents="none" style={{ height: 1, backgroundColor: theme.border }} /> : null}
-            </View>
+            </ReAnimated.View>
         );
     }
 
     return (
-        <View style={{ overflow: 'hidden' }}>
+        <ReAnimated.View style={[{ overflow: 'hidden' }, slotStyle]}>
             <ReAnimated.View
                 pointerEvents="none"
                 style={[
@@ -189,15 +209,142 @@ function ChatRow({ onPress, onDelete, title, subtitle, rightLabel, isUnseen, ava
             >
                 <Icon icon={Trash2} color={theme.destructive} />
             </ReAnimated.View>
-            <GestureDetector gesture={deleteGesture}>
-                <ReAnimated.View collapsable={false} style={swipeMoveStyle}>
-                    {rowContent}
-                </ReAnimated.View>
-            </GestureDetector>
+            <ReAnimated.View style={contentStyle}>
+                <GestureDetector gesture={deleteGesture}>
+                    <ReAnimated.View collapsable={false} style={swipeMoveStyle}>
+                        {rowContent}
+                    </ReAnimated.View>
+                </GestureDetector>
+            </ReAnimated.View>
             {!isLast ? <View pointerEvents="none" style={{ height: 1, backgroundColor: theme.border }} /> : null}
-        </View>
+        </ReAnimated.View>
     );
 }
+
+function useRowMoveStyles(animationKey, mode) {
+    const progress = useSharedValue(mode ? 0 : 1);
+
+    useEffect(() => {
+        if (mode === 'in' || mode === 'out') {
+            progress.value = 0;
+            progress.value = withTiming(1, { duration: CHAT_ROW_PHASE_MS, easing: Easing.linear });
+            return;
+        }
+        progress.value = 1;
+    }, [animationKey, mode, progress]);
+
+    const slotStyle = useAnimatedStyle(() => {
+        if (mode === 'out') {
+            const shrink = easeOutCubic((progress.value - 0.5) * 2);
+            return { height: CHAT_ROW_HEIGHT * (1 - shrink) };
+        }
+        if (mode === 'in') {
+            const grow = easeOutCubic(progress.value * 2);
+            return { height: CHAT_ROW_HEIGHT * grow };
+        }
+        return {};
+    });
+
+    const contentStyle = useAnimatedStyle(() => {
+        if (mode === 'out') {
+            const fade = easeOutCubic(progress.value * 2);
+            return {
+                opacity: 1 - fade,
+                transform: [{ scale: 1 - (1 - CHAT_ROW_APPEAR_FROM) * fade }],
+            };
+        }
+        if (mode === 'in') {
+            const fade = easeOutCubic((progress.value - 0.5) * 2);
+            return {
+                opacity: fade,
+                transform: [{ scale: CHAT_ROW_APPEAR_FROM + (1 - CHAT_ROW_APPEAR_FROM) * fade }],
+            };
+        }
+        return {
+            opacity: 1,
+            transform: [{ scale: 1 }],
+        };
+    });
+
+    return { contentStyle, slotStyle };
+}
+
+function samePreviewMsg(a, b) {
+    if (!a && !b) return true;
+    if (!a || !b) return false;
+    return (
+        a.cid === b.cid &&
+        a.id === b.id &&
+        a.t === b.t &&
+        a.c === b.c &&
+        a.sys === b.sys &&
+        a.retention === b.retention &&
+        a.pending === b.pending &&
+        a.failed === b.failed
+    );
+}
+
+function sameChatRow(prevChat, nextChat) {
+    if (prevChat === nextChat) return true;
+    if (!prevChat || !nextChat) return false;
+    return (
+        prevChat.id === nextChat.id &&
+        prevChat.ts === nextChat.ts &&
+        prevChat.unseen === nextChat.unseen &&
+        prevChat.settings?.retention === nextChat.settings?.retention &&
+        samePreviewMsg(prevChat.lastMsg, nextChat.lastMsg)
+    );
+}
+
+function samePeerProfile(prevProps, nextProps) {
+    const prevPeerChatPK = getChatPeerPK(prevProps.chat, prevProps.chatPK);
+    const nextPeerChatPK = getChatPeerPK(nextProps.chat, nextProps.chatPK);
+    if (prevPeerChatPK !== nextPeerChatPK) {
+        return false;
+    }
+    const prevProfile = prevPeerChatPK ? prevProps.peerByChatPK?.get(prevPeerChatPK) : null;
+    const nextProfile = nextPeerChatPK ? nextProps.peerByChatPK?.get(nextPeerChatPK) : null;
+    return (
+        prevProfile?.username === nextProfile?.username &&
+        prevProfile?.avatar === nextProfile?.avatar &&
+        prevProfile?.active === nextProfile?.active &&
+        prevProfile?.bot === nextProfile?.bot
+    );
+}
+
+const ChatListChatRow = memo(function ChatListChatRow({ animationKey = '', chat, chatPK, handleDeleteChat, isLast, mode = null, openChat, peerByChatPK }) {
+    const { contentStyle, slotStyle } = useRowMoveStyles(animationKey, mode);
+    const peerChatPK = getChatPeerPK(chat, chatPK);
+    const profile = peerChatPK ? peerByChatPK?.get(peerChatPK) : null;
+    const title = formatUserDisplay({ username: profile?.username, chatPK: peerChatPK });
+    const subtitle = getMsgPreview(chat?.lastMsg, chatPK, null, null);
+    const lastMs = chat?.ts || null;
+    const rightLabel = lastMs ? formatFullDateTime(lastMs) : '';
+
+    return (
+        <ChatRow
+            title={title}
+            subtitle={subtitle}
+            rightLabel={rightLabel}
+            isUnseen={!!chat?.unseen}
+            avatarUri={profile?.avatar || ''}
+            isActive={!!profile?.active}
+            isBot={!!profile?.bot}
+            isLast={isLast}
+            contentStyle={mode ? contentStyle : null}
+            slotStyle={mode ? slotStyle : null}
+            onPress={() => openChat(peerChatPK)}
+            onDelete={() => handleDeleteChat(chat.id)}
+        />
+    );
+}, (prev, next) => (
+    prev.animationKey === next.animationKey &&
+    prev.mode === next.mode &&
+    prev.isLast === next.isLast &&
+    prev.chatPK === next.chatPK &&
+    sameChatRow(prev.chat, next.chat) &&
+    samePeerProfile(prev, next)
+));
 
 export default function ChatList() {
     const { theme } = useTheme();
@@ -209,7 +356,12 @@ export default function ChatList() {
     const { searching, results, query, search: runSearch, clearSearch } = useSearch('profiles');
     const { lockRoute } = useRouteLock();
     const searchInputRef = useRef(null);
+    const stableChatItemsRef = useRef([]);
+    const pendingChatItemsRef = useRef(null);
+    const rowMoveRef = useRef(null);
+    const rowMoveKeyRef = useRef(0);
     const [search, setSearch] = useState('');
+    const [rowMove, setRowMove] = useState(null);
     const headerHeight = insets.top + SEARCH_BAR_HEIGHT + HEADER_BOTTOM_PADDING;
     const mainMenuHeight = getMainMenuHeight(insets.bottom);
 
@@ -259,7 +411,129 @@ export default function ChatList() {
         });
     }, [chatIds, chatPK, peers, query, results]);
 
-    const items = useMemo(() => [...filteredChats.map((chat) => ({ id: chat.id, chat, type: 'chat' })), ...searchPeers], [filteredChats, searchPeers]);
+    const chatItems = useMemo(() => filteredChats.map((chat) => ({ id: chat.id, chat, type: 'chat' })), [filteredChats]);
+    const items = useMemo(() => [...chatItems, ...searchPeers], [chatItems, searchPeers]);
+
+    const createRowMove = useCallback((previousItems, nextItems) => {
+        const batch = getMovedRowBatch(getItemIds(previousItems), getItemIds(nextItems));
+        if (!batch) {
+            return null;
+        }
+        rowMoveKeyRef.current += 1;
+        return {
+            ...batch,
+            key: `${rowMoveKeyRef.current}:${batch.ids.join(',')}`,
+            phase: 'leaving',
+            previousItems,
+            nextItems,
+        };
+    }, []);
+
+    useLayoutEffect(() => {
+        if (showLoadingChats) {
+            stableChatItemsRef.current = [];
+            pendingChatItemsRef.current = null;
+            rowMoveRef.current = null;
+            setRowMove(null);
+            return;
+        }
+
+        if (chatQuery) {
+            stableChatItemsRef.current = chatItems;
+            pendingChatItemsRef.current = null;
+            rowMoveRef.current = null;
+            setRowMove(null);
+            return;
+        }
+
+        if (rowMoveRef.current) {
+            pendingChatItemsRef.current = chatItems;
+            return;
+        }
+
+        const previousItems = stableChatItemsRef.current;
+        const move = createRowMove(previousItems, chatItems);
+        if (!move) {
+            stableChatItemsRef.current = chatItems;
+            pendingChatItemsRef.current = null;
+            setRowMove(null);
+            return;
+        }
+
+        rowMoveRef.current = move;
+        pendingChatItemsRef.current = null;
+        setRowMove(move);
+    }, [chatItems, chatQuery, createRowMove, showLoadingChats]);
+
+    useEffect(() => {
+        if (!rowMove) {
+            return;
+        }
+
+        const timeout = setTimeout(() => {
+            setRowMove((current) => {
+                if (current?.key !== rowMove.key) {
+                    return current;
+                }
+                if (current.phase === 'leaving') {
+                    const entering = { ...current, phase: 'entering' };
+                    rowMoveRef.current = entering;
+                    return entering;
+                }
+
+                const pendingItems = pendingChatItemsRef.current;
+                pendingChatItemsRef.current = null;
+                stableChatItemsRef.current = current.nextItems;
+
+                if (pendingItems && !sameListIds(getItemIds(current.nextItems), getItemIds(pendingItems))) {
+                    const nextMove = createRowMove(current.nextItems, pendingItems);
+                    if (nextMove) {
+                        rowMoveRef.current = nextMove;
+                        return nextMove;
+                    }
+                }
+
+                if (pendingItems) {
+                    stableChatItemsRef.current = pendingItems;
+                }
+                rowMoveRef.current = null;
+                return null;
+            });
+        }, CHAT_ROW_PHASE_MS);
+
+        return () => {
+            clearTimeout(timeout);
+        };
+    }, [createRowMove, rowMove]);
+
+    const displayItems = useMemo(() => {
+        if (!rowMove || chatQuery) {
+            return items;
+        }
+
+        const movingIds = new Set(rowMove.ids);
+        if (rowMove.phase === 'leaving') {
+            return rowMove.previousItems.map((item) => (
+                movingIds.has(item.id)
+                    ? {
+                          ...item,
+                          animationKey: rowMove.key,
+                          type: 'moving-chat-out',
+                      }
+                    : item
+            ));
+        }
+
+        return rowMove.nextItems.map((item) => (
+            item.type === 'chat' && movingIds.has(item.id)
+                ? {
+                      ...item,
+                      animationKey: rowMove.key,
+                      type: 'moving-chat-in',
+                  }
+                : item
+        ));
+    }, [chatQuery, items, rowMove]);
 
     const handleLoadMoreChats = useCallback(() => {
         if (chatQuery || !hasMoreChats || loadingMoreChats) {
@@ -318,11 +592,10 @@ export default function ChatList() {
 
     const renderItem = useCallback(
         ({ item, index }) => {
-            const isLast = index === items.length - 1;
+            const isLast = index === displayItems.length - 1;
             if (item.type === 'peer') {
                 const profile = item.peer;
                 const title = formatUserDisplay({ username: profile?.username, chatPK: profile?.chatPK, walletPK: profile?.walletPK });
-                const avatarSource = profile?.avatar ? { uri: profile.avatar } : null;
 
                 return (
                     <ChatRow
@@ -330,7 +603,7 @@ export default function ChatList() {
                         subtitle="start chat"
                         rightLabel="new"
                         isUnseen={false}
-                        avatarSource={avatarSource}
+                        avatarUri={profile?.avatar || ''}
                         isActive={!!profile?.active}
                         isBot={!!profile?.bot}
                         isLast={isLast}
@@ -339,32 +612,20 @@ export default function ChatList() {
                 );
             }
 
-            const chat = item.chat;
-            const peerChatPK = getChatPeerPK(chat, chatPK);
-            const profile = peerChatPK ? peerByChatPK?.get(peerChatPK) : null;
-            const title = formatUserDisplay({ username: profile?.username, chatPK: peerChatPK });
-            const avatarSource = profile?.avatar ? { uri: profile.avatar } : null;
-            const subtitle = getMsgPreview(chat?.lastMsg, chatPK, null, null);
-            const lastMs = chat?.ts || null;
-            const rightLabel = lastMs ? formatFullDateTime(lastMs) : '';
-            const isActive = !!profile?.active;
-
             return (
-                <ChatRow
-                    title={title}
-                    subtitle={subtitle}
-                    rightLabel={rightLabel}
-                    isUnseen={!!chat?.unseen}
-                    avatarSource={avatarSource}
-                    isActive={isActive}
-                    isBot={!!profile?.bot}
+                <ChatListChatRow
+                    animationKey={item.animationKey || ''}
+                    chat={item.chat}
+                    chatPK={chatPK}
+                    handleDeleteChat={handleDeleteChat}
                     isLast={isLast}
-                    onPress={() => openChat(peerChatPK)}
-                    onDelete={() => handleDeleteChat(chat.id)}
+                    mode={item.type === 'moving-chat-in' ? 'in' : item.type === 'moving-chat-out' ? 'out' : null}
+                    openChat={openChat}
+                    peerByChatPK={peerByChatPK}
                 />
             );
         },
-        [chatPK, handleDeleteChat, items.length, openChat, peerByChatPK]
+        [chatPK, displayItems.length, handleDeleteChat, openChat, peerByChatPK]
     );
 
     if (chatBanned) {
@@ -381,7 +642,7 @@ export default function ChatList() {
     return (
         <View style={{ flex: 1, overflow: 'hidden' }}>
             <FlatList
-                data={items}
+                data={displayItems}
                 keyExtractor={(item) => item.id}
                 showsVerticalScrollIndicator={false}
                 bounces

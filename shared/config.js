@@ -57,11 +57,12 @@ export const CHAT_DELETE_WRITE_BATCH_SIZE = 400;
 // Chat list Firestore read cost knobs.
 export const CHAT_LIST_LIVE_COUNT = 15;
 export const CHAT_LIST_PAGE_SIZE = 20;
+export const CHAT_LIST_CACHE_WRITE_DELAY_MS = 1500;
 
 // Chat client warmup knobs. These trade faster first render against extra reads, memory, and media work.
 export const CHAT_TOP_WARM_COUNT = 1;
-export const CHAT_EAGER_WARM_COUNT = 1;
-export const CHAT_WARM_DELAY_MS = 900;
+export const CHAT_EAGER_WARM_COUNT = 0;
+export const CHAT_WARM_DELAY_MS = 3000;
 export const CHAT_WARM_BATCH_SIZE = CHAT_MESSAGE_BATCH_SIZE;
 export const CHAT_MESSAGE_VIEW_CACHE_SIZE = 30;
 export const CHAT_VISITED_PREFETCH_OLDER_BATCHES = 0;
@@ -74,6 +75,8 @@ export const CHAT_MEDIA_WARM_MAX_BYTES = 0;
 // Chat write-throttle cost knobs. These batch noisy control messages into fewer Firestore writes.
 export const CHAT_READ_RECEIPT_WRITE_DELAY_MS = 2000;
 export const CHAT_REACTION_WRITE_DELAY_MS = 600;
+export const CHAT_SEND_QUEUE_RATE_LIMIT_COUNT = 12;
+export const CHAT_SEND_QUEUE_RATE_LIMIT_WINDOW_MS = 10 * MS_PER_SECOND;
 
 // Bot chat timing knobs. These keep deterministic replies from landing at the same instant as bot read state.
 export const BOT_REPLY_AFTER_READ_DELAY_MS = 650;
@@ -120,3 +123,4 @@ export const WALLET_CLAIM_PAGE_SIZE = 100;
 export const WALLET_RECENT_TRANSFER_LIMIT = 100;
 export const WALLET_TRANSFER_PAGE_LIMIT = 100;
 export const WALLET_TRANSFER_FETCH_THROTTLE_MS = 150;
+export const WALLET_TRANSFER_CACHE_WRITE_DELAY_MS = 1500;

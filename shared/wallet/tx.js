@@ -5,7 +5,11 @@ const FINAL_TRANSFER_STATUSES = new Set([TRANSFER_STATUS_COMPLETED, 'TRANSFER_ST
 const HIDDEN_TRANSFER_STATUSES = new Set(['TRANSFER_STATUS_EXPIRED', 'TRANSFER_STATUS_RETURNED', 'UNRECOGNIZED']);
 
 export function txCreatedMs(tx) {
-    return timestampMs(tx?.createdTime, 0, { parseString: true });
+    return timestampMs(tx?.createdTime, null, { parseString: true }) ?? timestampMs(tx?.updatedTime, 0, { parseString: true });
+}
+
+export function txUpdatedMs(tx) {
+    return timestampMs(tx?.updatedTime, 0, { parseString: true });
 }
 
 export function isCompletedTransfer(tx) {

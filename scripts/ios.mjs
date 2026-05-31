@@ -7,7 +7,8 @@ import { dirname, resolve } from 'node:path';
 const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 function resolveIosApp(name) {
-    const cwd = resolve(rootDir, 'apps', name, 'ios');
+    const appDir = name === 'veyl' ? 'ios' : name;
+    const cwd = resolve(rootDir, 'apps', appDir);
     if (!existsSync(resolve(cwd, 'package.json'))) {
         return null;
     }

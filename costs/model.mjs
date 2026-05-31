@@ -22,6 +22,11 @@ export const DEFAULT_ASSUMPTIONS = Object.freeze({
     baseWritesPerDauDay: 35,
     baseFunctionInvocationsPerDauDay: 11,
     baseStorageClassAOpsPerDauDay: 1,
+    messageSendFirestoreReadsPerMessage: 9,
+    messageSendFirestoreWritesPerMessage: 2,
+    messageSendFunctionInvocationsPerMessage: 1,
+    readReceiptFirestoreReadsPerMessage: 3,
+    readReceiptFirestoreWritesPerMessage: 1,
     btcSchedulerWritesPerDay: 1440,
     btcSchedulerFunctionInvocationsPerDay: 1440,
 });
@@ -196,6 +201,66 @@ export function monthlyExtraCost(dau, options = {}) {
     };
 }
 
+export function monthlyMessageRateCost(messagesPerSecond, options = {}) {
+    if (!Number.isFinite(messagesPerSecond) || messagesPerSecond < 0) {
+        throw new Error('messagesPerSecond must be a non-negative number');
+    }
+
+    const { includeReadReceipts = false, ...modelOptions } = options;
+    const { assumptions, rates, freeQuotas } = mergeModel(modelOptions);
+    const days = assumptions.daysPerMonth;
+    const secondsPerDay = 24 * 60 * 60;
+    const secondsPerMonth = secondsPerDay * days;
+    const messagesPerDay = messagesPerSecond * secondsPerDay;
+    const messagesPerMonth = messagesPerSecond * secondsPerMonth;
+
+    const firestoreReadsPerMessage =
+        assumptions.messageSendFirestoreReadsPerMessage +
+        (includeReadReceipts ? assumptions.readReceiptFirestoreReadsPerMessage : 0);
+    const firestoreWritesPerMessage =
+        assumptions.messageSendFirestoreWritesPerMessage +
+        (includeReadReceipts ? assumptions.readReceiptFirestoreWritesPerMessage : 0);
+    const functionInvocationsPerMessage = assumptions.messageSendFunctionInvocationsPerMessage;
+
+    const firestoreReadsPerDay = messagesPerDay * firestoreReadsPerMessage;
+    const firestoreWritesPerDay = messagesPerDay * firestoreWritesPerMessage;
+    const functionInvocationsPerMonth = messagesPerMonth * functionInvocationsPerMessage;
+
+    const grossFirestoreReads = messagesPerMonth * firestoreReadsPerMessage * rates.firestoreRead;
+    const grossFirestoreWrites = messagesPerMonth * firestoreWritesPerMessage * rates.firestoreWrite;
+    const grossFunctions = functionInvocationsPerMonth * rates.functionInvocation;
+    const paidFirestoreReads =
+        paidUsage(firestoreReadsPerDay, freeQuotas.firestoreReadsPerDay) * rates.firestoreRead * days;
+    const paidFirestoreWrites =
+        paidUsage(firestoreWritesPerDay, freeQuotas.firestoreWritesPerDay) * rates.firestoreWrite * days;
+    const paidFunctions =
+        paidUsage(functionInvocationsPerMonth, freeQuotas.functionInvocationsPerMonth) * rates.functionInvocation;
+
+    return {
+        messagesPerSecond,
+        messagesPerDay: roundCost(messagesPerDay, 3),
+        messagesPerMonth: roundCost(messagesPerMonth, 3),
+        includeReadReceipts,
+        operationsPerMessage: {
+            firestoreReads: roundCost(firestoreReadsPerMessage, 3),
+            firestoreWrites: roundCost(firestoreWritesPerMessage, 3),
+            functionInvocations: roundCost(functionInvocationsPerMessage, 3),
+        },
+        gross: {
+            firestoreReads: roundCost(grossFirestoreReads),
+            firestoreWrites: roundCost(grossFirestoreWrites),
+            functions: roundCost(grossFunctions),
+            total: roundCost(grossFirestoreReads + grossFirestoreWrites + grossFunctions),
+        },
+        paid: {
+            firestoreReads: roundCost(paidFirestoreReads),
+            firestoreWrites: roundCost(paidFirestoreWrites),
+            functions: roundCost(paidFunctions),
+            total: roundCost(paidFirestoreReads + paidFirestoreWrites + paidFunctions),
+        },
+    };
+}
+
 export function monthlyCost(dau, options = {}) {
     const baseOps = monthlyBaseOpsCost(dau, options);
     const retention = monthlyRetentionCost(dau, options);
@@ -223,6 +288,15 @@ function readNumberEnv(name, fallback) {
     return parsed;
 }
 
+function readBooleanEnv(name, fallback) {
+    const value = process.env[name];
+    if (value == null || value === '') return fallback;
+    const normalized = value.toLowerCase();
+    if (normalized === '1' || normalized === 'true' || normalized === 'yes') return true;
+    if (normalized === '0' || normalized === 'false' || normalized === 'no') return false;
+    throw new Error(`${name} must be a boolean`);
+}
+
 function cliOptions() {
     return {
         assumptions: {
@@ -238,6 +312,11 @@ function cliOptions() {
             functionComputeCostPerDauMonth: readNumberEnv('FUNCTION_COMPUTE_COST_PER_DAU_MONTH', DEFAULT_ASSUMPTIONS.functionComputeCostPerDauMonth),
             sparkCostPerDauMonth: readNumberEnv('SPARK_COST_PER_DAU_MONTH', DEFAULT_ASSUMPTIONS.sparkCostPerDauMonth),
             moderationLaborCostMonth: readNumberEnv('MODERATION_COST_MONTH', DEFAULT_ASSUMPTIONS.moderationLaborCostMonth),
+            messageSendFirestoreReadsPerMessage: readNumberEnv('MESSAGE_SEND_READS', DEFAULT_ASSUMPTIONS.messageSendFirestoreReadsPerMessage),
+            messageSendFirestoreWritesPerMessage: readNumberEnv('MESSAGE_SEND_WRITES', DEFAULT_ASSUMPTIONS.messageSendFirestoreWritesPerMessage),
+            messageSendFunctionInvocationsPerMessage: readNumberEnv('MESSAGE_SEND_FUNCTIONS', DEFAULT_ASSUMPTIONS.messageSendFunctionInvocationsPerMessage),
+            readReceiptFirestoreReadsPerMessage: readNumberEnv('READ_RECEIPT_READS', DEFAULT_ASSUMPTIONS.readReceiptFirestoreReadsPerMessage),
+            readReceiptFirestoreWritesPerMessage: readNumberEnv('READ_RECEIPT_WRITES', DEFAULT_ASSUMPTIONS.readReceiptFirestoreWritesPerMessage),
         },
         rates: {
             mediaDownloadGiB: readNumberEnv('MEDIA_DOWNLOAD_GIB_COST', DEFAULT_RATES.mediaDownloadGiB),
@@ -246,7 +325,13 @@ function cliOptions() {
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-    const dau = readNumberEnv('DAU', 1000000);
     const options = cliOptions();
-    console.log(JSON.stringify(monthlyCost(dau, options), null, 2));
+    if (process.env.MESSAGES_PER_SECOND != null && process.env.MESSAGES_PER_SECOND !== '') {
+        const messagesPerSecond = readNumberEnv('MESSAGES_PER_SECOND', 1);
+        const includeReadReceipts = readBooleanEnv('INCLUDE_READ_RECEIPTS', false);
+        console.log(JSON.stringify(monthlyMessageRateCost(messagesPerSecond, { ...options, includeReadReceipts }), null, 2));
+    } else {
+        const dau = readNumberEnv('DAU', 1000000);
+        console.log(JSON.stringify(monthlyCost(dau, options), null, 2));
+    }
 }

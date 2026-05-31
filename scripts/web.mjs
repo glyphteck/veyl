@@ -17,16 +17,10 @@ const webDefaults = {
 };
 
 function resolveAppDir(name, kind) {
-    const nested = resolve(rootDir, 'apps', name, kind);
-    if (existsSync(resolve(nested, 'package.json'))) {
-        return nested;
-    }
-
-    if (kind === 'web') {
-        const flat = resolve(rootDir, 'apps', name);
-        if (existsSync(resolve(flat, 'package.json'))) {
-            return flat;
-        }
+    const appDir = name === 'veyl' ? kind : name;
+    const cwd = resolve(rootDir, 'apps', appDir);
+    if (existsSync(resolve(cwd, 'package.json'))) {
+        return cwd;
     }
 
     return null;
@@ -230,6 +224,9 @@ if (network === 'mainnet') {
 }
 if (!env.NEXT_PUBLIC_VEYL_VARIANT) {
     env.NEXT_PUBLIC_VEYL_VARIANT = 'dev';
+}
+if (env.VEYL_VERBOSE === '1') {
+    env.NEXT_PUBLIC_VEYL_VERBOSE = '1';
 }
 
 const config = resolveWebApp(app);

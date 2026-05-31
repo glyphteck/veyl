@@ -10,6 +10,7 @@ import { Dot } from '@/components/dot';
 
 const AvatarContext = React.createContext(null);
 const loadedAvatarSrcs = new Set();
+const useAvatarLayoutEffect = typeof window === 'undefined' ? React.useEffect : React.useLayoutEffect;
 
 function getAvatarImageKey(src) {
     return avatarSourceKey(src);
@@ -46,9 +47,9 @@ const AvatarImage = React.forwardRef(function AvatarImage({ className, src, alt 
     const setStatus = avatar?.setStatus;
     const imgRef = React.useRef(null);
     const srcKey = getAvatarImageKey(src);
-    const loaded = avatar?.status === 'loaded' && avatar?.srcKey === srcKey;
+    const loaded = (avatar?.status === 'loaded' && avatar?.srcKey === srcKey) || loadedAvatarSrcs.has(srcKey);
 
-    React.useEffect(() => {
+    useAvatarLayoutEffect(() => {
         if (!srcKey) {
             setStatus?.('error', srcKey);
             return;

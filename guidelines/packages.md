@@ -7,7 +7,6 @@ Use this guide for dependency installs, package upgrades, framework bumps, lockf
 The repo root is a Bun workspace. Workspace packages are:
 
 - `apps/*`
-- `apps/*`
 - `shared`
 
 Run root workspace installs from the repo root:

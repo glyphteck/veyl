@@ -155,7 +155,8 @@ The CLI can do the same:
 - `bun bot add <count>` — provision N bots with random usernames
 - `bun bot power <@username|uid> on`
 - `bun bot power <@username|uid> off`
-- `bun bot burst [@username|uid]` — ask the running runtime to send a short deterministic message burst to a user; defaults to `@zxrl`, 60 messages, and a 3-second delay
+- `bun bot burst [@username|uid]` — ask the running runtime to send a naturalized message burst to a user; defaults to `@zxrl`, 60 messages, and a 3-second delay
+- `bun bot burst stop` — request cancellation for queued/running burst actions; restarted runtimes also cancel stale running actions before accepting new work
 - `bun bot b [@username|uid]` — short alias for `bun bot burst`
 - `bun bot kill <@username|uid>` — fully delete the bot account
 - `bun bot kill all` — delete every bot
@@ -201,7 +202,7 @@ bun bot burst @alice --count 20 --delay 1s
 bun bot b @alice --no-wait
 ```
 
-The burst action sends plain text only, round-robins across enabled bot sessions, and tries one final encrypted read receipt per bot chat when there is a recent user-authored message to acknowledge.
+The burst action randomly picks from the non-`review` enabled bot sessions, then uses shared text-vs-request weights. Text messages come from the shared 100-item burst-message pool. Requests use weighted amount buckets from 1,000 to 1,000,000 sats, with most requests in the 10,000-99,999 sat range and fewer larger asks. The runtime still tries one final encrypted read receipt per bot chat when there is a recent user-authored message to acknowledge.
 
 ### Delete a bot
 

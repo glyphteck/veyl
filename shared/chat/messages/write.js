@@ -56,6 +56,14 @@ async function syncChatLastMsgBestEffort(chatRef, lastMsg, fields) {
     }
 }
 
+export async function syncChatLastMsg(db, chatId, lastMsg) {
+    if (!db || !chatId || !lastMsg?.head || !lastMsg?.body) {
+        return false;
+    }
+    await updateDoc(doc(db, 'chats', chatId), { lastMsg, ts: serverTimestamp() });
+    return true;
+}
+
 export async function sendMsg(db, senderPubkey, senderPrivkey, receiverChatPK, message, options = {}) {
     if (!senderPrivkey || !senderPubkey) {
         throw new Error('vault locked');
@@ -76,9 +84,10 @@ export async function sendMsg(db, senderPubkey, senderPrivkey, receiverChatPK, m
 
     const batch = writeBatch(db);
     const msgRef = doc(collection(chatRef, 'messages'));
+    const lastMsg = makeChatLastMsg(msgData);
     batch.set(msgRef, msgData);
     if (updateLastMsg) {
-        const chatUpdate = { lastMsg: makeChatLastMsg(msgData), ts: serverTimestamp() };
+        const chatUpdate = { lastMsg, ts: serverTimestamp() };
         if (options?.chatExists === true) {
             batch.update(chatRef, chatUpdate);
         } else {
@@ -86,7 +95,7 @@ export async function sendMsg(db, senderPubkey, senderPrivkey, receiverChatPK, m
         }
     }
     await batch.commit();
-    return { chatId, msgId: msgRef.id, cid: head.cid };
+    return { chatId, msgId: msgRef.id, cid: head.cid, lastMsg };
 }
 
 export async function sendReadReceipt(db, senderPubkey, senderPrivkey, receiverChatPK, target, options = {}) {

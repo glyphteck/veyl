@@ -25,7 +25,7 @@ export function getChatPair(chatId, senderChatPK) {
     return { senderChatPK: sender, receiverChatPK };
 }
 
-async function getProfileByChatPK(chatPK) {
+export async function getProfileByChatPK(chatPK) {
     const snap = await db.collection('profiles').where('chatPK', '==', chatPK).limit(2).get();
     if (snap.docs.length !== 1) {
         return {

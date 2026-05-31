@@ -9,7 +9,7 @@ import { getDotMetrics } from './dot';
 import Icon from '@/components/icon';
 import { useTap } from '@/lib/tap';
 import { useTheme } from '../providers/themeprovider';
-import { prefetchAvatarImage, readAvatarImageCache, subscribeAvatarImageCache } from '../lib/avatarimagecache';
+import { prefetchAvatarImage, readAvatarImageCache, subscribeAvatarImageCache } from '../lib/user/avatarimages';
 
 const AVATAR_ANIMATION_MS = 160;
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
@@ -213,8 +213,12 @@ const AvatarImageLayer = memo(
                 progress.value = 0;
                 return;
             }
+            if (alreadyLoaded) {
+                progress.value = 1;
+                return;
+            }
             progress.value = withTiming(1, { duration: AVATAR_ANIMATION_MS });
-        }, [loaded, progress]);
+        }, [alreadyLoaded, loaded, progress]);
 
         return (
             <>
@@ -370,7 +374,7 @@ export default function Avatar({
     const id = useId();
     const { sourceKey, imageSource, cachedSource } = useAvatarImageSource(source);
     const [loadedKey, setLoadedKey] = useState(() => (sourceKey && loadedSourceKeys.has(sourceKey) ? sourceKey : ''));
-    const alreadyLoaded = !!sourceKey && (assumeImageLoaded || loadedSourceKeys.has(sourceKey));
+    const alreadyLoaded = !!sourceKey && (assumeImageLoaded || loadedSourceKeys.has(sourceKey) || !!cachedSource);
     const imageLoaded = !!sourceKey && (alreadyLoaded || !!cachedSource || loadedKey === sourceKey);
     const dot = useMemo(() => getAvatarAdornmentMetrics(size), [size]);
     const maskItems = useMemo(() => [active ? { key: 'active', ...dot } : null, ...maskAdornments].map(normalizeMaskAdornment).filter(Boolean), [active, dot, maskAdornments]);

@@ -3,6 +3,7 @@
 import { createContext, useContext, useMemo, useRef } from 'react';
 import { DAY_MS, HOUR_MS } from '../config.js';
 import { dayHourKey, dayKey, hourKey } from '../utils/time.js';
+import { sameText } from '../utils/text.js';
 import { isCompletedTransfer, isVisibleTransfer, txCreatedMs } from '../wallet/tx.js';
 
 const byRecentTx = (a, b) => {
@@ -61,6 +62,9 @@ const aggregateTxs = (transfers, userPK) => {
     const enrichedTxs = [];
 
     for (const raw of transfers) {
+        if (userPK && !sameText(raw?.senderIdentityPublicKey, userPK) && !sameText(raw?.receiverIdentityPublicKey, userPK)) {
+            continue;
+        }
         const tx = enrichTx(raw);
         if (!isVisibleTransfer(tx)) continue;
         enrichedTxs.push(tx);
@@ -167,31 +171,36 @@ export function createTxDataProvider({ useWallet, useUser }) {
     const TxDataContext = createContext(null);
 
     function TxDataProvider({ children }) {
-        const { transfers, balance, oldestTxMs, txHistoryComplete, hasMoreTxs, isTxLoading, ensureTxCoverage, loadMoreTxs } = useWallet();
+        const { transfers, balance, oldestTxMs, oldestVerifiedTxMs, txHistoryComplete, hasMoreTxs, isTxLoading, ensureTxCoverage, loadMoreTxs } = useWallet();
         const { walletPK } = useUser();
         const seriesCache = useRef(new Map());
         const lastTransfersRef = useRef(null);
         const lastBalanceRef = useRef(null);
 
         const aggregatedData = useMemo(() => {
-            if (transfers !== lastTransfersRef.current || balance !== lastBalanceRef.current) {
+            if (transfers !== lastTransfersRef.current) {
                 seriesCache.current.clear();
                 lastTransfersRef.current = transfers;
-                lastBalanceRef.current = balance;
             }
             const r = walletPK && transfers?.length ? aggregateTxs(transfers, walletPK) : null;
             return r ?? EMPTY_AGG;
-        }, [transfers, walletPK, balance]);
+        }, [transfers, walletPK]);
 
         const contextValue = useMemo(() => {
+            if (balance !== lastBalanceRef.current) {
+                seriesCache.current.clear();
+                lastBalanceRef.current = balance;
+            }
+
             const transactions = aggregatedData.enrichedTxs;
             const sortedTransactions = aggregatedData.sortedTxs;
+            const txHistoryKnownComplete = txHistoryComplete || oldestVerifiedTxMs != null;
 
             const isTxRangeCovered = (timeRange) => {
-                if (timeRange === 'all-time') return txHistoryComplete;
+                if (timeRange === 'all-time') return txHistoryKnownComplete;
                 const startMs = getTxRangeStartMs(timeRange);
                 if (!Number.isFinite(startMs)) return true;
-                return txHistoryComplete || (oldestTxMs != null && oldestTxMs <= startMs);
+                return txHistoryKnownComplete || (oldestTxMs != null && oldestTxMs <= startMs);
             };
 
             const ensureTxRange = (timeRange) => {
@@ -200,7 +209,7 @@ export function createTxDataProvider({ useWallet, useUser }) {
             };
 
             const getDefaultTimeRange = () => {
-                if (txHistoryComplete && transactions.length) return 'all-time';
+                if (txHistoryKnownComplete && transactions.length) return 'all-time';
                 for (const range of [30, 7, '24h', 'today']) {
                     if (isTxRangeCovered(range)) return range;
                 }
@@ -218,7 +227,7 @@ export function createTxDataProvider({ useWallet, useUser }) {
                 const series = [];
                 let runningBalance = Number(balance);
                 const daysSinceFirst = aggregatedData.firstDate ? Math.ceil((today.getTime() - aggregatedData.firstDate.getTime()) / DAY_MS) : 0;
-                const coveredDays = txHistoryComplete ? days : coveredUnitsSince(oldestTxMs, DAY_MS, today.getTime());
+                const coveredDays = txHistoryKnownComplete ? days : coveredUnitsSince(oldestTxMs, DAY_MS, today.getTime());
                 const actualDays = Math.min(days, daysSinceFirst + 1, coveredDays);
 
                 for (let i = 0; i < actualDays; i++) {
@@ -247,7 +256,7 @@ export function createTxDataProvider({ useWallet, useUser }) {
                 let runningBalance = Number(balance);
                 const today = dayKey(now);
                 const yesterday = dayKey(new Date(now.getTime() - DAY_MS));
-                const coveredHours = txHistoryComplete ? hours : coveredUnitsSince(oldestTxMs, HOUR_MS, now.getTime());
+                const coveredHours = txHistoryKnownComplete ? hours : coveredUnitsSince(oldestTxMs, HOUR_MS, now.getTime());
                 const actualHours = Math.min(hours, coveredHours);
 
                 if (prefix === 'today') {
@@ -340,6 +349,7 @@ export function createTxDataProvider({ useWallet, useUser }) {
                 transactions,
                 sortedTransactions,
                 oldestTxMs,
+                oldestVerifiedTxMs,
                 txHistoryComplete,
                 hasMoreTxs,
                 isTxLoading,
@@ -354,7 +364,7 @@ export function createTxDataProvider({ useWallet, useUser }) {
                 first: aggregatedData.firstDate ? aggregatedData.firstDate.toISOString() : null,
                 hasTx: transactions.length > 0,
             };
-        }, [aggregatedData, balance, ensureTxCoverage, hasMoreTxs, isTxLoading, loadMoreTxs, oldestTxMs, txHistoryComplete]);
+        }, [aggregatedData, balance, ensureTxCoverage, hasMoreTxs, isTxLoading, loadMoreTxs, oldestTxMs, oldestVerifiedTxMs, txHistoryComplete]);
 
         return <TxDataContext value={contextValue}>{children}</TxDataContext>;
     }

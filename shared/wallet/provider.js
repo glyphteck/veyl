@@ -44,8 +44,9 @@ export {
 
 const EMPTY_EXTRAS = Object.freeze({});
 const EMPTY_WALLET_SETTINGS = Object.freeze({ ghostWallet: true });
+const EMPTY_WALLET_IDENTITY = Object.freeze({ walletPK: null });
 
-export function createWalletProvider({ useVault, network, appState, useWalletExtras = () => EMPTY_EXTRAS, useWalletSettings = () => EMPTY_WALLET_SETTINGS, diag = null }) {
+export function createWalletProvider({ useVault, network, appState, useWalletExtras = () => EMPTY_EXTRAS, useWalletSettings = () => EMPTY_WALLET_SETTINGS, useWalletIdentity = () => EMPTY_WALLET_IDENTITY, diag = null }) {
     if (typeof useVault !== 'function') {
         throw new Error('createWalletProvider requires useVault');
     }
@@ -55,12 +56,13 @@ export function createWalletProvider({ useVault, network, appState, useWalletExt
     function WalletProvider({ children }) {
         const { wallet, localCache } = useVault();
         const walletSettings = useWalletSettings() || EMPTY_WALLET_SETTINGS;
+        const walletIdentity = useWalletIdentity() || EMPTY_WALLET_IDENTITY;
         const ghostWallet = walletSettings?.ghostWallet === true;
 
         useWalletPrivacy({ wallet, ghostWallet, diag });
 
         const balanceState = useWalletBalance({ wallet, diag });
-        const transferState = useWalletTransfers({ wallet, localCache, diag });
+        const transferState = useWalletTransfers({ wallet, walletPK: walletIdentity.walletPK, localCache, diag });
         const fundingState = useFundingAddress({ wallet, diag });
         const updateWalletData = useWalletData({
             wallet,
@@ -154,6 +156,7 @@ export function createWalletProvider({ useVault, network, appState, useWalletExt
                 isBalanceLoading: balanceState.isBalanceLoading,
                 isTxLoading: transferState.isTxLoading,
                 oldestTxMs: transferState.oldestLoadedMs,
+                oldestVerifiedTxMs: transferState.oldestVerifiedTxMs,
                 txHistoryComplete: transferState.historyComplete,
                 hasMoreTxs: transferState.hasMoreTxs,
                 isWalletDataReady: !!wallet,
@@ -170,6 +173,8 @@ export function createWalletProvider({ useVault, network, appState, useWalletExt
                 getLightningReceiveRequest: lightning.getLightningReceiveRequest,
                 getLightningSendRequest: lightning.getLightningSendRequest,
                 quoteWithdrawalFees: withdrawal.quoteWithdrawalFees,
+                prepareWithdrawal: withdrawal.prepareWithdrawal,
+                confirmWithdrawal: withdrawal.confirmWithdrawal,
                 withdrawFunds: withdrawal.withdrawFunds,
                 ...extras,
             }),
@@ -186,6 +191,7 @@ export function createWalletProvider({ useVault, network, appState, useWalletExt
                 balanceState.isBalanceLoading,
                 transferState.isTxLoading,
                 transferState.oldestLoadedMs,
+                transferState.oldestVerifiedTxMs,
                 transferState.historyComplete,
                 transferState.hasMoreTxs,
                 claimState.refreshWallet,
@@ -200,6 +206,8 @@ export function createWalletProvider({ useVault, network, appState, useWalletExt
                 lightning.getLightningReceiveRequest,
                 lightning.getLightningSendRequest,
                 withdrawal.quoteWithdrawalFees,
+                withdrawal.prepareWithdrawal,
+                withdrawal.confirmWithdrawal,
                 withdrawal.withdrawFunds,
                 extras,
             ]

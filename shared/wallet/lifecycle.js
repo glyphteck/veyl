@@ -29,6 +29,8 @@ function clearTimer(ref) {
 
 export function useWalletData({ wallet, getBalance, getRecentTxs, diag }) {
     const lastFetchTime = useRef(0);
+    const updatePromiseRef = useRef(null);
+    const queuedForceRef = useRef(false);
 
     return useCallback(
         async (force = false) => {
@@ -36,17 +38,44 @@ export function useWalletData({ wallet, getBalance, getRecentTxs, diag }) {
                 return;
             }
 
-            const now = Date.now();
-            if (!force && now - lastFetchTime.current < RATE_LIMIT) {
-                markDiag(diag, 'wallet.update.skip', { force: !!force, ageMs: now - lastFetchTime.current });
-                return;
+            if (updatePromiseRef.current) {
+                if (force) {
+                    queuedForceRef.current = true;
+                }
+                markDiag(diag, 'wallet.update.join', { force: !!force, queuedForce: queuedForceRef.current });
+                return updatePromiseRef.current;
             }
 
-            const startedAt = Date.now();
-            markDiag(diag, 'wallet.update.start', { force: !!force });
-            lastFetchTime.current = now;
-            await Promise.all([getBalance(), getRecentTxs()]);
-            markDone(diag, 'wallet.update', startedAt, { force: !!force });
+            const run = async () => {
+                let currentForce = !!force;
+
+                while (true) {
+                    const now = Date.now();
+                    if (!currentForce && now - lastFetchTime.current < RATE_LIMIT) {
+                        markDiag(diag, 'wallet.update.skip', { force: currentForce, ageMs: now - lastFetchTime.current });
+                        return;
+                    }
+
+                    const startedAt = Date.now();
+                    markDiag(diag, 'wallet.update.start', { force: currentForce });
+                    lastFetchTime.current = now;
+                    await Promise.all([getBalance(), getRecentTxs()]);
+                    markDone(diag, 'wallet.update', startedAt, { force: currentForce });
+
+                    if (!queuedForceRef.current) {
+                        return;
+                    }
+
+                    queuedForceRef.current = false;
+                    currentForce = true;
+                    markDiag(diag, 'wallet.update.drain', { force: currentForce });
+                }
+            };
+
+            updatePromiseRef.current = run().finally(() => {
+                updatePromiseRef.current = null;
+            });
+            return updatePromiseRef.current;
         },
         [diag, wallet, getBalance, getRecentTxs]
     );

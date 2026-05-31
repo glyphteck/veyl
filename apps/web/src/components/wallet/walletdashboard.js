@@ -59,7 +59,7 @@ export function WalletDashboard() {
     const bitcoin = useBitcoin();
     const { balance } = useWallet();
     const { settings, uid } = useUser();
-    const { getSeries, getHourlySeries, getTxsInRange, first, transactions, txHistoryComplete, isTxRangeCovered, ensureTxRange, getDefaultTimeRange } = useTxData();
+    const { getSeries, getHourlySeries, getTxsInRange, first, oldestVerifiedTxMs, transactions, txHistoryComplete, isTxRangeCovered, ensureTxRange, getDefaultTimeRange } = useTxData();
     const { peerByWalletPK } = usePeer();
     const { openDialog } = useDialog();
     const { cloaked } = useCloak();
@@ -75,7 +75,9 @@ export function WalletDashboard() {
         if (!transactions?.length || !first) return ['today'];
 
         const nowMs = Date.now();
-        const firstTxMs = txDateMs(first);
+        const verifiedFirstTxMs = Number.isFinite(oldestVerifiedTxMs) ? oldestVerifiedTxMs : null;
+        const firstTxMs = verifiedFirstTxMs ?? txDateMs(first);
+        const knownComplete = txHistoryComplete || verifiedFirstTxMs != null;
         if (firstTxMs == null) return ['today'];
 
         const today = new Date(nowMs);
@@ -88,15 +90,15 @@ export function WalletDashboard() {
         const spansBeforeToday = firstTxMs < today.getTime();
         const ranges = ['today'];
 
-        if (txAgeMs >= DAY_MS || spansBeforeToday || !txHistoryComplete) ranges.push('24h');
-        if (daysSinceFirst >= 7 || !txHistoryComplete) ranges.push(7);
-        if (daysSinceFirst >= 30 || !txHistoryComplete) ranges.push(30);
-        if (daysSinceFirst >= 90 || !txHistoryComplete) ranges.push(90);
-        if (daysSinceFirst >= 180 || !txHistoryComplete) ranges.push(180);
-        if (daysSinceFirst >= 365 || !txHistoryComplete) ranges.push(365);
-        if (!txHistoryComplete || txAgeMs > DAY_MS) ranges.push('all-time');
+        if (txAgeMs >= DAY_MS || spansBeforeToday) ranges.push('24h');
+        if (daysSinceFirst >= 7) ranges.push(7);
+        if (daysSinceFirst >= 30) ranges.push(30);
+        if (daysSinceFirst >= 90) ranges.push(90);
+        if (daysSinceFirst >= 180) ranges.push(180);
+        if (daysSinceFirst >= 365) ranges.push(365);
+        if (knownComplete && txAgeMs > DAY_MS) ranges.push('all-time');
         return ranges;
-    }, [first, transactions, txHistoryComplete]);
+    }, [first, oldestVerifiedTxMs, transactions, txHistoryComplete]);
 
     const activeTimeRange = pickTimeRange(timeRange ?? defaultTimeRange, availableTimeRanges);
 

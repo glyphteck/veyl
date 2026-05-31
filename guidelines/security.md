@@ -65,4 +65,6 @@ When changing auth, chat, wallet, onboarding, uploads, reports, moderation, acco
 - account deletion cleanup
 - moderation/reporting flows
 
+Callable abuse control is enforced in Functions with `functions/lib/ratelimit.js`. Public passkey option and verify callables are limited per IP plus passkey origin, login options also limit requested account ids, and authenticated write-producing callables limit by uid. Rejections use `resource-exhausted` with retry details. The counter docs live in `rate_limits` with hashed identities only and a Firestore TTL on `ttl`; do not store raw IPs, origins, uids, credential ids, report targets, or request payloads in rate-limit docs.
+
 Public profile moderation includes reserved and banned username filtering plus avatar bans. Keep username filtering aligned between onboarding, profile lookup, and admin docs; keep avatar-ban enforcement aligned across Storage rules, web admin moderation, admin commands, and iOS avatar upload UI.

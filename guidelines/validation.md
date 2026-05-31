@@ -39,6 +39,16 @@ bun --filter @veyl/shared lint
 cd functions && npm run lint
 ```
 
+## Repo Shape Sanity
+
+When a task moves files, renames package paths, or changes many imports, run:
+
+```bash
+bun check:paths
+```
+
+This is a cheap architecture guard, not a formatter or typecheck. It catches deleted paths and unresolved relative imports that lint may not resolve.
+
 Target specific files when that is enough:
 
 ```bash

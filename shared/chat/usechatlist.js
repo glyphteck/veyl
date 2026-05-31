@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CHAT_LIST_LIVE_COUNT, CHAT_LIST_PAGE_SIZE } from '../config.js';
+import { CHAT_LIST_CACHE_WRITE_DELAY_MS, CHAT_LIST_LIVE_COUNT, CHAT_LIST_PAGE_SIZE } from '../config.js';
 import { getChatId } from '../crypto/chat.js';
 import { readCachedChats, writeCachedChats } from '../cache/localdata.js';
 import {
@@ -91,6 +91,8 @@ export function useChatList({
     const peersCache = useRef([]);
     const lastPeersKey = useRef('');
     const lastServerChatIdsKey = useRef('');
+    const chatCacheWriteTimerRef = useRef(null);
+    const pendingChatCacheWriteRef = useRef(null);
 
     useEffect(() => {
         chatsRef.current = chats;
@@ -116,6 +118,39 @@ export function useChatList({
         },
         [chatPK, chatPreviewOverridesRef, hiddenChatPreviewKeysRef, localByChatRef, pendingDeleteIdsRef, readCacheRef, selectedChatIdRef]
     );
+
+    const flushChatCacheWrite = useCallback(() => {
+        if (chatCacheWriteTimerRef.current) {
+            clearTimeout(chatCacheWriteTimerRef.current);
+            chatCacheWriteTimerRef.current = null;
+        }
+        const pending = pendingChatCacheWriteRef.current;
+        pendingChatCacheWriteRef.current = null;
+        if (pending?.cache && Array.isArray(pending.rows)) {
+            writeCachedChats(pending.cache, pending.rows);
+        }
+    }, []);
+
+    const queueChatCacheWrite = useCallback(
+        (rows) => {
+            if (!localCache || !Array.isArray(rows)) {
+                return;
+            }
+            pendingChatCacheWriteRef.current = {
+                cache: localCache,
+                rows: filterPendingDeleteChats(rows, pendingDeleteIdsRef.current),
+            };
+            if (chatCacheWriteTimerRef.current) {
+                clearTimeout(chatCacheWriteTimerRef.current);
+            }
+            chatCacheWriteTimerRef.current = setTimeout(() => {
+                flushChatCacheWrite();
+            }, CHAT_LIST_CACHE_WRITE_DELAY_MS);
+        },
+        [flushChatCacheWrite, localCache, pendingDeleteIdsRef]
+    );
+
+    useEffect(() => () => flushChatCacheWrite(), [flushChatCacheWrite]);
 
     const rememberHiddenChatPreviewKeys = useCallback(
         (chatId, keys) => {
@@ -148,10 +183,10 @@ export function useChatList({
                 return;
             }
             lastServerChatsRef.current = nextServerChats;
-            writeCachedChats(localCache, filterPendingDeleteChats(nextServerChats, pendingDeleteIdsRef.current));
+            queueChatCacheWrite(nextServerChats);
             updateRenderedChats(nextServerChats);
         },
-        [chatPK, chatPreviewOverridesRef, hiddenChatPreviewKeysRef, lastServerChatsRef, localCache, pendingDeleteIdsRef, readCacheRef, rememberHiddenChatPreviewKeys, updateRenderedChats]
+        [chatPK, chatPreviewOverridesRef, hiddenChatPreviewKeysRef, lastServerChatsRef, queueChatCacheWrite, readCacheRef, rememberHiddenChatPreviewKeys, updateRenderedChats]
     );
 
     const updateServerChatIds = useCallback(
@@ -190,14 +225,14 @@ export function useChatList({
             updatePeersFromRows(nextServerChats);
             updateServerChatIds(nextServerChats);
             if (options?.writeCache !== false) {
-                writeCachedChats(localCache, filterPendingDeleteChats(nextServerChats, pendingDeleteIdsRef.current));
+                queueChatCacheWrite(nextServerChats);
             }
             if (options?.warm !== false) {
                 warmChats(shownChats);
             }
             return shownChats;
         },
-        [chatPK, chatPreviewOverridesRef, lastServerChatsRef, localCache, pendingDeleteIdsRef, readCacheRef, updatePeersFromRows, updateRenderedChats, updateServerChatIds, warmChats]
+        [chatPK, chatPreviewOverridesRef, lastServerChatsRef, queueChatCacheWrite, readCacheRef, updatePeersFromRows, updateRenderedChats, updateServerChatIds, warmChats]
     );
 
     const resetChatList = useCallback(
@@ -210,6 +245,7 @@ export function useChatList({
             setHasMoreChats((prev) => (prev ? false : prev));
             setLoadingMoreChats((prev) => (prev ? false : prev));
             setChatRowLoadVersion((prev) => (prev ? 0 : prev));
+            flushChatCacheWrite();
             peersCache.current = [];
             lastPeersKey.current = '';
             lastServerChatIdsKey.current = '';
@@ -231,6 +267,7 @@ export function useChatList({
             chatPageLockedRef,
             chatPreviewOverridesRef,
             chatRowLoadsRef,
+            flushChatCacheWrite,
             lastHydratedCacheKeyRef,
             lastPeersKey,
             lastServerChatIdsKey,
@@ -272,11 +309,11 @@ export function useChatList({
                 if (sameChats(prev, next)) {
                     return prev;
                 }
-                writeCachedChats(localCache, next);
+                queueChatCacheWrite(next);
                 return next;
             });
         },
-        [chatPK, lastServerChatsRef, localCache, readCacheRef]
+        [chatPK, lastServerChatsRef, queueChatCacheWrite, readCacheRef]
     );
 
     useEffect(() => {
@@ -304,17 +341,10 @@ export function useChatList({
                 ).filter((chatItem) => !!chatItem?.ts)
             );
 
-            if (cachedChats.length) {
-                commitServerChats(cachedChats, { writeCache: false });
-            }
-
-            if (cachedChats.length || hasSavedChatSnapshot) {
-                setIsChatDataReady(true);
-            }
             markDone(diag, 'chat.provider.cache', hydrateStartedAt, {
                 count: cachedChats.length,
                 hasSavedChatSnapshot,
-                ready: cachedChats.length > 0 || hasSavedChatSnapshot,
+                ready: false,
             });
         }
 
@@ -478,7 +508,7 @@ export function useChatList({
             const nextServerChats = trimExpiredChatPreviews(lastServerChatsRef.current, { skipChatId: selectedChatId });
             if (nextServerChats !== lastServerChatsRef.current) {
                 lastServerChatsRef.current = nextServerChats;
-                writeCachedChats(localCache, filterPendingDeleteChats(nextServerChats, pendingDeleteIdsRef.current));
+                queueChatCacheWrite(nextServerChats);
                 updateRenderedChats(nextServerChats);
                 return;
             }
@@ -495,7 +525,7 @@ export function useChatList({
         }, delay);
 
         return () => clearTimeout(timeout);
-    }, [chatPK, chatPreviewOverridesRef, chats, hiddenChatPreviewKeysRef, lastServerChatsRef, localCache, pendingDeleteIdsRef, readCacheRef, selectedChatId, updateRenderedChats]);
+    }, [chatPK, chatPreviewOverridesRef, chats, hiddenChatPreviewKeysRef, lastServerChatsRef, queueChatCacheWrite, readCacheRef, selectedChatId, updateRenderedChats]);
 
     const getChatRowLastMsgKey = useCallback(
         (chatId) => {

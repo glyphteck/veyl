@@ -16,13 +16,16 @@ cd functions && npm install
 
 ```bash
 bun dev
+bun dev -v
 bun dev clear
 bun dev bot
 bun dev web
+bun dev web -v
 bun dev web clear
 bun dev web mainnet
 bun dev web regtest
 bun dev ios
+bun dev ios -v
 bun dev ios clear
 bun dev ios mainnet
 bun dev ios regtest
@@ -37,7 +40,9 @@ bun make db
 bun make rules
 bun make fns
 bun make lifecycle
+bun map
 bun dirty
+bun check:paths
 bun lint
 bun lint:warn
 bun lint:fix
@@ -81,6 +86,12 @@ Use `bun push --help` or `bun merge --help` for the script's current usage text.
 ## Dirty Tree Summary
 
 Use `bun dirty` to print a colorized changed-file summary with total and per-file added and removed line counts. Tracked changes come from `git diff HEAD`; untracked text files count as added lines.
+
+## Agent Map And Path Checks
+
+Use `bun map` before broad repo crawls. It prints the current branch/head, dirty file count, workspace packages, active todo files, feature owner paths, focused docs, and targeted lint commands.
+
+Use `bun check:paths` after moving files, renaming package paths, or touching imports. It catches deleted app workspace layers, old shared package names, removed catch-all files, shadcn scaffolding, and unresolved relative JavaScript imports.
 
 ## Worktrees
 
@@ -126,6 +137,7 @@ bun make lifecycle
 ## Dev Script Notes
 
 - `bun dev` starts web, iOS, and bot together.
+- `bun dev`, `bun dev web`, `bun dev ios`, and `bun dev bot` keep routine child output quiet by default. Add `-v` or `--verbose` to show full child output; `bun dev -v` applies that to every child runtime.
 - veyl web always uses Turbopack for local dev.
 - `bun dev web` clears web `.next` before launch when the cache exceeds 5 GiB. Set `VEYL_WEB_CACHE_MAX_GB` to tune that threshold.
 - `bun dev clear` clears web `.next`, iOS `.expo`, and Metro cache before starting the combined runtime.

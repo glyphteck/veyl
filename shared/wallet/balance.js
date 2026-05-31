@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 
 import { markDiag, markDone, markError } from '../utils/diagnostics.js';
 
@@ -33,40 +33,114 @@ function getSatsBalance(result) {
     return satsBalance;
 }
 
+function samePlainObject(a, b) {
+    if (a === b) {
+        return true;
+    }
+    if (!a || !b) {
+        return false;
+    }
+
+    const aKeys = Object.keys(a);
+    const bKeys = Object.keys(b);
+    if (aKeys.length !== bKeys.length) {
+        return false;
+    }
+
+    return aKeys.every((key) => Object.is(a[key], b[key]));
+}
+
+function sameTokenBalances(a, b) {
+    if (a === b) {
+        return true;
+    }
+    if (!(a instanceof Map) || !(b instanceof Map) || a.size !== b.size) {
+        return false;
+    }
+
+    for (const [key, value] of a.entries()) {
+        if (!Object.is(value, b.get(key))) {
+            return false;
+        }
+    }
+    return true;
+}
+
 export function useWalletBalance({ wallet, diag }) {
     const [balance, setBalance] = useState(null);
     const [satsBalance, setSatsBalance] = useState(null);
     const [tokenBalances, setTokenBalances] = useState(() => new Map());
     const [balanceReady, setBalanceReady] = useState(false);
     const [isBalanceLoading, setIsBalanceLoading] = useState(false);
+    const balanceRef = useRef(null);
+    const satsBalanceRef = useRef(null);
+    const tokenBalancesRef = useRef(new Map());
+    const balanceReadyRef = useRef(false);
+
+    const setBalanceValue = useCallback((nextBalance) => {
+        const value = typeof nextBalance === 'function' ? nextBalance(balanceRef.current) : nextBalance;
+        if (Object.is(balanceRef.current, value)) {
+            return;
+        }
+        balanceRef.current = value;
+        setBalance(value);
+    }, []);
+
+    const setSatsBalanceValue = useCallback((nextSatsBalance) => {
+        const value = typeof nextSatsBalance === 'function' ? nextSatsBalance(satsBalanceRef.current) : nextSatsBalance;
+        if (samePlainObject(satsBalanceRef.current, value)) {
+            return;
+        }
+        satsBalanceRef.current = value;
+        setSatsBalance(value);
+    }, []);
+
+    const setTokenBalancesValue = useCallback((nextTokenBalances) => {
+        const source = nextTokenBalances instanceof Map ? nextTokenBalances : new Map();
+        if (sameTokenBalances(tokenBalancesRef.current, source)) {
+            return;
+        }
+        const value = new Map(source);
+        tokenBalancesRef.current = value;
+        setTokenBalances(value);
+    }, []);
+
+    const setBalanceReadyValue = useCallback((nextReady) => {
+        const value = nextReady === true;
+        if (balanceReadyRef.current === value) {
+            return;
+        }
+        balanceReadyRef.current = value;
+        setBalanceReady(value);
+    }, []);
 
     const setBalanceResult = useCallback((result) => {
         const nextBalance = getBalanceValue(result);
         if (nextBalance != null) {
-            setBalance(nextBalance);
+            setBalanceValue(nextBalance);
         }
 
         const nextSatsBalance = getSatsBalance(result);
         if (nextSatsBalance) {
-            setSatsBalance(nextSatsBalance);
+            setSatsBalanceValue(nextSatsBalance);
         }
 
         const nextTokenBalances = getTokenBalances(result);
         if (nextTokenBalances) {
-            setTokenBalances(new Map(nextTokenBalances));
+            setTokenBalancesValue(nextTokenBalances);
         }
-    }, []);
+    }, [setBalanceValue, setSatsBalanceValue, setTokenBalancesValue]);
 
     const setSatsBalanceResult = useCallback((nextSatsBalance) => {
         if (!nextSatsBalance || typeof nextSatsBalance !== 'object') {
             return;
         }
 
-        setSatsBalance(nextSatsBalance);
+        setSatsBalanceValue(nextSatsBalance);
         if (nextSatsBalance.available != null) {
-            setBalance(nextSatsBalance.available);
+            setBalanceValue(nextSatsBalance.available);
         }
-    }, []);
+    }, [setBalanceValue, setSatsBalanceValue]);
 
     const getBalance = useCallback(async () => {
         if (!wallet) {
@@ -74,8 +148,11 @@ export function useWalletBalance({ wallet, diag }) {
         }
 
         const startedAt = Date.now();
+        const showLoading = !balanceReadyRef.current;
         markDiag(diag, 'wallet.balance.start', {});
-        setIsBalanceLoading(true);
+        if (showLoading) {
+            setIsBalanceLoading(true);
+        }
         try {
             const result = await wallet.getBalance();
             setBalanceResult(result);
@@ -84,15 +161,21 @@ export function useWalletBalance({ wallet, diag }) {
             markError(diag, 'wallet.balance', startedAt, error);
             console.debug?.('could not get balance', error?.message ?? error);
         } finally {
-            setBalanceReady(true);
-            setIsBalanceLoading(false);
+            setBalanceReadyValue(true);
+            if (showLoading) {
+                setIsBalanceLoading(false);
+            }
         }
-    }, [diag, wallet, setBalanceResult]);
+    }, [diag, wallet, setBalanceReadyValue, setBalanceResult]);
 
     const resetBalance = useCallback(() => {
+        balanceRef.current = null;
+        satsBalanceRef.current = null;
+        tokenBalancesRef.current = new Map();
+        balanceReadyRef.current = false;
         setBalance(null);
         setSatsBalance(null);
-        setTokenBalances(new Map());
+        setTokenBalances(tokenBalancesRef.current);
         setBalanceReady(false);
         setIsBalanceLoading(false);
     }, []);
@@ -105,8 +188,8 @@ export function useWalletBalance({ wallet, diag }) {
         isBalanceLoading,
         getBalance,
         resetBalance,
-        setBalance,
-        setTokenBalances,
+        setBalance: setBalanceValue,
+        setTokenBalances: setTokenBalancesValue,
         setSatsBalanceResult,
     };
 }

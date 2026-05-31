@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 
 import { listNavigationStep } from '@/lib/focus';
 import { cn } from '@/lib/classes';
+import { Shortcut } from '@/components/shortcut';
 
 const DropdownMenuContext = React.createContext(null);
 
@@ -360,7 +361,7 @@ function DropdownMenuSeparator({ className, ...props }) {
 }
 
 function DropdownMenuShortcut({ className, ...props }) {
-    return <span className={cn('ml-auto text-sm font-black tracking-widest text-muted', className)} {...props} />;
+    return <Shortcut className={className} {...props} />;
 }
 
 export { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuLabel, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuShortcut };

@@ -23,6 +23,12 @@
             "indexes": []
         },
         {
+            "collectionGroup": "rate_limits",
+            "fieldPath": "ttl",
+            "ttl": true,
+            "indexes": []
+        },
+        {
             "collectionGroup": "messages",
             "fieldPath": "ttl",
             "ttl": true,

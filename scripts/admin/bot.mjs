@@ -5,8 +5,12 @@ import admin, { db, FieldValue, projectId } from '../../functions/lib/admin.js';
 import {
     BOT_ACTION_STATUS_DONE,
     BOT_ACTION_STATUS_ERROR,
+    BOT_ACTION_STATUS_CANCELLED,
     BOT_ACTION_STATUS_QUEUED,
+    BOT_ACTION_STATUS_RUNNING,
     BOT_ACTION_TYPE_BURST,
+    BOT_ACTION_TYPE_FUND_BOTS,
+    BOT_ACTION_TYPE_TRANSFER_BURST,
     BOT_MODE,
     BOT_RUNTIME_ACTIONS,
     BOT_RUNTIME_DOC_ID,
@@ -26,6 +30,8 @@ import { sleep } from '@veyl/shared/utils/async';
 import { cleanText, lowerText } from '@veyl/shared/utils/text';
 
 const DEFAULT_BURST_TARGET = '@zxrl';
+const DEFAULT_TRANSFER_AMOUNT_SATS = 1;
+const DEFAULT_FUND_BOT_AMOUNT_SATS = 1000;
 const BURST_WAIT_POLL_MS = 2000;
 const BURST_WAIT_GRACE_MS = 60000;
 
@@ -34,7 +40,10 @@ function usage() {
     console.error('usage: bun bot power <@username|uid|all> <on|off>');
     console.error('usage: bun bot kill <@username|uid|all>');
     console.error('usage: bun bot burst [@username|uid] [--count 60] [--delay 3000|3s] [--no-wait]');
+    console.error('usage: bun bot burst stop');
     console.error('usage: bun bot b [@username|uid] [--count 60] [--delay 3000|3s] [--no-wait]');
+    console.error('usage: bun bot fund-bots [--amount 1000] [--delay 250ms] [--no-wait]');
+    console.error('usage: bun bot transfer-burst [@username|uid] [--count 60] [--delay 3000|3s] [--amount 1] [--no-wait]');
     process.exit(1);
 }
 
@@ -85,6 +94,14 @@ function parseCount(value) {
 
 function parseDelayMs(value) {
     return cleanBurstDelayMs(value, { name: 'delay', text: true });
+}
+
+function parseAmountSats(value, fallback) {
+    const amount = Number(value ?? fallback);
+    if (!Number.isInteger(amount) || amount <= 0) {
+        throw new Error('amount must be a positive integer sat amount');
+    }
+    return amount;
 }
 
 function splitOption(arg) {
@@ -156,6 +173,98 @@ function parseBurstArgs(args) {
     return { target, count, delayMs, wait };
 }
 
+function parseTransferBurstArgs(args) {
+    let target = DEFAULT_BURST_TARGET;
+    let targetSet = false;
+    let count = BOT_BURST_DEFAULT_COUNT;
+    let delayMs = BOT_BURST_DEFAULT_DELAY_MS;
+    let amountSats = DEFAULT_TRANSFER_AMOUNT_SATS;
+    let wait = true;
+
+    for (let i = 0; i < args.length; i++) {
+        const raw = String(args[i] ?? '').trim();
+        if (!raw) {
+            continue;
+        }
+
+        const { name, value } = splitOption(raw);
+        if (name === '--count' || name === '-c') {
+            const next = readOptionValue(args, i, value);
+            count = parseCount(next.value);
+            i = next.index;
+            continue;
+        }
+        if (name === '--delay' || name === '--delay-ms' || name === '-d') {
+            const next = readOptionValue(args, i, value);
+            delayMs = parseDelayMs(next.value);
+            i = next.index;
+            continue;
+        }
+        if (name === '--amount' || name === '--amount-sats' || name === '-a') {
+            const next = readOptionValue(args, i, value);
+            amountSats = parseAmountSats(next.value, DEFAULT_TRANSFER_AMOUNT_SATS);
+            i = next.index;
+            continue;
+        }
+        if (name === '--wait') {
+            wait = true;
+            continue;
+        }
+        if (name === '--no-wait') {
+            wait = false;
+            continue;
+        }
+        if (raw.startsWith('-')) {
+            usage();
+        }
+        if (targetSet) {
+            usage();
+        }
+        target = raw;
+        targetSet = true;
+    }
+
+    return { target, count, delayMs, amountSats, wait };
+}
+
+function parseFundBotsArgs(args) {
+    let amountSats = DEFAULT_FUND_BOT_AMOUNT_SATS;
+    let delayMs = 250;
+    let wait = true;
+
+    for (let i = 0; i < args.length; i++) {
+        const raw = String(args[i] ?? '').trim();
+        if (!raw) {
+            continue;
+        }
+
+        const { name, value } = splitOption(raw);
+        if (name === '--amount' || name === '--amount-sats' || name === '-a') {
+            const next = readOptionValue(args, i, value);
+            amountSats = parseAmountSats(next.value, DEFAULT_FUND_BOT_AMOUNT_SATS);
+            i = next.index;
+            continue;
+        }
+        if (name === '--delay' || name === '--delay-ms' || name === '-d') {
+            const next = readOptionValue(args, i, value);
+            delayMs = parseDelayMs(next.value);
+            i = next.index;
+            continue;
+        }
+        if (name === '--wait') {
+            wait = true;
+            continue;
+        }
+        if (name === '--no-wait') {
+            wait = false;
+            continue;
+        }
+        usage();
+    }
+
+    return { amountSats, delayMs, wait };
+}
+
 async function requireRuntimeAction(actionType) {
     const snap = await runtimeRef().get();
     const data = snap.exists ? snap.data() : {};
@@ -163,7 +272,7 @@ async function requireRuntimeAction(actionType) {
         throw new Error('bot runtime is not running');
     }
     if (!supportsRuntimeAction(data, actionType)) {
-        throw new Error('bot runtime does not support burst actions; restart the bot runtime');
+        throw new Error(`bot runtime does not support ${actionType} actions; restart the bot runtime`);
     }
     return data;
 }
@@ -369,6 +478,117 @@ export async function queueBurstAction(options = {}) {
     };
 }
 
+export async function queueFundBotsAction(options = {}) {
+    await requireRuntimeAction(BOT_ACTION_TYPE_FUND_BOTS);
+
+    const amountSats = parseAmountSats(options.amountSats ?? DEFAULT_FUND_BOT_AMOUNT_SATS, DEFAULT_FUND_BOT_AMOUNT_SATS);
+    const delayMs = parseDelayMs(options.delayMs ?? 250);
+    const actionRef = runtimeRef().collection(BOT_RUNTIME_ACTIONS).doc();
+
+    await actionRef.set({
+        type: BOT_ACTION_TYPE_FUND_BOTS,
+        status: BOT_ACTION_STATUS_QUEUED,
+        amountSats,
+        delayMs,
+        requestedBy: 'cli',
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    return {
+        id: actionRef.id,
+        ref: actionRef,
+        amountSats,
+        delayMs,
+    };
+}
+
+export async function queueTransferBurstAction(options = {}) {
+    await requireRuntimeAction(BOT_ACTION_TYPE_TRANSFER_BURST);
+
+    const target = await resolveUid(options.target || DEFAULT_BURST_TARGET);
+    const count = parseCount(options.count ?? BOT_BURST_DEFAULT_COUNT);
+    const delayMs = parseDelayMs(options.delayMs ?? BOT_BURST_DEFAULT_DELAY_MS);
+    const amountSats = parseAmountSats(options.amountSats ?? DEFAULT_TRANSFER_AMOUNT_SATS, DEFAULT_TRANSFER_AMOUNT_SATS);
+    const actionRef = runtimeRef().collection(BOT_RUNTIME_ACTIONS).doc();
+
+    await actionRef.set({
+        type: BOT_ACTION_TYPE_TRANSFER_BURST,
+        status: BOT_ACTION_STATUS_QUEUED,
+        targetUid: target.uid,
+        targetUsername: target.username || null,
+        count,
+        delayMs,
+        amountSats,
+        requestedBy: 'cli',
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    return {
+        id: actionRef.id,
+        ref: actionRef,
+        target,
+        count,
+        delayMs,
+        amountSats,
+    };
+}
+
+export async function stopBurstActions() {
+    const snap = await runtimeRef().collection(BOT_RUNTIME_ACTIONS).where('status', 'in', [BOT_ACTION_STATUS_QUEUED, BOT_ACTION_STATUS_RUNNING]).get();
+    const batch = db.batch();
+    let queued = 0;
+    let running = 0;
+
+    for (const docSnap of snap.docs) {
+        const data = docSnap.data();
+        if (![BOT_ACTION_TYPE_BURST, BOT_ACTION_TYPE_FUND_BOTS, BOT_ACTION_TYPE_TRANSFER_BURST].includes(data?.type)) {
+            continue;
+        }
+
+        if (data?.status === BOT_ACTION_STATUS_QUEUED) {
+            queued++;
+            batch.set(
+                docSnap.ref,
+                {
+                    status: BOT_ACTION_STATUS_CANCELLED,
+                    result: {
+                        type: data?.type || BOT_ACTION_TYPE_BURST,
+                        requested: data?.count || 0,
+                        sent: 0,
+                        cancelled: true,
+                    },
+                    cancelRequested: true,
+                    cancelRequestedAt: FieldValue.serverTimestamp(),
+                    finishedAt: FieldValue.serverTimestamp(),
+                    updatedAt: FieldValue.serverTimestamp(),
+                },
+                { merge: true }
+            );
+            continue;
+        }
+
+        running++;
+        batch.set(
+            docSnap.ref,
+            {
+                cancelRequested: true,
+                cancelRequestedAt: FieldValue.serverTimestamp(),
+                updatedAt: FieldValue.serverTimestamp(),
+            },
+            { merge: true }
+        );
+    }
+
+    const total = queued + running;
+    if (total) {
+        await batch.commit();
+    }
+
+    return { total, queued, running };
+}
+
 function printPowerResult(result) {
     const names = result.updated.map((entry) => entry.username ? `@${entry.username}` : entry.uid).join(', ');
     const suffix = names ? `: ${names}` : '';
@@ -387,15 +607,58 @@ function printBurstQueued(action) {
     console.log(`queued bot burst ${action.id}: ${plural(action.count, 'message')} to ${target} every ${msLabel(action.delayMs)}`);
 }
 
+function printFundBotsQueued(action) {
+    console.log(`queued bot funding ${action.id}: ${action.amountSats} sats per bot every ${msLabel(action.delayMs)}`);
+}
+
+function printTransferBurstQueued(action) {
+    const target = action.target.username ? `@${action.target.username}` : action.target.uid;
+    console.log(`queued transfer burst ${action.id}: ${plural(action.count, 'transfer')} of ${action.amountSats} sats to ${target} every ${msLabel(action.delayMs)}`);
+}
+
 function printBurstResult(data) {
     const result = data?.result || {};
     const sent = Number.isFinite(result.sent) ? result.sent : 0;
     const requested = Number.isFinite(result.requested) ? result.requested : data?.count;
     const botNames = Array.isArray(result.bots) ? result.bots.filter(Boolean).map((name) => `@${name}`).join(', ') : '';
     const botSuffix = botNames ? ` from ${botNames}` : '';
+    const requests = Number.isFinite(result.requests) ? result.requests : 0;
+    const requestSuffix = requests ? ` including ${plural(requests, 'request')}` : '';
     const receipts = Number.isFinite(result.readReceipts) ? result.readReceipts : 0;
     const receiptSuffix = receipts ? ` and ${plural(receipts, 'read receipt')}` : '';
-    console.log(`burst complete: sent ${sent}/${requested} messages${receiptSuffix}${botSuffix}`);
+    const label = result.cancelled || data?.status === BOT_ACTION_STATUS_CANCELLED ? 'burst stopped' : 'burst complete';
+    console.log(`${label}: sent ${sent}/${requested} messages${requestSuffix}${receiptSuffix}${botSuffix}`);
+}
+
+function printFundBotsResult(data) {
+    const result = data?.result || {};
+    const sent = Number.isFinite(result.sent) ? result.sent : 0;
+    const requested = Number.isFinite(result.requested) ? result.requested : 0;
+    const amount = Number.isFinite(result.amountSats) ? result.amountSats : data?.amountSats;
+    const label = result.cancelled || data?.status === BOT_ACTION_STATUS_CANCELLED ? 'bot funding stopped' : 'bot funding complete';
+    console.log(`${label}: sent ${sent}/${requested} funding transfers of ${amount} sats`);
+}
+
+function printTransferBurstResult(data) {
+    const result = data?.result || {};
+    const sent = Number.isFinite(result.sent) ? result.sent : 0;
+    const requested = Number.isFinite(result.requested) ? result.requested : data?.count;
+    const botNames = Array.isArray(result.bots) ? result.bots.filter(Boolean).map((name) => `@${name}`).join(', ') : '';
+    const botSuffix = botNames ? ` from ${botNames}` : '';
+    const amount = Number.isFinite(result.amountSats) ? result.amountSats : data?.amountSats;
+    const label = result.cancelled || data?.status === BOT_ACTION_STATUS_CANCELLED ? 'transfer burst stopped' : 'transfer burst complete';
+    console.log(`${label}: sent ${sent}/${requested} transfers of ${amount} sats${botSuffix}`);
+}
+
+function printBurstStopResult(result) {
+    if (!result.total) {
+        console.log('no active bot actions');
+        return;
+    }
+    const queued = result.queued ? `${plural(result.queued, 'queued burst')}` : '';
+    const running = result.running ? `${plural(result.running, 'running burst')}` : '';
+    const details = [queued, running].filter(Boolean).join(', ');
+    console.log(`requested stop for ${plural(result.total, 'bot action')}${details ? `: ${details}` : ''}`);
 }
 
 async function waitForAction(actionRef, timeoutMs) {
@@ -405,7 +668,7 @@ async function waitForAction(actionRef, timeoutMs) {
     while (Date.now() <= deadline) {
         const snap = await actionRef.get();
         if (!snap.exists) {
-            throw new Error('bot burst action disappeared');
+            throw new Error('bot action disappeared');
         }
 
         const data = snap.data();
@@ -413,18 +676,21 @@ async function waitForAction(actionRef, timeoutMs) {
             return data;
         }
         if (data?.status === BOT_ACTION_STATUS_ERROR) {
-            throw new Error(data?.error || 'bot burst failed');
+            throw new Error(data?.error || 'bot action failed');
+        }
+        if (data?.status === BOT_ACTION_STATUS_CANCELLED) {
+            return data;
         }
 
         const runtimeSnap = await runtimeRef().get();
         if (!isRuntimeActive(runtimeSnap.exists ? runtimeSnap.data() : {})) {
-            throw new Error('bot runtime stopped before burst finished');
+            throw new Error('bot runtime stopped before action finished');
         }
 
         await sleep(Math.min(BURST_WAIT_POLL_MS, Math.max(0, deadline - Date.now())));
     }
 
-    throw new Error('bot burst did not finish before the wait timeout');
+    throw new Error('bot action did not finish before the wait timeout');
 }
 
 async function main() {
@@ -476,6 +742,12 @@ async function main() {
     }
 
     if (cmd === 'burst' || cmd === 'b') {
+        if (arg1 === 'stop') {
+            const result = await stopBurstActions();
+            printBurstStopResult(result);
+            return;
+        }
+
         const options = parseBurstArgs(cliArgs().slice(1));
         const action = await queueBurstAction(options);
         printBurstQueued(action);
@@ -484,6 +756,36 @@ async function main() {
         }
         const result = await waitForAction(action.ref, action.count * action.delayMs + BURST_WAIT_GRACE_MS);
         printBurstResult(result);
+        return;
+    }
+
+    if (cmd === 'fund-bots') {
+        const options = parseFundBotsArgs(cliArgs().slice(1));
+        const action = await queueFundBotsAction(options);
+        printFundBotsQueued(action);
+        if (!options.wait) {
+            return;
+        }
+        const result = await waitForAction(action.ref, 300000);
+        printFundBotsResult(result);
+        return;
+    }
+
+    if (cmd === 'transfer-burst' || cmd === 'tb') {
+        if (arg1 === 'stop') {
+            const result = await stopBurstActions();
+            printBurstStopResult(result);
+            return;
+        }
+
+        const options = parseTransferBurstArgs(cliArgs().slice(1));
+        const action = await queueTransferBurstAction(options);
+        printTransferBurstQueued(action);
+        if (!options.wait) {
+            return;
+        }
+        const result = await waitForAction(action.ref, action.count * action.delayMs + BURST_WAIT_GRACE_MS);
+        printTransferBurstResult(result);
         return;
     }
 

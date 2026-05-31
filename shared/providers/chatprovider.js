@@ -39,6 +39,7 @@ import {
     sendHiddenCheckpoint as sendHiddenCheckpointShared,
     sendReaction as sendReactionShared,
     sendMsg as sendMessageShared,
+    syncChatLastMsg as syncChatLastMsgShared,
     setChatRetention as setChatRetentionShared,
     uploadAttachmentMsg as uploadAttachmentShared,
     uploadImgMsg as uploadImageShared,
@@ -84,6 +85,9 @@ export function createChat({ db, storage, getStorage, uploadAttachment: uploadAt
     return {
         sendMessage(senderPubkey, senderPrivkey, receiverChatPK, message, options) {
             return sendMessageShared(db, senderPubkey, senderPrivkey, receiverChatPK, message, options);
+        },
+        syncChatLastMsg(chatId, lastMsg) {
+            return syncChatLastMsgShared(db, chatId, lastMsg);
         },
         sendReadReceipt(senderPubkey, senderPrivkey, receiverChatPK, target, options) {
             return sendReadReceiptShared(db, senderPubkey, senderPrivkey, receiverChatPK, target, options);

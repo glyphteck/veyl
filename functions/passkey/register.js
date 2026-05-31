@@ -2,6 +2,7 @@ import admin from 'firebase-admin';
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { randomBytes } from 'node:crypto';
 import { bufferToBase64url, encodeOptionsForClient, decodeCredentialFromClient, getRpIdForOrigin, createFido2Lib, storeChallenge, consumeChallenge, validateOrigin, resolveOrigin, isRpIdHashMismatch } from '../lib/passkey.js';
+import { HOUR_MS, MINUTE_MS, ipLimitKey, limitCallable } from '../lib/ratelimit.js';
 import { ensureUserDoc } from '../lib/userdoc.js';
 
 const db = admin.firestore();
@@ -27,12 +28,29 @@ function challengeMatchesRegistration(record, { origin, rpId }) {
     return record?.type === 'register' && typeof record.uid === 'string' && record.uid && record.origin === origin && record.rpId === rpId;
 }
 
+async function limitRegisterOptions(context, origin) {
+    const key = ipLimitKey(context, 'passkey-register-options', origin);
+    await limitCallable(context, [
+        { name: 'passkey-register-options-minute', key, limit: 10, windowMs: MINUTE_MS },
+        { name: 'passkey-register-options-hour', key, limit: 60, windowMs: HOUR_MS },
+    ]);
+}
+
+async function limitRegisterVerify(context, origin) {
+    const key = ipLimitKey(context, 'passkey-register-verify', origin);
+    await limitCallable(context, [
+        { name: 'passkey-register-verify-minute', key, limit: 20, windowMs: MINUTE_MS },
+        { name: 'passkey-register-verify-hour', key, limit: 120, windowMs: HOUR_MS },
+    ]);
+}
+
 /* 1. Generate passkey registration options */
 export const passkeyRegisterOptions = onCall(async (context) => {
     const origin = resolveOrigin(context);
     if (!validateOrigin(origin)) {
         throw new HttpsError('permission-denied', 'Invalid origin');
     }
+    await limitRegisterOptions(context, origin);
     const rpId = getRpIdForOrigin(origin);
     const fido = createFido2Lib(rpId);
     const options = await fido.attestationOptions();
@@ -62,7 +80,8 @@ export const passkeyRegisterOptions = onCall(async (context) => {
 });
 
 /* 2. Verify passkey registration */
-export const passkeyRegisterVerify = onCall(async ({ data }) => {
+export const passkeyRegisterVerify = onCall(async (context) => {
+    const { data } = context;
     const { attestation } = data ?? {};
     if (!attestation) {
         throw new HttpsError('invalid-argument', 'attestation required');
@@ -74,6 +93,7 @@ export const passkeyRegisterVerify = onCall(async ({ data }) => {
     if (!validateOrigin(clientDataJSON.origin)) {
         throw new HttpsError('permission-denied', 'Invalid origin');
     }
+    await limitRegisterVerify(context, clientDataJSON.origin);
     // Get appropriate RP ID for the origin
     const rpId = getRpIdForOrigin(clientDataJSON.origin);
     const fido = createFido2Lib(rpId);

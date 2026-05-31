@@ -12,6 +12,7 @@ import {
     resolveOrigin,
     isRpIdHashMismatch,
 } from '../lib/passkey.js';
+import { HOUR_MS, MINUTE_MS, ipLimitKey, limitCallable, uidLimitKey } from '../lib/ratelimit.js';
 import { ensureUserDoc } from '../lib/userdoc.js';
 
 const db = admin.firestore();
@@ -36,6 +37,30 @@ function cleanUid(value) {
 
 function challengeMatchesLogin(record, { origin, rpId }) {
     return record?.type === 'login' && record.origin === origin && record.rpId === rpId;
+}
+
+async function limitLoginOptions(context, origin, uid) {
+    const ipKey = ipLimitKey(context, 'passkey-login-options', origin);
+    const rules = [
+        { name: 'passkey-login-options-ip-minute', key: ipKey, limit: 30, windowMs: MINUTE_MS },
+        { name: 'passkey-login-options-ip-hour', key: ipKey, limit: 180, windowMs: HOUR_MS },
+    ];
+    if (uid) {
+        const uidKey = uidLimitKey(uid, 'passkey-login-options', origin);
+        rules.push(
+            { name: 'passkey-login-options-uid-minute', key: uidKey, limit: 20, windowMs: MINUTE_MS },
+            { name: 'passkey-login-options-uid-hour', key: uidKey, limit: 120, windowMs: HOUR_MS }
+        );
+    }
+    await limitCallable(context, rules);
+}
+
+async function limitLoginVerify(context, origin) {
+    const key = ipLimitKey(context, 'passkey-login-verify', origin);
+    await limitCallable(context, [
+        { name: 'passkey-login-verify-minute', key, limit: 40, windowMs: MINUTE_MS },
+        { name: 'passkey-login-verify-hour', key, limit: 240, windowMs: HOUR_MS },
+    ]);
 }
 
 async function getCredentialsForUid(uid, rpId) {
@@ -66,10 +91,10 @@ export const passkeyLoginOptions = onCall(async (context) => {
         throw new HttpsError('permission-denied', 'Invalid origin');
     }
     const rpId = getRpIdForOrigin(origin);
-    const fido = createFido2Lib(rpId);
-
-    const options = await fido.assertionOptions();
     const uid = cleanUid(context.data?.uid);
+    await limitLoginOptions(context, origin, uid);
+    const fido = createFido2Lib(rpId);
+    const options = await fido.assertionOptions();
     if (uid) {
         const allowCredentials = await getCredentialsForUid(uid, rpId);
         if (!allowCredentials.length) {
@@ -93,7 +118,8 @@ export const passkeyLoginOptions = onCall(async (context) => {
 });
 
 /* 4. Verify passkey login */
-export const passkeyLoginVerify = onCall(async ({ data }) => {
+export const passkeyLoginVerify = onCall(async (context) => {
+    const { data } = context;
     const { assertion } = data ?? {};
     if (!assertion) {
         throw new HttpsError('invalid-argument', 'assertion required');
@@ -107,6 +133,7 @@ export const passkeyLoginVerify = onCall(async ({ data }) => {
     }
 
     const rpId = getRpIdForOrigin(clientDataJSON.origin);
+    await limitLoginVerify(context, clientDataJSON.origin);
 
     // Verify challenge exists and is valid before accepting any credential.
     const challenge = await consumeChallenge(clientDataJSON.challenge);

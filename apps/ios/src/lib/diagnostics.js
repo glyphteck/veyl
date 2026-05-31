@@ -35,6 +35,7 @@ const SENSITIVE_STRING_KEYS = new Set(['chatId', 'deviceId', 'message', 'name', 
 let installed = false;
 let writeChain = Promise.resolve();
 let lines = [];
+let persistTimer = null;
 
 function safeJson(value) {
     try {
@@ -71,15 +72,25 @@ function line(label, data) {
     return `${new Date().toISOString()} ${label}${payload}`;
 }
 
-function persist(nextLine) {
+function flushPersist() {
     if (!FILE) return;
-    lines = [...lines, nextLine].slice(-MAX_LINES);
+    const payload = `${lines.join('\n')}\n`;
     writeChain = writeChain
         .then(async () => {
             if (!(await ensureDirectory(DIR, { quiet: true }))) return;
-            await FileSystem.writeAsStringAsync(FILE, `${lines.join('\n')}\n`).catch(() => {});
+            await FileSystem.writeAsStringAsync(FILE, payload).catch(() => {});
         })
         .catch(() => {});
+}
+
+function persist(nextLine) {
+    if (!FILE) return;
+    lines = [...lines, nextLine].slice(-MAX_LINES);
+    if (persistTimer) return;
+    persistTimer = setTimeout(() => {
+        persistTimer = null;
+        flushPersist();
+    }, 500);
 }
 
 function clearConsoleForBundleReload() {

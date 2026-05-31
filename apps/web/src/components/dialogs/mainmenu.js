@@ -32,47 +32,79 @@ import { useVault } from '@/components/providers/vaultprovider';
 import { useTxData } from '@/components/providers/txdataprovider';
 import { usePeer } from '@/components/providers/peerprovider';
 import { useCloak } from '@veyl/shared/providers/cloakprovider';
-import { formatCacheSize } from '@veyl/shared/utils/display';
-import { mergeProfiles } from '@veyl/shared/search/merge';
 import { sameText } from '@veyl/shared/utils/text';
-import { completeCommandPrefix, getTypingUsername, matchCommands, parseCommand, parseCommandAmountSats } from '@veyl/shared/commands';
-import { hasAvailableBalance } from '@veyl/shared/wallet/balance';
+import { parseCommandAmountSats } from '@veyl/shared/commands';
 import { useChat } from '@/components/providers/chatprovider';
 import { cn } from '@/lib/classes';
 import { formatUserDisplay } from '@veyl/shared/profile';
 import { renderMoney } from '@veyl/shared/money';
-import { formatFullDateTime } from '@veyl/shared/utils/time';
 import {
     LIST_HEIGHT,
     ROW_HEIGHT,
+    buildMainMenuModel,
+    completeMainMenuInput,
     countRows,
     findRow,
-    getOrderedPeers,
+    getMainMenuEmptyState,
+    getMainMenuMatchedPeers,
+    getMainMenuSearchState,
+    getMainMenuSearchTarget,
+    getMainMenuTopPeers,
+    getMainMenuTransactions,
+    getMenuSignature,
     getVisibleWindow,
-    textMatches,
 } from '@/lib/mainmenu';
 import { useSearch } from '@/lib/search/usesearch';
 import { shortcuts } from '@/lib/shortcuts';
 import { isEditableTarget, listNavigationStep } from '@/lib/focus';
 import { Bitcoin } from '@/components/bitcoin';
-import { getMsgPreview as displayLastMsg, makeReq, makeTxt } from '@veyl/shared/chat/messages';
+import { makeReq, makeTxt } from '@veyl/shared/chat/messages';
 import { Dot } from '@/components/dot';
 import { qr } from '@veyl/shared/qr';
 import { getChatId } from '@veyl/shared/crypto/chat';
+import { Shortcut } from '@/components/shortcut';
 
-function rowsSection(key, rows) {
+const ROW_ICONS = {
+    arrowDownLeft: ArrowDownLeft,
+    arrowUpRight: ArrowUpRight,
+    banknoteArrowDown: BanknoteArrowDown,
+    banknoteArrowUp: BanknoteArrowUp,
+    bot: Bot,
+    box: Box,
+    camera: Camera,
+    eye: Eye,
+    eyeOff: EyeOff,
+    hammer: Hammer,
+    history: History,
+    lock: Lock,
+    logOut: LogOut,
+    messageCircle: MessageCircle,
+    messageCirclePlus: MessageCirclePlus,
+    settings2: Settings2,
+    trash2: Trash2,
+    wallet: Wallet,
+};
+
+function renderIcon(name) {
+    if (name === 'bitcoin') {
+        return <Bitcoin className="size-5 grower" />;
+    }
+    const Icon = ROW_ICONS[name];
+    return Icon ? <Icon /> : null;
+}
+
+function rowsSection(section, selectAction) {
+    const rows = section.rows || [];
     return {
-        key,
+        key: section.key,
         count: rows.length,
         keyFor: (index) => rows[index]?.key,
-        select: (index) => rows[index]?.select?.(),
+        select: (index) => selectAction(rows[index]?.action),
         render: (index, active, onActive, separated) => {
             const row = rows[index];
             if (!row) return null;
             return (
-                <MainMenuItem active={active} className={cn(separated && 'shadow-[inset_0_1px_0_0_var(--border)]', row.className)} onActive={onActive} onSelect={row.select}>
-                    {row.content}
-                </MainMenuItem>
+                <MainMenuRow row={row} active={active} separated={separated} onActive={onActive} onSelect={() => selectAction(row.action)} />
             );
         },
     };
@@ -118,7 +150,85 @@ function MainMenuItem({ active, className, children, onActive, onSelect }) {
 }
 
 function MainMenuShortcut({ className, ...props }) {
-    return <span className={cn('ml-auto text-sm font-black tracking-widest text-muted', className)} {...props} />;
+    return <Shortcut className={className} {...props} />;
+}
+
+function MainMenuRowContent({ row }) {
+    if (row.kind === 'user') {
+        const peer = row.peer;
+        return (
+            <>
+                <Avatar active={peer?.active} bot={!!peer?.bot}>
+                    <AvatarImage src={peer?.avatar} alt={row.label || peer?.username || 'user'} />
+                    <AvatarFallback />
+                </Avatar>
+                <span>{row.label}</span>
+            </>
+        );
+    }
+
+    if (row.kind === 'transaction') {
+        return (
+            <>
+                <Avatar active={row.active} bot={row.bot}>
+                    <AvatarImage src={row.avatarSrc} alt={row.displayName} />
+                    <AvatarFallback />
+                </Avatar>
+                <span className="min-w-0 flex-1 truncate font-black">{row.displayName}</span>
+                <span className="ml-auto flex shrink-0 flex-col items-end leading-none">
+                    <span className="text-xs text-muted">{row.status}</span>
+                    <span className={cn('truncate text-xs font-black', row.amountClassName)}>{row.amount}</span>
+                </span>
+            </>
+        );
+    }
+
+    if (row.mono) {
+        return <span className="font-mono">{row.title || row.label}</span>;
+    }
+
+    const icon = renderIcon(row.icon);
+    const trailingIcon = renderIcon(row.trailingIcon);
+    const label = row.title || row.label;
+
+    return (
+        <>
+            {row.dot !== undefined ? (
+                <Dot show={!!row.dot} compact>
+                    {icon}
+                </Dot>
+            ) : (
+                icon
+            )}
+            {row.subtitle ? (
+                <span className="flex min-w-0 items-center gap-2">
+                    <span>{label}</span>
+                    <span className="truncate text-muted">{row.subtitle}</span>
+                </span>
+            ) : (
+                <span>{label}</span>
+            )}
+            {row.shortcut ? <MainMenuShortcut>{shortcuts[row.shortcut]}</MainMenuShortcut> : null}
+            {row.trailing ? (
+                trailingIcon ? (
+                    <div className="ml-auto flex items-center gap-1 text-sm text-muted">
+                        {trailingIcon}
+                        <span>{row.trailing}</span>
+                    </div>
+                ) : (
+                    <span className="ml-auto text-sm text-muted">{row.trailing}</span>
+                )
+            ) : null}
+        </>
+    );
+}
+
+function MainMenuRow({ row, active, separated, onActive, onSelect }) {
+    return (
+        <MainMenuItem active={active} className={cn(separated && 'shadow-[inset_0_1px_0_0_var(--border)]', row.className)} onActive={onActive} onSelect={onSelect}>
+            <MainMenuRowContent row={row} />
+        </MainMenuItem>
+    );
 }
 
 function MainMenuEmpty({ children }) {
@@ -206,13 +316,15 @@ export default function MainMenu({ close, data, open = true }) {
     const inputRef = useRef(null);
     const clearingCacheRef = useRef(false);
     const cacheRefreshRef = useRef(0);
-    const hasBalance = balance && balance > 0;
     const hasUnseenChats = !!chats?.some((c) => c?.unseen);
     const showWalletDot = false;
-    const showAllTx = searchValue.trim() === '#';
-    const browseUsers = query?.kind === 'username' && !query.value;
-    const showSlashCommands = searchValue.startsWith('/');
-    const showUserSearch = !!query && !showSlashCommands;
+    const searchState = useMemo(() => getMainMenuSearchState(searchValue, query), [query, searchValue]);
+    const topPeers = useMemo(() => getMainMenuTopPeers(recentPeers), [recentPeers]);
+    const matchedPeers = useMemo(
+        () => getMainMenuMatchedPeers({ searchState, peers, recentPeers, results, query, uid }),
+        [peers, query, recentPeers, results, searchState, uid]
+    );
+    const txs = useMemo(() => getMainMenuTransactions(searchState, sortedTransactions), [searchState, sortedTransactions]);
 
     const openUser = useCallback(
         (peer) => {
@@ -220,9 +332,6 @@ export default function MainMenu({ close, data, open = true }) {
         },
         [openDialog, uid]
     );
-    const matchedSlashCommands = showSlashCommands ? matchCommands(searchValue, { mode: 'mainmenu' }) : [];
-    const parsedSlashCommand = showSlashCommands ? parseCommand(searchValue, { mode: 'mainmenu' }) : null;
-    const typingUsername = showSlashCommands ? getTypingUsername(searchValue, { mode: 'mainmenu' }) : null;
 
     const openFundingQr = async () => {
         close();
@@ -321,24 +430,19 @@ export default function MainMenu({ close, data, open = true }) {
 
     const handleSearchChange = (value) => {
         setSearchValue(value);
-        if (!value) {
+        const target = getMainMenuSearchTarget(value);
+        if (!target) {
             clearSearch();
             return;
         }
-        if (value.startsWith('/')) {
-            const typing = getTypingUsername(value, { mode: 'mainmenu' });
-            if (typing !== null) search(`@${typing}`);
-            else clearSearch();
-        } else {
-            search(value);
-        }
+        search(target);
     };
 
     const handleInputCompletion = (event) => {
         if (event.key !== 'Tab' || event.shiftKey || event.metaKey || event.ctrlKey || event.altKey) {
             return;
         }
-        const next = completeCommandPrefix(searchValue, { mode: 'mainmenu' });
+        const next = completeMainMenuInput(searchValue);
         if (!next) {
             return;
         }
@@ -402,16 +506,6 @@ export default function MainMenu({ close, data, open = true }) {
         };
     }, [localCache]);
 
-    const topPeers = (recentPeers?.all || []).slice(0, 3);
-    const matchedPeers = useMemo(() => {
-        if (!query) return [];
-        if (browseUsers) {
-            return getOrderedPeers({ peers, recentPeers, excludeUid: uid });
-        }
-        return mergeProfiles({ local: peers || [], remote: results || [], parsed: query, excludeUid: uid });
-    }, [browseUsers, peers, query, recentPeers?.all, results, uid]);
-    const txs = useMemo(() => (showAllTx ? sortedTransactions || [] : []), [showAllTx, sortedTransactions]);
-
     const openRoute = (href) => {
         router.push(href);
         close();
@@ -435,461 +529,81 @@ export default function MainMenu({ close, data, open = true }) {
         window.setTimeout(() => inputRef.current?.focus({ preventScroll: true }), 0);
     };
 
-    const userSection = (key, list, select) => ({
-        key,
-        count: list.length,
-        keyFor: (index) => list[index]?.uid || `${key}-${index}`,
-        select: (index) => select(list[index]),
-        render: (index, active, onActive, separated) => {
-            const peer = list[index];
-            if (!peer) return null;
-            return (
-                <MainMenuItem active={active} className={separated && 'shadow-[inset_0_1px_0_0_var(--border)]'} onActive={onActive} onSelect={() => select(peer)}>
-                    <Avatar active={peer?.active} bot={!!peer?.bot}>
-                        <AvatarImage src={peer.avatar} alt={peer.username || 'user'} />
-                        <AvatarFallback />
-                    </Avatar>
-                    <span>{formatUserDisplay(peer, true)}</span>
-                </MainMenuItem>
-            );
-        },
+    const handleAction = (action) => {
+        if (!action) return;
+        if (action.type === 'dialog') {
+            openDialog(action.id, action.data);
+        } else if (action.type === 'route') {
+            openRoute(action.href);
+        } else if (action.type === 'fundingQr') {
+            void openFundingQr();
+        } else if (action.type === 'clearCache') {
+            void clearCache();
+        } else if (action.type === 'cloak') {
+            close();
+            cloak();
+        } else if (action.type === 'lock') {
+            lock();
+        } else if (action.type === 'external') {
+            close();
+            window.open(action.href, '_blank');
+        } else if (action.type === 'txdetails') {
+            openDialog('txdetails', { tx: action.tx });
+        } else if (action.type === 'openUser') {
+            openUser(action.peer);
+        } else if (action.type === 'fillSlashCommand') {
+            handleSearchChange(`/${action.name} @`);
+            focusInput();
+        } else if (action.type === 'fillSlashUser') {
+            if (!action.slashName || !action.peer?.username) return;
+            handleSearchChange(`/${action.slashName} @${action.peer.username} `);
+            focusInput();
+        } else if (action.type === 'runSlash') {
+            void runSlashCommand(action.parsed);
+        }
+    };
+
+    const modelSections = buildMainMenuModel({
+        avatar,
+        balance,
+        bitcoin,
+        cacheSize,
+        chatBanned,
+        chatPK,
+        cloaked,
+        hasChats,
+        hasTx,
+        hasUnseenChats,
+        isAdmin,
+        lastChat,
+        matchedPeers,
+        peerByChatPK,
+        peerByWalletPK,
+        searchState,
+        searchValue,
+        settings,
+        showWalletDot,
+        topPeers,
+        txs,
+        uid,
+        username,
     });
-
-    const menuSections = [];
-
-    if (showSlashCommands && matchedSlashCommands.length > 0) {
-        if (parsedSlashCommand?.complete) {
-            const { username: targetUsername, amount, message } = parsedSlashCommand.args;
-            const label = parsedSlashCommand.name === 'msg' ? `msg @${targetUsername}: ${message}` : `${parsedSlashCommand.name} ${amount} sats to @${targetUsername}`;
-            menuSections.push(
-                rowsSection('slash', [
-                    {
-                        key: 'slash-execute',
-                        label: `/${label}`,
-                        value: searchValue,
-                        keywords: [searchValue.trim()],
-                        select: () => runSlashCommand(parsedSlashCommand),
-                        content: <span>/{label}</span>,
-                    },
-                ])
-            );
-        } else if (typingUsername !== null && matchedPeers.length > 0) {
-            menuSections.push(
-                userSection('slash-users', matchedPeers, (peer) => {
-                    const slashCommand = matchedSlashCommands[0];
-                    if (!slashCommand || !peer?.username) return;
-                    handleSearchChange(`/${slashCommand.name} @${peer.username} `);
-                    focusInput();
-                })
-            );
-        } else if (parsedSlashCommand?.args?.username) {
-            const { username: targetUsername } = parsedSlashCommand.args;
-            const hintLabel =
-                parsedSlashCommand.name === 'msg'
-                    ? `send a message to @${targetUsername}`
-                    : parsedSlashCommand.name === 'send'
-                      ? `send money to @${targetUsername}`
-                      : parsedSlashCommand.name === 'request'
-                        ? `request money from @${targetUsername}`
-                        : null;
-            if (hintLabel) {
-                menuSections.push(
-                    rowsSection('slash', [
-                        {
-                            key: 'slash-hint',
-                            label: hintLabel,
-                            value: searchValue,
-                            keywords: [searchValue.trim(), `/${parsedSlashCommand.name} ${targetUsername}`, `/${parsedSlashCommand.name} ${targetUsername} `],
-                            select: () => runSlashCommand(parsedSlashCommand),
-                            content: <span>{hintLabel}</span>,
-                        },
-                    ])
-                );
-            }
-        } else {
-            menuSections.push(
-                rowsSection(
-                    'slash',
-                    matchedSlashCommands.map((slashCommand) => ({
-                        key: slashCommand.name,
-                        label: slashCommand.name,
-                        value: `/${slashCommand.name}`,
-                        keywords: ['/', slashCommand.name, searchValue],
-                        select: () => {
-                            handleSearchChange(`/${slashCommand.name} @`);
-                            focusInput();
-                        },
-                        content: <span className="font-mono">{slashCommand.syntax}</span>,
-                    }))
-                )
-            );
-        }
-    }
-
-    if (!searchValue && topPeers.length > 0) {
-        menuSections.push(userSection('top-users', topPeers, openUser));
-    }
-
-    if (!showSlashCommands && !showUserSearch && !showAllTx) {
-        const staticFilter = searchValue;
-        const moneyRows = [
-            !chatBanned && {
-                key: 'newchat',
-                label: 'new chat',
-                keywords: ['message', 'chat', 'dm', 'conversation'],
-                select: () => openDialog('newchat'),
-                content: (
-                    <>
-                        <MessageCirclePlus />
-                        <span>new chat</span>
-                        <MainMenuShortcut>{shortcuts.newchat}</MainMenuShortcut>
-                    </>
-                ),
-            },
-            hasBalance && {
-                key: 'sendmoney',
-                label: 'send money',
-                select: () => openDialog('payments', { tab: 'send' }),
-                content: (
-                    <>
-                        <ArrowUpRight />
-                        <span>send money</span>
-                        <MainMenuShortcut>{shortcuts.sendmoney}</MainMenuShortcut>
-                    </>
-                ),
-            },
-            {
-                key: 'requestmoney',
-                label: 'request money',
-                select: () => openDialog('payments', { tab: 'request' }),
-                content: (
-                    <>
-                        <ArrowDownLeft />
-                        <span>request money</span>
-                        <MainMenuShortcut>{shortcuts.requestmoney}</MainMenuShortcut>
-                    </>
-                ),
-            },
-        ].filter(Boolean);
-        const filteredMoneyRows = moneyRows.filter((row) => textMatches(row, staticFilter));
-        if (filteredMoneyRows.length) menuSections.push(rowsSection('money', filteredMoneyRows));
-
-        const viewRows = [
-            !chatBanned && {
-                key: 'chat',
-                label: 'chat',
-                select: () => openRoute('/chat'),
-                content: (
-                    <>
-                        <Dot show={hasUnseenChats && !cloaked} compact>
-                            <MessageCircle />
-                        </Dot>
-                        <span className="flex min-w-0 items-center gap-2">
-                            <span>chat</span>
-                            {lastChat && !cloaked && (
-                                <span className="truncate text-muted">
-                                    {(() => {
-                                        const profile = peerByChatPK.get(lastChat.peerChatPK) ?? null;
-                                        const displayName = formatUserDisplay(
-                                            {
-                                                username: profile?.username,
-                                                chatPK: lastChat.peerChatPK,
-                                            },
-                                            true
-                                        );
-                                        const lastMessage = displayLastMsg(lastChat.lastMsg, chatPK, settings, bitcoin.price);
-                                        const truncatedMessage = lastMessage.length > 24 ? `${lastMessage.slice(0, 24)}...` : lastMessage;
-                                        return `${displayName}: ${truncatedMessage}`;
-                                    })()}
-                                </span>
-                            )}
-                        </span>
-                        <MainMenuShortcut>{shortcuts.chat}</MainMenuShortcut>
-                    </>
-                ),
-            },
-            {
-                key: 'camera',
-                label: 'camera',
-                keywords: ['scan', 'qr'],
-                select: () => openRoute('/camera'),
-                content: (
-                    <>
-                        <Camera />
-                        <span>camera</span>
-                        <MainMenuShortcut>{shortcuts.camera}</MainMenuShortcut>
-                    </>
-                ),
-            },
-            {
-                key: 'wallet',
-                label: 'dashboard',
-                keywords: ['dashboard', 'overview', 'home', 'wallet'],
-                select: () => openRoute('/wallet'),
-                content: (
-                    <>
-                        <Dot show={showWalletDot && !cloaked} compact>
-                            <Wallet />
-                        </Dot>
-                        <span className="flex min-w-0 items-center gap-2">
-                            <span>dashboard</span>
-                            {balance !== null && balance > 0 && !cloaked && <span className="truncate text-muted">{renderMoney(balance, settings?.moneyFormat, bitcoin.price)}</span>}
-                        </span>
-                        <MainMenuShortcut>{shortcuts.wallet}</MainMenuShortcut>
-                    </>
-                ),
-            },
-            hasTx && {
-                key: 'transactions',
-                label: 'transaction history',
-                keywords: ['transactions', 'history'],
-                select: () => openRoute('/transactions'),
-                content: (
-                    <>
-                        <History />
-                        <span>transaction history</span>
-                        <MainMenuShortcut>{shortcuts.transactions}</MainMenuShortcut>
-                    </>
-                ),
-            },
-            isAdmin && {
-                key: 'admin',
-                label: 'admin',
-                keywords: ['admin', 'reports', 'moderation'],
-                select: () => openRoute('/admin/reports'),
-                content: (
-                    <>
-                        <Hammer />
-                        <span>admin</span>
-                        <MainMenuShortcut>{shortcuts.admin}</MainMenuShortcut>
-                    </>
-                ),
-            },
-            isAdmin && {
-                key: 'bot',
-                label: 'bot',
-                keywords: ['bot', 'automation', 'reviewer', 'mirror'],
-                select: () => openRoute('/admin/bots'),
-                content: (
-                    <>
-                        <Bot />
-                        <span>bot</span>
-                        <MainMenuShortcut>{shortcuts.bot}</MainMenuShortcut>
-                    </>
-                ),
-            },
-        ].filter(Boolean);
-        const filteredViewRows = viewRows.filter((row) => textMatches(row, staticFilter));
-        if (filteredViewRows.length) menuSections.push(rowsSection('views', filteredViewRows));
-
-        const walletRows = [
-            {
-                key: 'fund',
-                label: 'fund wallet',
-                select: openFundingQr,
-                content: (
-                    <>
-                        <BanknoteArrowDown />
-                        <span>fund wallet</span>
-                    </>
-                ),
-            },
-            hasAvailableBalance(balance) && {
-                    key: 'withdraw',
-                    label: 'withdraw funds',
-                    select: () => openDialog('withdraw'),
-                    content: (
-                        <>
-                            <BanknoteArrowUp />
-                            <span>withdraw funds</span>
-                        </>
-                    ),
-                },
-        ].filter(Boolean);
-        const filteredWalletRows = walletRows.filter((row) => textMatches(row, staticFilter));
-        if (filteredWalletRows.length) menuSections.push(rowsSection('wallet', filteredWalletRows));
-
-        const appRows = [
-            {
-                key: 'settings',
-                label: 'settings',
-                keywords: ['change', 'currency', 'lock', 'profile', 'preferences', 'avatar'],
-                select: () => openDialog('settings'),
-                content: (
-                    <>
-                        <Settings2 />
-                        <span>settings</span>
-                        <MainMenuShortcut>{shortcuts.settings}</MainMenuShortcut>
-                    </>
-                ),
-            },
-            (hasChats || hasTx) && {
-                key: 'cloak',
-                label: cloaked ? 'uncloak' : 'cloak',
-                keywords: ['cloak', 'uncloak', 'hide', 'vision', 'privacy', 'view', 'show'],
-                select: () => {
-                    close();
-                    cloak();
-                },
-                content: (
-                    <>
-                        {cloaked ? <EyeOff /> : <Eye />}
-                        <span>{cloaked ? 'uncloak' : 'cloak'}</span>
-                        <MainMenuShortcut>{shortcuts.cloak}</MainMenuShortcut>
-                    </>
-                ),
-            },
-            {
-                key: 'clear-cache',
-                label: 'clear cache',
-                keywords: ['cache', 'clear', 'delete', 'storage'],
-                select: clearCache,
-                content: (
-                    <>
-                        <Trash2 />
-                        <span>clear cache</span>
-                        <span className="ml-auto text-sm text-muted">{formatCacheSize(cacheSize)}</span>
-                    </>
-                ),
-            },
-        ].filter(Boolean);
-        const filteredAppRows = appRows.filter((row) => textMatches(row, staticFilter));
-        if (filteredAppRows.length) menuSections.push(rowsSection('app', filteredAppRows));
-
-        const sessionRows = [
-            {
-                key: 'lock',
-                label: 'lock vault',
-                select: () => lock(),
-                content: (
-                    <>
-                        <Lock />
-                        <span>lock vault</span>
-                        <MainMenuShortcut>{shortcuts.lock}</MainMenuShortcut>
-                    </>
-                ),
-            },
-            {
-                key: 'logout',
-                label: 'logout',
-                select: () => openDialog('rememberaccount', { user: { uid, username, avatar } }),
-                content: (
-                    <>
-                        <LogOut />
-                        <span>logout</span>
-                        <MainMenuShortcut>{shortcuts.logout}</MainMenuShortcut>
-                    </>
-                ),
-            },
-        ];
-        const filteredSessionRows = sessionRows.filter((row) => textMatches(row, staticFilter));
-        if (filteredSessionRows.length) menuSections.push(rowsSection('session', filteredSessionRows));
-
-        const accountRows = [
-            {
-                key: 'delete-account',
-                label: 'delete account',
-                className: 'text-destructive',
-                select: () => openDialog('deleteaccount'),
-                content: (
-                    <>
-                        <Trash2 />
-                        <span>delete account</span>
-                    </>
-                ),
-            },
-        ];
-        const filteredAccountRows = accountRows.filter((row) => textMatches(row, staticFilter));
-        if (filteredAccountRows.length) menuSections.push(rowsSection('account', filteredAccountRows));
-
-        if (searchValue && bitcoin) {
-            const bitcoinRow = {
-                key: 'bitcoin',
-                label: 'bitcoin',
-                keywords: ['btc', 'price', 'mempool', 'block'],
-                select: () => {
-                    close();
-                    window.open('https://mempool.space/', '_blank');
-                },
-                content: (
-                    <>
-                        <Bitcoin className="size-5 grower" />
-                        <span>${bitcoin.price?.toLocaleString()}</span>
-                        <div className="ml-auto flex items-center gap-1 text-sm text-muted">
-                            <Box />
-                            <span>{bitcoin.block?.toLocaleString()}</span>
-                        </div>
-                    </>
-                ),
-            };
-            if (textMatches(bitcoinRow, staticFilter)) menuSections.push(rowsSection('bitcoin', [bitcoinRow]));
-        }
-    }
-
-    if (showUserSearch && matchedPeers.length > 0) {
-        menuSections.push(userSection('users', matchedPeers, openUser));
-    }
-
-    if (showAllTx && txs.length > 0) {
-        menuSections.push({
-            key: 'transactions',
-            count: txs.length,
-            keyFor: (index) => txs[index]?.id || `tx-${index}`,
-            select: (index) => {
-                const tx = txs[index];
-                if (tx) openDialog('txdetails', { tx });
-            },
-            render: (index, active, onActive, separated) => {
-                const tx = txs[index];
-                if (!tx) return null;
-                const peer = peerByWalletPK.get(tx.peerPK);
-                const peerDisplayName = tx.funding ? 'Funded' : tx.withdrawal ? 'Withdrawn' : formatUserDisplay(peer || { walletPK: tx.peerPK }, true);
-                return (
-                    <MainMenuItem active={active} className={separated && 'shadow-[inset_0_1px_0_0_var(--border)]'} onActive={onActive} onSelect={() => openDialog('txdetails', { tx })}>
-                        <Avatar active={tx.funding || tx.withdrawal ? false : peer?.active} bot={!!peer?.bot}>
-                            <AvatarImage src={tx.funding || tx.withdrawal ? avatar : peer?.avatar} alt={peerDisplayName} />
-                            <AvatarFallback />
-                        </Avatar>
-                        <span className="min-w-0 flex-1 truncate font-black">{peerDisplayName}</span>
-                        <span className="ml-auto flex shrink-0 flex-col items-end leading-none">
-                            <span className="text-xs text-muted">{tx.pending ? 'pending' : formatFullDateTime(tx.createdTime)}</span>
-                            <span className={`truncate text-xs font-black ${tx.incoming ? 'text-inflow' : 'text-outflow'} ${tx.pending ? 'opacity-50' : ''} ${cloaked ? 'cloaked' : ''}`}>
-                                {renderMoney(tx.totalValue, settings?.moneyFormat, bitcoin.price, tx.incoming ? '+' : '-')}
-                            </span>
-                        </span>
-                    </MainMenuItem>
-                );
-            },
-        });
-    }
-
+    const menuSections = modelSections.map((section) => rowsSection(section, handleAction));
     const menuTotal = countRows(menuSections);
-    const menuSignature = menuSections.map((section) => `${section.key}:${section.count}`).join('|');
+    const menuSignature = getMenuSignature(modelSections);
     const listId = 'mainmenu-list';
     const activeId = menuTotal > 0 && activeIndex >= 0 ? `${listId}-item-${activeIndex}` : '';
-    const emptyMessage =
-        searching && query?.value ? (
-            <Loader className="size-6 animate-spin" />
-        ) : showSlashCommands && matchedSlashCommands.length === 0 ? (
-            'unknown / command'
-        ) : showSlashCommands && typingUsername !== null ? (
-            'no users found'
-        ) : browseUsers ? (
-            'search users'
-        ) : showAllTx ? (
-            'no transactions'
-        ) : (
-            'no results'
-        );
+    const emptyState = getMainMenuEmptyState({ query, searchState, searching });
+    const emptyMessage = emptyState.type === 'loading' ? <Loader className="size-6 animate-spin" /> : emptyState.text;
 
     useEffect(() => {
         setActiveIndex(menuTotal > 0 ? 0 : -1);
     }, [menuSignature, searchValue, menuTotal]);
 
     useEffect(() => {
-        if (!showAllTx || !hasMoreTxs || isTxLoading || activeIndex < 0 || menuTotal - activeIndex > 20) return;
+        if (!searchState.showAllTx || !hasMoreTxs || isTxLoading || activeIndex < 0 || menuTotal - activeIndex > 20) return;
         void loadMoreTxs?.();
-    }, [activeIndex, hasMoreTxs, isTxLoading, loadMoreTxs, menuTotal, showAllTx]);
+    }, [activeIndex, hasMoreTxs, isTxLoading, loadMoreTxs, menuTotal, searchState.showAllTx]);
 
     const handleMenuKeyDown = (event) => {
         if (event.defaultPrevented || event.nativeEvent?.isComposing) return;

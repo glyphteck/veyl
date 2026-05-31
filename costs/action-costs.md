@@ -4,6 +4,8 @@ This file ties the repo-derived server actions in [server-actions.md](server-act
 
 These are gross operation costs before daily/monthly free quotas. [README.md](README.md) applies the common free quotas for the monthly model.
 
+For sustained app-wide messages-per-second costs, use [message-rate-costs.md](message-rate-costs.md).
+
 ## Single action costs
 
 | User action | Server actions included | Gross cost |
@@ -14,8 +16,8 @@ These are gross operation costs before daily/monthly free quotas. [README.md](RE
 | Launch/unlock web app, 10 min | Route guard, seed read, core listeners, blocked query, bitcoin listener, chat list, one warmed chat, presence | ~$0.000040 |
 | Launch/unlock iOS app, 10 min | Seed listener, core listeners, blocked query, bitcoin listener, chat list, one warmed chat, presence | ~$0.000039 |
 | Open a chat | Adaptive recent message listener targeting 20 post-retention readable messages, no older prefetch | ~$0.000014 normal, up to ~$0.000038 in control-heavy spans |
-| Send text message | Message write, parent chat update, rules reads, chat push-trigger function and reads | ~$0.000009 |
-| Send payment request | Same server cost as text message | ~$0.000009 |
+| Send text message | Message write, parent chat update, rules reads, chat push-trigger function and reads | ~$0.000009 active push, ~$0.000006 no active push; queue-coalesced burst sends are ~$0.000004 before the final parent sync |
+| Send payment request | Same server cost as text message | ~$0.000009 active push, ~$0.000006 no active push; queue-coalesced burst sends are ~$0.000004 before the final parent sync |
 | Send media or long text | Text-message cost plus one Storage upload | ~$0.000014 before stored bytes |
 | Send same media to 5 people | One upload reused across five message sends | ~$0.000052 before stored bytes |
 | Recipient reads message | Encrypted read receipt message write and rules reads | ~$0.000004 |

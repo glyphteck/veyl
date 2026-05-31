@@ -26,11 +26,12 @@ Use this guide for any change to encrypted chat, chat rows, message payloads, re
 2. The message doc is written with a fixed 21-day `ttl`, unless the user explicitly saves the message forever later.
 3. The parent chat doc stores participants, independent recency `ts`, encrypted `lastMsg`, and encrypted `settings`. `lastMsg` is only a preview hint; `chat.ts` is the row ordering source of truth.
 4. Reading writes encrypted `rr` controls after a debounce. Controls do not update `lastMsg` and do not trigger chat push.
-5. Visible message lists apply the encrypted retention timeline. `on seen` hides after the viewer releases the message; `24h after seen` hides after the first covering receipt is 24 hours old.
-6. While a chat route is mounted, already-rendered rows are held visible so the UI does not erase messages under the user.
-7. After the UI releases hidden messages, the client writes an encrypted `hid` checkpoint. Checkpoints are a no-hole waterline and must not skip over an older hidden row still held visible.
-8. A client may delete an unsaved received display message only after both participants' hidden checkpoints cover it. The receiver owns this smart delete to avoid duplicate delete churn.
-9. Firestore TTL remains a backup that eventually deletes any unsaved message not cleaned up by clients.
+5. Visible user sends go through a soft client queue that allows short bursts but caps sustained write starts at 12 sends per 10 seconds. Established-chat bursts coalesce parent `lastMsg` writes at queue drain: queued sends write message docs first, then the queue syncs the latest parent chat row per chat when it clears. New chats still write the parent row immediately so rules can authorize message creation. This is UX pacing and cost control, not backend abuse control.
+6. Visible message lists apply the encrypted retention timeline. `on seen` hides after the viewer releases the message; `24h after seen` hides after the first covering receipt is 24 hours old.
+7. While a chat route is mounted, already-rendered rows are held visible so the UI does not erase messages under the user.
+8. After the UI releases hidden messages, the client writes an encrypted `hid` checkpoint. Checkpoints are a no-hole waterline and must not skip over an older hidden row still held visible.
+9. A client may delete an unsaved received display message only after both participants' hidden checkpoints cover it. The receiver owns this smart delete to avoid duplicate delete churn.
+10. Firestore TTL remains a backup that eventually deletes any unsaved message not cleaned up by clients.
 
 ## Saving And Media
 
@@ -68,4 +69,4 @@ Use this guide for any change to encrypted chat, chat rows, message payloads, re
 - Do not add plaintext read state, reaction state, retention mode, hidden state, or "currently in chat" state to chat docs.
 - Do not reintroduce read-time plaintext TTL shortening.
 - Do not make `lastMsg` authoritative for chat existence, ordering, or retention.
-- When changing message lifecycle, update web, iOS, bot runtime, README, this guide, security guidance, Firestore rules if needed, and the cost docs.
+- When changing message lifecycle, update web, iOS, bot runtime, this guide, security guidance, Firestore rules if needed, and cost docs. Update `README.md` only if the human product overview changes.

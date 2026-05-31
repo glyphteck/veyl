@@ -11,6 +11,7 @@ import { clearAudioCache } from '@/lib/chat/audiocache';
 import { preloadMessageMedia } from '@/lib/chat/preload';
 import { clearMsgImageCache, seedMsgImage } from '@/lib/chat/useimage';
 import { clearMsgVideoCache } from '@/lib/chat/videocache';
+import { mark } from '@/lib/diagnostics';
 
 const chat = createChat({
     db,
@@ -36,6 +37,7 @@ const { ChatProvider: SharedChatProvider, useChat } = createChatProvider({
             seedMsgImage(message, local.localUri, { priority: 4 });
         }
     },
+    diag: mark,
 });
 
 const ChatInputContext = createContext(null);

@@ -1,30 +1,24 @@
-# User behavior assumptions
+# Cost model assumptions
 
-These assumptions turn per-action server costs into a monthly operating model. The executable defaults live in [model.mjs](model.mjs) so assumptions can be changed in one place.
+These assumptions turn repo-derived action costs into monthly planning numbers. The executable defaults live in [model.mjs](model.mjs).
 
-## Model defaults
+## Scale variables
 
-| Variable | Assumption |
-| --- | ---: |
-| Days per month | 30 |
-| Monthly active users | 3x DAU |
-| Paid Auth MAU price after free quota | $0.0055 |
-| Auth free quota | 50,000 MAU/month |
-| Average media object | 5 MiB |
-| Average avatar object | 25 KiB |
-| Avatar upload rate | 90% of new accounts |
-| Saved text/payment messages | 10% |
-| Saved media messages | 10% |
-| Saved message document size | 2 KiB |
-| Routine unsaved media live set | 21 days |
-| Retained saved-history age in monthly table | 360 days |
-| Media download egress, function compute, Spark, moderation labor | $0 in this model |
+| Variable | Default | Meaning |
+| --- | ---: | --- |
+| `DAU` | 1,000,000 in the CLI | Daily active users, not registered accounts. |
+| `DAYS_PER_MONTH` | 30 | Month length used for monthly totals and message-rate math. |
+| `MAU_PER_DAU` | 3 | Monthly active users are modeled as 3x DAU. |
+| Auth free quota | 50,000 MAU/month | Applied before the `$0.0055` paid Auth MAU rate. |
+| `RETAINED_SAVED_DAYS` | 360 | Retained saved-history age used for saved media and saved message-doc storage. |
+
+The README's 100k DAU table means 100,000 daily active users and 300,000 monthly active users.
 
 ## Normal daily active user
 
-One daily active user is assumed to do this per day:
+One DAU-day is modeled as:
 
-| Behavior | Assumption |
+| Behavior | Default |
 | --- | ---: |
 | App launches/unlocks | 1 session |
 | Mounted session length | 10 minutes |
@@ -32,44 +26,66 @@ One daily active user is assumed to do this per day:
 | Text or payment-request messages sent | 10 |
 | Messages read, causing read receipts | 10 |
 | Reactions sent | 2 |
-| Media or long-text messages sent | 1 averaging 5 MiB |
-| Messages saved forever | 10% of sent messages |
-| Media messages saved forever | 10% of sent media messages |
-| Username/profile searches | 1 search returning 10 profiles |
+| Media or long-text messages sent | 1 |
+| Username/profile searches | 1 search returning about 10 profiles |
 | Push registration refreshes | 0 normal daily cost; only when token/device state changes |
 
-This is an active-user model, not a registered-user model. Use DAU, not total accounts.
+That bundle is about 260 Firestore read-equivalent ops, 35 Firestore writes, 11 function invocations, and 1 Storage Class A operation per DAU-day.
+
+## Media and retention variables
+
+| Variable | Default | Meaning |
+| --- | ---: | --- |
+| `MEDIA_MIB` | 5 MiB | Average encrypted media or long-text object size. |
+| `SAVED_TEXT_RATE` | 10% | Share of sent text/payment messages saved forever. |
+| `SAVED_MEDIA_RATE` | 10% | Share of sent media messages saved forever. |
+| Saved message doc size | 2 KiB | Planning size for each retained Firestore message doc including overhead. |
+| Routine unsaved media live set | 21 days | Unsaved media storage before lifecycle deletion catches up. |
+| `AVATAR_KIB` | 25 KiB | Average avatar object size. |
+| `AVATAR_UPLOAD_RATE` | 90% | Share of new accounts that upload an avatar. |
+
+Each DAU-day permanently adds about:
+
+- 1.1 saved message docs,
+- 2.2 KiB of saved Firestore message-doc storage,
+- 0.5 MiB of saved media storage.
+
+At sustained 100k DAU, one extra retained saved-history year adds about `$365/month` to the future monthly run-rate. The saved-media bytes dominate that buildup.
 
 ## New account
 
 One new account is assumed to:
 
-- create an account,
-- complete onboarding,
-- upload an avatar 90% of the time, averaging 25 KiB.
+- create a passkey account,
+- complete username/vault onboarding,
+- upload an avatar 90% of the time.
 
-Daily active behavior is modeled separately in the DAU table. Avatar upload is weighted separately because it adds Storage bytes.
-
-## Saved retention
-
-The retained-data model assumes 10% of sent messages are saved forever. That 10% is applied separately to normal text/payment messages and media/long-text messages so media retention can be estimated from a per-DAU-day storage addition.
-
-For rough Firestore retained-data math, a saved message document is estimated at 2 KiB including document and index overhead. This is intentionally conservative until real billing/export measurements exist.
-
-For media retained-data math, the default planning value is one 5 MiB encrypted media object per DAU-day. With 10% saved forever, each DAU-day permanently adds about 0.1 saved media object, or 0.5 MiB of saved media storage. The 21-day live media set before lifecycle deletion is modeled from the full one media object per DAU-day.
-
-If the average media object changes, media stored-byte costs scale linearly.
-
-## Scale points
-
-Monthly totals are shown for:
-
-- 100 daily active users,
-- 1,000 daily active users,
-- 10,000 daily active users,
-- 100,000 daily active users,
-- 1,000,000 daily active users.
+Daily active behavior is modeled separately. Paid Auth MAU is a monthly active-user charge, not a one-time lifetime signup fee.
 
 ## Zero-dollar defaults
 
-The monthly table assumes `$0` for media download egress, Cloud Functions CPU/memory duration beyond invocation charges, Firestore index-entry reads from Query Explain, Spark wallet/payment network costs, and moderation labor. These are zero-default variables in [model.mjs](model.mjs).
+The monthly table intentionally leaves these as `$0` until real usage or vendor costs are known:
+
+| Environment variable | Default |
+| --- | ---: |
+| `MEDIA_DOWNLOAD_GIB_PER_DAU_MONTH` | 0 |
+| `MEDIA_DOWNLOAD_GIB_COST` | 0 |
+| `FUNCTION_COMPUTE_COST_PER_DAU_MONTH` | 0 |
+| `SPARK_COST_PER_DAU_MONTH` | 0 |
+| `MODERATION_COST_MONTH` | 0 |
+
+Those zero defaults keep the model focused on Firebase operations, stored bytes, and Auth MAU. Change them in the environment or in [model.mjs](model.mjs) when those costs become known.
+
+## Message-rate variables
+
+Sustained app-wide throughput is separate from DAU scale. See [message-rate-costs.md](message-rate-costs.md).
+
+| Environment variable | Default | Meaning |
+| --- | ---: | --- |
+| `MESSAGES_PER_SECOND` | unset | Enables the message-rate CLI output. |
+| `INCLUDE_READ_RECEIPTS` | false | Adds one read receipt per visible send. |
+| `MESSAGE_SEND_READS` | 9 | Firestore reads per active-push visible send. |
+| `MESSAGE_SEND_WRITES` | 2 | Firestore writes per visible send. |
+| `MESSAGE_SEND_FUNCTIONS` | 1 | Function invocations per visible send. |
+| `READ_RECEIPT_READS` | 3 | Firestore reads per read receipt. |
+| `READ_RECEIPT_WRITES` | 1 | Firestore writes per read receipt. |

@@ -6,14 +6,15 @@ import { VAULT_CRYPTO, VAULT_KDF } from './seed.js';
 
 const SEED_MAGIC = encoder.encode(VAULT_CRYPTO);
 
-const concat = (...arrs) => {
+export const concatBytes = (...arrs) => {
     let len = 0;
-    for (const a of arrs) len += a.length;
+    const bytes = arrs.map((arr) => toBytes(arr, 'packed bytes'));
+    for (const item of bytes) len += item.length;
     const out = new Uint8Array(len);
     let offset = 0;
-    for (const a of arrs) {
-        out.set(a, offset);
-        offset += a.length;
+    for (const item of bytes) {
+        out.set(item, offset);
+        offset += item.length;
     }
     return out;
 };
@@ -42,7 +43,7 @@ export const packSeedData = ({ salt, iv, ciphertext, ct, kdf = VAULT_KDF }) => {
     new DataView(header.buffer).setUint32(offset + 3, kdf.m);
     header[offset + 7] = kdf.version;
 
-    return Bytes.fromUint8Array(concat(header, salt, iv, body));
+    return Bytes.fromUint8Array(concatBytes(header, salt, iv, body));
 };
 
 // unpack seed data from storage
@@ -72,11 +73,30 @@ export const unpackSeedData = (bytes) => {
     };
 };
 
-export const packRawData = (nonce, ct) => concat(nonce, ct);
+export const packRawData = (...arrs) => concatBytes(...arrs);
 
 export const packBodyData = (nonce, ct) => Bytes.fromUint8Array(packRawData(nonce, ct));
 
 export const unpackBodyData = (bytes, nonceBytes = BOX_NONCE_BYTES) => {
     const p = toPackedBytes(bytes);
     return { nonce: p.subarray(0, nonceBytes), ct: p.subarray(nonceBytes) };
+};
+
+export const packVersionedData = (version, nonce, ct) => {
+    if (!Number.isInteger(version) || version < 0 || version > 255) {
+        throw new Error('invalid data version');
+    }
+    return packRawData(new Uint8Array([version]), nonce, ct);
+};
+
+export const unpackVersionedData = (bytes, nonceBytes = BOX_NONCE_BYTES) => {
+    const p = toPackedBytes(bytes);
+    if (p.byteLength <= 1 + nonceBytes) {
+        throw new Error('invalid versioned data');
+    }
+    return {
+        version: p[0],
+        nonce: p.subarray(1, 1 + nonceBytes),
+        ct: p.subarray(1 + nonceBytes),
+    };
 };

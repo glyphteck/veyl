@@ -1,6 +1,7 @@
 import { onDocumentWritten } from 'firebase-functions/v2/firestore';
-import { isBlocked, isChatBanned, messageSenderFallback, resolveChatActors } from '../lib/chatroute.js';
+import { getChatPair, getProfileByChatPK, isBlocked, isChatBanned, messageSenderFallback } from '../lib/chatroute.js';
 import { getPushDocs, pushSecrets, sendPush } from '../lib/push.js';
+import { getPushRoute, syncPushRouteForUid } from '../lib/pushroute.js';
 
 function lastCid(snap) {
     const cid = snap?.data?.()?.lastMsg?.head?.cid;
@@ -20,9 +21,9 @@ export const onChatMessage = onDocumentWritten({ document: 'chats/{chatId}', sec
         return;
     }
 
-    const actors = await resolveChatActors(event.params.chatId, senderChatPK);
+    const pair = getChatPair(event.params.chatId, senderChatPK);
 
-    if (!actors) {
+    if (!pair) {
         console.info('push skip: bad pair', {
             chatId: event.params.chatId,
             senderChatPK: !!senderChatPK,
@@ -30,11 +31,32 @@ export const onChatMessage = onDocumentWritten({ document: 'chats/{chatId}', sec
         return;
     }
 
-    const { duplicateChatPKs, senderUid, receiverUid } = actors;
-    if (duplicateChatPKs.length || !receiverUid || senderUid === receiverUid) {
+    const receiverRoute = await getPushRoute(pair.receiverChatPK);
+    const receiverUid = receiverRoute?.uid || null;
+    if (!receiverUid || receiverRoute.activePushCount <= 0) {
+        console.info('push skip: no active push route', {
+            chatId: event.params.chatId,
+            receiverChatPK: !!pair.receiverChatPK,
+            receiverUid,
+        });
+        return;
+    }
+
+    const senderRoute = await getPushRoute(pair.senderChatPK);
+    let senderUid = senderRoute?.uid || null;
+    let senderName = senderRoute?.username || '';
+    let duplicateSenderChatPK = false;
+    if (!senderUid || !senderName) {
+        const sender = await getProfileByChatPK(pair.senderChatPK);
+        duplicateSenderChatPK = sender.duplicate;
+        senderUid ||= sender.profile?.uid || null;
+        senderName ||= sender.profile?.username || '';
+    }
+
+    if (duplicateSenderChatPK || !senderUid || senderUid === receiverUid) {
         console.info('push skip: receiver unresolved', {
             chatId: event.params.chatId,
-            duplicateChatPKs: duplicateChatPKs.length,
+            duplicateSenderChatPK,
             senderUid: senderUid || null,
             receiverUid: receiverUid || null,
         });
@@ -67,6 +89,12 @@ export const onChatMessage = onDocumentWritten({ document: 'chats/{chatId}', sec
     }
 
     if (!pushDocs.length) {
+        await syncPushRouteForUid(receiverUid).catch((error) => {
+            console.warn('push route sync failed after empty push lookup', {
+                receiverUid,
+                error: error?.message || String(error),
+            });
+        });
         console.info('push skip: no device tokens', {
             chatId: event.params.chatId,
             receiverUid,
@@ -74,7 +102,6 @@ export const onChatMessage = onDocumentWritten({ document: 'chats/{chatId}', sec
         return;
     }
 
-    const senderName = actors.senderProfile?.username || messageSenderFallback();
     console.info('push send: chat', {
         chatId: event.params.chatId,
         receiverUid,
@@ -82,7 +109,7 @@ export const onChatMessage = onDocumentWritten({ document: 'chats/{chatId}', sec
     });
     await sendPush(receiverUid, pushDocs, {
         collapseId: `chat-${event.params.chatId}`,
-        title: senderName,
+        title: senderName || messageSenderFallback(),
         body: 'sent you a message',
         data: {
             type: 'chat',

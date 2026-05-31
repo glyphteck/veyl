@@ -1,6 +1,7 @@
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { createHash } from 'node:crypto';
 import admin, { db, FieldValue, OK } from '../lib/admin.js';
+import { HOUR_MS, MINUTE_MS, limitCallable, uidLimitKey } from '../lib/ratelimit.js';
 
 const MEDIA_PATH_RE = /^media\/[0-9a-fA-F]{32}\/main$/;
 const MEDIA_STAY_RE = /^[A-Za-z0-9_-]{8,80}$/;
@@ -142,6 +143,10 @@ async function requireSignedInMediaRequest(auth, data) {
 
 export const setMediaSaved = onCall(async ({ auth, data }) => {
     const path = await requireSignedInMediaRequest(auth, data);
+    await limitCallable({ auth }, [
+        { name: 'set-media-saved-uid-minute', key: uidLimitKey(auth.uid, 'set-media-saved'), limit: 90, windowMs: MINUTE_MS },
+        { name: 'set-media-saved-uid-hour', key: uidLimitKey(auth.uid, 'set-media-saved'), limit: 600, windowMs: HOUR_MS },
+    ]);
     const stayId = cleanMediaStay(data?.stayId);
     const stayKey = cleanMediaStayKey(data?.stayKey);
     if (data?.saved === false) {

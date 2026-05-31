@@ -1,5 +1,7 @@
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { db, FieldValue, OK } from '../../lib/admin.js';
+import { HOUR_MS, MINUTE_MS, limitCallable, uidLimitKey } from '../../lib/ratelimit.js';
+import { syncPushRouteForUid } from '../../lib/pushroute.js';
 
 const DID_RE = /^[a-zA-Z0-9_-]{12,128}$/;
 const EXPO_RE = /^(Expo|Exponent)PushToken\[[^\]]+\]$/;
@@ -14,6 +16,14 @@ const PUSH_VARIANT_META = {
     test: { apnsTopic: 'com.glyphteck.veyl.test', apnsEnvironment: 'production' },
     prod: { apnsTopic: 'com.glyphteck.veyl', apnsEnvironment: 'production' },
 };
+
+async function limitPushAction(context, action) {
+    const uid = context.auth?.uid;
+    await limitCallable(context, [
+        { name: `${action}-push-uid-minute`, key: uidLimitKey(uid, action), limit: 20, windowMs: MINUTE_MS },
+        { name: `${action}-push-uid-hour`, key: uidLimitKey(uid, action), limit: 80, windowMs: HOUR_MS },
+    ]);
+}
 
 function cleanString(value) {
     return typeof value === 'string' ? value.trim() : '';
@@ -143,8 +153,10 @@ async function setUserPush(uid, ref, data) {
     });
 }
 
-export const setPush = onCall(async ({ auth, data }) => {
+export const setPush = onCall(async (context) => {
+    const { auth, data } = context;
     if (!auth?.uid) throw new HttpsError('unauthenticated', 'auth');
+    await limitPushAction(context, 'set');
 
     const uid = auth.uid;
     const next = pushDoc(data);
@@ -159,11 +171,14 @@ export const setPush = onCall(async ({ auth, data }) => {
 
     await deleteRefs(staleRefs);
     await setUserPush(uid, ref, next);
+    await syncPushRouteForUid(uid);
     return OK;
 });
 
-export const dropPush = onCall(async ({ auth, data }) => {
+export const dropPush = onCall(async (context) => {
+    const { auth, data } = context;
     if (!auth?.uid) throw new HttpsError('unauthenticated', 'auth');
+    await limitPushAction(context, 'drop');
 
     const uid = auth.uid;
     const did = data?.did == null ? null : requireDid(data.did);
@@ -181,5 +196,6 @@ export const dropPush = onCall(async ({ auth, data }) => {
     ]);
 
     await deleteRefs(refs);
+    await syncPushRouteForUid(uid);
     return OK;
 });

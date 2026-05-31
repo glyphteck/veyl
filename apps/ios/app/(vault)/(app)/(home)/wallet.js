@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Animated, FlatList, InteractionManager, Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useIsFocused, useRouter } from 'expo-router';
 import { BanknoteArrowDown, BanknoteArrowUp, UserRoundPlus } from 'lucide-react-native';
+import ReAnimated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
 import { useBitcoin } from '@/providers/bitcoinprovider';
 import { useTheme } from '@/providers/themeprovider';
@@ -22,6 +23,7 @@ import { getChatId } from '@veyl/shared/crypto/chat';
 import { renderBalance, renderMoney } from '@veyl/shared/money';
 import { formatUserDisplay } from '@veyl/shared/profile';
 import { formatFullDateTime } from '@veyl/shared/utils/time';
+import { getInsertedRowBatch, sameListIds } from '@veyl/shared/chat/listanimation';
 import { hasAvailableBalance } from '@veyl/shared/wallet/balance';
 
 const BALANCE_HEIGHT = 42;
@@ -31,8 +33,184 @@ const ACTION_ICON_SIZE = 56;
 const ACTION_GAP = 24;
 const ACTION_COLLAPSE_OFFSET = (ACTION_ICON_SIZE + ACTION_GAP) / 2;
 const PEER_SELECTOR_LOCK_MS = 520;
+const TX_ROW_HEIGHT = 71;
+const TX_LOADER_HEIGHT = 84;
+const TX_ROW_APPEAR_MS = 320;
+const TX_ROW_APPEAR_FROM = 0.98;
+const MAX_TX_ANIMATED_INSERTS = 8;
+const TX_INITIAL_RENDER_LIMIT = 36;
+const TX_RENDER_BATCH_SIZE = 28;
+const TX_RENDER_AHEAD_REMAINING = 10;
+const TX_LOADER_ITEM = Object.freeze({ id: '__tx_loader__', kind: 'loader' });
 
-function TxRow({ tx, profile, theme, moneyFormat, btcPrice, isLast, openRoute, selectChat, user }) {
+function clamp(value, min, max) {
+    'worklet';
+    return Math.min(Math.max(value, min), max);
+}
+
+function easeOutCubic(value) {
+    'worklet';
+    const t = clamp(value, 0, 1);
+    return 1 - Math.pow(1 - t, 3);
+}
+
+function getTxIds(txs) {
+    return (txs || []).map((tx) => tx?.id).filter(Boolean);
+}
+
+function sameTxRow(a, b) {
+    if (a === b) return true;
+    if (!a || !b) return false;
+    return (
+        a.id === b.id &&
+        a.pending === b.pending &&
+        a.amount === b.amount &&
+        a.totalValue === b.totalValue &&
+        a.createdMs === b.createdMs &&
+        a.peerPK === b.peerPK &&
+        a.funding === b.funding &&
+        a.withdrawal === b.withdrawal
+    );
+}
+
+function sameProfile(a, b) {
+    if (a === b) return true;
+    if (!a || !b) return false;
+    return a.username === b.username && a.avatar === b.avatar && a.active === b.active && a.bot === b.bot && a.chatPK === b.chatPK;
+}
+
+function sameTheme(a, b) {
+    if (a === b) return true;
+    if (!a || !b) return false;
+    return a.foreground === b.foreground && a.muted === b.muted && a.inflow === b.inflow && a.outflow === b.outflow && a.border === b.border;
+}
+
+function useTxInsertStyles(animationKey) {
+    const progress = useSharedValue(0);
+
+    useEffect(() => {
+        progress.value = 0;
+        progress.value = withTiming(1, { duration: TX_ROW_APPEAR_MS, easing: Easing.linear });
+    }, [animationKey, progress]);
+
+    const slotStyle = useAnimatedStyle(() => {
+        const grow = easeOutCubic(progress.value * 2);
+        return { height: TX_ROW_HEIGHT * grow };
+    });
+
+    const contentStyle = useAnimatedStyle(() => {
+        const fade = easeOutCubic((progress.value - 0.5) * 2);
+        return {
+            opacity: fade,
+            transform: [{ scale: TX_ROW_APPEAR_FROM + (1 - TX_ROW_APPEAR_FROM) * fade }],
+        };
+    });
+
+    return { contentStyle, slotStyle };
+}
+
+function TxInsertSlot({ animationKey, children }) {
+    const { contentStyle, slotStyle } = useTxInsertStyles(animationKey);
+
+    return (
+        <ReAnimated.View style={[{ overflow: 'hidden' }, slotStyle]}>
+            <ReAnimated.View style={contentStyle}>{children}</ReAnimated.View>
+        </ReAnimated.View>
+    );
+}
+
+function useAnimatedRecentTxs(recentTxs) {
+    const [displayTxs, setDisplayTxs] = useState(recentTxs);
+    const [insertState, setInsertState] = useState(() => ({ ids: new Set(), key: 0 }));
+    const displayRef = useRef(recentTxs);
+    const pendingRef = useRef(null);
+    const animatingRef = useRef(false);
+    const timerRef = useRef(null);
+    const applyRef = useRef(null);
+    const keyRef = useRef(0);
+
+    const clearTimer = useCallback(() => {
+        if (!timerRef.current) return;
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+    }, []);
+
+    const startInsert = useCallback(
+        (nextTxs, batch) => {
+            clearTimer();
+            animatingRef.current = true;
+            displayRef.current = nextTxs;
+            keyRef.current += 1;
+            setDisplayTxs(nextTxs);
+            setInsertState({ ids: new Set(batch.ids), key: keyRef.current });
+            timerRef.current = setTimeout(() => {
+                timerRef.current = null;
+                animatingRef.current = false;
+                setInsertState({ ids: new Set(), key: keyRef.current });
+
+                const pending = pendingRef.current;
+                pendingRef.current = null;
+                if (pending) {
+                    applyRef.current?.(pending);
+                }
+            }, TX_ROW_APPEAR_MS);
+        },
+        [clearTimer]
+    );
+
+    const applyTxs = useCallback(
+        (nextTxs) => {
+            const previousIds = getTxIds(displayRef.current);
+            const nextIds = getTxIds(nextTxs);
+            if (sameListIds(previousIds, nextIds)) {
+                if (displayRef.current !== nextTxs) {
+                    displayRef.current = nextTxs;
+                    setDisplayTxs(nextTxs);
+                }
+                return;
+            }
+
+            const insertBatch = getInsertedRowBatch(previousIds, nextIds);
+            if (insertBatch && insertBatch.ids.length <= MAX_TX_ANIMATED_INSERTS) {
+                startInsert(nextTxs, insertBatch);
+                return;
+            }
+
+            displayRef.current = nextTxs;
+            setDisplayTxs(nextTxs);
+            setInsertState({ ids: new Set(), key: keyRef.current });
+        },
+        [startInsert]
+    );
+
+    useEffect(() => {
+        applyRef.current = applyTxs;
+    }, [applyTxs]);
+
+    useEffect(() => {
+        if (animatingRef.current) {
+            pendingRef.current = recentTxs;
+            return;
+        }
+        applyTxs(recentTxs);
+    }, [applyTxs, recentTxs]);
+
+    useEffect(
+        () => () => {
+            clearTimer();
+        },
+        [clearTimer]
+    );
+
+    return { animationKey: insertState.key, displayTxs, insertingIds: insertState.ids };
+}
+
+const StableTxAvatar = memo(function StableTxAvatar({ active, bot, uri }) {
+    const source = useMemo(() => (uri ? { uri } : null), [uri]);
+    return <Avatar pointerEvents="none" source={source} active={active} bot={bot} />;
+});
+
+const TxRow = memo(function TxRow({ animationKey, inserting = false, tx, profile, theme, moneyFormat, btcPrice, isLast, openRoute, selectChat, user }) {
     const { chatPK, chatBanned } = user || {};
     const isInflow = (tx?.amount ?? 0) > 0;
     const amountText = renderMoney(tx?.totalValue ?? 0, moneyFormat, btcPrice, isInflow ? '+' : '-');
@@ -40,7 +218,7 @@ function TxRow({ tx, profile, theme, moneyFormat, btcPrice, isLast, openRoute, s
     const label = tx?.pending ? 'pending' : formatFullDateTime(tx?.createdTime);
     const displayName = tx?.funding ? 'Funded' : tx?.withdrawal ? 'Withdrawn' : formatUserDisplay({ username: profile?.username, walletPK: tx?.peerPK });
 
-    const avatarSource = tx?.funding || tx?.withdrawal ? (user?.avatar ? { uri: user.avatar } : null) : profile?.avatar ? { uri: profile.avatar } : null;
+    const avatarUri = tx?.funding || tx?.withdrawal ? user?.avatar : profile?.avatar;
     const isActive = tx?.funding || tx?.withdrawal ? false : !!profile?.active;
     const nameColor = tx?.funding ? theme.inflow : tx?.withdrawal ? theme.outflow : theme.foreground;
     const nameWeight = tx?.funding || tx?.withdrawal ? '900' : '700';
@@ -67,7 +245,7 @@ function TxRow({ tx, profile, theme, moneyFormat, btcPrice, isLast, openRoute, s
         drift: 1,
     });
 
-    return (
+    const row = (
         <Pressable
             {...pressFeedback.props}
             disabled={!canOpen}
@@ -85,7 +263,7 @@ function TxRow({ tx, profile, theme, moneyFormat, btcPrice, isLast, openRoute, s
         >
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16, flex: 1 }}>
                 <Animated.View style={{ transform: [{ scale: pressFeedback.scale }] }} pointerEvents="none">
-                    <Avatar pointerEvents="none" source={avatarSource} active={isActive} bot={!tx?.funding && !tx?.withdrawal && !!profile?.bot} />
+                    <StableTxAvatar uri={avatarUri} active={isActive} bot={!tx?.funding && !tx?.withdrawal && !!profile?.bot} />
                 </Animated.View>
                 <Text numberOfLines={1} style={{ flex: 1, fontSize: 17, fontWeight: nameWeight, color: nameColor }}>
                     {displayName}
@@ -110,7 +288,35 @@ function TxRow({ tx, profile, theme, moneyFormat, btcPrice, isLast, openRoute, s
             </View>
         </Pressable>
     );
-}
+
+    if (!inserting) {
+        return <View style={{ height: TX_ROW_HEIGHT, overflow: 'hidden' }}>{row}</View>;
+    }
+
+    return <TxInsertSlot animationKey={animationKey}>{row}</TxInsertSlot>;
+}, (prev, next) =>
+    prev.animationKey === next.animationKey &&
+    prev.inserting === next.inserting &&
+    prev.moneyFormat === next.moneyFormat &&
+    prev.btcPrice === next.btcPrice &&
+    prev.isLast === next.isLast &&
+    prev.openRoute === next.openRoute &&
+    prev.selectChat === next.selectChat &&
+    prev.user?.chatPK === next.user?.chatPK &&
+    prev.user?.chatBanned === next.user?.chatBanned &&
+    prev.user?.avatar === next.user?.avatar &&
+    sameTheme(prev.theme, next.theme) &&
+    sameTxRow(prev.tx, next.tx) &&
+    sameProfile(prev.profile, next.profile)
+);
+
+const TxLoaderRow = memo(function TxLoaderRow({ theme }) {
+    return (
+        <View style={{ height: TX_LOADER_HEIGHT, alignItems: 'center', justifyContent: 'center' }}>
+            <ActivityIndicator color={theme.muted} />
+        </View>
+    );
+});
 
 function WalletEmpty() {
     const { theme } = useTheme();
@@ -142,7 +348,7 @@ export default function Wallet() {
     const isFocused = useIsFocused();
     const insets = useSafeAreaInsets();
     const bitcoin = useBitcoin();
-    const { balance, txReady } = useWallet();
+    const { balance, hasMoreTxs, isTxLoading, loadMoreTxs, txReady } = useWallet();
     const user = useUser();
     const { settings, chatBanned } = user || {};
     const { peerByWalletPK } = usePeer() || {};
@@ -192,7 +398,13 @@ export default function Wallet() {
     }, [activeFormat, balance]);
     const balanceFeedback = useTap({ onPress: cycleFormat, disabled: !showBalance });
 
-    const recentTxs = useMemo(() => (txData?.sortedTransactions ?? []).slice(0, 25), [txData?.sortedTransactions]);
+    const txs = txData?.sortedTransactions ?? [];
+    const { animationKey: txAnimationKey, displayTxs, insertingIds } = useAnimatedRecentTxs(txs);
+    const [paintedTxLimit, setPaintedTxLimit] = useState(0);
+    const loadingMoreRef = useRef(false);
+    const txSourceCountRef = useRef(0);
+    const paintedTxLimitRef = useRef(0);
+    const paintAdvanceRef = useRef({ queued: false, task: null, frame: null });
 
     const balanceText = useMemo(() => {
         if (displayBalance == null) return '';
@@ -244,25 +456,172 @@ export default function Wallet() {
         [lockRoute, router]
     );
 
+    useEffect(() => {
+        if (!isTxLoading) {
+            loadingMoreRef.current = false;
+        }
+    }, [isTxLoading]);
+
+    useEffect(() => {
+        txSourceCountRef.current = displayTxs.length;
+        setPaintedTxLimit((current) => {
+            if (!displayTxs.length) {
+                return 0;
+            }
+            if (current <= 0) {
+                return Math.min(displayTxs.length, TX_INITIAL_RENDER_LIMIT);
+            }
+            return Math.min(current, displayTxs.length);
+        });
+    }, [displayTxs.length]);
+
+    useEffect(() => {
+        paintedTxLimitRef.current = paintedTxLimit;
+    }, [paintedTxLimit]);
+
+    const advancePaintedTxWindow = useCallback(() => {
+        if (paintAdvanceRef.current.queued || paintedTxLimitRef.current >= txSourceCountRef.current) return;
+        paintAdvanceRef.current.queued = true;
+        paintAdvanceRef.current.task = InteractionManager.runAfterInteractions(() => {
+            paintAdvanceRef.current.frame = requestAnimationFrame(() => {
+                paintAdvanceRef.current.frame = null;
+                setPaintedTxLimit((current) => Math.min(txSourceCountRef.current, Math.max(current, TX_INITIAL_RENDER_LIMIT) + TX_RENDER_BATCH_SIZE));
+                requestAnimationFrame(() => {
+                    paintAdvanceRef.current.queued = false;
+                    paintAdvanceRef.current.task = null;
+                });
+            });
+        });
+    }, []);
+
+    useEffect(
+        () => () => {
+            paintAdvanceRef.current.task?.cancel?.();
+            if (paintAdvanceRef.current.frame != null) {
+                cancelAnimationFrame(paintAdvanceRef.current.frame);
+            }
+        },
+        []
+    );
+
+    const handleLoadMoreTxs = useCallback(() => {
+        if (!hasMoreTxs || isTxLoading || loadingMoreRef.current) return;
+        loadingMoreRef.current = true;
+        const request = loadMoreTxs?.();
+        Promise.resolve(request).finally(() => {
+            loadingMoreRef.current = false;
+        });
+    }, [hasMoreTxs, isTxLoading, loadMoreTxs]);
+
+    const handleTxEndReached = useCallback(() => {
+        if (paintedTxLimitRef.current < txSourceCountRef.current) {
+            advancePaintedTxWindow();
+            return;
+        }
+        handleLoadMoreTxs();
+    }, [advancePaintedTxWindow, handleLoadMoreTxs]);
+
+    const txListHasLoader = displayTxs.length > 0 && (paintedTxLimit < displayTxs.length || hasMoreTxs || isTxLoading);
+    const visibleTxs = useMemo(() => displayTxs.slice(0, Math.min(paintedTxLimit, displayTxs.length)), [displayTxs, paintedTxLimit]);
+    const txListData = useMemo(() => (txListHasLoader ? [...visibleTxs, TX_LOADER_ITEM] : visibleTxs), [txListHasLoader, visibleTxs]);
+
+    const txPagingRef = useRef({ paintedCount: 0, sourceCount: 0, hasMore: false, loadMore: null, advanceWindow: null });
+    useEffect(() => {
+        txPagingRef.current = {
+            paintedCount: paintedTxLimit,
+            sourceCount: displayTxs.length,
+            hasMore: hasMoreTxs,
+            loadMore: handleLoadMoreTxs,
+            advanceWindow: advancePaintedTxWindow,
+        };
+    }, [advancePaintedTxWindow, displayTxs.length, handleLoadMoreTxs, hasMoreTxs, paintedTxLimit]);
+
+    const txViewabilityConfig = useRef({ itemVisiblePercentThreshold: 10 }).current;
+    const handleViewableTxItemsChanged = useRef(({ viewableItems }) => {
+        let lastVisibleIndex = -1;
+        for (const item of viewableItems || []) {
+            if (Number.isInteger(item?.index) && item.index > lastVisibleIndex) {
+                lastVisibleIndex = item.index;
+            }
+        }
+        const { paintedCount, sourceCount, hasMore, loadMore, advanceWindow } = txPagingRef.current;
+        if (paintedCount <= 0 || lastVisibleIndex < 0 || paintedCount - lastVisibleIndex > TX_RENDER_AHEAD_REMAINING) {
+            return;
+        }
+        if (paintedCount < sourceCount) {
+            advanceWindow?.();
+            return;
+        }
+        if (hasMore) {
+            loadMore?.();
+        }
+    }).current;
+
+    const renderTxItem = useCallback(
+        ({ item, index }) => {
+            if (item?.kind === 'loader') {
+                return <TxLoaderRow theme={theme} />;
+            }
+            return (
+                <TxRow
+                    animationKey={insertingIds.has(item.id) ? txAnimationKey : 0}
+                    inserting={insertingIds.has(item.id)}
+                    tx={item}
+                    profile={item?.peerPK ? peerByWalletPK?.get(item.peerPK) : null}
+                    theme={theme}
+                    moneyFormat={moneyFormat}
+                    btcPrice={btcPrice}
+                    isLast={!txListHasLoader && index === txListData.length - 1}
+                    openRoute={openRoute}
+                    selectChat={selectChat}
+                    user={user}
+                />
+            );
+        },
+        [btcPrice, insertingIds, moneyFormat, openRoute, peerByWalletPK, selectChat, theme, txAnimationKey, txListData.length, txListHasLoader, user]
+    );
+
+    const getTxItemLayout = useCallback((data, index) => {
+        const length = data?.[index]?.kind === 'loader' ? TX_LOADER_HEIGHT : TX_ROW_HEIGHT;
+        return { length, offset: listTopSpace + TX_ROW_HEIGHT * index, index };
+    }, [listTopSpace]);
+
+    const txListExtraData = useMemo(
+        () => [
+            txAnimationKey,
+            moneyFormat,
+            btcPrice,
+            user?.chatPK || '',
+            user?.chatBanned ? '1' : '0',
+            user?.avatar || '',
+            theme.foreground,
+            theme.muted,
+            theme.inflow,
+            theme.outflow,
+            theme.border,
+            txListHasLoader ? '1' : '0',
+        ].join('|'),
+        [btcPrice, moneyFormat, theme.border, theme.foreground, theme.inflow, theme.muted, theme.outflow, txAnimationKey, txListHasLoader, user?.avatar, user?.chatBanned, user?.chatPK]
+    );
+
     return (
         <View style={{ flex: 1, overflow: 'hidden' }}>
             <Animated.View style={{ flex: 1, transform: [{ translateY: listOffset }] }}>
                 <FlatList
-                    data={recentTxs}
+                    data={txListData}
                     keyExtractor={(item) => item.id}
-                    renderItem={({ item, index }) => (
-                        <TxRow
-                            tx={item}
-                            profile={item?.peerPK ? peerByWalletPK?.get(item.peerPK) : null}
-                            theme={theme}
-                            moneyFormat={moneyFormat}
-                            btcPrice={btcPrice}
-                            isLast={index === recentTxs.length - 1}
-                            openRoute={openRoute}
-                            selectChat={selectChat}
-                            user={user}
-                        />
-                    )}
+                    renderItem={renderTxItem}
+                    extraData={txListExtraData}
+                    getItemLayout={getTxItemLayout}
+                    initialNumToRender={14}
+                    maxToRenderPerBatch={10}
+                    removeClippedSubviews
+                    updateCellsBatchingPeriod={24}
+                    windowSize={8}
+                    onEndReached={handleTxEndReached}
+                    onEndReachedThreshold={0.6}
+                    onViewableItemsChanged={handleViewableTxItemsChanged}
+                    viewabilityConfig={txViewabilityConfig}
                     ListHeaderComponent={<View style={{ height: listTopSpace }} />}
                     ListEmptyComponent={() => (txReady ? <WalletEmpty /> : <WalletLoading />)}
                     contentContainerStyle={{ flexGrow: 1, paddingBottom: insets.bottom + LIST_BOTTOM_GAP + BALANCE_HEIGHT }}

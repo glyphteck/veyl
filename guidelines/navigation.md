@@ -43,6 +43,26 @@ Forced auth, vault, and onboarding flows are route-guard owned. After a required
 - iOS withdraw route: `apps/ios/app/(vault)/(app)/withdraw.js`
 - Account deletion flows: `apps/web/src/components/dialogs/deleteaccount.js`, `apps/ios/app/(vault)/(app)/deleteaccount.js`
 
+## QR And App Links
+
+- Shared QR helpers: `shared/qr.js`
+- Shared app-link domains and host URLs: `shared/links.js`, [links.md](../links.md)
+- Web QR route: `apps/web/src/app/(authenticated)/(vault)/(app)/qr/page.js`
+- iOS user scan route: `apps/ios/app/(vault)/(app)/userscan.js`
+- iOS camera scanner: `apps/ios/app/(vault)/(app)/(home)/camera.js`
+
+Veyl-specific QR codes are HTTPS wrappers at `/qr` on the active Veyl web host. Use `shared/qr.js` to write and read them. Do not emit raw `veyl:` strings or base64 JSON payloads.
+
+Current QR structures:
+
+- User: `${links.veyl}/qr?u=<username>`
+- Payment request: `${links.veyl}/qr?r=<walletPK>&a=<sats>` (`a` is optional)
+- Bitcoin funding address: `bitcoin:<address>`
+
+For user QR codes, the username is the scanned account id. Do not encode Firebase UIDs in user QR codes.
+
+The wrapper URL is intentional for Veyl-specific actions. On iOS, the Veyl web hosts are app links, so a system Camera scan opens Veyl when it is installed. Without the app, the website can send mobile users to the download page, and desktop users go through the normal web auth/unlock path. Bitcoin funding QR codes intentionally stay standard `bitcoin:` URIs so external wallets can scan them directly.
+
 ## Chat
 
 - Shared chat provider factory: `shared/providers/chatprovider.js`

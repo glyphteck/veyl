@@ -17,7 +17,7 @@ import { Lock } from 'lucide-react';
 
 export const VaultCtx = createContext(null);
 
-const UNLOCK_STATES = new Set(['decrypting', 'deriving', 'wallet', 'chat', 'launching']);
+const UNLOCK_STATES = new Set(['decrypting', 'seed-decrypted', 'deriving', 'wallet', 'chat', 'launching']);
 
 export function VaultProvider({ children }) {
     const user = useUser();
@@ -136,7 +136,7 @@ export function VaultProvider({ children }) {
 
     //boot features from master seed
     const unlock = useCallback(
-        async (password) => {
+        async (password, options = {}) => {
             //decrypt seed
             if (UNLOCK_STATES.has(lockState)) throw new Error('unlock in progress');
             const unlockUid = user.uid || auth.currentUser?.uid || null;
@@ -156,6 +156,8 @@ export function VaultProvider({ children }) {
                 }
                 const { salt, iv, ct, kdf } = unpackSeedData(seedData);
                 masterSeed = await decryptSeed(ct, salt, iv, normalizePassword(password), kdf);
+                setLockState('seed-decrypted');
+                const seedDecrypted = options.onSeedDecrypted?.();
 
                 // Derive feature-specific seeds
                 setLockState('deriving');
@@ -200,6 +202,10 @@ export function VaultProvider({ children }) {
                 setWallet(w);
                 setChatPrivateKey(chatPrivKey);
                 setLocalCache(nextCache);
+                await seedDecrypted;
+                if (!isCurrentUnlock()) {
+                    throw new Error('account changed during unlock');
+                }
 
                 // Mark as unlocked
                 setLockState('launching');

@@ -1,6 +1,7 @@
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { OK } from '../lib/admin.js';
 import { isAdminUid, setBotPowerState } from '../lib/bots.js';
+import { HOUR_MS, limitCallable, uidLimitKey } from '../lib/ratelimit.js';
 
 export const setBotPower = onCall(async ({ auth, data }) => {
     if (!auth?.uid) {
@@ -9,6 +10,12 @@ export const setBotPower = onCall(async ({ auth, data }) => {
     if (!(await isAdminUid(auth.uid))) {
         throw new HttpsError('permission-denied', 'admin');
     }
+    await limitCallable({ auth }, {
+        name: 'set-bot-power-uid-hour',
+        key: uidLimitKey(auth.uid, 'set-bot-power'),
+        limit: 120,
+        windowMs: HOUR_MS,
+    });
 
     if (typeof data?.enabled !== 'boolean') {
         throw new HttpsError('invalid-argument', 'enabled must be boolean');

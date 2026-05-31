@@ -1,5 +1,6 @@
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { db, FieldValue, Timestamp, OK } from '../../lib/admin.js';
+import { DAY_MS, HOUR_MS, limitCallable, uidLimitKey } from '../../lib/ratelimit.js';
 
 const MAX_CONTENT = 4000;
 const MAX_PATH = 500;
@@ -92,6 +93,10 @@ export const submitReport = onCall(async ({ auth, data }) => {
     const uid = auth.uid;
     const targetUid = cleanUid(data?.uid);
     if (targetUid === uid) throw new HttpsError('invalid-argument', 'cannot report self');
+    await limitCallable({ auth }, [
+        { name: 'submit-report-uid-hour', key: uidLimitKey(uid, 'submit-report'), limit: 5, windowMs: HOUR_MS },
+        { name: 'submit-report-uid-day', key: uidLimitKey(uid, 'submit-report'), limit: 20, windowMs: DAY_MS },
+    ]);
 
     const type = cleanType(data?.type);
     const content = cleanContent(data?.content);

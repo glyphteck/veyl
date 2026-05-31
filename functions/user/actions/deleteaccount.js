@@ -1,9 +1,16 @@
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import admin, { db, OK } from '../../lib/admin.js';
+import { DAY_MS, limitCallable, uidLimitKey } from '../../lib/ratelimit.js';
 
 export const deleteAccount = onCall(async (context) => {
     if (!context.auth?.uid) throw new HttpsError('unauthenticated', 'auth');
     const uid = context.auth.uid;
+    await limitCallable(context, {
+        name: 'delete-account-uid-day',
+        key: uidLimitKey(uid, 'delete-account'),
+        limit: 3,
+        windowMs: DAY_MS,
+    });
     const bucket = admin.storage().bucket();
 
     // delete user chats
@@ -31,6 +38,9 @@ export const deleteAccount = onCall(async (context) => {
     batch.delete(db.collection('seeds').doc(uid));
     batch.delete(db.collection('profiles').doc(uid));
     batch.delete(db.collection('moderation').doc(uid));
+    if (profileData?.chatPK) {
+        batch.delete(db.collection('pushRoutes').doc(profileData.chatPK));
+    }
     const unameSnap = await db.collection('usernames').where('uid', '==', uid).get();
     unameSnap.forEach((d) => batch.delete(d.ref));
     const pks = await db.collection('passkeys').where('uid', '==', uid).get();

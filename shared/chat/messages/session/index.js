@@ -46,6 +46,13 @@ function notifyRetentionPreviewDrop(onDrop, chatId, messages, chatPK, peerChatPK
     onDrop?.(chatId, collectMessageKeys(hidden), latestVisiblePreviewMessage(previewVisibleMessages(messages, chatPK, peerChatPK)));
 }
 
+function warmKeyStore(ref) {
+    if (!(ref.current instanceof Map)) {
+        ref.current = new Map();
+    }
+    return ref.current;
+}
+
 export function useChatMessageSessions({ chat, chatPK, chatPrivateKey, chatBanned, isActive, localCache, rowsRef, pendingDeleteIdsRef, config, preloadMessageMedia, onRead, onExpire, diag = null }) {
     const batchesRef = useRef(new Map());
     const generationRef = useRef(0);
@@ -58,6 +65,7 @@ export function useChatMessageSessions({ chat, chatPK, chatPrivateKey, chatBanne
     const warmIdsRef = useRef([]);
     const warmQueueRef = useRef([]);
     const warmJobRef = useRef(null);
+    const lastWarmKeyRef = useRef(new Map());
     const messageViewCacheRef = useRef(null);
     if (!messageViewCacheRef.current) {
         messageViewCacheRef.current = createMessageViewCache(MESSAGE_VIEW_CACHE_SIZE);
@@ -145,6 +153,7 @@ export function useChatMessageSessions({ chat, chatPK, chatPrivateKey, chatBanne
         generationRef.current += 1;
         mediaRunRef.current += 1;
         warmIdsRef.current = [];
+        warmKeyStore(lastWarmKeyRef).clear();
         if (warmTimerRef.current) {
             clearTimeout(warmTimerRef.current);
             warmTimerRef.current = null;
@@ -612,10 +621,17 @@ export function useChatMessageSessions({ chat, chatPK, chatPrivateKey, chatBanne
     const warmRows = useCallback(
         (rows, limit) => {
             if (!warming.enabled || !isActive || !chatPK || !chatPrivateKey || chatBanned) {
-                return;
+                return false;
             }
 
             const candidates = warmCandidates(rows, chatPK, pendingDeleteIdsRef.current, limit);
+            const candidateKey = candidates.map((chatItem) => chatItem.id).join('|');
+            const warmKey = `${limit}:${warming.pageSize}:${candidateKey}`;
+            const lastWarmKeys = warmKeyStore(lastWarmKeyRef);
+            if (warmKey === lastWarmKeys.get(limit)) {
+                return false;
+            }
+            lastWarmKeys.set(limit, warmKey);
             const desired = new Set(candidates.map((chatItem) => chatItem.id));
             warmIdsRef.current = candidates.map((chatItem) => chatItem.id);
             const currentKey = warmJobRef.current?.key || '';
@@ -650,6 +666,7 @@ export function useChatMessageSessions({ chat, chatPK, chatPrivateKey, chatBanne
                     releaseMessageBatch(chatId, 'warm');
                 }
             }
+            return true;
         },
         [chatBanned, chatPK, chatPrivateKey, diag, isActive, pendingDeleteIdsRef, pumpWarmQueue, releaseMessageBatch, warming.enabled, warming.pageSize]
     );
@@ -665,14 +682,19 @@ export function useChatMessageSessions({ chat, chatPK, chatPrivateKey, chatBanne
             }
 
             const list = Array.isArray(rows) ? rows : rowsRef.current || [];
-            markDiag(diag, 'chat.warm.start', { rowCount: list.length, eagerCount: warming.eagerCount, count: warming.count, delayMs: warming.delayMs });
-            warmRows(list, warming.eagerCount);
-            scheduleMedia();
+            const runWarm = (limit, phase) => {
+                if (warmRows(list, limit)) {
+                    markDiag(diag, 'chat.warm.start', { rowCount: list.length, phase, eagerCount: warming.eagerCount, count: warming.count, delayMs: warming.delayMs });
+                    scheduleMedia();
+                }
+            };
+            if (warming.eagerCount > 0) {
+                runWarm(warming.eagerCount, 'eager');
+            }
             if (warming.count > warming.eagerCount) {
                 warmTimerRef.current = setTimeout(() => {
                     warmTimerRef.current = null;
-                    warmRows(list, warming.count);
-                    scheduleMedia();
+                    runWarm(warming.count, 'delayed');
                 }, warming.delayMs);
             }
         },
