@@ -3,15 +3,16 @@
 import * as React from 'react';
 import Image from 'next/image';
 import { Bot, UserRound } from 'lucide-react';
+import { avatarSourceKey } from '@veyl/shared/avatar';
 
-import { cn } from '@/lib/utils';
+import { cn } from '@/lib/classes';
 import { Dot } from '@/components/dot';
 
 const AvatarContext = React.createContext(null);
 const loadedAvatarSrcs = new Set();
 
 function getAvatarImageKey(src) {
-    return typeof src === 'string' ? src.trim() : '';
+    return avatarSourceKey(src);
 }
 
 function isAvatarImageLoaded(src) {

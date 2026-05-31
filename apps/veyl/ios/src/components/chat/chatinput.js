@@ -9,7 +9,7 @@ import { useTap } from '@/lib/tap';
 import GlassView from '@/components/glass/glassview';
 import Icon from '@/components/icon';
 import { mark } from '@/lib/diagnostics';
-import { parseCommand } from '@glyphteck/shared/commands';
+import { parseCommand } from '@veyl/shared/commands';
 
 const INACTIVE_OPACITY = 0.32;
 const COMPOSER_POP_MS = 160;

@@ -1,4 +1,4 @@
-import { renderMoney } from '../../utils.js';
+import { renderMoney } from '../../money.js';
 import { canShowMsg, getSystemMsgText, isSystemMsg } from './control.js';
 import { getAttachmentCaption, getAttachmentTitle, isAttachmentMsgType } from './files.js';
 import { hasText } from './text.js';

@@ -1,4 +1,4 @@
-import { links } from '@glyphteck/shared/links';
+import { links } from '@veyl/shared/links';
 
 export const metadata = {
     title: 'veyl App Review',

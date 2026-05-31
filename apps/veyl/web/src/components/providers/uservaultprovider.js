@@ -6,9 +6,9 @@ import Loading from '@/components/loading';
 import { UserProvider } from '@/components/providers/userprovider';
 import { VaultProvider, useVault } from '@/components/providers/vaultprovider';
 import { ChatProvider } from '@/components/providers/chatprovider';
-import { CloakProvider } from '@glyphteck/shared/providers/cloakprovider';
-import { readLastAppTarget } from '@glyphteck/shared/localdatacache';
-import { hrefForLastAppTarget } from '@/lib/approute';
+import { CloakProvider } from '@veyl/shared/providers/cloakprovider';
+import { readResumeTarget } from '@veyl/shared/cache/localdata';
+import { hrefForResumeTarget } from '@veyl/shared/navigation/resume';
 
 function VaultRouteGate({ children }) {
     const router = useRouter();
@@ -18,8 +18,8 @@ function VaultRouteGate({ children }) {
     const unlocked = lockState === 'unlocked';
     const leaveUnlock = unlocked && unlockRoute;
     const goUnlock = !unlocked && !unlockRoute;
-    const appTarget = leaveUnlock ? readLastAppTarget(localCache) : null;
-    const appRoute = leaveUnlock ? hrefForLastAppTarget(appTarget) : '/chat';
+    const appTarget = leaveUnlock ? readResumeTarget(localCache) : null;
+    const appRoute = leaveUnlock ? hrefForResumeTarget(appTarget) : '/chat';
 
     useEffect(() => {
         if (leaveUnlock) {

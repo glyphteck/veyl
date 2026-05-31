@@ -2,15 +2,15 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef } from 'react';
 import { httpsCallable } from 'firebase/functions';
-import { WEB_CHAT_WARMING } from '@glyphteck/shared/chat/messages/session/config';
-import { createChat, createChatProvider } from '@glyphteck/shared/providers/chatprovider';
+import { WEB_CHAT_WARMING } from '@veyl/shared/chat/messages/session/config';
+import { createChat, createChatProvider } from '@veyl/shared/providers/chatprovider';
 import { db, getFunctions, getStorage } from '@/lib/firebase/firebaseclient';
 import { useUser } from '@/components/providers/userprovider';
 import { useVault } from '@/components/providers/vaultprovider';
-import { preloadMessageMedia } from '@/components/chat/mediapreload';
-import { clearMsgImageCache, seedMsgImage } from '@/components/chat/usemsgimage';
-import { clearMsgVideoCache } from '@/components/chat/videomediacache';
-import { clearAudioCache } from '@/components/chat/audiocache';
+import { clearAudioCache } from '@/lib/chat/audiocache';
+import { preloadMessageMedia } from '@/lib/chat/preload';
+import { clearMsgImageCache, seedMsgImage } from '@/lib/chat/useimage';
+import { clearMsgVideoCache } from '@/lib/chat/videocache';
 
 const chat = createChat({
     db,

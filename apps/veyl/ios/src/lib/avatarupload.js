@@ -1,4 +1,4 @@
-import { dropAvatar, putAvatar } from '@glyphteck/shared/files';
+import { dropAvatar, putAvatar } from '@veyl/shared/files';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import * as FileSystem from 'expo-file-system/legacy';
 import { doc, updateDoc } from 'firebase/firestore';

@@ -1,4 +1,4 @@
-import { dropCachedMedia } from '../../localdatacache.js';
+import { dropCachedMedia } from '../../cache/localdata.js';
 import { filterChatMessages } from '../ids.js';
 import { addMessageKeys, keySet, messageHasKey } from '../messagekeys.js';
 import { getMessageKey, getMessageOrderMs, mergeMessages } from '../state.js';

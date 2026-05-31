@@ -1,15 +1,15 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Animated, Pressable, Text, View } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
-import { useRouter } from 'expo-router';
-import { useIsFocused } from 'expo-router/react-navigation';
+import { useIsFocused, useRouter } from 'expo-router';
 import { Check } from 'lucide-react-native';
 import QRCode from 'react-native-qrcode-svg';
-import { makeQr, qr } from '@glyphteck/shared/qrutils';
-import { FUNDING_TX_PREVIEW_VBYTES, STATIC_DEPOSIT_CLAIM_FEE_SATS, formatOnchainFeeAmount } from '@glyphteck/shared/wallet/fees';
+import { makeQr, qr } from '@veyl/shared/qr';
+import { FUNDING_TX_PREVIEW_VBYTES, STATIC_DEPOSIT_CLAIM_FEE_SATS, formatOnchainFeeAmount } from '@veyl/shared/wallet/fees';
 
 import Icon from '@/components/icon';
 import { usePop } from '@/lib/pop';
+import { useRouteLock } from '@/lib/navigation/routelock';
 import { useTap } from '@/lib/tap';
 import { useBitcoin } from '@/providers/bitcoinprovider';
 import { useTheme } from '@/providers/themeprovider';
@@ -27,8 +27,7 @@ export default function FundWalletScreen() {
     const [loading, setLoading] = useState(!fundingAddress);
     const [copied, setCopied] = useState(false);
     const [qrSize, setQrSize] = useState(0);
-    const routeLockRef = useRef(false);
-    const routeLockTimerRef = useRef(null);
+    const { lockRoute } = useRouteLock();
 
     useEffect(() => {
         if (isFocused) {
@@ -93,16 +92,6 @@ export default function FundWalletScreen() {
             .then(() => setCopied(true))
             .catch(() => {});
     };
-    const lockRoute = useCallback((ms = 1200) => {
-        if (routeLockRef.current) return false;
-        routeLockRef.current = true;
-        if (routeLockTimerRef.current) clearTimeout(routeLockTimerRef.current);
-        routeLockTimerRef.current = setTimeout(() => {
-            routeLockRef.current = false;
-            routeLockTimerRef.current = null;
-        }, ms);
-        return true;
-    }, []);
     const openFundingInfo = useCallback(() => {
         if (!lockRoute()) return;
         router.push('/fundinginfo');
@@ -116,15 +105,6 @@ export default function FundWalletScreen() {
             setQrSize(width);
         }
     };
-
-    useEffect(
-        () => () => {
-            if (routeLockTimerRef.current) {
-                clearTimeout(routeLockTimerRef.current);
-            }
-        },
-        []
-    );
 
     if (loading || !qrValue) return null;
 

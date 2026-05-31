@@ -1,8 +1,8 @@
 import Constants from 'expo-constants';
-import walletLogo from '@glyphteck/shared/logos/wallet.png';
-import walletDevLogo from '@glyphteck/shared/logos/walletdev.png';
-import walletTestLogo from '@glyphteck/shared/logos/wallettest.png';
-import { normalizeVeylVariant } from '@glyphteck/shared/variant';
+import walletLogo from '@veyl/shared/logos/wallet.png';
+import walletDevLogo from '@veyl/shared/logos/walletdev.png';
+import walletTestLogo from '@veyl/shared/logos/wallettest.png';
+import { normalizeVeylVariant } from '@veyl/shared/variant';
 
 const variant = normalizeVeylVariant(Constants?.expoConfig?.extra?.variant, 'dev');
 const logos = {

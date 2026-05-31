@@ -15,9 +15,14 @@ import { useChat } from '@/providers/chatprovider';
 import Avatar from '@/components/avatar';
 import GlassHeader from '@/components/glass/glassheader';
 import GlassIcon from '@/components/glass/glassicon';
+import { useRouteLock } from '@/lib/navigation/routelock';
 import { useTap } from '@/lib/tap';
-import { getChatId } from '@glyphteck/shared/crypto/chat';
-import { formatFullDateTime, formatUserDisplay, renderBalance, renderMoney } from '@glyphteck/shared/utils';
+import { BTC_PRICE_FALLBACK } from '@veyl/shared/config';
+import { getChatId } from '@veyl/shared/crypto/chat';
+import { renderBalance, renderMoney } from '@veyl/shared/money';
+import { formatUserDisplay } from '@veyl/shared/profile';
+import { formatFullDateTime } from '@veyl/shared/utils/time';
+import { hasAvailableBalance } from '@veyl/shared/wallet/balance';
 
 const BALANCE_HEIGHT = 42;
 const LIST_BOTTOM_GAP = 44;
@@ -143,15 +148,14 @@ export default function Wallet() {
     const { peerByWalletPK } = usePeer() || {};
     const { selectChat } = useChat() || {};
     const txData = useTxData();
-    const routeLockRef = useRef(false);
-    const routeLockTimerRef = useRef(null);
+    const { lockRoute } = useRouteLock();
 
-    const btcPrice = bitcoin?.price ?? 100000;
+    const btcPrice = bitcoin?.price ?? BTC_PRICE_FALLBACK;
     const moneyFormat = settings?.moneyFormat ?? 'usd';
 
     const [displayFormat, setDisplayFormat] = useState(null);
     const activeFormat = displayFormat ?? moneyFormat;
-    const showBalance = Number(balance ?? 0) > 0;
+    const showBalance = hasAvailableBalance(balance);
     const canWithdraw = showBalance;
     const [displayBalance, setDisplayBalance] = useState(showBalance ? balance : null);
     const fundedAnim = useRef(new Animated.Value(showBalance ? 1 : 0)).current;
@@ -194,23 +198,6 @@ export default function Wallet() {
         if (displayBalance == null) return '';
         return renderBalance(displayBalance, activeFormat, btcPrice);
     }, [displayBalance, activeFormat, btcPrice]);
-
-    const lockRoute = useCallback((ms = 1200) => {
-        if (routeLockRef.current) return false;
-        routeLockRef.current = true;
-        if (routeLockTimerRef.current) clearTimeout(routeLockTimerRef.current);
-        routeLockTimerRef.current = setTimeout(() => {
-            routeLockRef.current = false;
-            routeLockTimerRef.current = null;
-        }, ms);
-        return true;
-    }, []);
-
-    useEffect(() => {
-        return () => {
-            if (routeLockTimerRef.current) clearTimeout(routeLockTimerRef.current);
-        };
-    }, []);
 
     useEffect(() => {
         if (!isFocused || chatBanned) return;

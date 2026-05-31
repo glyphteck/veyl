@@ -1,4 +1,5 @@
 import { getMessageKey, getMessageOrderMs } from './state.js';
+import { cleanText } from '../utils/text.js';
 
 export function keySet(value) {
     if (value instanceof Set) {
@@ -9,10 +10,10 @@ export function keySet(value) {
 
 export function messageKeys(message) {
     if (typeof message === 'string') {
-        const key = message.trim();
+        const key = cleanText(message);
         return key ? [key] : [];
     }
-    return [...new Set([getMessageKey(message), message?.id, message?.cid].map((key) => (typeof key === 'string' ? key.trim() : '')).filter(Boolean))];
+    return [...new Set([getMessageKey(message), message?.id, message?.cid].map(cleanText).filter(Boolean))];
 }
 
 export function addMessageKeys(keys, message) {
@@ -55,7 +56,7 @@ export function indexMessagesByKey(messages, { keep = 'first' } = {}) {
 }
 
 export function targetMessageMs(target, byKey) {
-    const key = typeof target === 'string' ? target.trim() : '';
+    const key = cleanText(target);
     if (!key) {
         return null;
     }

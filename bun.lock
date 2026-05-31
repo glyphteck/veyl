@@ -25,7 +25,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@buildonspark/spark-sdk": "catalog:",
-        "@glyphteck/shared": "workspace:*",
+        "@veyl/shared": "workspace:*",
         "@google-cloud/secret-manager": "^6.1.2",
         "firebase-admin": "^13.10.0",
       },
@@ -36,7 +36,7 @@
       "dependencies": {
         "@azure/core-asynciterator-polyfill": "^1.0.2",
         "@buildonspark/spark-sdk": "catalog:",
-        "@glyphteck/shared": "workspace:*",
+        "@veyl/shared": "workspace:*",
         "@react-native-async-storage/async-storage": "2.2.0",
         "@react-native-masked-view/masked-view": "0.3.2",
         "bech32": "catalog:",
@@ -109,7 +109,7 @@
       "version": "2.7.5",
       "dependencies": {
         "@buildonspark/spark-sdk": "catalog:",
-        "@glyphteck/shared": "workspace:*",
+        "@veyl/shared": "workspace:*",
         "@hookform/resolvers": "^5.4.0",
         "@noble/hashes": "catalog:",
         "@tailwindcss/postcss": "catalog:",
@@ -136,7 +136,7 @@
       },
     },
     "shared": {
-      "name": "@glyphteck/shared",
+      "name": "@veyl/shared",
       "version": "0.0.0",
       "dependencies": {
         "@noble/ciphers": "catalog:",
@@ -587,7 +587,7 @@
 
     "@firebase/webchannel-wrapper": ["@firebase/webchannel-wrapper@1.0.6", "", {}, "sha512-Vr/Mqu79dMwGRAyGbJ4uN4+BtXB3/mRTdzetD1daWNeG8QaWuzhhbG77GltO5c0yYmYls8i250iX73624GJd7Q=="],
 
-    "@glyphteck/shared": ["@glyphteck/shared@workspace:shared"],
+    "@veyl/shared": ["@veyl/shared@workspace:shared"],
 
     "@glyphteck/veyl-bot": ["@glyphteck/veyl-bot@workspace:apps/veyl/bot"],
 

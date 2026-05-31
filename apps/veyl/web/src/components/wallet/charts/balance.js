@@ -3,8 +3,9 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useTheme } from 'next-themes';
-import { cn, formatDate, formatHour, renderMoney } from '@/lib/utils';
-import { getChartColors, getChartDomain } from '@/components/wallet/charts/common';
+import { cn } from '@/lib/classes';
+import { renderMoney } from '@veyl/shared/money';
+import { formatDate, formatHour } from '@veyl/shared/utils/time';
 import { ChartTooltip } from '@/components/wallet/charts/tooltip';
 
 const ReactECharts = dynamic(() => import('echarts-for-react').then((mod) => mod.default), {
@@ -16,6 +17,45 @@ const grid = {
     top: 12,
     bottom: 30,
 };
+
+function getChartVar(name, fallback) {
+    if (typeof window === 'undefined') {
+        return fallback;
+    }
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
+}
+
+function getChartColors() {
+    return {
+        background: getChartVar('--background', '#ffffffcc'),
+        foreground: getChartVar('--foreground', '#000000'),
+        muted: getChartVar('--muted', '#666666'),
+        border: getChartVar('--border', '#e5e5e5'),
+        bitcoin: getChartVar('--bitcoin', '#f7931a'),
+    };
+}
+
+function getChartDomain(values) {
+    const valid = values.filter((value) => Number.isFinite(value));
+
+    if (!valid.length) {
+        return [0, 1];
+    }
+
+    const min = Math.min(...valid);
+    const max = Math.max(...valid);
+
+    if (min === max) {
+        if (min === 0) {
+            return [-1, 1];
+        }
+        return [min * 0.8, max * 1.2];
+    }
+
+    const range = max - min;
+    const padding = range * 0.05;
+    return [min - padding, max + padding];
+}
 
 function getKey(point, hourly) {
     return hourly ? point.hour : point.date;

@@ -6,16 +6,12 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/button';
 import { Fingerprint, Loader, UserRoundPlus, X } from 'lucide-react';
 import { toast } from 'sonner';
-import { isPasskeyEnvironmentMismatchError, isPasskeyRpMismatchError, passkeyLogin } from '@/lib/passkey';
-import { userAvatarCache } from '@/lib/useravatarcache';
+import { isPasskeyEnvironmentMismatchError, isPasskeyRpMismatchError, isUnlinkedPasskeyError, passkeyLogin } from '@/lib/passkey';
+import { userAvatarCache } from '@/lib/user/avatarcache';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/avatar';
 import { Card } from '@/components/card';
 import { walletLogoSrc } from '@/lib/brand';
-import { cn } from '@/lib/utils';
-
-function isUnlinkedPasskeyError(error) {
-    return error?.code === 'passkey-unlinked';
-}
+import { cn } from '@/lib/classes';
 
 export default function LoginPage() {
     const [loadingKey, setLoadingKey] = useState(null);

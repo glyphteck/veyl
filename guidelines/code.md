@@ -26,6 +26,9 @@
 - Keep React hooks before any early return. Derive booleans first, define hooks and callbacks, then return `null` or fallback UI.
 - Prefer small top-level helpers for pure transforms. Keep component bodies focused on state, hooks, and rendering.
 - Provider wrappers should stay thin. Put shared behavior in `shared` and keep app providers mostly responsible for platform wiring.
+- Avoid one-function files unless the function is reused across an ownership boundary, is a public module boundary, or names an important sub-concept inside a large system. Otherwise keep the helper near its caller.
+- Do not recreate deleted catch-all modules such as root `shared/utils.js`, `shared/localdatacache.js`, or flat app-level chat media helpers. Use the current feature folders.
+- Do not add shadcn-generated scaffolding back to the web app. Veyl-owned UI primitives live under `apps/veyl/web/src/components`.
 
 ## Language And Patterns
 
@@ -33,7 +36,42 @@
 - Prefer existing patterns over new architecture.
 - If web and shared already solve a problem, do not invent a third approach.
 - If a change belongs in `shared`, put it there instead of duplicating the same logic in web and iOS.
+
+## Shared Helper Boundaries
+
 - Put arbitrary shared logic knobs in `shared/config.js`: batch sizes, fetch caps, cache budgets, upload limits, debounce intervals, retention durations, polling cadences, and profile/search limits. Keep protocol constants, schema versions, and UI styling/animation values next to their owners unless a dedicated config pass moves them.
+- Use `MONEY_UNITS`, `moneyUnitLabel`, money conversion, and money render helpers from `shared/money.js` instead of repeating `sats`/`btc`/`usd` arrays or conversion logic.
+- Use `shared/utils/time.js` for timestamp-like values, date/hour keys, and time/date display labels; use `shared/utils/async.js` for simple delay, UI-yield, or idle promises; use `shared/utils/text.js` for plain string trimming/lowercasing instead of creating local `toMillis`, `timestampMs`, `sleep`, `yieldToUi`, `waitForIdle`, `cleanText`, or trim-plus-lowercase helpers.
+- Use `shared/utils/number.js` for cross-module numeric cleaners and config parsing. Keep obvious one-off UI clamps local when an import would make the code harder to follow.
+- Use `shared/utils/array.js` for repeated truthy unique lists, sets, sorted unique lists, and simple array equality. Keep simple local `new Set(...)` usage local when it only serves one component.
+- Use `shared/chat/equal.js` for chat Firestore `Bytes` and message-head equality used by listener caches.
+- Use `shared/chat/ids.js` for chat id and peer chat key extraction instead of inspecting `participants` arrays locally.
+- Use `shared/chat/messagekeys.js` for message id/cid key sets instead of re-creating local key arrays in chat UI.
+- Use `storedFileKey` from `shared/chat/messages` for stored chat media cache keys instead of hand-building `peer:path:key` strings.
+- Use `shared/chat/lastmsg.js` for parent chat `lastMsg` envelope creation and updates.
+- Use `shared/utils/display.js` for address/label truncation, byte-size labels, emoji-only text sizing, and safe DOM/SVG id parts.
+- Keep web `src/lib/classes.js` limited to styling class composition such as `cn`; import generic helpers from `@veyl/shared/utils/*` and domain helpers from their feature folders.
+- Use `shared/avatar.js` for avatar version parsing, source keys, versioned avatar URLs, remembered-avatar metadata, remembered-avatar sorting, and remembered-avatar username cleanup.
+- Use `shared/moderation.js` for ban expiry and active-ban checks instead of duplicating moderation timestamp parsing in providers or admin UI.
+- Use `shared/report.js` for report attachment names, MIME fallbacks, and report field shaping.
+- Use `shared/utils/diagnostics.js` for optional diagnostic callbacks instead of local `markDiag`, `markDone`, or `markError` clones.
+- Use `shared/utils/filename.js` for plain filename sanitizing/random capture names and `shared/utils/filetype.js` for filename/MIME sniffing; keep them separate from chat upload modules so lightweight media utilities do not import encryption/upload code. Use iOS `src/lib/file.js` for React Native local `file://` URI normalization and idempotent directory creation.
+- Use `shared/utils/image.js` for byte-level image MIME/extension sniffing instead of keeping image-byte primitives at the shared root.
+- Use `shared/navigation/params.js` for route/search param values that may arrive as either arrays or scalars.
+- Use `shared/profile.js` for profile-shape normalization, profile display labels, peer-key predicates, and peer uid/key extraction.
+- Use `shared/navigation/resume.js` for cross-platform route-resume helpers; keep platform navigation-state plumbing local.
+- Use `shared/qr.js` for QR payload creation/parsing and `shared/vault.js` for cross-platform vault boot/lock primitives.
+- Use web `src/lib/cache/idb.js` for IndexedDB request, transaction, object-store creation, and retryable opener helpers.
+- Use web `src/lib/admin/format.js` for admin-only user labels, bot status classes, sat balances, and admin timestamps.
+- Use web `src/components/peergrid.js` for the shared new-chat/share peer grid cell, height, and incremental-loading hook.
+- Use iOS `src/lib/navigation/routelock.js` for temporary route-navigation locks instead of repeating route lock refs and timers in screens.
+- Use `shared/wallet/tx.js` for wallet transfer timestamp parsing and transfer status checks instead of local `createdTime` or status coercers.
+- Use `shared/wallet/balance.js` for wallet balance coercion and positive-balance checks instead of local `Number(balance)`/`BigInt(Math.floor(...))` snippets.
+- Use `shared/passkey.js` for passkey error normalization and error-code predicates, and `shared/passkeylabel.js` for generated passkey labels; keep WebAuthn byte conversion and native passkey prompt wiring in the platform modules.
+- Use `shared/username.js` for app, bot, and admin username normalization/validation. Keep `functions/lib/regex.js` functions-local unless the Firebase deploy layout is changed.
+
+## Implementation Hygiene
+
 - For structured data, use structured APIs or parsers instead of ad hoc string manipulation when reasonable.
 - Keep lint rules production-oriented. They should catch undefined names, blocked browser prompts, and hook-order mistakes without enforcing broad style churn.
 - Do not silence lint unless the exception is narrow and still correct. Remove stale eslint-disable comments when the rule no longer reports.
@@ -61,3 +99,4 @@ Use [workflow.md](workflow.md) for the detailed task-file, branch, worktree, han
 - Chat/account deletion UI must use shared provider flows, not direct callable invocations, so encrypted saved-media stays can be collected before server-side message deletion and released afterward.
 - When touching wallet code, remember that boot, address derivation, transfer history, and peer analytics are spread across vault, wallet, and tx data providers.
 - When touching bots, start with deterministic scripted behavior and normal account primitives.
+- Bot action contracts belong in `shared/bot/*`; admin scripts and runtimes should consume the same validators instead of carrying parallel rules.

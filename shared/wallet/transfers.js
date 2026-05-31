@@ -1,19 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { WALLET_RECENT_TRANSFER_LIMIT, WALLET_TRANSFER_FETCH_THROTTLE_MS, WALLET_TRANSFER_PAGE_LIMIT } from '../config.js';
-import { readCachedTransferState, writeCachedTransferState } from '../localdatacache.js';
-import { markDiag, markDone, markError } from './diag.js';
+import { readCachedTransferState, writeCachedTransferState } from '../cache/localdata.js';
+import { sleep } from '../utils/async.js';
+import { markDiag, markDone, markError } from '../utils/diagnostics.js';
+import { isPendingTransfer, txCreatedMs } from './tx.js';
 
 export const RECENT_TRANSFER_LIMIT = WALLET_RECENT_TRANSFER_LIMIT;
 export const TRANSFER_PAGE_LIMIT = WALLET_TRANSFER_PAGE_LIMIT;
 const INITIAL_TRANSFER_LIMIT = RECENT_TRANSFER_LIMIT;
 const TRANSFER_FETCH_THROTTLE_MS = WALLET_TRANSFER_FETCH_THROTTLE_MS;
-const FINAL_TRANSFER_STATUSES = new Set(['TRANSFER_STATUS_COMPLETED', 'TRANSFER_STATUS_EXPIRED', 'TRANSFER_STATUS_RETURNED', 'UNRECOGNIZED']);
-
-export function isPendingTransfer(tx) {
-    const status = typeof tx?.status === 'string' ? tx.status : '';
-    return !!status && !FINAL_TRANSFER_STATUSES.has(status);
-}
+export { isPendingTransfer };
 
 function sameTransfers(a = [], b = []) {
     if (a === b) {
@@ -42,24 +39,6 @@ function sameTransfers(a = [], b = []) {
     }
 
     return true;
-}
-
-function txCreatedMs(tx) {
-    const value = tx?.createdTime;
-    if (typeof value?.toMillis === 'function') {
-        const ms = value.toMillis();
-        return Number.isFinite(ms) ? ms : 0;
-    }
-    if (value instanceof Date) {
-        const ms = value.getTime();
-        return Number.isFinite(ms) ? ms : 0;
-    }
-    if (Number.isFinite(value)) return value;
-    if (typeof value === 'string') {
-        const ms = Date.parse(value);
-        return Number.isFinite(ms) ? ms : 0;
-    }
-    return 0;
 }
 
 function getOldestTransferMs(transfers = []) {
@@ -104,10 +83,6 @@ function getNextOffset(page, currentOffset, pageTransfers) {
 
 function hasMorePage(pageTransfers, limit) {
     return pageTransfers.length >= limit;
-}
-
-function sleep(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export function useWalletTransfers({ wallet, localCache, diag }) {

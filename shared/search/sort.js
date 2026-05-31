@@ -1,7 +1,11 @@
-import { cleanUsername } from '../regex.js';
+import { cleanUsername } from '../username.js';
 
-function byUsername(a, b) {
+export function compareProfilesByUsername(a, b) {
     return (a?.username || '').localeCompare(b?.username || '');
+}
+
+export function compareProfilesByName(a, b) {
+    return String(a?.username || a?.uid || '').localeCompare(String(b?.username || b?.uid || ''));
 }
 
 // Username searches rank exact prefix matches first, then alphabetical.
@@ -9,7 +13,7 @@ function byUsername(a, b) {
 export function sortProfiles(profiles = [], parsed) {
     const list = [...(profiles || [])];
     if (!parsed || parsed.kind !== 'username' || !parsed.value) {
-        return list.sort(byUsername);
+        return list.sort(compareProfilesByUsername);
     }
 
     const q = parsed.value;

@@ -5,46 +5,16 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { useParams } from 'next/navigation';
 import { ArrowLeft, Copy, Download, Loader, MessageCircleOff } from 'lucide-react';
+import { firstRouteParam } from '@veyl/shared/navigation/params';
 import Loading from '@/components/loading';
 import { Button } from '@/components/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/avatar';
 import { Card } from '@/components/card';
 import { useAdminData } from '@/components/providers/adminprovider';
-import { useAdminFile } from '@/lib/admin/files';
-import { imageWidth } from '@/lib/messages';
-import { formatUserDisplay } from '@/lib/utils';
+import { displayUser, formatDateTime } from '@/lib/admin/format';
+import { useFileUrl } from '@/lib/admin/files';
+import { imageWidth } from '@/lib/chat/messages';
 import { toast } from 'sonner';
-
-function displayUser(user) {
-    return user?.username || user?.uid || formatUserDisplay(user);
-}
-
-function formatDateTime(value) {
-    let date = null;
-
-    if (typeof value?.toDate === 'function') {
-        date = value.toDate();
-    } else if (value instanceof Date) {
-        date = value;
-    } else if (typeof value === 'number') {
-        date = new Date(value);
-    } else if (typeof value?.seconds === 'number') {
-        date = new Date(value.seconds * 1000 + Math.floor((value.nanoseconds || 0) / 1000000));
-    } else if (typeof value?._seconds === 'number') {
-        date = new Date(value._seconds * 1000 + Math.floor((value._nanoseconds || 0) / 1000000));
-    } else if (typeof value === 'string') {
-        date = new Date(value);
-    }
-
-    if (!date) {
-        return '';
-    }
-
-    return new Intl.DateTimeFormat('en-US', {
-        dateStyle: 'medium',
-        timeStyle: 'short',
-    }).format(date);
-}
 
 function reportTypeLabel(type) {
     switch (type) {
@@ -70,7 +40,7 @@ function ReportEvidence({ report }) {
     const typeLabel = reportTypeLabel(type);
     const attachment = report?.parsed?.attachment || null;
     const content = report?.parsed?.content || '';
-    const fileUrl = useAdminFile(attachment?.path);
+    const fileUrl = useFileUrl(attachment?.path);
     const [downloading, setDownloading] = useState(false);
     const [aspect, setAspect] = useState(4 / 3);
 
@@ -183,7 +153,7 @@ function ReportEvidence({ report }) {
 
 export default function AdminUserPage() {
     const params = useParams();
-    const slug = Array.isArray(params?.username) ? params.username[0] : params?.username;
+    const slug = firstRouteParam(params?.username);
     const { details, loadOffender, banUser, unbanUser } = useAdminData();
     const entry = slug ? details[slug] : null;
     const offender = entry?.data?.offender || null;

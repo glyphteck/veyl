@@ -1,6 +1,6 @@
-import { unpackSeedData } from '@glyphteck/shared/crypto/pack';
-import { decryptSeed as decryptSeedShared, deriveWalletMnemonic as deriveWalletMnemonicShared, encryptSeed as encryptSeedShared } from '@glyphteck/shared/crypto/seed';
-import { normalizePassword } from '@glyphteck/shared/password';
+import { unpackSeedData } from '@veyl/shared/crypto/pack';
+import { decryptSeed as decryptSeedShared, deriveWalletMnemonic as deriveWalletMnemonicShared, encryptSeed as encryptSeedShared } from '@veyl/shared/crypto/seed';
+import { normalizePassword } from '@veyl/shared/password';
 import { deriveVaultKey } from './kdf';
 
 function zero(bytes) {

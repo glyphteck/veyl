@@ -15,21 +15,18 @@ import { useTheme } from '@/providers/themeprovider';
 import { useUser } from '@/providers/userprovider';
 import { useWallet } from '@/providers/walletprovider';
 import { tap } from '@/lib/tap';
-import { makeReq } from '@glyphteck/shared/chat/messages';
-import { SEND_ON_SCAN_ENABLED } from '@glyphteck/shared/settings';
-import { formatUserDisplay, renderMoney, satsInABitcoin, toDisplay, toSats } from '@glyphteck/shared/utils';
-
-const UNITS = ['sats', 'btc', 'usd'];
-const MAX_REQUEST_AMOUNT = satsInABitcoin * 100000n;
-
-function pick(value) {
-    if (typeof value === 'string') return value;
-    if (Array.isArray(value)) return value[0] || '';
-    return '';
-}
+import { yieldToUi } from '@veyl/shared/utils/async';
+import { makeReq } from '@veyl/shared/chat/messages';
+import { BTC_PRICE_FALLBACK, REQUEST_MONEY_MAX_SATS } from '@veyl/shared/config';
+import { textRouteParam } from '@veyl/shared/navigation/params';
+import { SEND_ON_SCAN_ENABLED } from '@veyl/shared/settings';
+import { lowerText } from '@veyl/shared/utils/text';
+import { MONEY_UNITS, renderMoney, toDisplay, toSats } from '@veyl/shared/money';
+import { formatUserDisplay } from '@veyl/shared/profile';
+import { availableBalanceSats } from '@veyl/shared/wallet/balance';
 
 function flag(value) {
-    const raw = pick(value).trim().toLowerCase();
+    const raw = lowerText(textRouteParam(value));
     return raw === '1' || raw === 'true' || raw === 'yes';
 }
 
@@ -42,13 +39,13 @@ export default function TransferScreen() {
     const { peerByUid, peerByWalletPK, addPeer } = usePeer() || {};
     const params = useLocalSearchParams();
 
-    const uid = pick(params?.uid).trim();
-    const walletPK = pick(params?.walletPK).trim();
-    const rawAmount = pick(params?.amount).trim();
-    const presetMode = pick(params?.mode).trim().toLowerCase();
+    const uid = textRouteParam(params?.uid).trim();
+    const walletPK = textRouteParam(params?.walletPK).trim();
+    const rawAmount = textRouteParam(params?.amount).trim();
+    const presetMode = lowerText(textRouteParam(params?.mode));
     const forceSend = flag(params?.send);
     const autoSend = SEND_ON_SCAN_ENABLED && flag(params?.auto);
-    const price = bitcoin?.price ?? 100000;
+    const price = bitcoin?.price ?? BTC_PRICE_FALLBACK;
     const preset = rawAmount.length > 0;
 
     const inputRef = useRef(null);
@@ -71,14 +68,7 @@ export default function TransferScreen() {
         }
     }, [rawAmount]);
 
-    const balanceSats = useMemo(() => {
-        if (balance == null) return 0n;
-        try {
-            return BigInt(Math.floor(Number(balance)));
-        } catch {
-            return 0n;
-        }
-    }, [balance]);
+    const balanceSats = useMemo(() => availableBalanceSats(balance), [balance]);
 
     const knownPeer = useMemo(() => {
         if (uid) {
@@ -153,7 +143,7 @@ export default function TransferScreen() {
         });
     }, [preset, settings?.moneyFormat, uid, walletPK]);
 
-    const maxSats = mode === 'request' ? MAX_REQUEST_AMOUNT : balanceSats;
+    const maxSats = mode === 'request' ? REQUEST_MONEY_MAX_SATS : balanceSats;
     const typedSats = useMemo(() => {
         if (!amount) return 0n;
         try {
@@ -177,8 +167,8 @@ export default function TransferScreen() {
     const unitStyle = useAnimatedStyle(() => ({ transform: [{ scale: unitScale.value }] }));
 
     const cycleUnit = useCallback(() => {
-        const i = UNITS.indexOf(unit);
-        const next = UNITS[(i + 1) % UNITS.length];
+        const i = MONEY_UNITS.indexOf(unit);
+        const next = MONEY_UNITS[(i + 1) % MONEY_UNITS.length];
         if (amount) {
             try {
                 const sats = toSats(amount, unit, price);
@@ -199,7 +189,7 @@ export default function TransferScreen() {
     const closeRoute = useCallback(async () => {
         inputRef.current?.blur?.();
         Keyboard.dismiss();
-        await new Promise((resolve) => requestAnimationFrame(resolve));
+        await yieldToUi();
         if (!openRef.current) return;
         router.dismiss();
     }, []);

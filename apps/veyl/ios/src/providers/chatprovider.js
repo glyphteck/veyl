@@ -1,10 +1,10 @@
 import { AppState } from 'react-native';
 import { httpsCallable } from 'firebase/functions';
-import { IOS_CHAT_WARMING } from '@glyphteck/shared/chat/messages/session/config';
-import { createChat, createChatProvider } from '@glyphteck/shared/providers/chatprovider';
+import { IOS_CHAT_WARMING } from '@veyl/shared/chat/messages/session/config';
+import { createChat, createChatProvider } from '@veyl/shared/providers/chatprovider';
 import { db, functions, storage } from '@/lib/firebase';
-import { readMessageFileNative, uploadAttachmentMsgNative } from '@/lib/chatmedia';
-import { preloadMessageMediaUri } from '@/lib/chatdownloads';
+import { readMessageFileNative, uploadAttachmentMsgNative } from '@/lib/chat/media';
+import { preloadMessageMediaUri } from '@/lib/chat/downloads';
 import { useVault } from '@/providers/vaultprovider';
 import { useUser } from '@/providers/userprovider';
 import { mark } from '@/lib/diagnostics';

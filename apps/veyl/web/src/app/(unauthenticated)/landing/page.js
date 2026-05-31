@@ -3,11 +3,11 @@ import Image from 'next/image';
 import { headers } from 'next/headers';
 import { userAgent } from 'next/server';
 import { ArrowRight, HatGlasses, KeyRound, Lock, MessageCircle, Smartphone, Wallet } from 'lucide-react';
-import { btclogo, gtlogo, usdblogo } from '@glyphteck/shared/logos';
+import { btclogo, gtlogo, usdblogo } from '@veyl/shared/logos';
 import { Button } from '@/components/button';
 import { Card } from '@/components/card';
 import { walletLogoSrc } from '@/lib/brand';
-import { cn } from '@/lib/utils';
+import { cn } from '@/lib/classes';
 import { FeatureJump } from './featurejump';
 import { Graph } from './graph';
 
@@ -215,19 +215,19 @@ export default async function LandingPage() {
                 ))}
             </section>
 
-            <div className="relative z-10 mx-auto grid w-full max-w-6xl gap-16 px-5 pb-14 md:gap-24 md:px-8 md:pb-20">
+            <div className="relative z-10 mx-auto grid w-full max-w-6xl gap-16 px-5 md:gap-24 md:px-8">
                 {sections.map((section, index) => (
                     <FeatureSection key={section.title} {...section} device={device} reverse={index % 2 === 1} />
                 ))}
             </div>
 
-            <div aria-hidden="true" className="relative z-10 h-dvh" />
-
-            <div className="relative z-10 mx-auto flex w-full flex-col items-center gap-8 pb-2 text-xs font-black uppercase tracking-normal text-muted">
-                <a href="https://glyphteck.com" aria-label="Glyphteck" className="grower inline-flex">
-                    <Image src={gtlogo} alt="" width={128} height={64} className="h-8 w-auto dark:invert md:h-16" unoptimized />
+            <div className="relative z-10 mx-auto h-dvh w-full text-muted">
+                <a href="https://glyphteck.com" aria-label="Glyphteck" className="grower absolute left-1/2 top-1/2 inline-flex -translate-x-1/2 -translate-y-1/2">
+                    <Image src={gtlogo} alt="" width={128} height={64} className="h-auto w-16 dark:invert md:w-32" style={{ height: 'auto' }} unoptimized />
                 </a>
-                <span>©2026 Glyphteck Corp.</span>
+                <div className="pointer-events-none absolute bottom-2 inset-x-0 z-10 flex h-6 items-center px-1 text-xs font-black uppercase text-muted">
+                    <span className="absolute left-1/2 -translate-x-1/2">©2026 Glyphteck Corp.</span>
+                </div>
             </div>
         </main>
     );

@@ -35,7 +35,7 @@ const CSP_DIRECTIVES = [
 const CSP = CSP_DIRECTIVES.join('; ');
 
 module.exports = {
-    transpilePackages: ['@buildonspark/spark-sdk', '@glyphteck/shared'],
+    transpilePackages: ['@buildonspark/spark-sdk', '@veyl/shared'],
     devIndicators: false,
     env: {
         APP_VERSION: appPackageInfo.version,

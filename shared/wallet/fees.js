@@ -1,4 +1,5 @@
-import { formatMoney } from '../formatmoney.js';
+import { formatMoney } from '../money.js';
+import { nonNegativeNumber } from '../utils/number.js';
 
 export const DEFAULT_EXIT_SPEED = 'MEDIUM';
 export const EXIT_SPEEDS = Object.freeze(['SLOW', 'MEDIUM', 'FAST']);
@@ -232,7 +233,7 @@ export function formatFeeRateSatsPerVbyte(value, { fallback = 'updating', precis
     if (!Number.isFinite(rate)) {
         return fallback;
     }
-    const scale = 10 ** Math.max(0, Number(precision) || 0);
+    const scale = 10 ** nonNegativeNumber(precision, 0);
     const rounded = Math.round(rate * scale) / scale;
     const formatted = rounded >= 10 ? formatWholeNumber(Math.round(rounded)) : String(rounded);
     return `${formatted} sat/vB`;

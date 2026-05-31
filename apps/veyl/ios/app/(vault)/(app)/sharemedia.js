@@ -4,31 +4,23 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MessageCircle, Search } from 'lucide-react-native';
-import { mergeProfiles } from '@glyphteck/shared/search/merge';
-import { formatUserDisplay } from '@glyphteck/shared/utils';
-import { getChatId } from '@glyphteck/shared/crypto/chat';
+import { mergeProfiles } from '@veyl/shared/search/merge';
+import { textRouteParam } from '@veyl/shared/navigation/params';
+import { formatUserDisplay, peerKey } from '@veyl/shared/profile';
+import { truncateLabel } from '@veyl/shared/utils/display';
+import { getChatId } from '@veyl/shared/crypto/chat';
 
 import { useTheme } from '@/providers/themeprovider';
 import { usePeer } from '@/providers/peerprovider';
 import { useUser } from '@/providers/userprovider';
 import { useChat } from '@/providers/chatprovider';
 import { useSearch } from '@/lib/search/usesearch';
-import { clearShareMedia, readShareMedia } from '@/lib/sharemedia';
+import { clearShareMedia, readShareMedia } from '@/lib/chat/share';
 import Avatar from '@/components/avatar';
 import EmptyState from '@/components/emptystate';
 import GlassButton from '@/components/glass/glassbutton';
 import SearchInput from '@/components/search';
 import { tap } from '@/lib/tap';
-
-function getPeerLabel(peer) {
-    if (!peer) return '';
-    return peer?.username || formatUserDisplay({ username: peer?.username, chatPK: peer?.chatPK, walletPK: peer?.walletPK });
-}
-
-function truncateLabel(label, max = 8) {
-    if (!label || label.length <= max) return label || '';
-    return `${label.slice(0, max)}...`;
-}
 
 function PeerCell({ item, onToggle, theme, selected, disabled }) {
     const scale = useSharedValue(1);
@@ -41,7 +33,7 @@ function PeerCell({ item, onToggle, theme, selected, disabled }) {
 
     const scaleStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
     const avatar = item?.avatar ? { uri: item.avatar } : null;
-    const label = truncateLabel(getPeerLabel(item), 8);
+    const label = truncateLabel(formatUserDisplay(item), 8);
 
     return (
         <Pressable {...pressFeedback} style={{ width: '33.333%', alignItems: 'center', paddingVertical: 10 }}>
@@ -64,7 +56,7 @@ export default function ShareMediaScreen() {
     const router = useRouter();
     const insets = useSafeAreaInsets();
     const params = useLocalSearchParams();
-    const shareId = typeof params?.id === 'string' ? params.id : Array.isArray(params?.id) ? params.id[0] : '';
+    const shareId = textRouteParam(params?.id);
     const msg = useMemo(() => readShareMedia(shareId), [shareId]);
 
     const searchInputRef = useRef(null);
@@ -148,9 +140,9 @@ export default function ShareMediaScreen() {
         [selectedUids, theme, togglePeer]
     );
 
-    const peerKey = useCallback((item, index) => item?.uid || item?.chatPK || `${index}`, []);
+    const keyExtractor = useCallback((item, index) => peerKey(item, `${index}`), []);
     const hasSelection = selected.length > 0;
-    const sendLabel = selected.length > 1 ? `send to ${selected.length} people` : selected.length === 1 ? `send to ${truncateLabel(getPeerLabel(selected[0]), 12)}` : 'send';
+    const sendLabel = selected.length > 1 ? `send to ${selected.length} people` : selected.length === 1 ? `send to ${truncateLabel(formatUserDisplay(selected[0]), 12)}` : 'send';
 
     return (
         <View style={{ flex: 1, paddingHorizontal: 12 }}>
@@ -168,7 +160,7 @@ export default function ShareMediaScreen() {
             <View style={{ flex: 1, marginTop: 20, overflow: 'hidden' }}>
                 <FlatList
                     data={filteredPeers}
-                    keyExtractor={peerKey}
+                    keyExtractor={keyExtractor}
                     renderItem={renderPeer}
                     numColumns={3}
                     keyboardShouldPersistTaps="handled"

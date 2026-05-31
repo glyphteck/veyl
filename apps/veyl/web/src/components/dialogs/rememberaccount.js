@@ -3,8 +3,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { DIALOG_CLOSE_MS } from '@/components/dialog';
 import Alert from './alert';
-import { logout } from '@/lib/useractions';
-import { userAvatarCache } from '@/lib/useravatarcache';
+import { logout } from '@/lib/user/actions';
+import { userAvatarCache } from '@/lib/user/avatarcache';
 
 export default function RememberAccount({ data, close }) {
     const [busy, setBusy] = useState(false);

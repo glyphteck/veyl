@@ -17,14 +17,16 @@ import { auth, functions } from '@/lib/firebase';
 import { clearFaceIdPassword } from '@/lib/faceid';
 import { dropPush } from '@/lib/push';
 import { useTap } from '@/lib/tap';
-import { userAvatarCache } from '@/lib/useravatarcache';
+import { userAvatarCache } from '@/lib/user/avatarcache';
 import { useBitcoin } from '@/providers/bitcoinprovider';
 import { useTheme } from '@/providers/themeprovider';
 import { useUser } from '@/providers/userprovider';
 import { useVault } from '@/providers/vaultprovider';
 import { useWallet } from '@/providers/walletprovider';
 import { useChat } from '@/providers/chatprovider';
-import { renderMoney } from '@glyphteck/shared/utils';
+import { renderMoney } from '@veyl/shared/money';
+import { yieldToUi } from '@veyl/shared/utils/async';
+import { hasAvailableBalance } from '@veyl/shared/wallet/balance';
 import { verifyVaultPassword } from '@/lib/crypto/seed';
 
 function getVaultError(error) {
@@ -55,7 +57,7 @@ export default function DeleteAccountScreen() {
     const [isVerifying, setIsVerifying] = useState(false);
     const [isVerified, setIsVerified] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
-    const showWithdraw = Number(balance ?? 0) > 0;
+    const showWithdraw = hasAvailableBalance(balance);
     const balanceLabel = renderMoney(balance ?? 0n, settings.moneyFormat, bitcoin.price);
     const lockPulse = useSharedValue(1);
     const lockAnimStyle = useAnimatedStyle(() => ({ opacity: lockPulse.value }));
@@ -108,11 +110,6 @@ export default function DeleteAccountScreen() {
         setPassword(value.slice(0, 64));
         setError('');
         setIsVerified(false);
-    }, []);
-
-    const yieldToUi = useCallback(async () => {
-        await new Promise((resolve) => requestAnimationFrame(resolve));
-        await new Promise((resolve) => setTimeout(resolve, 0));
     }, []);
 
     const handleVerify = useCallback(async () => {

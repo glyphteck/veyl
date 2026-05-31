@@ -1,5 +1,5 @@
-import { createSearch } from '@glyphteck/shared/search/hook';
-import { createProfileSource } from '@glyphteck/shared/search/source';
+import { createSearch } from '@veyl/shared/search/hook';
+import { createProfileSource } from '@veyl/shared/search/source';
 import { profileQueries } from '@/lib/peers';
 import { usePeer } from '@/providers/peerprovider';
 import { useUser } from '@/providers/userprovider';

@@ -1,8 +1,10 @@
 #!/usr/bin/env bun
 
 import admin, { db } from '../../functions/lib/admin.js';
-import { cliArgs } from './common.mjs';
+import { cliArgs } from './cli.mjs';
 import { nukeBots } from './bot.mjs';
+import { uniqueValues } from '@veyl/shared/utils/array';
+import { lowerText } from '@veyl/shared/utils/text';
 
 const ALL = ['db', 'storage', 'auth'];
 const EXTRA = ['bots'];
@@ -22,9 +24,7 @@ function parseArgs(args) {
 
     for (let index = 0; index < args.length; index += 1) {
         const arg = args[index];
-        const target = String(arg ?? '')
-            .trim()
-            .toLowerCase();
+        const target = lowerText(arg);
 
         if (!target) continue;
         if (target === 'all') {
@@ -36,7 +36,7 @@ function parseArgs(args) {
             targets.add('bots');
 
             const maybeBot = String(args[index + 1] ?? '').trim();
-            const maybeBotTarget = maybeBot.toLowerCase();
+            const maybeBotTarget = lowerText(maybeBot);
             if (maybeBot && !KNOWN.includes(maybeBotTarget) && maybeBotTarget !== 'bot') {
                 botTarget = maybeBot;
                 index += 1;
@@ -142,7 +142,7 @@ function plural(count, word) {
 
 function printResult(target, result) {
     if (target === 'db') {
-        const collections = [...new Set(result.collections)];
+        const collections = uniqueValues(result.collections);
         const names = collections.length ? `: ${collections.join(', ')}` : '';
         console.log(`deleted ${plural(collections.length, 'collection')} from firestore in ${plural(result.rounds, 'round')}${names}`);
         return;

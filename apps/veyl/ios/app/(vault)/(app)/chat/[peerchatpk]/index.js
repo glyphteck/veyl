@@ -16,13 +16,19 @@ import MessageList from '@/components/chat/messagelist';
 import { KeyboardStickyView } from '@/components/keyboardscroll';
 import Icon from '@/components/icon';
 import Avatar from '@/components/avatar';
-import { prepareAssetForChatUpload } from '@/lib/chatmedia';
+import { prepareAssetForChatUpload } from '@/lib/chat/media';
 import { mark } from '@/lib/diagnostics';
-import { formatUserDisplay } from '@glyphteck/shared/utils';
-import { getChatId } from '@glyphteck/shared/crypto/chat';
-import { canReplyToMsg, makeReq, makeTxt, setReply, setTxt } from '@glyphteck/shared/chat/messages';
+import { useRouteLock } from '@/lib/navigation/routelock';
+import { formatUserDisplay } from '@veyl/shared/profile';
+import { getChatId } from '@veyl/shared/crypto/chat';
+import { getChatPeerPK } from '@veyl/shared/chat/ids';
+import { chatUploadErrorMessage } from '@veyl/shared/chat/attachments';
+import { getMessageKey } from '@veyl/shared/chat/state';
+import { canReplyToMsg, makeReq, makeTxt, setReply, setTxt } from '@veyl/shared/chat/messages';
 import { useTap } from '@/lib/tap';
-import { getCommandContext, parseCommandAmountSats } from '@glyphteck/shared/commands';
+import { getCommandContext, parseCommandAmountSats } from '@veyl/shared/commands';
+import { firstRouteParam } from '@veyl/shared/navigation/params';
+import { lowerText } from '@veyl/shared/utils/text';
 
 const ENABLE_CHAT_COMPOSER = true;
 const ENABLE_CHAT_INPUT = true;
@@ -36,39 +42,21 @@ const composerOverlayTiming = {
 };
 const composerOverlayLayout = LinearTransition.duration(COMPOSER_OVERLAY_MS).easing(Easing.out(Easing.cubic));
 
-function formatUploadSize(bytes) {
-    const size = Number(bytes);
-    if (!Number.isFinite(size) || size <= 0) {
-        return '';
-    }
-    if (size >= 1024 * 1024) {
-        return `${Math.round(size / 1024 / 1024)} MB`;
-    }
-    return `${Math.max(1, Math.round(size / 1024))} KB`;
-}
-
 function uploadErrorMessage(error, fallback) {
-    const code = String(error?.code || '');
-    if (code === 'file-too-large') {
-        const max = formatUploadSize(error?.maxBytes);
-        return max ? `This file is too large. Chat uploads are limited to ${max}.` : 'This file is too large.';
-    }
-    if (code === 'video-unavailable') {
-        return 'This video could not be read. Try a shorter video or export it again.';
-    }
-    return fallback;
+    return chatUploadErrorMessage(error, {
+        fallback,
+        size: { fallback: '', unitSeparator: ' ' },
+        fileTooLarge: (max) => (max ? `This file is too large. Chat uploads are limited to ${max}.` : 'This file is too large.'),
+        videoUnavailable: () => 'This video could not be read. Try a shorter video or export it again.',
+    });
 }
 
 function showUploadError(title, error, fallback) {
     Alert.alert(title, uploadErrorMessage(error, fallback));
 }
 
-function pickParam(value) {
-    return Array.isArray(value) ? value[0] : value;
-}
-
 function cleanChatPK(value) {
-    const chatPK = typeof value === 'string' ? value.trim().toLowerCase() : '';
+    const chatPK = lowerText(value);
     return /^[0-9a-f]{64}$/.test(chatPK) ? chatPK : null;
 }
 
@@ -83,8 +71,7 @@ export default function PeerChatRoute() {
     const { peerByChatPK, updatePeer } = usePeer() || {};
     const backTap = useTap({ onPress: () => router.dismissTo('/chat') });
     const inputH = useRef(0);
-    const routeLockRef = useRef(false);
-    const routeLockTimerRef = useRef(null);
+    const { lockRoute } = useRouteLock();
     const inputApiRef = useRef(null);
     const inputBaseH = useRef(0);
     const overlayH = useRef(0);
@@ -100,14 +87,11 @@ export default function PeerChatRoute() {
     const composerExtraPadding = useDerivedValue(() => composerOverlayPadding.value + composerInputPadding.value);
 
     const ownChatPK = cleanChatPK(chatPK);
-    const peerChatPKParam = cleanChatPK(pickParam(params?.peerchatpk));
-    const chatId = useMemo(() => (ownChatPK && peerChatPKParam ? getChatId(ownChatPK, peerChatPKParam) : null), [ownChatPK, peerChatPKParam]);
+    const routeChatPK = cleanChatPK(firstRouteParam(params?.peerchatpk));
+    const chatId = useMemo(() => (ownChatPK && routeChatPK ? getChatId(ownChatPK, routeChatPK) : null), [ownChatPK, routeChatPK]);
     const currentChat = useMemo(() => (chatId && Array.isArray(chats) ? (chats.find((chat) => chat?.id === chatId) ?? null) : null), [chatId, chats]);
 
-    const peerChatPK = useMemo(
-        () => currentChat?.participants?.find?.((participant) => participant && participant !== chatPK) ?? peerChatPKParam,
-        [currentChat?.participants, chatPK, peerChatPKParam]
-    );
+    const peerChatPK = useMemo(() => getChatPeerPK(currentChat, chatPK) ?? routeChatPK, [chatPK, currentChat, routeChatPK]);
     const peerProfile = useMemo(() => (peerChatPK ? (peerByChatPK?.get(peerChatPK) ?? null) : null), [peerByChatPK, peerChatPK]);
     const chatTitle = useMemo(() => {
         if (!peerChatPK) return 'chat';
@@ -128,17 +112,6 @@ export default function PeerChatRoute() {
     }, [peerChatPK, peerProfile]);
     const hasChatRow = !!currentChat;
     const hasPeerProfile = !!peerProfile;
-
-    const lockRoute = useCallback((ms = 1200) => {
-        if (routeLockRef.current) return false;
-        routeLockRef.current = true;
-        if (routeLockTimerRef.current) clearTimeout(routeLockTimerRef.current);
-        routeLockTimerRef.current = setTimeout(() => {
-            routeLockRef.current = false;
-            routeLockTimerRef.current = null;
-        }, ms);
-        return true;
-    }, []);
 
     useEffect(() => {
         if (!chatId) {
@@ -199,12 +172,6 @@ export default function PeerChatRoute() {
         }
         router.replace('/wallet');
     }, [chatBanned, router]);
-
-    useEffect(() => {
-        return () => {
-            if (routeLockTimerRef.current) clearTimeout(routeLockTimerRef.current);
-        };
-    }, []);
 
     useEffect(() => {
         setDraft(null);
@@ -474,7 +441,7 @@ export default function PeerChatRoute() {
         return null;
     }
 
-    const draftKey = draft ? `${draft.mode}:${draft.msg?.cid || draft.msg?.id || draft.msg?.ts?.toMillis?.() || ''}` : '';
+    const draftKey = draft ? `${draft.mode}:${getMessageKey(draft.msg) || draft.msg?.ts?.toMillis?.() || ''}` : '';
 
     return (
         <View style={{ flex: 1 }}>

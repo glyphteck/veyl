@@ -1,8 +1,8 @@
 'use client';
 import { useMemo } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import { makeQr, qr } from '@glyphteck/shared/qrutils';
-import { FUNDING_TX_PREVIEW_VBYTES, STATIC_DEPOSIT_CLAIM_FEE_SATS, formatOnchainFeeAmount } from '@glyphteck/shared/wallet/fees';
+import { makeQr, qr } from '@veyl/shared/qr';
+import { FUNDING_TX_PREVIEW_VBYTES, STATIC_DEPOSIT_CLAIM_FEE_SATS, formatOnchainFeeAmount } from '@veyl/shared/wallet/fees';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/avatar';
 import { Button } from '@/components/button';
 import { useBitcoin } from '@/components/providers/bitcoinprovider';

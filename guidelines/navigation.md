@@ -11,20 +11,21 @@ Start here when a task touches one of these areas.
 - Public key onboarding: `functions/user/onboarding/setpks.js`
 - Web onboarding routes: `apps/veyl/web/src/app/(authenticated)/*`
 - iOS onboarding routes: `apps/veyl/ios/app/(onboarding)/*`
+- iOS stack options and route locks: `apps/veyl/ios/src/lib/navigation/*`
 - Root-domain auth files: separate Website repo under `public/.well-known/*`
 
 Forced auth, vault, and onboarding flows are route-guard owned. After a required write such as username, avatar, community acknowledgement, seed creation, auth, or unlock state changes, update the underlying state and let the guarded layout or protected stack choose the next route. Do not push or replace to the next concrete forced step from the completing screen; reserve explicit navigation for optional user actions and non-forced exits.
 
 ## Vault And Seed Handling
 
-- Shared vault boot helpers: `shared/vaultutils.js`
-- Shared vaulted local cache helpers: `shared/localdatacache.js`
+- Shared vault boot helpers: `shared/vault.js`
+- Shared vaulted local cache helpers: `shared/cache/localdata.js`
 - Seed crypto: `shared/crypto/seed.js`
 - Packed Firestore byte helpers: `shared/crypto/pack.js`
 - Web vault provider: `apps/veyl/web/src/components/providers/vaultprovider.js`
 - iOS vault provider: `apps/veyl/ios/src/providers/vaultprovider.js`
-- Web local cache adapter: `apps/veyl/web/src/lib/localdatacache.js`
-- iOS local cache adapter: `apps/veyl/ios/src/lib/localdatacache.js`
+- Web local cache adapter: `apps/veyl/web/src/lib/cache/localdata.js`
+- iOS local cache adapter: `apps/veyl/ios/src/lib/cache/localdata.js`
 - Web wallet export: `apps/veyl/web/src/components/dialogs/exportwallet.js`
 - iOS wallet export: `apps/veyl/ios/app/(vault)/(app)/exportwallet.js`
 
@@ -56,11 +57,15 @@ Forced auth, vault, and onboarding flows are route-guard owned. After a required
 - Shared chat attachment/cache helpers: `shared/chat/attachments.js`
 - Web chat provider: `apps/veyl/web/src/components/providers/chatprovider.js`
 - iOS chat provider: `apps/veyl/ios/src/providers/chatprovider.js`
+- Web chat UI helpers: `apps/veyl/web/src/lib/chat/messages.js`
+- Web chat message/media runtime helpers: `apps/veyl/web/src/lib/chat/*`
+- iOS chat UI helpers: `apps/veyl/ios/src/lib/chat/messages.js`
+- iOS chat message hook wrapper: `apps/veyl/ios/src/lib/chat/usemessages.js`
 - iOS full-screen media viewer: `apps/veyl/ios/src/providers/mediaviewerprovider.js`
 - iOS full-screen media viewer UI: `apps/veyl/ios/src/components/media/mediaviewer.js`
 - iOS long-press menu provider: `apps/veyl/ios/src/providers/menuprovider.js`
 - iOS long-press menu portal UI: `apps/veyl/ios/src/components/menuportal.js`
-- iOS transient media render-file cache: `apps/veyl/ios/src/lib/msgimagecache.js`
+- iOS transient media render-file cache: `apps/veyl/ios/src/lib/chat/imagecache.js`
 
 Keep `shared/providers/chatprovider.js` focused on React provider orchestration. It owns chat-list wiring, pending local action state, read receipts, hidden checkpoints, and provider-level message session plumbing. Provider-owned current-message state lives in `shared/chat/messages/session/`: it keeps latest-message session entries, session-only remembered views, and recent-chat warming. `shared/chat/usemessages.js` should consume those provider-owned sessions as its initial visible list instead of attaching its own latest-message listener or carrying a separate route-built list cache, so opening a warmed chat does not double-subscribe or restart from an empty list. Warm sessions must not download attachment bytes; media rows may reuse in-memory render-file URIs, and video rows should render cached poster images instead of mounting live video elements just because a row appeared. Put outbound message shaping, optimistic local send state, retry payload helpers, reactions, save/unsave, whole-chat deletion, seen/read action scheduling, and settings mutations in `shared/chat/actions/`; put encrypted read-receipt primitives in `shared/chat/read.js`; put smart deletion, saved-media stay scans, and control compaction in `shared/chat/messages/`. Chat media is still evolving. Before changing payload shape, inspect both clients, bot runtime, rules, and shared chat code.
 
@@ -92,7 +97,7 @@ The search system is built around profile lookups. An input string is parsed int
 - Firestore profile queries: `shared/search/remote.js`
 - Roles registry: `shared/search/roles.js`
 - Input parser: `shared/search/query.js`
-- Local profile predicate: `shared/search/predicate.js`
+- Local profile match: `shared/search/match.js`
 - Result sort: `shared/search/sort.js`
 - Local + remote merge: `shared/search/merge.js`
 - Web search wrapper: `apps/veyl/web/src/lib/search/usesearch.js`

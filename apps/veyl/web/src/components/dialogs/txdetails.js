@@ -3,12 +3,14 @@
 import { Card } from '@/components/card';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/avatar';
 import { Button } from '@/components/button';
-import { formatUserDisplay, formatFullDateTime, renderMoney } from '@/lib/utils';
+import { formatUserDisplay } from '@veyl/shared/profile';
+import { renderMoney } from '@veyl/shared/money';
+import { formatFullDateTime } from '@veyl/shared/utils/time';
 import { useBitcoin } from '@/components/providers/bitcoinprovider';
 import { useUser } from '@/components/providers/userprovider';
 import { usePeer } from '@/components/providers/peerprovider';
 import { useDialog } from '@/components/providers/dialogprovider';
-import { useCloak } from '@glyphteck/shared/providers/cloakprovider';
+import { useCloak } from '@veyl/shared/providers/cloakprovider';
 import { Clock, HandCoins, Check, Copy, BanknoteArrowDown, BanknoteArrowUp } from 'lucide-react';
 import { toast } from 'sonner';
 

@@ -2,20 +2,19 @@
 
 import Image from 'next/image';
 import { Loader } from 'lucide-react';
-import { useCloak } from '@glyphteck/shared/providers/cloakprovider';
-import { cn } from '@/lib/utils';
-import { imageWidth } from '@/lib/messages';
-import { getImageAspect } from '@glyphteck/shared/chat/messages';
-import { useMsgImage } from '../usemsgimage';
-import { stopClick } from './utils';
+import { useCloak } from '@veyl/shared/providers/cloakprovider';
+import { cn } from '@/lib/classes';
+import { imageWidth, stopClick } from '@/lib/chat/messages';
+import { getImageAspect, hasText, isPngMsg } from '@veyl/shared/chat/messages';
+import { useMsgImage } from '@/lib/chat/useimage';
 
 export default function ImageMessage({ msg, peerChatPK }) {
     const { cloaked } = useCloak();
     const { src, loading, error } = useMsgImage(peerChatPK, msg);
     const aspect = getImageAspect(msg);
     const width = imageWidth(aspect);
-    const hasCaption = typeof msg?.c === 'string' && msg.c.trim();
-    const barePng = String(msg?.m || '').toLowerCase() === 'image/png' && !hasCaption;
+    const hasCaption = hasText(msg?.c);
+    const barePng = isPngMsg(msg) && !hasCaption;
 
     return (
         <div className={cn('overflow-hidden rounded-round', barePng ? '' : 'bg-foreground/5 shadow-sm')} style={{ width, maxWidth: '100%' }} onClick={stopClick}>

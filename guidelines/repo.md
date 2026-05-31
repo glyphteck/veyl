@@ -14,7 +14,7 @@ Main app surfaces:
 
 Shared and backend packages:
 
-- `shared`: shared workspace package `@glyphteck/shared`
+- `shared`: shared workspace package `@veyl/shared`
 - `functions`: Firebase Functions package with its own npm lifecycle
 
 veyl is the first product. `veyl` is a codename and may change at launch.
@@ -48,6 +48,17 @@ After a feature branch is merged, delete the merged branch and any abandoned pre
 - Most core behavior belongs in `shared`, with only minor platform-specific differences in web and iOS.
 - When behavior is unclear, inspect shared first, then compare the other client if the question is client-specific.
 - When auth behavior is unclear, remember the root domain owns passkeys and account identity.
+
+## Source Boundaries
+
+- Web routes live in `apps/veyl/web/src/app`; web UI, providers, dialogs, and local primitives live in `apps/veyl/web/src/components`; web-only logic lives in `apps/veyl/web/src/lib`.
+- Web `src/lib` is feature-folded into `admin`, `cache`, `chat`, `crypto`, `firebase`, `media`, `search`, and `user`, with small root platform helpers such as `passkey.js`, `routeguards.js`, `vault.js`, and `classes.js`.
+- iOS routes live in `apps/veyl/ios/app`; iOS UI lives in `apps/veyl/ios/src/components`; provider wiring lives in `apps/veyl/ios/src/providers`; iOS-only logic lives in `apps/veyl/ios/src/lib`.
+- iOS `src/lib` is feature-folded into `cache`, `camera`, `chat`, `crypto`, `navigation`, `search`, and `user`, with small root platform helpers.
+- Shared cross-platform product logic lives in `shared` as `@veyl/shared`. Generic helpers are under `shared/utils/*`; feature logic is under owner folders such as `shared/chat`, `shared/wallet`, `shared/search`, `shared/cache`, `shared/navigation`, and `shared/bot`.
+- Web UI no longer uses shadcn-generated primitive files. Keep Veyl-owned primitives under `apps/veyl/web/src/components`.
+- Firebase Functions feature entrypoints live under `functions/passkey`, `functions/user`, `functions/chat`, `functions/wallet`, `functions/btc`, and `functions/admin`; deploy-local helpers live under `functions/lib`.
+- Repo tooling lives under `scripts`, with admin command helpers in `scripts/admin`.
 
 ## Company-Wide Accounts
 
@@ -99,5 +110,5 @@ Device-local cache data is stored outside Firebase:
 
 - iOS stores one encrypted local-cache blob plus opaque encrypted media blobs in app document storage.
 - Web stores one encrypted local-cache blob plus opaque encrypted media blobs in IndexedDB.
-- The shared payload and crypto helpers live in `shared/localdatacache.js`.
+- The shared payload and crypto helpers live in `shared/cache/localdata.js`.
 - Only ciphertext is durable while the vault is locked, and account deletion clears the local cache.

@@ -1,19 +1,16 @@
 import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { SparkWallet } from '@buildonspark/spark-sdk';
-import { generateSeed } from '@glyphteck/shared/crypto/seed';
-import { resolveNetwork } from '@glyphteck/shared/network';
-import { normalizeWalletNetwork, resolveWalletPK, walletPKPatch } from '@glyphteck/shared/wallet/keys';
-import { BOT_MODE } from '@glyphteck/shared/bot/events';
-import { bootBotAccount, closeBotAccount } from '@glyphteck/shared/bot/account';
+import { generateSeed } from '@veyl/shared/crypto/seed';
+import { resolveNetwork } from '@veyl/shared/network';
+import { normalizeWalletNetwork, resolveWalletPK, walletPKPatch } from '@veyl/shared/wallet/keys';
+import { BOT_MODE } from '@veyl/shared/bot/events';
+import { bootBotAccount, closeBotAccount } from '@veyl/shared/bot/account';
+import { MAX_USERNAME, isUsername, normalizeUsername } from '@veyl/shared/username';
+import { cleanText, sameText } from '@veyl/shared/utils/text';
 import admin, { db, projectId } from './admin.js';
 import { createSecretClient, ensureBotSeed } from './secrets.js';
 import { ensureUserDoc } from '../../../../functions/lib/userdoc.js';
-import { MAX_USERNAME, isUsername, normalizeUsername } from '../../../../functions/lib/regex.js';
-
-function sameKey(a, b) {
-    return String(a || '').toLowerCase() === String(b || '').toLowerCase();
-}
 
 async function resolveUid(username) {
     const [usernameSnap, botsSnap] = await Promise.all([
@@ -21,7 +18,7 @@ async function resolveUid(username) {
         db.collection('bots').where('username', '==', username).limit(1).get(),
     ]);
 
-    const usernameUid = typeof usernameSnap.data()?.uid === 'string' ? usernameSnap.data().uid.trim() : '';
+    const usernameUid = cleanText(usernameSnap.data()?.uid);
     const botUid = botsSnap.docs[0]?.id || '';
 
     if (usernameUid && botUid && usernameUid !== botUid) {
@@ -61,23 +58,23 @@ async function syncDocs({ uid, username, walletPK, chatPK, network }) {
     await db.runTransaction(async (tx) => {
         const [botSnap, profileSnap, usernameSnap] = await Promise.all([tx.get(botRef), tx.get(profileRef), tx.get(usernameRef)]);
 
-        const reservedUid = typeof usernameSnap.data()?.uid === 'string' ? usernameSnap.data().uid.trim() : '';
+        const reservedUid = cleanText(usernameSnap.data()?.uid);
         if (reservedUid && reservedUid !== uid) {
             throw new Error(`@${username} is already reserved`);
         }
 
         const profileData = profileSnap.exists ? profileSnap.data() : {};
         const existingProfileWalletPK = resolveWalletPK(profileData, walletNetwork);
-        if (existingProfileWalletPK && !sameKey(existingProfileWalletPK, walletPK)) {
+        if (existingProfileWalletPK && !sameText(existingProfileWalletPK, walletPK)) {
             throw new Error('wallet identity mismatch on profile');
         }
-        if (profileData?.chatPK && String(profileData.chatPK).toLowerCase() !== String(chatPK).toLowerCase()) {
+        if (profileData?.chatPK && !sameText(profileData.chatPK, chatPK)) {
             throw new Error('chat identity mismatch on profile');
         }
 
         const botData = botSnap.exists ? botSnap.data() : {};
         const existingBotWalletPK = resolveWalletPK(botData, walletNetwork);
-        if (existingBotWalletPK && !sameKey(existingBotWalletPK, walletPK)) {
+        if (existingBotWalletPK && !sameText(existingBotWalletPK, walletPK)) {
             throw new Error('wallet identity mismatch on bot');
         }
 
@@ -136,7 +133,7 @@ async function generateUniqueUsername(maxAttempts = 10) {
 }
 
 export async function provisionBot(rawInput) {
-    const rawArg = String(rawInput || '').trim().replace(/^@/, '');
+    const rawArg = cleanText(rawInput).replace(/^@/, '');
     const username = rawArg
         ? normalizeUsername(rawArg)
         : await generateUniqueUsername();

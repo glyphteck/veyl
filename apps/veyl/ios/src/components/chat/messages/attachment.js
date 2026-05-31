@@ -1,12 +1,12 @@
 import { useEffect } from 'react';
 import { Text, View } from 'react-native';
-import { useIsFocused } from 'expo-router/react-navigation';
+import { useIsFocused } from 'expo-router';
 import { File } from 'lucide-react-native';
 import { useChat } from '@/providers/chatprovider';
 import { useTheme } from '@/providers/themeprovider';
-import { warmMessageDownload } from '@/lib/chatdownloads';
-import { bubbleTint } from '@/lib/messages';
-import { formatAttachmentSize, getAttachmentCaption, getAttachmentTitle } from '@glyphteck/shared/chat/messages';
+import { warmMessageDownload } from '@/lib/chat/downloads';
+import { bubbleTint } from '@/lib/chat/messages';
+import { formatAttachmentSize, getAttachmentCaption, getAttachmentTitle } from '@veyl/shared/chat/messages';
 import { useMessageGestureBlockers } from '@/components/chat/messagegesturecontext';
 import GlassView from '@/components/glass/glassview';
 import Icon from '@/components/icon';

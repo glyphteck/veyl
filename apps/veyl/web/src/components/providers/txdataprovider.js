@@ -1,6 +1,6 @@
 'use client';
 
-import { createTxDataProvider } from '@glyphteck/shared/providers/txdataprovider';
+import { createTxDataProvider } from '@veyl/shared/providers/txdataprovider';
 import { useWallet } from '@/components/providers/walletprovider';
 import { useUser } from '@/components/providers/userprovider';
 

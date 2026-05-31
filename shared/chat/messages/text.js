@@ -1,5 +1,6 @@
 import { MAX_TXT_CHARS } from './types.js';
 import { retentionPatch } from './retention.js';
+import { cleanText } from '../../utils/text.js';
 
 const DOMAIN_LABEL_PATTERN = '[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?';
 const DOMAIN_TLD_PATTERN = '(?:[a-z]{2,63}|xn--[a-z0-9-]{2,59})';
@@ -15,11 +16,7 @@ const LINK_BAD_CHARS = /[<>"'`]/;
 const LINK_TRAILING_PUNCT = /[),.;!?]+$/;
 
 export function hasText(value) {
-    return typeof value === 'string' && value.trim().length > 0;
-}
-
-function cleanUrl(value) {
-    return String(value ?? '').trim();
+    return cleanText(value).length > 0;
 }
 
 function canStartLink(value, index) {
@@ -50,7 +47,7 @@ function charLength(value) {
 }
 
 export function getLinkUrl(value) {
-    const raw = cleanUrl(value);
+    const raw = cleanText(value);
     if (!raw || /\s/.test(raw)) {
         return '';
     }
@@ -124,8 +121,7 @@ export function isLongTxt(msg) {
 
 export function makeTxtFileName(text) {
     const first =
-        String(text ?? '')
-            .trim()
+        cleanText(text)
             .split(/\s+/)[0] || 'message';
     const clean = first.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '').trim();
     const base = Array.from(clean).slice(0, 12).join('');
@@ -133,7 +129,7 @@ export function makeTxtFileName(text) {
 }
 
 export function makeTxt(text) {
-    const c = typeof text === 'string' ? text.trim() : '';
+    const c = cleanText(text);
     if (!c) {
         throw new Error('text required');
     }
@@ -141,7 +137,7 @@ export function makeTxt(text) {
 }
 
 export function setTxt(msg, text) {
-    const c = typeof text === 'string' ? text.trim() : '';
+    const c = cleanText(text);
     if (!c) {
         throw new Error('text required');
     }

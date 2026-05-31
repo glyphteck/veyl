@@ -1,4 +1,4 @@
-import { cn } from '@/lib/utils';
+import { cn } from '@/lib/classes';
 
 export function ChartTooltip({ tip }) {
     if (!tip?.label || !tip?.value) {

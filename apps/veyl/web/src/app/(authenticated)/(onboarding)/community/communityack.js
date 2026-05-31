@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { Loader } from 'lucide-react';
-import { COMMUNITY_RULES_DATE, COMMUNITY_RULES_EFFECTIVE, COMMUNITY_RULES_VERSION, COMMUNITY_SECTIONS } from '@glyphteck/shared/community';
+import { COMMUNITY_RULES_DATE, COMMUNITY_RULES_EFFECTIVE, COMMUNITY_RULES_VERSION, COMMUNITY_SECTIONS } from '@veyl/shared/community';
 import { Button } from '@/components/button';
 import { auth, db } from '@/lib/firebase/firebaseclient';
 

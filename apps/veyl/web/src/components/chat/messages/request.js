@@ -7,10 +7,9 @@ import { useTxData } from '@/components/providers/txdataprovider';
 import { useUser } from '@/components/providers/userprovider';
 import { useWallet } from '@/components/providers/walletprovider';
 import { Loader } from 'lucide-react';
-import { useCloak } from '@glyphteck/shared/providers/cloakprovider';
-import { bubbleBg } from '@/lib/messages';
-import { renderMoney } from '@/lib/utils';
-import { stopClick } from './utils';
+import { useCloak } from '@veyl/shared/providers/cloakprovider';
+import { bubbleBg, stopClick } from '@/lib/chat/messages';
+import { renderMoney } from '@veyl/shared/money';
 
 export default function RequestMessage({ msg, fromPeer = false, peerDisplayName, onPay, isPaying = false }) {
     const { settings } = useUser();

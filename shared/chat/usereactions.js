@@ -3,12 +3,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CHAT_REACTION_WRITE_DELAY_MS } from '../config.js';
 import { DEFAULT_REACTION_EMOJI, MAX_REACTIONS, getMsgReactions } from './messages.js';
+import { indexMessagesByKey } from './messagekeys.js';
+import { getMessageKey } from './state.js';
 
 export const DEFAULT_REACTION_WRITE_DELAY_MS = CHAT_REACTION_WRITE_DELAY_MS;
-
-function msgKey(message) {
-    return message?.cid || message?.id || null;
-}
 
 function reactionStateKey(reaction) {
     return reaction ? `${reaction.user}:${reaction.emoji}` : '';
@@ -33,19 +31,6 @@ export function chatReactions(msg, chatPK, peerChatPK) {
         chatPK,
         peerChatPK
     );
-}
-
-function messagesByKey(messages) {
-    const map = new Map();
-    for (const message of messages || []) {
-        if (message?.id) {
-            map.set(message.id, message);
-        }
-        if (message?.cid) {
-            map.set(message.cid, message);
-        }
-    }
-    return map;
 }
 
 function withActorReaction(message, actor, reaction, chatPK, peerChatPK) {
@@ -106,7 +91,7 @@ export function useOptimisticMessageReactions({
     const scopeRef = useRef(scopeKey);
     const messagesByKeyRef = useRef(new Map());
     const flushWriteRef = useRef(null);
-    const messageMap = useMemo(() => messagesByKey(messages), [messages]);
+    const messageMap = useMemo(() => indexMessagesByKey(messages), [messages]);
 
     useEffect(() => {
         messagesByKeyRef.current = messageMap;
@@ -175,7 +160,7 @@ export function useOptimisticMessageReactions({
 
     const reactionsForMessage = useCallback(
         (message, overrideMap) => {
-            const id = msgKey(message);
+            const id = getMessageKey(message);
             const latest = latestMessageForKey(messagesByKeyRef.current, id, message);
             if (id && overrideMap?.has?.(id)) {
                 return withActorReaction(latest, chatPK, overrideMap.get(id), chatPK, peerChatPK);
@@ -300,7 +285,7 @@ export function useOptimisticMessageReactions({
 
     const toggleReaction = useCallback(
         (message) => {
-            const id = msgKey(message);
+            const id = getMessageKey(message);
             if (!id || !chatPK) {
                 return [];
             }

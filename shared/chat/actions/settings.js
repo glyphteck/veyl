@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback } from 'react';
-import { writeCachedChats } from '../../localdatacache.js';
+import { writeCachedChats } from '../../cache/localdata.js';
 import { makeChatUnavailableError } from '../attachments.js';
 import { filterPendingDeleteChats, sameChats } from '../chats.js';
 import { getPeerChatPKFromChatId } from '../ids.js';

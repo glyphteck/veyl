@@ -6,24 +6,18 @@ import { Field } from '@/components/field';
 import { Input } from '@/components/input';
 import { Button } from '@/components/button';
 import { Loader, CircleCheck, QrCode } from 'lucide-react';
-import { formatUserDisplay, toSats, toDisplay, renderMoney, satsInABitcoin } from '@/lib/utils';
+import { formatUserDisplay } from '@veyl/shared/profile';
+import { MONEY_UNITS, moneyUnitLabel, toSats, toDisplay, renderMoney } from '@veyl/shared/money';
 import { useBitcoin } from '@/components/providers/bitcoinprovider';
 import { useUser } from '@/components/providers/userprovider';
 import { useDialog } from '@/components/providers/dialogprovider';
 import { useChat } from '@/components/providers/chatprovider';
-import { useCloak } from '@glyphteck/shared/providers/cloakprovider';
-import { makeReq } from '@glyphteck/shared/chat/messages';
-import { makeRequestQr, qr } from '@glyphteck/shared/qrutils';
+import { useCloak } from '@veyl/shared/providers/cloakprovider';
+import { makeReq } from '@veyl/shared/chat/messages';
+import { REQUEST_MONEY_MAX_SATS } from '@veyl/shared/config';
+import { makeRequestQr, qr } from '@veyl/shared/qr';
 import { toast } from 'sonner';
 import PeerSelector from '@/components/peerselector';
-
-const MONEY_UNITS = ['sats', 'btc', 'usd'];
-
-function unitLabel(unit) {
-    if (unit === 'btc') return '₿';
-    if (unit === 'usd') return '$';
-    return 'sats';
-}
 
 export default function RequestMoney({ peer, amount = '', inputUnit, onPeerChange, onAmountChange, onInputUnitChange }) {
     const [sender, setSender] = useState(null);
@@ -34,7 +28,6 @@ export default function RequestMoney({ peer, amount = '', inputUnit, onPeerChang
     const { sendMessage } = useChat();
     const { cloaked } = useCloak();
     const amountInputRef = useRef(null);
-    const MAX_AMOUNT = satsInABitcoin * 100000n; // 100k bitcoin in sats
     const unit = inputUnit || settings.moneyFormat;
     const hasAmount = amount != null && amount !== '';
     const start = !peer ? 'peer' : !hasAmount ? 'amount' : null;
@@ -43,7 +36,7 @@ export default function RequestMoney({ peer, amount = '', inputUnit, onPeerChang
         z
             .object({
                 sender: z.object({}).passthrough(),
-                inputUnit: z.enum(['sats', 'btc', 'usd']),
+                inputUnit: z.enum(MONEY_UNITS),
                 amount: z.string().regex(/^\d+(\.\d{0,8})?$/, 'invalid number'),
             })
             .superRefine((data, ctx) => {
@@ -87,7 +80,7 @@ export default function RequestMoney({ peer, amount = '', inputUnit, onPeerChang
             })
             .transform((d) => ({ ...d, amount: d.amount }));
 
-    const resolver = useMemo(() => zodResolver(schema(MAX_AMOUNT, bitcoin.price, currentUserWalletPK)), [bitcoin.price, currentUserWalletPK]);
+    const resolver = useMemo(() => zodResolver(schema(REQUEST_MONEY_MAX_SATS, bitcoin.price, currentUserWalletPK)), [bitcoin.price, currentUserWalletPK]);
     const form = useForm({
         resolver,
         defaultValues: {
@@ -163,7 +156,7 @@ export default function RequestMoney({ peer, amount = '', inputUnit, onPeerChang
     const setAmount = useCallback(
         (raw) => {
             const unit = form.getValues('inputUnit');
-            const max = MAX_AMOUNT;
+            const max = REQUEST_MONEY_MAX_SATS;
             const accept = (regex, ok) => {
                 if (!regex.test(raw) || !ok()) return;
                 form.setValue('amount', raw);
@@ -290,7 +283,7 @@ export default function RequestMoney({ peer, amount = '', inputUnit, onPeerChang
                                 onClick={cycleUnit}
                                 disabled={isSubmitting}
                             >
-                                {unitLabel(watchedInputUnit)}
+                                {moneyUnitLabel(watchedInputUnit)}
                             </Button>
                         </div>
                     )}

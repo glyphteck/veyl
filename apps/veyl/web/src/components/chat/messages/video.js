@@ -3,14 +3,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Loader, Pause, Play } from 'lucide-react';
 import { useChat } from '@/components/providers/chatprovider';
-import { imageWidth } from '@/lib/messages';
-import { clear, play } from '@/lib/media';
-import { getAttachmentCaption, getImageAspect, isExpiredAttachmentMsg } from '@glyphteck/shared/chat/messages';
-import { getMessagePreviewCacheKey } from '@glyphteck/shared/chat/previews';
-import { useCloak } from '@glyphteck/shared/providers/cloakprovider';
-import { formatDuration } from '@glyphteck/shared/utils';
-import { getReadyPoster, getVideoCacheKey, loadVideoObjectUrl, loadVideoPoster, releaseVideo, retainVideo } from '../videomediacache';
-import { stopClick } from './utils';
+import { imageWidth, stopClick } from '@/lib/chat/messages';
+import { clear, play } from '@/lib/media/playback';
+import { getAttachmentCaption, getImageAspect, hasStoredFileRef, isExpiredAttachmentMsg } from '@veyl/shared/chat/messages';
+import { getMessagePreviewCacheKey } from '@veyl/shared/chat/previews';
+import { useCloak } from '@veyl/shared/providers/cloakprovider';
+import { formatDuration } from '@veyl/shared/utils/time';
+import { getReadyPoster, getVideoCacheKey, loadVideoObjectUrl, loadVideoPoster, releaseVideo, retainVideo } from '@/lib/chat/videocache';
 
 export default function VideoMessage({ msg, peerChatPK }) {
     const { readMessageFile, readMessagePreview, writeMessagePreview } = useChat();
@@ -20,7 +19,7 @@ export default function VideoMessage({ msg, peerChatPK }) {
     const posterKey = getMessagePreviewCacheKey(peerChatPK, msg) || cacheKey;
     const expired = isExpiredAttachmentMsg(msg);
     const [src, setSrc] = useState(() => (!expired && typeof msg?.localUri === 'string' && msg.localUri ? msg.localUri : ''));
-    const [loading, setLoading] = useState(() => msg?.t === 'mp4' && !msg?.localUri && !!msg?.p && !!msg?.k);
+    const [loading, setLoading] = useState(() => msg?.t === 'mp4' && !msg?.localUri && hasStoredFileRef(msg));
     const [error, setError] = useState('');
     const [playing, setPlaying] = useState(false);
     const [rowHover, setRowHover] = useState(false);
@@ -90,7 +89,7 @@ export default function VideoMessage({ msg, peerChatPK }) {
             return;
         }
 
-        if (msg?.t !== 'mp4' || !peerChatPK || !msg?.p || !msg?.k) {
+        if (msg?.t !== 'mp4' || !peerChatPK || !hasStoredFileRef(msg)) {
             setSrc('');
             setLoading(false);
             setError('');

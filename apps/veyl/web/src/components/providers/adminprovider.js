@@ -2,20 +2,19 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { collection, doc, getDoc, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
-import { resolveNetwork } from '@glyphteck/shared/network';
-import { resolveWalletPK } from '@glyphteck/shared/wallet/keys';
+import { resolveNetwork } from '@veyl/shared/network';
+import { banState } from '@veyl/shared/moderation';
+import { cleanText, lowerText } from '@veyl/shared/utils/text';
+import { timestampMs } from '@veyl/shared/utils/time';
+import { resolveWalletPK } from '@veyl/shared/wallet/keys';
 import { db } from '@/lib/firebase/firebaseclient';
 import { usePeer } from '@/components/providers/peerprovider';
 import { useUser } from '@/components/providers/userprovider';
-import { ban, getActiveBan, powerBot as callPowerBot, sortBots, unban } from '@/lib/admin/bots';
-import { parseReportEvidence, reportCount, sortOffenders, timestampMs } from '@/lib/admin/reports';
+import { ban, powerBot as callPowerBot, sortBots, unban } from '@/lib/admin/bots';
+import { parseReportEvidence, reportCount, sortOffenders } from '@/lib/admin/reports';
 
 const AdminContext = createContext(null);
 const WALLET_NETWORK = resolveNetwork({ NEXT_PUBLIC_NETWORK: process.env.NEXT_PUBLIC_NETWORK });
-
-function cleanText(value) {
-    return typeof value === 'string' ? value.trim() : '';
-}
 
 export function AdminProvider({ children }) {
     const user = useUser();
@@ -270,8 +269,7 @@ export function AdminProvider({ children }) {
             const uid = cleanText(row?.id || row?.uid);
             const peer = person(uid);
             const banned = uid ? moderationRaw[uid] || null : null;
-            const activeChatBan = getActiveBan(banned?.full) || getActiveBan(banned?.chat);
-            const activeAvatarBan = getActiveBan(banned?.full) || getActiveBan(banned?.avatar);
+            const bans = banState(banned);
             const username = peer.username || cleanText(row?.username) || null;
             const walletPK = peer.walletPK || resolveWalletPK(row, WALLET_NETWORK) || null;
 
@@ -287,8 +285,8 @@ export function AdminProvider({ children }) {
                 enabled: row?.enabled === true,
                 status: cleanText(row?.status),
                 banned,
-                chatBanned: !!activeChatBan,
-                avatarBanned: !!activeAvatarBan,
+                chatBanned: bans.chatBanned,
+                avatarBanned: bans.avatarBanned,
             };
         },
         [moderationRaw, person, runtimeRunning]
@@ -299,8 +297,7 @@ export function AdminProvider({ children }) {
             offendersRaw.map((row) => {
                 const peer = person(row.uid);
                 const banned = moderationRaw[row.uid] || null;
-                const activeChatBan = getActiveBan(banned?.full) || getActiveBan(banned?.chat);
-                const activeAvatarBan = getActiveBan(banned?.full) || getActiveBan(banned?.avatar);
+                const bans = banState(banned);
                 return {
                     ...peer,
                     uid: row.uid,
@@ -308,8 +305,8 @@ export function AdminProvider({ children }) {
                     lastReportAt: row.lastReportAt,
                     slug: peer.username || row.uid,
                     banned,
-                    chatBanned: !!activeChatBan,
-                    avatarBanned: !!activeAvatarBan,
+                    chatBanned: bans.chatBanned,
+                    avatarBanned: bans.avatarBanned,
                 };
             }),
         [moderationRaw, offendersRaw, person]
@@ -408,7 +405,7 @@ export function AdminProvider({ children }) {
                 (snap) => {
                     const reports = snap.docs
                         .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
-                        .sort((a, b) => timestampMs(b.createdAt) - timestampMs(a.createdAt));
+                        .sort((a, b) => timestampMs(b.createdAt, 0, { parseString: true }) - timestampMs(a.createdAt, 0, { parseString: true }));
 
                     reports.forEach((report) => {
                         const reporter = cleanText(report?.reporter);
@@ -535,8 +532,8 @@ export function AdminProvider({ children }) {
                 const uid = cleanText(value?.uid);
                 const offenderRow = uid ? offenderMap.get(uid) || { uid, count: 0, lastReportAt: null } : null;
                 const banned = uid ? moderationRaw[uid] || null : null;
-                const activeChatBan = getActiveBan(banned?.full) || getActiveBan(banned?.chat);
-                const activeAvatarBan = getActiveBan(banned?.full) || getActiveBan(banned?.avatar);
+                const bans = banState(banned);
+                const offender = uid ? person(uid) : null;
 
                 return [
                     key,
@@ -545,14 +542,14 @@ export function AdminProvider({ children }) {
                         data: uid
                             ? {
                                   offender: {
-                                      ...person(uid),
+                                      ...offender,
                                       uid,
                                       count: offenderRow?.count || 0,
                                       lastReportAt: offenderRow?.lastReportAt || null,
-                                      slug: person(uid).username || uid,
+                                      slug: offender?.username || uid,
                                       banned,
-                                      chatBanned: !!activeChatBan,
-                                      avatarBanned: !!activeAvatarBan,
+                                      chatBanned: bans.chatBanned,
+                                      avatarBanned: bans.avatarBanned,
                                   },
                                   reports: (value?.reports || []).map((report) => ({
                                       ...report,
@@ -573,7 +570,7 @@ export function AdminProvider({ children }) {
 
         return Object.fromEntries(
             Object.entries(botDetailsRaw).map(([key, value]) => {
-                const botUid = cleanText(value?.botUid).toLowerCase();
+                const botUid = lowerText(value?.botUid);
                 const rawBot = value?.bot || (botUid ? botMap.get(botUid) || null : null);
                 const bot = rawBot ? decorateBot(rawBot) : null;
 

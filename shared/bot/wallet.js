@@ -1,18 +1,12 @@
 import { WALLET_TRANSFER_PAGE_LIMIT } from '../config.js';
+import { nonNegativeNumber } from '../utils/number.js';
+import { cleanText } from '../utils/text.js';
 import { walletPKtoSparkAddress } from '../wallet/spark.js';
+import { isCompletedTransfer, txCreatedMs } from '../wallet/tx.js';
 
 function balanceValue(result, fallback = null) {
     const raw = result?.satsBalance?.available ?? result?.balance ?? fallback;
     return typeof raw === 'bigint' ? Number(raw) : raw;
-}
-
-function txCreatedMs(tx) {
-    const value = tx?.createdTime;
-    if (value instanceof Date) {
-        return value.getTime();
-    }
-    const ms = new Date(value ?? 0).getTime();
-    return Number.isFinite(ms) ? ms : 0;
 }
 
 export async function getBotBalance(wallet, { fallback = null } = {}) {
@@ -28,7 +22,7 @@ export async function getBotTransfer(wallet, transferId) {
         return null;
     }
 
-    const nextTransferId = String(transferId ?? '').trim();
+    const nextTransferId = cleanText(transferId);
     if (!nextTransferId) {
         return null;
     }
@@ -50,7 +44,7 @@ export async function getBotTransfer(wallet, transferId) {
 }
 
 export function isMirrorableBotTransfer(tx, walletPK, resumeAtMs = 0) {
-    if (!tx?.id || tx?.status !== 'TRANSFER_STATUS_COMPLETED') {
+    if (!tx?.id || !isCompletedTransfer(tx)) {
         return false;
     }
     if (tx?.transferDirection !== 'INCOMING') {
@@ -74,7 +68,7 @@ export function isMirrorableBotTransfer(tx, walletPK, resumeAtMs = 0) {
         return false;
     }
 
-    return txCreatedMs(tx) >= Math.max(0, Number(resumeAtMs) || 0);
+    return txCreatedMs(tx) >= nonNegativeNumber(resumeAtMs, 0);
 }
 
 export async function mirrorBotTransfer(wallet, receiverWalletPK, amountSats, network) {

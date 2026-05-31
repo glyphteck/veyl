@@ -3,8 +3,8 @@
 import { useBitcoin } from '@/components/providers/bitcoinprovider';
 import { useWallet } from '@/components/providers/walletprovider';
 import { useUser } from '@/components/providers/userprovider';
-import { useCloak } from '@glyphteck/shared/providers/cloakprovider';
-import { renderMoney } from '@/lib/utils';
+import { useCloak } from '@veyl/shared/providers/cloakprovider';
+import { renderMoney } from '@veyl/shared/money';
 import { useEffect } from 'react';
 
 export default function WalletTitleLayout({ children }) {

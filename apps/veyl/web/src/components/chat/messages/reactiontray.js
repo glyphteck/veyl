@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { StaticAvatar } from '@/components/avatar';
-import { bubbleBg } from '@/lib/messages';
-import { DEFAULT_REACTION_EMOJI, MAX_REACTIONS, getMsgReactions } from '@glyphteck/shared/chat/messages';
+import { bubbleBg } from '@/lib/chat/messages';
+import { DEFAULT_REACTION_EMOJI, MAX_REACTIONS, getMsgReactions } from '@veyl/shared/chat/messages';
 
 const REACTION_MARK_H = 24;
 const REACTION_MARK_INSET = 12;

@@ -5,7 +5,7 @@ import { getFirestore } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import { getFunctions as getFirebaseFunctions } from 'firebase/functions';
 import { getStorage as getFirebaseStorage } from 'firebase/storage';
-import { firebaseConfig } from '@glyphteck/shared/firebaseconfig';
+import { firebaseConfig } from '@veyl/shared/firebaseconfig';
 
 const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 const db = getFirestore(app);

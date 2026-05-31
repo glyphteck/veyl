@@ -1,6 +1,8 @@
 'use client';
 
 import { CHAT_SEEN_TTL_MS, CHAT_UNSAVED_TTL_MS, DAY_MS as CONFIG_DAY_MS } from '../config.js';
+import { cleanText } from '../utils/text.js';
+import { timestampMs } from '../utils/time.js';
 
 export const CHAT_RETENTION_SEEN = 'seen';
 export const CHAT_RETENTION_24H = '24h';
@@ -16,12 +18,12 @@ export const DEFAULT_MESSAGE_TTL_MS = CHAT_UNSAVED_TTL_MS;
 export const SEEN_MESSAGE_TTL_MS = CHAT_SEEN_TTL_MS;
 
 export function hasChatRetention(value) {
-    const retention = typeof value === 'string' ? value.trim() : '';
+    const retention = cleanText(value);
     return CHAT_RETENTION_VALUES.includes(retention);
 }
 
 export function cleanChatRetention(value) {
-    const retention = typeof value === 'string' ? value.trim() : '';
+    const retention = cleanText(value);
     return hasChatRetention(retention) ? retention : DEFAULT_CHAT_RETENTION;
 }
 
@@ -46,19 +48,7 @@ export function withMessageRetention(message, retention = DEFAULT_CHAT_RETENTION
 }
 
 export function ttlMillis(value) {
-    if (value == null) {
-        return null;
-    }
-    if (typeof value?.toMillis === 'function') {
-        const ms = value.toMillis();
-        return Number.isFinite(ms) ? ms : null;
-    }
-    if (value instanceof Date) {
-        const ms = value.getTime();
-        return Number.isFinite(ms) ? ms : null;
-    }
-    const ms = Number(value);
-    return Number.isFinite(ms) && ms > 0 ? ms : null;
+    return timestampMs(value, null, { positive: true });
 }
 
 export function isTtlExpired(value, now = Date.now()) {

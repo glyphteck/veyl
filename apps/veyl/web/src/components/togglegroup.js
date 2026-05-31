@@ -3,7 +3,7 @@
 import * as React from 'react';
 
 import { listNavigationStep } from '@/lib/focus';
-import { cn } from '@/lib/utils';
+import { cn } from '@/lib/classes';
 
 const ToggleGroupContext = React.createContext(null);
 

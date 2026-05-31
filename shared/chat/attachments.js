@@ -1,10 +1,12 @@
 'use client';
 
-import { CHAT_FILE_SIZE_LIMIT_ENABLED, MAX_CHAT_FILE_BYTES, makeChatFileTooLargeError } from './filepayload.js';
+import { CHAT_FILE_SIZE_LIMIT_ENABLED, MAX_CHAT_FILE_BYTES, MAX_CHAT_UPLOAD_FILES, makeChatFileTooLargeError } from './filepayload.js';
 import { makeTxtFileName } from './messages.js';
 import { ATTACHMENT_CACHE_FALLBACK_DELAY_MS, ATTACHMENT_CACHE_IDLE_TIMEOUT_MS } from '../config.js';
 import { encoder } from '../crypto/core.js';
-import { writeCachedMedia } from '../localdatacache.js';
+import { writeCachedMedia } from '../cache/localdata.js';
+import { cleanText, lowerText } from '../utils/text.js';
+import { formatBytes } from '../utils/display.js';
 
 export function makeChatUnavailableError() {
     const error = new Error('chat unavailable');
@@ -45,6 +47,39 @@ export function makeAttachmentUnavailableError(type = 'file') {
     return error;
 }
 
+export function formatMaxChatFileSize(bytes = MAX_CHAT_FILE_BYTES, options = {}) {
+    return formatBytes(bytes, {
+        fallback: options.fallback ?? '0MB',
+        unitSeparator: options.unitSeparator ?? '',
+        maxUnit: 'MB',
+    });
+}
+
+export function formatMaxChatUploadFiles(maxFiles = MAX_CHAT_UPLOAD_FILES) {
+    return `${maxFiles} ${maxFiles === 1 ? 'file' : 'files'}`;
+}
+
+export function chatUploadErrorMessage(error, options = {}) {
+    const fallback = typeof options === 'string' ? options : (options.fallback ?? 'failed to send attachment');
+    const code = cleanText(error?.code);
+
+    if (code === 'too-many-files') {
+        const label = formatMaxChatUploadFiles(error?.maxFiles || MAX_CHAT_UPLOAD_FILES);
+        return typeof options.tooManyFiles === 'function' ? options.tooManyFiles(label, error) : `choose up to ${label}`;
+    }
+
+    if (code === 'file-too-large') {
+        const label = formatMaxChatFileSize(error?.maxBytes || MAX_CHAT_FILE_BYTES, options.size);
+        return typeof options.fileTooLarge === 'function' ? options.fileTooLarge(label, error) : `attachment too large (max ${label})`;
+    }
+
+    if (code === 'video-unavailable' && typeof options.videoUnavailable === 'function') {
+        return options.videoUnavailable(error);
+    }
+
+    return error?.message || fallback;
+}
+
 export function makeFileGoneError() {
     const error = new Error('this file is no longer available');
     error.code = 'file-gone';
@@ -62,7 +97,7 @@ export function isFileGoneError(error) {
     if (error.status === 404) {
         return true;
     }
-    const message = String(error.message || '').toLowerCase();
+    const message = lowerText(error.message);
     return message.includes('object') && message.includes('not found');
 }
 
@@ -127,12 +162,12 @@ export function saveMedia(cache, message, data, meta = {}) {
 }
 
 export function getAttachmentType(attachment = {}) {
-    const type = typeof attachment?.type === 'string' ? attachment.type.trim() : '';
+    const type = cleanText(attachment?.type);
     if (type) {
         return type;
     }
 
-    const mimeType = typeof attachment?.mimeType === 'string' ? attachment.mimeType.toLowerCase() : '';
+    const mimeType = lowerText(attachment?.mimeType);
     if (mimeType.startsWith('image/')) {
         return 'img';
     }

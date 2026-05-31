@@ -1,14 +1,15 @@
 'use client';
 
 import { useCallback } from 'react';
-import { dropCachedMedia, readCachedMedia, writeCachedMedia } from '../../localdatacache.js';
+import { dropCachedMedia, readCachedMedia, writeCachedMedia } from '../../cache/localdata.js';
 import { randomBytes, toHex } from '../../crypto/core.js';
 import { attachmentBytes, isFileGoneError, makeChatUnavailableError, makeFileGoneError, saveMedia } from '../attachments.js';
-import { timestampMs } from '../chats.js';
 import { CHAT_MEDIA_TTL_MS, getMediaFileId } from '../filepayload.js';
 import { getPeerChatPKFromChatId } from '../ids.js';
-import { hasStoredFileRef, isAttachmentMsgType, isExpiredAttachmentMsg } from '../messages.js';
+import { hasStoredFileRef, isAttachmentMsgType, isExpiredAttachmentMsg, mediaStayRef } from '../messages.js';
 import { makeMessagePreviewMedia, MESSAGE_PREVIEW_MIME } from '../previews.js';
+import { cleanText } from '../../utils/text.js';
+import { timestampMs } from '../../utils/time.js';
 
 export function newMediaStayId() {
     return toHex(randomBytes(16));
@@ -18,15 +19,9 @@ export function newMediaStayKey() {
     return toHex(randomBytes(16));
 }
 
-function mediaStayCapability(message) {
-    const id = typeof message?.stay === 'string' ? message.stay.trim() : '';
-    const key = typeof message?.stayKey === 'string' ? message.stayKey.trim() : '';
-    return id && key ? { id, key } : null;
-}
-
 export async function requireMediaSaved(chat, path, stay, saved) {
-    const id = typeof stay?.id === 'string' ? stay.id.trim() : '';
-    const key = typeof stay?.key === 'string' ? stay.key.trim() : '';
+    const id = cleanText(stay?.id);
+    const key = cleanText(stay?.key);
     const updated = await chat.setMediaSaved(path, id, key, saved);
     if (updated !== true) {
         throw new Error('media save state unavailable');
@@ -34,8 +29,8 @@ export async function requireMediaSaved(chat, path, stay, saved) {
 }
 
 function hasInvalidStoredMediaRef(message) {
-    const path = typeof message?.p === 'string' ? message.p.trim() : '';
-    const fileKey = typeof message?.k === 'string' ? message.k.trim() : '';
+    const path = cleanText(message?.p);
+    const fileKey = cleanText(message?.k);
     if (!path || !fileKey || path.startsWith('local:') || fileKey === 'local') {
         return false;
     }
@@ -48,8 +43,8 @@ function hasInvalidStoredMediaRef(message) {
     }
 }
 
-function mediaStay(message) {
-    return mediaStayCapability(message) || { id: newMediaStayId(), key: newMediaStayKey() };
+function ensureMediaStay(message) {
+    return mediaStayRef(message) || { id: newMediaStayId(), key: newMediaStayKey() };
 }
 
 function makeSavedMessagePayload(message, stay) {
@@ -104,7 +99,7 @@ function unsavedMessageTtlMs(message, ttlMs) {
 }
 
 function hasSavedMessagePayload(message) {
-    return message?.permanent === true || Number.isFinite(Number(message?.savedTtl)) || !!mediaStayCapability(message);
+    return message?.permanent === true || Number.isFinite(Number(message?.savedTtl)) || !!mediaStayRef(message);
 }
 
 export function useChatSave({ chat, chatBanned, chatPK, chatPrivateKey, localCache }) {
@@ -124,7 +119,7 @@ export function useChatSave({ chat, chatBanned, chatPK, chatPrivateKey, localCac
                     throw makeChatUnavailableError();
                 }
                 const saveMediaRef = isAttachmentMsgType(item.t) && hasStoredFileRef(item);
-                const stay = saveMediaRef ? mediaStay(item) : null;
+                const stay = saveMediaRef ? ensureMediaStay(item) : null;
                 if (saveMediaRef) {
                     await requireMediaSaved(chat, item.p, stay, true);
                 }
@@ -163,7 +158,7 @@ export function useChatSave({ chat, chatBanned, chatPK, chatPrivateKey, localCac
                     throw makeChatUnavailableError();
                 }
                 if (isAttachmentMsgType(item.t) && hasStoredFileRef(item)) {
-                    const stay = mediaStayCapability(item);
+                    const stay = mediaStayRef(item);
                     await chat.updateMessage(chatId, item.id, chatPrivateKey, peerChatPK, makeUnsavedMessagePayload(item), { updateLastMsg: false });
                     updated += await chat.makeMessageTemporary(chatId, [item], unsavedMessageTtlMs(item, ttlMs));
                     if (stay) {

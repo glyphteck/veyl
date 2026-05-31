@@ -12,7 +12,7 @@
     "dependencies": {
         "@azure/core-asynciterator-polyfill": "^1.0.2",
         "@buildonspark/spark-sdk": "catalog:",
-        "@glyphteck/shared": "workspace:*",
+        "@veyl/shared": "workspace:*",
         "@react-native-async-storage/async-storage": "2.2.0",
         "@react-native-masked-view/masked-view": "0.3.2",
         "bech32": "catalog:",

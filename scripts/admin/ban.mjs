@@ -1,7 +1,8 @@
 #!/usr/bin/env bun
 
 import admin, { db, FieldValue, Timestamp } from '../../functions/lib/admin.js';
-import { cliArgs, resolveUid } from './common.mjs';
+import { cliArgs, resolveUid } from './cli.mjs';
+import { lowerText } from '@veyl/shared/utils/text';
 
 function usage() {
     console.error('usage: bun ban <uid|@username> [chat|avatar] [hours|permanent|clear]');
@@ -9,9 +10,7 @@ function usage() {
 }
 
 function parseFeature(value) {
-    const raw = String(value ?? '')
-        .trim()
-        .toLowerCase();
+    const raw = lowerText(value);
 
     if (!raw || raw === 'chat') {
         return 'chat';
@@ -25,9 +24,7 @@ function parseFeature(value) {
 }
 
 function parseCooldown(value) {
-    const raw = String(value ?? '')
-        .trim()
-        .toLowerCase();
+    const raw = lowerText(value);
 
     if (!raw || ['perm', 'perma', 'permanent', 'forever'].includes(raw)) {
         return null;

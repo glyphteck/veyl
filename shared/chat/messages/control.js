@@ -1,6 +1,7 @@
-import { getMessageOrderMs } from '../state.js';
+import { getMessageKey, getMessageOrderMs } from '../state.js';
 import { collectMessageKeys, indexMessagesByKey, messageHasKey, messageKeys } from '../messagekeys.js';
 import { CHAT_RETENTION_24H, CHAT_RETENTION_SEEN, cleanChatRetention, getMessageRetention, hasChatRetention, isTtlExpired, onSeenMessageTtlMs, seenMessageTtlMs, withMessageRetention } from '../ttl.js';
+import { cleanText } from '../../utils/text.js';
 import { isAttachmentMsg } from './files.js';
 import { hasText } from './text.js';
 import {
@@ -15,22 +16,22 @@ import {
 } from './types.js';
 
 function cleanReactionUser(value) {
-    return typeof value === 'string' ? value.trim() : '';
+    return cleanText(value);
 }
 
 function cleanReactionEmoji(value) {
-    const emoji = typeof value === 'string' ? value.trim() : '';
+    const emoji = cleanText(value);
     return emoji || DEFAULT_REACTION_EMOJI;
 }
 
-function cleanReactionTarget(value) {
-    const target = typeof value === 'object' && value ? msgKey(value) : value;
-    return typeof target === 'string' ? target.trim() : '';
+function cleanTarget(value) {
+    const target = typeof value === 'object' && value ? getMessageKey(value) : value;
+    return cleanText(target);
 }
 
 export function isPeerMsg(msg, chatPK) {
-    const sender = typeof msg?.s === 'string' ? msg.s.trim() : '';
-    const user = typeof chatPK === 'string' ? chatPK.trim() : '';
+    const sender = cleanText(msg?.s);
+    const user = cleanText(chatPK);
     return !!sender && !!user && sender !== user;
 }
 
@@ -38,12 +39,16 @@ export function isServerConfirmedMsg(msg) {
     return !!msg?.id && !String(msg.id).startsWith('local:') && !msg.pending && !msg.failed;
 }
 
-export function msgKey(msg) {
-    return msg?.cid || msg?.id || null;
+export function hasMessageTtl(msg) {
+    return Object.prototype.hasOwnProperty.call(msg || {}, 'ttl');
 }
 
-export function msgKeys(msg) {
-    return messageKeys(msg);
+export function isSavedForeverMsg(msg) {
+    return isServerConfirmedMsg(msg) && hasMessageTtl(msg) && msg.ttl == null;
+}
+
+export function canToggleSaveForeverMsg(msg) {
+    return isServerConfirmedMsg(msg) && !isSystemMsg(msg);
 }
 
 function messageOrderMs(message) {
@@ -56,7 +61,7 @@ function hasAnyMsgKey(msg, keys) {
 }
 
 export function makeReadReceipt(target) {
-    const upto = String(target?.cid || target?.id || target || '').trim();
+    const upto = cleanTarget(target);
     if (!upto) {
         throw new Error('read receipt target required');
     }
@@ -68,7 +73,7 @@ export function isReadReceiptMsg(msg) {
 }
 
 export function makeReaction(target, emoji = DEFAULT_REACTION_EMOJI) {
-    const nextTarget = cleanReactionTarget(target);
+    const nextTarget = cleanTarget(target);
     if (!nextTarget) {
         throw new Error('reaction target required');
     }
@@ -86,7 +91,7 @@ export function isReactionMsg(msg) {
 }
 
 export function makeHiddenCheckpoint(target) {
-    const upto = String(target?.cid || target?.id || target || '').trim();
+    const upto = cleanTarget(target);
     if (!upto) {
         throw new Error('hidden checkpoint target required');
     }
@@ -217,7 +222,7 @@ export function deriveMessageReactions(messages, chatPK, peerChatPK) {
         }
 
         const user = cleanReactionUser(msg.s || msg.from);
-        const target = cleanReactionTarget(msg.target);
+        const target = cleanTarget(msg.target);
         if (!user || !allowed.has(user) || !target) {
             continue;
         }
@@ -240,7 +245,7 @@ export function deriveMessageReactions(messages, chatPK, peerChatPK) {
             return msg;
         }
 
-        const target = msgKey(msg);
+        const target = getMessageKey(msg);
         const reactionsByUser = target ? byTarget.get(target) : null;
         const reactions = participants.map((user) => reactionsByUser?.get(user)).filter(Boolean).slice(0, MAX_REACTIONS);
         if (sameReactions(msg.reactions, reactions)) {
@@ -266,7 +271,7 @@ export function getLatestReadReceiptTarget(messages, chatPK) {
         }
 
         if (isPeerMsg(msg, chatPK) && canShowMsg(msg) && !isSystemMsg(msg)) {
-            return latestSentReceipt?.upto === msgKey(msg) ? null : msg;
+            return latestSentReceipt?.upto === getMessageKey(msg) ? null : msg;
         }
     }
     return null;
@@ -288,7 +293,7 @@ export function getLatestOwnReadReceiptTarget(messages, chatPK) {
 
     for (let i = (messages?.length || 0) - 1; i >= 0; i -= 1) {
         const msg = messages[i];
-        if (isServerConfirmedMsg(msg) && isPeerMsg(msg, chatPK) && canShowMsg(msg) && !isSystemMsg(msg) && msgKey(msg) === target) {
+        if (isServerConfirmedMsg(msg) && isPeerMsg(msg, chatPK) && canShowMsg(msg) && !isSystemMsg(msg) && getMessageKey(msg) === target) {
             return msg;
         }
     }
@@ -321,7 +326,7 @@ export function getLatestReadOutgoingReceipt(messages, chatPK, peerChatPK) {
         if (!isServerConfirmedMsg(msg) || isPeerMsg(msg, chatPK) || !canShowMsg(msg) || isSystemMsg(msg)) {
             continue;
         }
-        if (msgKey(msg) === target) {
+        if (getMessageKey(msg) === target) {
             return { message: msg, receipt };
         }
         if (!fallback && getMessageOrderMs(msg) <= fallbackMaxOrderMs) {
@@ -342,11 +347,11 @@ function readReceiptFromRecipient(receipt, msg, chatPK, peerChatPK) {
 }
 
 function readReceiptCoversMessage(receipt, msg, byKey, chatPK, peerChatPK) {
-    const targetKey = typeof receipt?.upto === 'string' ? receipt.upto.trim() : '';
+    const targetKey = cleanText(receipt?.upto);
     if (!targetKey || !readReceiptFromRecipient(receipt, msg, chatPK, peerChatPK)) {
         return false;
     }
-    if (msgKeys(msg).includes(targetKey)) {
+    if (messageKeys(msg).includes(targetKey)) {
         return true;
     }
 

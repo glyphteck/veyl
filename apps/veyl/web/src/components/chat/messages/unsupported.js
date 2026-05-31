@@ -1,6 +1,6 @@
 'use client';
 
-import { stopClick } from './utils';
+import { stopClick } from '@/lib/chat/messages';
 
 export default function UnsupportedMessage() {
     return (

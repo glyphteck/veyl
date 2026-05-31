@@ -3,32 +3,9 @@
 import { canShowMsg } from './messages.js';
 import { collectMessageKeys, messageHasKey } from './messagekeys.js';
 import { ttlMillis } from './ttl.js';
-
-export function timestampMs(value) {
-    if (typeof value?.toMillis === 'function') {
-        const ms = value.toMillis();
-        return Number.isFinite(ms) ? ms : null;
-    }
-    if (value instanceof Date) {
-        const ms = value.getTime();
-        return Number.isFinite(ms) ? ms : null;
-    }
-    if (Number.isFinite(value)) {
-        return value;
-    }
-    return null;
-}
-
-export function makeTs(ms) {
-    return {
-        toMillis() {
-            return ms;
-        },
-        toDate() {
-            return new Date(ms);
-        },
-    };
-}
+import { timestampMs } from '../utils/time.js';
+import { uniqueValues } from '../utils/array.js';
+import { getChatPeerPK } from './ids.js';
 
 function sameChatShape(a, b) {
     if (!a || !b) return a === b;
@@ -79,7 +56,7 @@ export function getLastChat(chats, chatPK) {
         return null;
     }
 
-    const peerChatPK = latest.participants?.find?.((participant) => participant !== chatPK) ?? null;
+    const peerChatPK = getChatPeerPK(latest, chatPK);
     return {
         lastMsg: latest.lastMsg,
         ts: latest.ts || 0,
@@ -88,16 +65,7 @@ export function getLastChat(chats, chatPK) {
 }
 
 export function getPeersFromChats(chats, chatPK) {
-    const peers = new Set();
-    for (const chat of chats || []) {
-        const participants = Array.isArray(chat?.participants) ? chat.participants : [];
-        for (const participant of participants) {
-            if (participant && participant !== chatPK) {
-                peers.add(participant);
-            }
-        }
-    }
-    return [...peers];
+    return uniqueValues((chats || []).map((chat) => getChatPeerPK(chat, chatPK)));
 }
 
 function sortChats(chats) {
@@ -348,7 +316,7 @@ export function setLocalChats(chats, localByChat) {
             continue;
         }
 
-        const ts = typeof lastMsg.ts?.toMillis === 'function' ? lastMsg.ts.toMillis() : 0;
+        const ts = timestampMs(lastMsg.ts, 0);
         const currentIndex = indexById.get(chatId);
         const current = currentIndex != null ? next[currentIndex] : null;
         const participants = current?.participants?.length

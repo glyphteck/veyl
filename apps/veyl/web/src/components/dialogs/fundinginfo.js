@@ -1,6 +1,6 @@
 'use client';
 
-import { FUNDING_TX_PREVIEW_VBYTES, STATIC_DEPOSIT_CLAIM_FEE_SATS, formatOnchainFeeAmount, formatOnchainFeeFormula } from '@glyphteck/shared/wallet/fees';
+import { FUNDING_TX_PREVIEW_VBYTES, STATIC_DEPOSIT_CLAIM_FEE_SATS, formatOnchainFeeAmount, formatOnchainFeeFormula } from '@veyl/shared/wallet/fees';
 import { Button } from '@/components/button';
 import { Card } from '@/components/card';
 import { useBitcoin } from '@/components/providers/bitcoinprovider';

@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef } from 'react';
 import { Stack, useRouter } from 'expo-router';
-import { readLastAppTarget } from '@glyphteck/shared/localdatacache';
-import { hrefForLastAppTarget } from '@/lib/approute';
+import { readResumeTarget } from '@veyl/shared/cache/localdata';
+import { hrefForResumeTarget } from '@veyl/shared/navigation/resume';
 
 import { WalletProvider } from '@/providers/walletprovider';
 import { TxDataProvider } from '@/providers/txdataprovider';
@@ -12,7 +12,7 @@ import { useTheme } from '@/providers/themeprovider';
 import { useUser } from '@/providers/userprovider';
 import { useVault } from '@/providers/vaultprovider';
 import { mark } from '@/lib/diagnostics';
-import { stackScreenOptions } from '@/lib/stackoptions';
+import { stackScreenOptions } from '@/lib/navigation/stackoptions';
 
 function VaultContent() {
     const { theme } = useTheme();
@@ -50,8 +50,8 @@ function VaultContent() {
             return;
         }
 
-        const target = readLastAppTarget(localCache);
-        const href = hrefForLastAppTarget(target);
+        const target = readResumeTarget(localCache);
+        const href = hrefForResumeTarget(target);
         mark('route.cache.read', { route: target?.route || '' });
         router.replace(href, { withAnchor: true });
     }, [faceIDConfigured, localCache, lockState, router]);

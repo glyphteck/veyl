@@ -17,7 +17,7 @@ import { useChatSend } from '../chat/actions/send.js';
 import { useChatSettings } from '../chat/actions/settings.js';
 import { useChatMessageSessions } from '../chat/messages/session/index.js';
 import { useChatList } from '../chat/usechatlist.js';
-import { hasStoredFileRef, isAttachmentMsgType } from '../chat/messages.js';
+import { savedMediaStayRef } from '../chat/messages.js';
 import {
     collectAccountSavedMediaStays as collectAccountSavedMediaStaysShared,
     collectSavedMediaStays as collectSavedMediaStaysShared,
@@ -69,14 +69,7 @@ function resolveDeleteMessage(localByChat, chatId, messageOrId) {
 }
 
 function hasSavedMediaStay(message) {
-    return (
-        isAttachmentMsgType(message?.t) &&
-        hasStoredFileRef(message) &&
-        typeof message?.stay === 'string' &&
-        message.stay.trim().length > 0 &&
-        typeof message?.stayKey === 'string' &&
-        message.stayKey.trim().length > 0
-    );
+    return !!savedMediaStayRef(message);
 }
 
 export function createChat({ db, storage, getStorage, uploadAttachment: uploadAttachmentImpl, uploadImage: uploadImageImpl, readMessageFile: readMessageFileImpl, setMediaSaved: setMediaSavedImpl, finishDeletingChat: finishDeletingChatImpl }) {

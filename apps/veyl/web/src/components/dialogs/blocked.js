@@ -7,7 +7,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/avatar';
 import { Loader, UserX } from 'lucide-react';
 import { usePeer } from '@/components/providers/peerprovider';
 import { useUser } from '@/components/providers/userprovider';
-import { formatUserDisplay } from '@/lib/utils';
+import { formatUserDisplay } from '@veyl/shared/profile';
 
 function BlockedRow({ peer, busy, onUnblock }) {
     return (

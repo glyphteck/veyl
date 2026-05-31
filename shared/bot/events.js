@@ -1,3 +1,5 @@
+import { cleanText, lowerText } from '../utils/text.js';
+
 export const BOT_MODE = 'mirror';
 export const BOT_UNDERFUNDED_TEXT = 'not enough balance right now';
 export const BOT_SEEDS_SECRET_ID = 'veyl-bot-seeds';
@@ -11,7 +13,7 @@ export const BOT_ACTION_STATUS_DONE = 'done';
 export const BOT_ACTION_STATUS_ERROR = 'error';
 
 export function botSeedKey(username) {
-    const name = String(username ?? '').trim().toLowerCase();
+    const name = lowerText(username);
     if (!name) {
         throw new Error('bot seed key requires username');
     }
@@ -19,7 +21,7 @@ export function botSeedKey(username) {
 }
 
 export function walletEventId(txId) {
-    const nextTxId = String(txId ?? '').trim();
+    const nextTxId = cleanText(txId);
     if (!nextTxId) {
         throw new Error('wallet event id requires txId');
     }

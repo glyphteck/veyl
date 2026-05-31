@@ -164,6 +164,8 @@ Glyphteck Corp does **not** sell user private message content or wallet secrets 
 
 Glyphteck Corp does **not** build veyl as an advertising network.
 
+Glyphteck Corp will not sell your personal data and does **not** disclose personal data for third-party advertising, behavioral ad targeting, or data brokerage. Glyphteck Corp discloses limited service data only when needed to operate veyl, follow the law, protect users or the service, or act on your request.
+
 ### 8. Safety, Abuse, and Unlawful Use
 
 Glyphteck Corp does not support or condone:
@@ -389,7 +391,38 @@ This document constitutes the entire agreement between you and Glyphteck Corp re
 
 Glyphteck Corp may update these Terms from time to time. Continued use of the service after an update becomes effective constitutes acceptance of the updated Terms to the extent permitted by law.
 
-## PART III. THIRD-PARTY NOTICES
+## PART III. SUPPORT
+
+veyl support is limited by the product architecture. Glyphteck Corp can help with service issues, account records, and general product questions, but cannot recover secrets that only exist on your device.
+
+Support can help with:
+
+- general product questions
+- account deletion requests
+- app behavior
+- settings
+- passkey issues
+- service-side availability issues
+- policy, safety, abuse, or legal concerns relating to usernames, profiles, uploads, or use of the service
+
+Support cannot:
+
+- recover your vault password
+- recover your decrypted seed
+- recover private keys
+- restore permanently lost wallet access
+- reverse or cancel blockchain transactions
+- decrypt your private chats during normal operation
+
+You can manage permissions from Settings > Manage Permissions.
+
+You can delete your account from Settings > Delete Account.
+
+You can block accounts in the app. Blocked accounts are filtered from relevant surfaces and cannot continue normal chat contact with you.
+
+If you are reporting a legal, safety, or abuse issue, include enough detail for Glyphteck Corp to identify the relevant account, username, profile, or message.
+
+## PART IV. THIRD-PARTY NOTICES
 
 This product includes icons from the Lucide project.
 

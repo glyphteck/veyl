@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { AppState } from 'react-native';
 import { Stack, usePathname } from 'expo-router';
-import { writeLastAppTarget } from '@glyphteck/shared/localdatacache';
-import { lastAppTargetForPathname } from '@/lib/approute';
+import { writeResumeTarget } from '@veyl/shared/cache/localdata';
+import { resumeTargetFromPath } from '@veyl/shared/navigation/resume';
 import { useTheme } from '@/providers/themeprovider';
 import { useVault } from '@/providers/vaultprovider';
 import { mark } from '@/lib/diagnostics';
-import { stackScreenOptions } from '@/lib/stackoptions';
+import { stackScreenOptions } from '@/lib/navigation/stackoptions';
 
 export const unstable_settings = {
     initialRouteName: '(home)',
@@ -28,7 +28,7 @@ export default function AppLayout() {
     unlockedRef.current = lockState === 'unlocked';
 
     useEffect(() => {
-        const target = lastAppTargetForPathname(pathname);
+        const target = resumeTargetFromPath(pathname);
         if (!target) return;
         lastTargetRef.current = target;
     }, [pathname]);
@@ -36,10 +36,10 @@ export default function AppLayout() {
     const saveCurrentRoute = useCallback((options = {}) => {
         if (!options.force && !unlockedRef.current) return;
         const cache = cacheRef.current;
-        const target = lastTargetRef.current || lastAppTargetForPathname(pathnameRef.current);
+        const target = lastTargetRef.current || resumeTargetFromPath(pathnameRef.current);
         if (!target) return;
         mark('route.cache.write', { route: target.route, reason: options.reason || 'leave' });
-        writeLastAppTarget(cache, target);
+        writeResumeTarget(cache, target);
         void cache?.flush?.();
     }, []);
 

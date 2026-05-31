@@ -1,66 +1,20 @@
 import { collection, query, where, orderBy, onSnapshot, doc, getDocsFromServer, getDocFromServer, limit, startAfter } from 'firebase/firestore';
 import { CHAT_LIST_PAGE_SIZE } from '../config.js';
+import { sameArray, uniqueValues } from '../utils/array.js';
 import { openMsg } from '../crypto/chat.js';
 import { canShowMsg, canStoreMsg, isControlMsg } from './messages.js';
 import { openChatSettingsForPair } from './settings.js';
-import { getPeerChatPKFromChatId } from './ids.js';
+import { getChatPeerPK } from './ids.js';
 import { getCachedPair } from './pairs.js';
-import { toMillis, valueMillis } from './time.js';
-
-function arraysEqual(a, b) {
-    if (a === b) {
-        return true;
-    }
-    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) {
-        return false;
-    }
-    for (let index = 0; index < a.length; index += 1) {
-        if (a[index] !== b[index]) {
-            return false;
-        }
-    }
-    return true;
-}
-
-function bytesEqual(a, b) {
-    if (a === b) {
-        return true;
-    }
-    if (typeof a?.isEqual === 'function') {
-        return a.isEqual(b);
-    }
-    if (typeof b?.isEqual === 'function') {
-        return b.isEqual(a);
-    }
-    if (typeof a?.toUint8Array !== 'function' || typeof b?.toUint8Array !== 'function') {
-        return false;
-    }
-
-    const left = a.toUint8Array();
-    const right = b.toUint8Array();
-    if (left.length !== right.length) {
-        return false;
-    }
-    for (let index = 0; index < left.length; index += 1) {
-        if (left[index] !== right[index]) {
-            return false;
-        }
-    }
-    return true;
-}
-
-function headsEqual(a, b) {
-    if (a === b) {
-        return true;
-    }
-    return a?.from === b?.from && a?.cid === b?.cid;
-}
+import { timestampKey, timestampMs } from '../utils/time.js';
+import { sameBytes, sameHead } from './equal.js';
+import { positiveInt } from '../utils/number.js';
 
 function envelopesEqual(a, b) {
     if (a == null || b == null) {
         return a == null && b == null;
     }
-    return headsEqual(a?.head, b?.head) && bytesEqual(a?.body, b?.body) && valueMillis(a?.ttl ?? null) === valueMillis(b?.ttl ?? null);
+    return sameHead(a?.head, b?.head) && sameBytes(a?.body, b?.body) && timestampKey(a?.ttl ?? null) === timestampKey(b?.ttl ?? null);
 }
 
 function chatDocDataEqual(a, b) {
@@ -71,16 +25,11 @@ function chatDocDataEqual(a, b) {
         !!a &&
         !!b &&
         a.deleting === b.deleting &&
-        arraysEqual(a.participants, b.participants) &&
-        valueMillis(a.ts ?? null) === valueMillis(b.ts ?? null) &&
+        sameArray(a.participants, b.participants) &&
+        timestampKey(a.ts ?? null) === timestampKey(b.ts ?? null) &&
         envelopesEqual(a.lastMsg, b.lastMsg) &&
         envelopesEqual(a.settings, b.settings)
     );
-}
-
-function cleanPositiveInt(value, fallback) {
-    const next = Number(value);
-    return Number.isFinite(next) && next > 0 ? Math.floor(next) : fallback;
 }
 
 function chatListQuery(db, userChatPK, count, cursor) {
@@ -88,7 +37,7 @@ function chatListQuery(db, userChatPK, count, cursor) {
     if (cursor) {
         base.push(startAfter(cursor));
     }
-    base.push(limit(cleanPositiveInt(count, CHAT_LIST_PAGE_SIZE)));
+    base.push(limit(positiveInt(count, CHAT_LIST_PAGE_SIZE)));
     return query(collection(db, 'chats'), ...base);
 }
 
@@ -114,7 +63,7 @@ export function isChatUnseenForUser(chatData, userChatPK) {
 }
 
 export function listenToChats(db, userChatPK, userPrivKey, onUpdate, onError, options = {}) {
-    const pageSize = cleanPositiveInt(options?.limitCount ?? options?.pageSize ?? options?.count, CHAT_LIST_PAGE_SIZE);
+    const pageSize = positiveInt(options?.limitCount ?? options?.pageSize ?? options?.count, CHAT_LIST_PAGE_SIZE);
     const cache = new Map();
     let run = 0;
 
@@ -157,7 +106,7 @@ export async function loadMoreChats(db, userChatPK, userPrivKey, cursor, pageSiz
         };
     }
 
-    const count = cleanPositiveInt(pageSize, CHAT_LIST_PAGE_SIZE);
+    const count = positiveInt(pageSize, CHAT_LIST_PAGE_SIZE);
     const snap = await getDocsFromServer(chatListQuery(db, userChatPK, count, cursor));
     const result = await handleChats(db, snap.docs, userChatPK, userPrivKey, new Map(), { prune: false });
     return {
@@ -184,7 +133,7 @@ async function decryptChatDoc(docSnap, userChatPK, userPrivKey) {
         return null;
     }
     const participants = Array.isArray(data?.participants) ? data.participants.filter(Boolean) : [];
-    const peerPK = participants.find((pk) => pk !== userChatPK) ?? getPeerChatPKFromChatId(docSnap.id, userChatPK);
+    const peerPK = getChatPeerPK({ id: docSnap.id, participants }, userChatPK);
     if (!peerPK) {
         return null;
     }
@@ -201,7 +150,7 @@ async function decryptChatDoc(docSnap, userChatPK, userPrivKey) {
                   .catch(() => null)
             : null;
     const visibleLastMsg = lastMsg && canShowMsg(lastMsg) && !isControlMsg(lastMsg) ? lastMsg : null;
-    const ts = toMillis(data?.ts, null);
+    const ts = timestampMs(data?.ts, null);
     if (!ts) {
         return null;
     }
@@ -246,6 +195,6 @@ async function handleChats(db, docs, userChatPK, userPrivKey, cache, options = {
         rowDocs.map((docSnap) => chatRowFromDoc(db, docSnap, userChatPK, userPrivKey, cache))
     );
     const readyChats = chats.filter(Boolean).sort((a, b) => (b?.ts || 0) - (a?.ts || 0));
-    const peers = [...new Set(readyChats.map((chat) => chat?.participants?.find((pk) => pk && pk !== userChatPK)).filter(Boolean))];
+    const peers = uniqueValues(readyChats.map((chat) => getChatPeerPK(chat, userChatPK)));
     return { chats: readyChats, peers, deletingChatIds };
 }

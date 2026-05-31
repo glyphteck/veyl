@@ -2,6 +2,7 @@
 
 import { addMessageKeys, indexMessagesByKey, keySet, targetMessageMs } from '../messagekeys.js';
 import { getMessageKey, getMessageOrderMs, sortMessages } from '../state.js';
+import { cleanText } from '../../utils/text.js';
 import {
     canShowMsg,
     isControlMsg,
@@ -20,11 +21,11 @@ function messageMs(msg) {
 }
 
 function senderKey(msg) {
-    return typeof msg?.s === 'string' && msg.s.trim() ? msg.s.trim() : typeof msg?.from === 'string' ? msg.from.trim() : '';
+    return cleanText(msg?.s) || cleanText(msg?.from);
 }
 
 function reactionTarget(msg) {
-    return typeof msg?.target === 'string' ? msg.target.trim() : '';
+    return cleanText(msg?.target);
 }
 
 function addMsg(targets, msg) {
@@ -37,10 +38,10 @@ function addMsg(targets, msg) {
     }
 }
 
-function getCoveredControlDeletes(messages, byKey, predicate) {
+function getCoveredControlDeletes(messages, byKey, matches) {
     const groups = new Map();
     for (const msg of messages || []) {
-        if (!isServerConfirmedMsg(msg) || !predicate(msg)) {
+        if (!isServerConfirmedMsg(msg) || !matches(msg)) {
             continue;
         }
         const sender = senderKey(msg);
@@ -81,7 +82,7 @@ function getDuplicateReadReceiptDeletes(messages) {
             continue;
         }
         const sender = senderKey(msg);
-        const upto = typeof msg.upto === 'string' ? msg.upto.trim() : '';
+        const upto = cleanText(msg.upto);
         if (!sender || !upto) {
             continue;
         }
@@ -196,7 +197,7 @@ export function getCompactMessages(messages, options = {}) {
 }
 
 function compactKey(chatId, msg) {
-    const id = typeof msg?.id === 'string' ? msg.id.trim() : '';
+    const id = cleanText(msg?.id);
     return chatId && id ? `${chatId}/${id}` : '';
 }
 

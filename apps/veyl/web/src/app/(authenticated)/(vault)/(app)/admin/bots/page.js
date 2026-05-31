@@ -8,26 +8,8 @@ import { Button } from '@/components/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/avatar';
 import { Card } from '@/components/card';
 import { useAdminData } from '@/components/providers/adminprovider';
-import { formatUserDisplay } from '@/lib/utils';
+import { botPowerClass, displayUser, formatSats } from '@/lib/admin/format';
 import { toast } from 'sonner';
-
-function displayBot(bot) {
-    return bot?.username || bot?.uid || formatUserDisplay(bot);
-}
-
-function powerButtonClass(bot) {
-    if (!bot?.enabled) return 'text-destructive';
-    if (bot?.active) return 'text-active';
-    return 'text-pending';
-}
-
-function formatBalance(balance) {
-    const n = Number(balance);
-    if (!Number.isFinite(n)) {
-        return null;
-    }
-    return `${n.toLocaleString()} sats`;
-}
 
 export default function BotPage() {
     const { bots, botsReady, powerBot, banUser, unbanUser } = useAdminData();
@@ -44,7 +26,7 @@ export default function BotPage() {
         setPendingUid(bot.uid);
         try {
             await powerBot(bot.uid, !bot.enabled);
-            toast(bot.enabled ? `paused ${displayBot(bot)}` : `enabled ${displayBot(bot)}`, { icon: <Power /> });
+            toast(bot.enabled ? `paused ${displayUser(bot)}` : `enabled ${displayUser(bot)}`, { icon: <Power /> });
         } catch (error) {
             console.error('bot power update failed', error);
             toast(bot.enabled ? 'pause failed' : 'enable failed');
@@ -66,10 +48,10 @@ export default function BotPage() {
         try {
             if (isBanned) {
                 await unbanUser(bot.uid, feature);
-                toast(`${feature} unbanned ${displayBot(bot)}`);
+                toast(`${feature} unbanned ${displayUser(bot)}`);
             } else {
                 await banUser(bot.uid, feature);
-                toast(`${feature} banned ${displayBot(bot)}`);
+                toast(`${feature} banned ${displayUser(bot)}`);
             }
         } catch (error) {
             console.error('bot ban update failed', error);
@@ -113,18 +95,18 @@ export default function BotPage() {
                             <div key={bot.uid} className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-3 py-2 text-left">
                                 <Link href={`/admin/bots/${bot.slug}`} className="group flex min-w-0 items-center gap-2.5 pr-4">
                                     <Avatar active={bot.active} bot={!!bot?.bot} className="grower">
-                                        <AvatarImage src={bot.avatar} alt={displayBot(bot)} />
+                                        <AvatarImage src={bot.avatar} alt={displayUser(bot)} />
                                         <AvatarFallback />
                                     </Avatar>
                                     <div className="min-w-0">
                                         <p className="truncate">
                                             {bot.lastError ? <TriangleAlert className="mr-1 inline size-4 text-destructive" /> : null}
-                                            <span className={bot.lastError ? 'text-destructive' : ''}>{displayBot(bot)}</span>
+                                            <span className={bot.lastError ? 'text-destructive' : ''}>{displayUser(bot)}</span>
                                             <span className="text-muted"> · {bot.uid}</span>
                                         </p>
                                         <p className="truncate text-sm text-muted">
                                             <span>{bot.mode || 'mirror'}</span>
-                                            {formatBalance(bot.balance) ? <span> · {formatBalance(bot.balance)}</span> : null}
+                                            {formatSats(bot.balance) ? <span> · {formatSats(bot.balance)}</span> : null}
                                         </p>
                                     </div>
                                 </Link>
@@ -173,7 +155,7 @@ export default function BotPage() {
                                             <AvatarFallback />
                                         </Avatar>
                                     </Button>
-                                    <Button className={`grower-lg px-2 py-2 ${powerButtonClass(bot)}`} onClick={(event) => handlePower(event, bot)} disabled={pendingUid === bot.uid} title={bot.enabled ? 'turn bot off' : 'turn bot on'}>
+                                    <Button className={`grower-lg px-2 py-2 ${botPowerClass(bot)}`} onClick={(event) => handlePower(event, bot)} disabled={pendingUid === bot.uid} title={bot.enabled ? 'turn bot off' : 'turn bot on'}>
                                         {pendingUid === bot.uid ? <Loader className="size-5 animate-spin" /> : <Power className="size-5" />}
                                     </Button>
                                 </div>

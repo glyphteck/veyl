@@ -7,31 +7,18 @@ import {
     RECENT_PEER_REFRESH_LIMIT,
     RECENT_PEER_REFRESH_THROTTLE_MS,
 } from '../config.js';
-import { readCachedProfiles, writeCachedProfiles } from '../localdatacache.js';
-
-function timeMs(value) {
-    if (typeof value?.toMillis === 'function') {
-        const ms = value.toMillis();
-        return Number.isFinite(ms) ? ms : null;
-    }
-    if (value instanceof Date) {
-        const ms = value.getTime();
-        return Number.isFinite(ms) ? ms : null;
-    }
-    if (Number.isFinite(value)) {
-        return value;
-    }
-    if (typeof value === 'string') {
-        const ms = Date.parse(value);
-        return Number.isFinite(ms) ? ms : null;
-    }
-    return null;
-}
+import { sortedUniqueValues, uniqueValues } from '../utils/array.js';
+import { sleep } from '../utils/async.js';
+import { readCachedProfiles, writeCachedProfiles } from '../cache/localdata.js';
+import { peerUid } from '../profile.js';
+import { getChatPeerPK } from '../chat/ids.js';
+import { compareProfilesByName } from '../search/sort.js';
+import { timestampMs } from '../utils/time.js';
 
 function byRecent(a, b) {
     const delta = (b?.recentAt || 0) - (a?.recentAt || 0);
     if (delta !== 0) return delta;
-    return String(a?.username || a?.uid || '').localeCompare(String(b?.username || b?.uid || ''));
+    return compareProfilesByName(a, b);
 }
 
 function makeRecentPeer(peer, recency) {
@@ -45,10 +32,6 @@ function makeRecentPeer(peer, recency) {
     };
 }
 
-function sortedValues(items) {
-    return [...new Set((Array.isArray(items) ? items : []).filter(Boolean))].sort();
-}
-
 export function createPeerProvider({ useChat, useUser, useTxData, useVault, peerApi }) {
     if (typeof useChat !== 'function' || typeof useUser !== 'function' || typeof useTxData !== 'function' || typeof useVault !== 'function') {
         throw new Error('createPeerProvider requires { useChat, useUser, useTxData, useVault, peerApi }');
@@ -59,10 +42,6 @@ export function createPeerProvider({ useChat, useUser, useTxData, useVault, peer
 
     const { loadProfiles, assemblePeers, fetchAndCachePeer, updatePeerByUID, hydrateProfiles, getCachedProfiles } = peerApi;
     const PeerContext = createContext(null);
-
-    function getPeerUid(peer) {
-        return typeof peer === 'string' ? peer.trim() : typeof peer?.uid === 'string' ? peer.uid.trim() : '';
-    }
 
     function PeerProvider({ children }) {
         const { peers: chatPeers, chats } = useChat();
@@ -82,8 +61,8 @@ export function createPeerProvider({ useChat, useUser, useTxData, useVault, peer
         const lastPeersRef = useRef([]);
         const blockedPeersRef = useRef([]);
         const hydratedProfileCacheKeyRef = useRef('');
-        const walletPKs = useMemo(() => sortedValues(Object.keys(walletPeers || {})), [walletPeers]);
-        const chatPeerPKs = useMemo(() => sortedValues(chatPeers), [chatPeers]);
+        const walletPKs = useMemo(() => sortedUniqueValues(Object.keys(walletPeers || {})), [walletPeers]);
+        const chatPeerPKs = useMemo(() => sortedUniqueValues(chatPeers), [chatPeers]);
 
         useEffect(() => {
             blockedPeersRef.current = blockedPeers;
@@ -193,7 +172,7 @@ export function createPeerProvider({ useChat, useUser, useTxData, useVault, peer
         );
 
         const updatePeers = useCallback(async (uids, { throttleMs = 0, refreshAvatar = false } = {}) => {
-            const uniqueUids = Array.from(new Set((uids || []).filter(Boolean)));
+            const uniqueUids = uniqueValues(uids);
             if (!uniqueUids.length) return [];
 
             const results = [];
@@ -201,7 +180,7 @@ export function createPeerProvider({ useChat, useUser, useTxData, useVault, peer
                 const result = await updatePeerByUID(uid, { refreshAvatar });
                 if (result) results.push(result);
                 if (throttleMs > 0) {
-                    await new Promise((resolve) => setTimeout(resolve, throttleMs));
+                    await sleep(throttleMs);
                 }
             }
 
@@ -285,7 +264,7 @@ export function createPeerProvider({ useChat, useUser, useTxData, useVault, peer
 
         const findPeer = useCallback(
             (peer) => {
-                const uid = getPeerUid(peer);
+                    const uid = peerUid(peer);
                 if (!uid) {
                     return null;
                 }
@@ -315,17 +294,16 @@ export function createPeerProvider({ useChat, useUser, useTxData, useVault, peer
 
             for (const peer of peerByUid.values()) {
                 const walletPeer = peer?.walletPK ? walletPeers?.[peer.walletPK] : null;
-                const ms = timeMs(walletPeer?.lastMs);
+                const ms = timestampMs(walletPeer?.lastMs, null, { parseString: true });
                 if (walletPeer) {
                     setRecent(peer.uid, 'wallet', ms || 0);
                 }
             }
 
             for (const chat of chats || []) {
-                const participants = Array.isArray(chat?.participants) ? chat.participants : [];
-                const peerChatPK = participants.find((participant) => participant && participant !== chatPK);
+                const peerChatPK = getChatPeerPK(chat, chatPK);
                 const uid = peerChatPK ? peerByChatPK.get(peerChatPK)?.uid : null;
-                const ms = timeMs(chat?.ts) ?? 0;
+                const ms = timestampMs(chat?.ts, null, { parseString: true }) ?? 0;
                 if (uid) {
                     setRecent(uid, 'chat', ms);
                 }
@@ -434,7 +412,7 @@ export function createPeerProvider({ useChat, useUser, useTxData, useVault, peer
         }, [blocked, blockedReady, fetchAndCachePeer]);
 
         const dropPeer = useCallback((peer) => {
-            const uid = getPeerUid(peer);
+            const uid = peerUid(peer);
             if (!uid) {
                 return;
             }
@@ -446,7 +424,7 @@ export function createPeerProvider({ useChat, useUser, useTxData, useVault, peer
         }, []);
 
         const restorePeer = useCallback((peer) => {
-            const uid = getPeerUid(peer);
+            const uid = peerUid(peer);
             if (!uid) {
                 return;
             }

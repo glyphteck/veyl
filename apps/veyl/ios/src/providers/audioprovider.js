@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
+import { cleanText } from '@veyl/shared/utils/text';
 
 const AudioContext = createContext(null);
 const StateContext = createContext(null);
@@ -8,10 +9,6 @@ let modeReady = false;
 
 function empty() {
     return { kind: '', key: '' };
-}
-
-function clean(value) {
-    return String(value || '').trim();
 }
 
 export function AudioProvider({ children }) {
@@ -75,9 +72,9 @@ export function AudioProvider({ children }) {
 
     const play = useCallback(
         ({ kind = 'audio', key, uri, title, player } = {}) => {
-            const nextKind = clean(kind);
-            const nextKey = clean(key);
-            const nextUri = clean(uri);
+            const nextKind = cleanText(kind);
+            const nextKey = cleanText(key);
+            const nextUri = cleanText(uri);
             const nextPlayer = nextKind === 'audio' ? audio : player;
             if (!nextKind || !nextKey || !nextPlayer) {
                 return;

@@ -7,7 +7,7 @@ import { Search, Trash2 } from 'lucide-react-native';
 import ReAnimated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { scheduleOnRN } from 'react-native-worklets';
-import { mergeProfiles } from '@glyphteck/shared/search/merge';
+import { mergeProfiles } from '@veyl/shared/search/merge';
 import { useTheme } from '@/providers/themeprovider';
 import { useChat } from '@/providers/chatprovider';
 import { useUser } from '@/providers/userprovider';
@@ -19,11 +19,14 @@ import GlassHeader from '@/components/glass/glassheader';
 import Icon from '@/components/icon';
 import { getMainMenuHeight } from '@/components/mainmenu';
 import SearchInput from '@/components/search';
+import { useRouteLock } from '@/lib/navigation/routelock';
 import { useTap } from '@/lib/tap';
-import { formatFullDateTime, formatUserDisplay } from '@glyphteck/shared/utils';
-import { getChatId } from '@glyphteck/shared/crypto/chat';
-import { getPeerChatPKFromChatId } from '@glyphteck/shared/chat/ids';
-import { getMsgPreview } from '@glyphteck/shared/chat/messages';
+import { formatUserDisplay } from '@veyl/shared/profile';
+import { formatFullDateTime } from '@veyl/shared/utils/time';
+import { getChatId } from '@veyl/shared/crypto/chat';
+import { getChatPeerPK } from '@veyl/shared/chat/ids';
+import { getMsgPreview } from '@veyl/shared/chat/messages';
+import { lowerText } from '@veyl/shared/utils/text';
 
 const SEARCH_BAR_HEIGHT = 42;
 const HEADER_BOTTOM_PADDING = 8;
@@ -53,10 +56,6 @@ function revealDelete(value) {
     if (value <= 0) return 0;
     if (value <= DELETE_DRAG) return value;
     return DELETE_DRAG + rubberBand(value - DELETE_DRAG, DELETE_HINT_W);
-}
-
-function getPeerChatPK(chat, myChatPK) {
-    return chat?.participants?.find?.((participant) => participant && participant !== myChatPK) ?? getPeerChatPKFromChatId(chat?.id, myChatPK);
 }
 
 function ChatRow({ onPress, onDelete, title, subtitle, rightLabel, isUnseen, avatarSource, isActive, isBot, isLast = false }) {
@@ -208,14 +207,13 @@ export default function ChatList() {
     const { chatPK, blockedSet, chatBanned } = useUser();
     const { peers, peerByChatPK, isBlockedChatPK, isPeerDataReady } = usePeer() || {};
     const { searching, results, query, search: runSearch, clearSearch } = useSearch('profiles');
-    const routeLockRef = useRef(false);
-    const routeLockTimerRef = useRef(null);
+    const { lockRoute } = useRouteLock();
     const searchInputRef = useRef(null);
     const [search, setSearch] = useState('');
     const headerHeight = insets.top + SEARCH_BAR_HEIGHT + HEADER_BOTTOM_PADDING;
     const mainMenuHeight = getMainMenuHeight(insets.bottom);
 
-    const chatQuery = useMemo(() => search.trim().toLowerCase(), [search]);
+    const chatQuery = useMemo(() => lowerText(search), [search]);
 
     const hasBlockedUsers = !!blockedSet?.size;
     const showLoadingChats = !chatQuery && (!isChatDataReady || (hasBlockedUsers && !isPeerDataReady && Array.isArray(chats) && chats.length > 0));
@@ -225,18 +223,18 @@ export default function ChatList() {
             return [];
         }
 
-        const baseItems = Array.isArray(chats) ? chats.filter((chat) => !isBlockedChatPK?.(getPeerChatPK(chat, chatPK))) : [];
+        const baseItems = Array.isArray(chats) ? chats.filter((chat) => !isBlockedChatPK?.(getChatPeerPK(chat, chatPK))) : [];
 
         if (!chatQuery) return baseItems;
 
         return baseItems.filter((chat) => {
-            const peerChatPK = getPeerChatPK(chat, chatPK);
+            const peerChatPK = getChatPeerPK(chat, chatPK);
             const profile = peerChatPK ? peerByChatPK?.get(peerChatPK) : null;
-            const title = formatUserDisplay({ username: profile?.username, chatPK: peerChatPK }).toLowerCase();
-            const username = String(profile?.username ?? '').toLowerCase();
+            const title = lowerText(formatUserDisplay({ username: profile?.username, chatPK: peerChatPK }));
+            const username = lowerText(profile?.username);
             const atUsername = username ? `@${username}` : '';
-            const preview = getMsgPreview(chat?.lastMsg, chatPK, null, null).toLowerCase();
-            const peerKey = String(peerChatPK ?? '').toLowerCase();
+            const preview = lowerText(getMsgPreview(chat?.lastMsg, chatPK, null, null));
+            const peerKey = lowerText(peerChatPK);
 
             return title.includes(chatQuery) || username.includes(chatQuery) || atUsername.includes(chatQuery) || preview.includes(chatQuery) || peerKey.includes(chatQuery);
         });
@@ -303,21 +301,9 @@ export default function ChatList() {
         [deleteChat, restoreDeletedChat]
     );
 
-    const lockRoute = useCallback((ms = 1200) => {
-        if (routeLockRef.current) return false;
-        routeLockRef.current = true;
-        if (routeLockTimerRef.current) clearTimeout(routeLockTimerRef.current);
-        routeLockTimerRef.current = setTimeout(() => {
-            routeLockRef.current = false;
-            routeLockTimerRef.current = null;
-        }, ms);
-        return true;
-    }, []);
-
     useEffect(() => {
         return () => {
             clearSearch();
-            if (routeLockTimerRef.current) clearTimeout(routeLockTimerRef.current);
         };
     }, [clearSearch]);
 
@@ -354,7 +340,7 @@ export default function ChatList() {
             }
 
             const chat = item.chat;
-            const peerChatPK = getPeerChatPK(chat, chatPK);
+            const peerChatPK = getChatPeerPK(chat, chatPK);
             const profile = peerChatPK ? peerByChatPK?.get(peerChatPK) : null;
             const title = formatUserDisplay({ username: profile?.username, chatPK: peerChatPK });
             const avatarSource = profile?.avatar ? { uri: profile.avatar } : null;

@@ -13,24 +13,13 @@ import { useBitcoin } from '@/components/providers/bitcoinprovider';
 import { useDialog } from '@/components/providers/dialogprovider';
 import { useWallet } from '@/components/providers/walletprovider';
 import { useUser } from '@/components/providers/userprovider';
-import { useCloak } from '@glyphteck/shared/providers/cloakprovider';
-import { toSats, toDisplay, truncateAddress, renderMoney } from '@/lib/utils';
-import { COOPERATIVE_EXIT_FLAT_FEE_SATS, COOPERATIVE_EXIT_TX_VBYTES, formatOnchainFeeAmount, getWithdrawalFeeRisk } from '@glyphteck/shared/wallet/fees';
-import { isAddressOnNetwork, isMainnet } from '@glyphteck/shared/network';
+import { useCloak } from '@veyl/shared/providers/cloakprovider';
+import { MONEY_UNITS, moneyUnitLabel, toSats, toDisplay, renderMoney } from '@veyl/shared/money';
+import { truncateAddress } from '@veyl/shared/utils/display';
+import { COOPERATIVE_EXIT_FLAT_FEE_SATS, COOPERATIVE_EXIT_TX_VBYTES, formatOnchainFeeAmount, getWithdrawalFeeRisk } from '@veyl/shared/wallet/fees';
+import { availableBalanceSats } from '@veyl/shared/wallet/balance';
+import { isAddressOnNetwork, isMainnet } from '@veyl/shared/network';
 import { toast } from 'sonner';
-
-function balanceToSats(balance) {
-    const value = Number(balance ?? 0);
-    return Number.isFinite(value) && value > 0 ? BigInt(Math.floor(value)) : 0n;
-}
-
-const MONEY_UNITS = ['sats', 'btc', 'usd'];
-
-function unitLabel(unit) {
-    if (unit === 'btc') return '₿';
-    if (unit === 'usd') return '$';
-    return 'sats';
-}
 
 export default function Withdraw({ data, close }) {
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -51,11 +40,11 @@ export default function Withdraw({ data, close }) {
                     .refine((v) => isAddressOnNetwork(v, network), {
                         message: isMainnet(network) ? 'not a mainnet address' : 'not a regtest address',
                     }),
-                inputUnit: z.enum(['sats', 'btc', 'usd']),
+                inputUnit: z.enum(MONEY_UNITS),
                 amount: z.string().regex(/^\d+(\.\d{0,8})?$/, 'invalid number'),
             })
             .superRefine((data, ctx) => {
-                const maxSats = balanceToSats(max);
+                const maxSats = availableBalanceSats(max);
                 let sats;
                 try {
                     sats = toSats(data.amount, data.inputUnit, price);
@@ -99,7 +88,7 @@ export default function Withdraw({ data, close }) {
     const watchedAmount = form.watch('amount');
     const watchedInputUnit = form.watch('inputUnit');
     const watchedAddress = form.watch('receivingAddress');
-    const balanceSats = useMemo(() => balanceToSats(balance), [balance]);
+    const balanceSats = useMemo(() => availableBalanceSats(balance), [balance]);
     const addressOnNetwork = watchedAddress && isAddressOnNetwork(watchedAddress, network);
     const enteredSats = useMemo(() => {
         if (!watchedAmount) return 0n;
@@ -160,7 +149,7 @@ export default function Withdraw({ data, close }) {
     const setAmount = useCallback(
         (raw) => {
             const unit = form.getValues('inputUnit');
-            const max = balanceToSats(balance);
+            const max = availableBalanceSats(balance);
             const accept = (regex, ok) => {
                 if (regex.test(raw) && ok()) form.setValue('amount', raw);
             };
@@ -300,7 +289,7 @@ export default function Withdraw({ data, close }) {
                                     onClick={cycleUnit}
                                     disabled={isSubmitting}
                                 >
-                                    {unitLabel(watchedInputUnit)}
+                                    {moneyUnitLabel(watchedInputUnit)}
                                 </Button>
                             </div>
                         )}

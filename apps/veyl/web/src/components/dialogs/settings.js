@@ -11,8 +11,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/tabs';
 import { ToggleGroup, ToggleGroupItem } from '@/components/togglegroup';
 import { useUser } from '@/components/providers/userprovider';
 import UpdateAvatar from '@/components/updateavatar';
-import { deleteAvatar, uploadAvatar } from '@/lib/useractions';
-import { SEND_ON_SCAN_ENABLED } from '@glyphteck/shared/settings';
+import { deleteAvatar, uploadAvatar } from '@/lib/user/actions';
+import { SEND_ON_SCAN_ENABLED } from '@veyl/shared/settings';
 
 const settingsSchema = z.object({
     moneyFormat: z.enum(['btc', 'usd', 'sats']),

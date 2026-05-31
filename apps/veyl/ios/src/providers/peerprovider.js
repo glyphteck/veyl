@@ -1,11 +1,12 @@
 import { useEffect, useMemo } from 'react';
-import { createPeerProvider } from '@glyphteck/shared/providers/peerprovider';
+import { createPeerProvider } from '@veyl/shared/providers/peerprovider';
+import { sortedUniqueValues } from '@veyl/shared/utils/array';
 import { useChat } from '@/providers/chatprovider';
 import { useUser } from '@/providers/userprovider';
 import { useTxData } from '@/providers/txdataprovider';
 import { useVault } from '@/providers/vaultprovider';
 import * as peerApi from '@/lib/peers';
-import { prefetchAvatarImages } from '@/lib/avatarimagecache';
+import { prefetchAvatarImages } from '@/lib/user/avatarimages';
 
 const { PeerProvider: BasePeerProvider, usePeer, usePeers } = createPeerProvider({
     useChat,
@@ -24,7 +25,7 @@ function PeerAvatarPrefetch() {
                 urls.push(peer.avatar);
             }
         }
-        return Array.from(new Set(urls)).sort();
+        return sortedUniqueValues(urls);
     }, [peers]);
 
     useEffect(() => {

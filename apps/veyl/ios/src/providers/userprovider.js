@@ -1,7 +1,7 @@
-import { createUserProvider } from '@glyphteck/shared/providers/userprovider';
-import { resolveNetwork } from '@glyphteck/shared/network';
+import { createUserProvider } from '@veyl/shared/providers/userprovider';
+import { resolveNetwork } from '@veyl/shared/network';
 import { auth, db, storage } from '@/lib/firebase';
-import { userAvatarCache } from '@/lib/useravatarcache';
+import { userAvatarCache } from '@/lib/user/avatarcache';
 import { mark } from '@/lib/diagnostics';
 
 const { UserProvider, useUser } = createUserProvider({

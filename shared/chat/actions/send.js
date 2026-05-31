@@ -3,20 +3,23 @@
 import { useCallback, useRef } from 'react';
 import { getChatId } from '../../crypto/chat.js';
 import { checkAttachmentSize, getAttachmentType, isAttachmentType, makeAttachmentUnavailableError, makeChatUnavailableError, makeTxtFileAttachment, saveMedia } from '../attachments.js';
-import { makeTs, setLocalChats } from '../chats.js';
+import { setLocalChats } from '../chats.js';
 import { hasStoredFileRef, isAttachmentMsgType, isLongTxt, makeSharedAttachment } from '../messages.js';
 import { usePendingSendQueue } from './pending.js';
 import { newMediaStayId, newMediaStayKey, requireMediaSaved } from './save.js';
 import { getPeerChatPKFromChatId } from '../ids.js';
-import { makeCid, sortMessages } from '../state.js';
+import { getMessageKey, makeCid, sortMessages } from '../state.js';
 import { cleanChatRetention, getMessageRetention, hasChatRetention, withMessageRetention } from '../ttl.js';
+import { cleanText } from '../../utils/text.js';
+import { makeTimestamp } from '../../utils/time.js';
 
 export const LOCAL_FAILED = Object.freeze({ pending: false, failed: true });
 export const LOCAL_PENDING = Object.freeze({ pending: true, failed: false });
 export const LOCAL_SENT = Object.freeze({ pending: false, failed: false });
 
 function replyPatch(message) {
-    return typeof message?.r === 'string' && message.r ? { r: message.r } : {};
+    const replyId = cleanText(message?.r);
+    return replyId ? { r: replyId } : {};
 }
 
 function retentionPatch(message) {
@@ -43,7 +46,7 @@ export function makeLocalMessage(chatPK, peerChatPK, message) {
         from: chatPK,
         cid,
         id: `local:${cid}`,
-        ts: makeTs(ms),
+        ts: makeTimestamp(ms),
         pending: true,
         failed: false,
     };
@@ -149,13 +152,7 @@ export function makeSentLongTxtMessage(chatPK, cid, uploaded, message) {
 }
 
 function localUriForAttachment(attachment) {
-    if (typeof attachment?.previewUri === 'string' && attachment.previewUri) {
-        return attachment.previewUri;
-    }
-    if (typeof attachment?.localUri === 'string' && attachment.localUri) {
-        return attachment.localUri;
-    }
-    return '';
+    return cleanText(attachment?.previewUri) || cleanText(attachment?.localUri);
 }
 
 export function prepareAttachment(chatPK, attachment) {
@@ -167,6 +164,8 @@ export function prepareAttachment(chatPK, attachment) {
 
     const cid = makeCid();
     const localUri = localUriForAttachment(attachment);
+    const caption = cleanText(attachment?.caption);
+    const name = cleanText(attachment?.name);
     const nextAttachment = {
         cid,
         type,
@@ -181,8 +180,8 @@ export function prepareAttachment(chatPK, attachment) {
         ...(Number.isFinite(attachment?.width) ? { w: attachment.width } : {}),
         ...(Number.isFinite(attachment?.height) ? { h: attachment.height } : {}),
         ...(Number.isFinite(attachment?.duration) ? { d: attachment.duration } : {}),
-        ...(typeof attachment?.caption === 'string' && attachment.caption.trim() ? { c: attachment.caption.trim() } : {}),
-        ...(typeof attachment?.name === 'string' && attachment.name.trim() ? { n: attachment.name.trim() } : {}),
+        ...(caption ? { c: caption } : {}),
+        ...(name ? { n: name } : {}),
         ...((type === 'img' || type === 'mp3' || type === 'mp4') && localUri ? { localUri } : {}),
         ...(attachment?.data ? { localData: attachment.data } : {}),
         cid,
@@ -198,14 +197,16 @@ export function splitRetryMessage(message) {
 }
 
 export function retryAttachmentMeta(message, localUri = '') {
+    const caption = cleanText(message?.c);
+    const name = cleanText(message?.n);
     return {
         ...(message?.m ? { mimeType: message.m } : {}),
         ...(Number.isFinite(message?.z) ? { size: message.z } : {}),
         ...(Number.isFinite(message?.w) ? { width: message.w } : {}),
         ...(Number.isFinite(message?.h) ? { height: message.h } : {}),
         ...(Number.isFinite(message?.d) ? { duration: message.d } : {}),
-        ...(typeof message?.c === 'string' && message.c.trim() ? { caption: message.c.trim() } : {}),
-        ...(typeof message?.n === 'string' && message.n.trim() ? { name: message.n.trim() } : {}),
+        ...(caption ? { caption } : {}),
+        ...(name ? { name } : {}),
         ...(localUri ? { localUri } : {}),
     };
 }
@@ -215,7 +216,7 @@ export function uniqueChatTargets(peerChatPKs) {
     const seen = new Set();
     const targets = [];
     for (const peerChatPK of list) {
-        const target = typeof peerChatPK === 'string' ? peerChatPK.trim() : '';
+        const target = cleanText(peerChatPK);
         if (!target || seen.has(target)) {
             continue;
         }
@@ -233,8 +234,8 @@ export function attachmentWithPermanence(attachment, permanent, stay = null) {
     if (!permanent) {
         return attachment;
     }
-    const stayId = typeof stay?.id === 'string' ? stay.id : '';
-    const stayKey = typeof stay?.key === 'string' ? stay.key : '';
+    const stayId = cleanText(stay?.id);
+    const stayKey = cleanText(stay?.key);
     return {
         ...attachment,
         meta: {
@@ -266,7 +267,7 @@ export function useChatSend({ chat, chatBanned, chatPK, chatPrivateKey, localCac
 
     const ackMessages = useCallback(
         (chatId, messages) => {
-            const acked = new Set((messages || []).map((message) => (typeof message === 'string' ? message : message?.cid || message?.id)).filter(Boolean));
+            const acked = new Set((messages || []).map((message) => (typeof message === 'string' ? message : getMessageKey(message))).filter(Boolean));
             if (!chatId || !acked.size) {
                 return;
             }

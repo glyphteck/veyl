@@ -14,7 +14,7 @@
     },
     "dependencies": {
         "@buildonspark/spark-sdk": "catalog:",
-        "@glyphteck/shared": "workspace:*",
+        "@veyl/shared": "workspace:*",
         "@hookform/resolvers": "^5.4.0",
         "@noble/hashes": "catalog:",
         "@tailwindcss/postcss": "catalog:",

@@ -1,7 +1,7 @@
 'use client';
 
-import { cn } from '@/lib/utils';
-import { isMainnet, resolveNetwork } from '@glyphteck/shared/network';
+import { cn } from '@/lib/classes';
+import { isMainnet, resolveNetwork } from '@veyl/shared/network';
 
 const network = resolveNetwork({ NEXT_PUBLIC_NETWORK: process.env.NEXT_PUBLIC_NETWORK });
 

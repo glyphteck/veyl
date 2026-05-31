@@ -3,12 +3,13 @@ import { createPortal } from 'react-dom';
 import { Button } from '@/components/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/avatar';
 import { ChevronsUpDown, Loader, Search, UsersRound } from 'lucide-react';
-import { mergeProfiles } from '@glyphteck/shared/search/merge';
-import { formatUserDisplay } from '@/lib/utils';
+import { mergeProfiles } from '@veyl/shared/search/merge';
+import { formatUserDisplay } from '@veyl/shared/profile';
 import { useSearch } from '@/lib/search/usesearch';
 import { useUser } from '@/components/providers/userprovider';
 import { usePeer } from '@/components/providers/peerprovider';
 import { isEditableTarget, listNavigationStep } from '@/lib/focus';
+import { cn } from '@/lib/classes';
 
 function isFastSearchKey(event) {
     return event.key.length === 1 && event.key !== ' ' && !event.metaKey && !event.ctrlKey && !event.altKey;
@@ -280,7 +281,7 @@ export default function PeerSelector({ selectedPeer, onPeerChange, disabled = fa
                 aria-haspopup="dialog"
                 onClick={() => handlePopoverOpenChange(!popoverOpen)}
                 onKeyDown={handleTriggerKeyDown}
-                className={`group button-outline w-full justify-between ${className || ''}`}
+                className={cn('group button-outline w-full justify-between', className)}
                 disabled={disabled}
             >
                 {selectedPeer ? (
@@ -294,7 +295,7 @@ export default function PeerSelector({ selectedPeer, onPeerChange, disabled = fa
                 ) : (
                     <span className="flex min-w-0 items-center gap-3.5 text-muted">
                         <span className="flex size-9 shrink-0 items-center justify-center">
-                            <UsersRound className={`size-7 text-foreground transition-opacity ease-out ${popoverOpen ? 'opacity-100' : 'opacity-45 group-hover:opacity-100 group-focus-visible:opacity-100'}`} />
+                            <UsersRound className={cn('size-7 text-foreground transition-opacity ease-out', popoverOpen ? 'opacity-100' : 'opacity-45 group-hover:opacity-100 group-focus-visible:opacity-100')} />
                         </span>
                         {label}
                     </span>

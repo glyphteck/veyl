@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 
-import { markDiag, markDone } from './diag.js';
+import { markDiag, markDone } from '../utils/diagnostics.js';
 
 export function useWalletPrivacy({ wallet, ghostWallet, diag }) {
     const desiredPrivacyRef = useRef(ghostWallet);

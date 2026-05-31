@@ -1,5 +1,8 @@
 import { collection, doc, getDoc, getDocs, limit, query, where } from 'firebase/firestore';
+import { uniqueValues } from './utils/array.js';
+import { avatarUrlWithVersion, readAvatarVersion } from './avatar.js';
 import { avatarPath, getFileUrl } from './files.js';
+import { hasPeerKeys, isFullProfile, normalizeProfile } from './profile.js';
 import { normalizeWalletNetwork, resolveWalletPK, walletPKField } from './wallet/keys.js';
 
 export function createPeersApi({ db, storage, getStorage, network }) {
@@ -23,14 +26,6 @@ export function createPeersApi({ db, storage, getStorage, network }) {
         return typeof bot === 'string' ? bot : 'bot';
     }
 
-    function readAvatarVersion(value) {
-        if (value == null || value === '' || (typeof value !== 'number' && typeof value !== 'string')) {
-            return null;
-        }
-        const version = Number(value);
-        return Number.isSafeInteger(version) && version >= 0 ? version : null;
-    }
-
     function createProfileFromData(uid, data) {
         return {
             username: data?.username || null,
@@ -46,11 +41,6 @@ export function createPeersApi({ db, storage, getStorage, network }) {
 
     function createProfileFromDoc(docSnap) {
         return createProfileFromData(docSnap.id, docSnap.data());
-    }
-
-    function avatarUrlWithVersion(url, version) {
-        if (!url) return null;
-        return version == null ? url : `${url}${url.includes('?') ? '&' : '?'}v=${encodeURIComponent(String(version))}`;
     }
 
     async function getAvatarUrl(uid, options = {}) {
@@ -74,10 +64,6 @@ export function createPeersApi({ db, storage, getStorage, network }) {
 
     function clearAvatarUrl(uid) {
         if (uid) avatarCache.delete(uid);
-    }
-
-    function hasPeerKeys(profile) {
-        return !!(profile?.walletPK || profile?.chatPK);
     }
 
     function avatarStateChanged(existing, profile) {
@@ -262,25 +248,12 @@ export function createPeersApi({ db, storage, getStorage, network }) {
         }
     }
 
-    function isFullProfile(profile) {
-        return !!(profile?.uid && ('active' in profile || 'username' in profile || ('walletPK' in profile && 'chatPK' in profile)));
-    }
-
     async function fetchAndCachePeer(partialProfile, stats) {
         if (!partialProfile) return null;
 
         let fullProfile = null;
         if (isFullProfile(partialProfile)) {
-            fullProfile = {
-                username: partialProfile.username || null,
-                avatar: partialProfile.avatar || null,
-                walletPK: partialProfile.walletPK || null,
-                chatPK: partialProfile.chatPK || null,
-                active: partialProfile.active ?? false,
-                bot: partialProfile.bot || null,
-                avatarVersion: readAvatarVersion(partialProfile.avatarVersion),
-                uid: partialProfile.uid,
-            };
+            fullProfile = normalizeProfile(partialProfile, partialProfile.uid);
         } else if (partialProfile.uid) {
             fullProfile = await fetchProfileByUid(partialProfile.uid);
         } else if (partialProfile.walletPK) {
@@ -293,16 +266,7 @@ export function createPeersApi({ db, storage, getStorage, network }) {
 
         if (!fullProfile) {
             if (partialProfile.walletPK || partialProfile.chatPK || partialProfile.username) {
-                fullProfile = {
-                    username: partialProfile.username || null,
-                    avatar: partialProfile.avatar || null,
-                    walletPK: partialProfile.walletPK || null,
-                    chatPK: partialProfile.chatPK || null,
-                    active: partialProfile.active ?? false,
-                    bot: partialProfile.bot || null,
-                    avatarVersion: readAvatarVersion(partialProfile.avatarVersion),
-                    uid: partialProfile.uid || null,
-                };
+                fullProfile = normalizeProfile(partialProfile);
             } else {
                 return null;
             }
@@ -347,7 +311,7 @@ export function createPeersApi({ db, storage, getStorage, network }) {
     }
 
     function uniqueLookupKeys(keys) {
-        return [...new Set((keys || []).filter(Boolean))];
+        return uniqueValues(keys);
     }
 
     async function loadProfiles(walletPKs, chatPKs) {

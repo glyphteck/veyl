@@ -14,11 +14,12 @@ import { Stack } from 'expo-router';
 import { usePathname } from 'expo-router';
 import { onAuthStateChanged } from 'firebase/auth';
 import * as SplashScreen from 'expo-splash-screen';
+import { hasCurrentCommunityRules } from '@veyl/shared/community';
+import { cleanText } from '@veyl/shared/utils/text';
 import { auth } from '@/lib/firebase';
-import { hasCurrentCommunityRules } from '@/lib/community';
 import { KeyboardRootProvider } from '@/components/keyboardscroll';
 import { installDiagnostics, mark } from '@/lib/diagnostics';
-import { stackScreenOptions } from '@/lib/stackoptions';
+import { stackScreenOptions } from '@/lib/navigation/stackoptions';
 
 installDiagnostics();
 void SplashScreen.preventAutoHideAsync();
@@ -48,7 +49,7 @@ const SAFE_ROUTES = new Set([
 ]);
 
 function safeRoute(pathname) {
-    const route = typeof pathname === 'string' ? pathname.trim() : '';
+    const route = cleanText(pathname);
     if (!route) return '';
     if (SAFE_ROUTES.has(route)) return route;
     if (route.startsWith('/chat/')) return '/chat';

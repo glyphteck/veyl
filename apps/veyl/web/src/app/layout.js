@@ -1,7 +1,7 @@
 import '@/app/globals.css';
 import { Notifications } from '@/components/notifications';
 import { ThemeProvider } from '@/components/themeprovider';
-import { links } from '@glyphteck/shared/links';
+import { links } from '@veyl/shared/links';
 import { walletLogoSrc } from '@/lib/brand';
 
 export const metadata = {

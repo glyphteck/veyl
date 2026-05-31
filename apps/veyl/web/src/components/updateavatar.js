@@ -5,6 +5,7 @@ import { Avatar, AvatarImage, AvatarFallback } from '@/components/avatar';
 import { Button } from '@/components/button';
 import { Input } from '@/components/input';
 import { X } from 'lucide-react';
+import { cn } from '@/lib/classes';
 
 export default function UpdateAvatar({
     currentAvatar = null,
@@ -111,12 +112,16 @@ export default function UpdateAvatar({
 
     return (
         <>
-            <div ref={rootRef} className={`${className} relative inline-flex shrink-0 overflow-visible`}>
+            <div ref={rootRef} className={cn('relative inline-flex shrink-0 overflow-visible', className)}>
                 <Avatar
                     key={avatarView}
-                    className={`size-full ${!selectedImage && !currentAvatar ? 'shadow text-muted' : ''} transition-all ${
-                        disabled || !isHoveringAvatar ? 'cursor-default' : 'cursor-pointer'
-                    } ${isHoveringAvatar ? 'scale-95 text-foreground' : ''} ${isPressingAvatar || isDragOver ? 'scale-85 text-foreground' : ''}`}
+                    className={cn(
+                        'size-full transition-all',
+                        !selectedImage && !currentAvatar && 'shadow text-muted',
+                        disabled || !isHoveringAvatar ? 'cursor-default' : 'cursor-pointer',
+                        isHoveringAvatar && 'scale-95 text-foreground',
+                        (isPressingAvatar || isDragOver) && 'scale-85 text-foreground'
+                    )}
                     onClick={(event) => {
                         if (disabled || !isInAvatarCircle(event)) return;
                         fileInputRef.current?.click();

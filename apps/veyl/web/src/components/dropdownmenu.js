@@ -4,7 +4,7 @@ import * as React from 'react';
 import { createPortal } from 'react-dom';
 
 import { listNavigationStep } from '@/lib/focus';
-import { cn } from '@/lib/utils';
+import { cn } from '@/lib/classes';
 
 const DropdownMenuContext = React.createContext(null);
 

@@ -10,10 +10,9 @@ import GlassHeader from '@/components/glass/glassheader';
 import GlassView from '@/components/glass/glassview';
 import Icon from '@/components/icon';
 import { useTap } from '@/lib/tap';
-import { LEGAL_EFFECTIVE_DATE, COMPANY_NAME, LEGAL_SECTIONS, getLegalSection } from '@/lib/legal';
+import { LEGAL_EFFECTIVE_DATE, LEGAL_SECTION_ORDER, COMPANY_NAME, LEGAL_SECTIONS, getLegalSection } from '@veyl/shared/legal';
 import { useTheme } from '@/providers/themeprovider';
-
-const SECTION_ORDER = ['privacy', 'terms', 'support'];
+import { textRouteParam } from '@veyl/shared/navigation/params';
 
 const TAB_META = {
     privacy: { label: 'privacy', icon: Shield },
@@ -74,13 +73,13 @@ export default function LegalRoute() {
     const router = useRouter();
     const params = useLocalSearchParams();
     const insets = useSafeAreaInsets();
-    const [selectedKey, setSelectedKey] = useState(getLegalSection(params?.section).key);
+    const [selectedKey, setSelectedKey] = useState(getLegalSection(textRouteParam(params?.section)).key);
     const [footerHeight, setFooterHeight] = useState(0);
     const scrollRef = useRef(null);
     const backTap = useTap({ onPress: router.back });
 
     useEffect(() => {
-        setSelectedKey(getLegalSection(params?.section).key);
+        setSelectedKey(getLegalSection(textRouteParam(params?.section)).key);
     }, [params?.section]);
 
     useEffect(() => {
@@ -147,7 +146,7 @@ export default function LegalRoute() {
                     gap: 12,
                 }}
             >
-                {SECTION_ORDER.map((tabKey) => (
+                {LEGAL_SECTION_ORDER.map((tabKey) => (
                     <SectionTab key={tabKey} tabKey={tabKey} active={selectedKey === tabKey} theme={theme} onPress={() => setSelectedKey(tabKey)} />
                 ))}
             </GlassFooter>

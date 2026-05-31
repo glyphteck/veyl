@@ -8,18 +8,18 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/togglegroup';
 import { useUser } from '@/components/providers/userprovider';
 import { useChat } from '@/components/providers/chatprovider';
 import { useDialog } from '@/components/providers/dialogprovider';
-import { useCloak } from '@glyphteck/shared/providers/cloakprovider';
-import { makeTxt } from '@glyphteck/shared/chat/messages';
-import { CHAT_RETENTION_24H, CHAT_RETENTION_SEEN, cleanChatRetention } from '@glyphteck/shared/chat/ttl';
+import { useCloak } from '@veyl/shared/providers/cloakprovider';
+import { makeTxt } from '@veyl/shared/chat/messages';
+import { CHAT_RETENTION_24H, CHAT_RETENTION_SEEN, cleanChatRetention } from '@veyl/shared/chat/ttl';
 import { usePeer } from '@/components/providers/peerprovider';
-import { formatUserDisplay } from '@/lib/utils';
-import { chatUploadErrorMessage, getChatUploadFiles, queueChatFileMessages } from '@/lib/chatfiles';
+import { formatUserDisplay } from '@veyl/shared/profile';
+import { chatUploadErrorMessage, getUploadFiles, queueMessages } from '@/lib/chat/files';
 import { HandCoins, Copy, CircleArrowRight, CircleCheck, Clock3, Eye, Flag, Paperclip, Trash2, UserX } from 'lucide-react';
 import { toast } from 'sonner';
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { useForm } from 'react-hook-form';
-import { getChatId } from '@glyphteck/shared/crypto/chat';
-import { getPeerChatPKFromChatId } from '@glyphteck/shared/chat/ids';
+import { getChatId } from '@veyl/shared/crypto/chat';
+import { getChatPeerPK } from '@veyl/shared/chat/ids';
 
 const RETENTION_OPTIONS = [
     {
@@ -51,7 +51,7 @@ export default function UserDetails({ data, close }) {
     const peerChatPK = user?.chatPK || '';
     const liveChat = useMemo(() => {
         if (!user?.chatPK || !chatPK) return null;
-        return chats?.find((item) => getPeerChatPKFromChatId(item.id, chatPK) === user.chatPK) ?? null;
+        return chats?.find((item) => getChatPeerPK(item, chatPK) === user.chatPK) ?? null;
     }, [chatPK, chats, user?.chatPK]);
     const chatScopeRef = useRef({ data: null, peerChatPK: '', chatId: null });
     if (chatScopeRef.current.data !== data || chatScopeRef.current.peerChatPK !== peerChatPK) {
@@ -170,7 +170,7 @@ export default function UserDetails({ data, close }) {
     const handleFileChange = async (e) => {
         let files;
         try {
-            files = getChatUploadFiles(e.target.files);
+            files = getUploadFiles(e.target.files);
         } catch (error) {
             toast.error(chatUploadErrorMessage(error));
             e.target.value = '';
@@ -181,7 +181,7 @@ export default function UserDetails({ data, close }) {
         await savePendingRetention().catch(() => {});
         close();
         try {
-            const result = await queueChatFileMessages(files, (attachment) => sendAttachment(user.chatPK, attachment));
+            const result = await queueMessages(files, (attachment) => sendAttachment(user.chatPK, attachment));
             const label = result.sent === 1 ? 'attachment' : `${result.sent} attachments`;
             toast(`sent ${label} to ${formatUserDisplay(user, false)}`, { icon: <CircleCheck /> });
         } catch (error) {

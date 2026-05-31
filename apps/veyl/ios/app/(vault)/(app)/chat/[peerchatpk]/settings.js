@@ -9,37 +9,30 @@ import GlassHeader from '@/components/glass/glassheader';
 import GlassIcon from '@/components/glass/glassicon';
 import Icon from '@/components/icon';
 import { functions } from '@/lib/firebase';
+import { useRouteLock } from '@/lib/navigation/routelock';
 import { useTap } from '@/lib/tap';
 import { useChat } from '@/providers/chatprovider';
 import { usePeer } from '@/providers/peerprovider';
 import { useTheme } from '@/providers/themeprovider';
 import { useUser } from '@/providers/userprovider';
-import { getPeerChatPKFromChatId } from '@glyphteck/shared/chat/ids';
-import { CHAT_RETENTION_24H, CHAT_RETENTION_SEEN, cleanChatRetention } from '@glyphteck/shared/chat/ttl';
-import { formatUserDisplay } from '@glyphteck/shared/utils';
-
-function pick(value) {
-    if (typeof value === 'string') return value;
-    if (Array.isArray(value)) return value[0] || '';
-    return '';
-}
-
-function clean(value) {
-    return typeof value === 'string' ? value.trim() : '';
-}
+import { getChatPeerPK } from '@veyl/shared/chat/ids';
+import { CHAT_RETENTION_24H, CHAT_RETENTION_SEEN, cleanChatRetention } from '@veyl/shared/chat/ttl';
+import { textRouteParam } from '@veyl/shared/navigation/params';
+import { cleanText } from '@veyl/shared/utils/text';
+import { formatUserDisplay } from '@veyl/shared/profile';
 
 function parsePeer(value) {
-    const raw = pick(value).trim();
+    const raw = textRouteParam(value).trim();
     if (!raw) return null;
     try {
         const peer = JSON.parse(raw);
         if (!peer || typeof peer !== 'object') return null;
         return {
-            username: clean(peer.username) || null,
-            uid: clean(peer.uid) || null,
-            chatPK: clean(peer.chatPK) || null,
-            walletPK: clean(peer.walletPK) || null,
-            avatar: clean(peer.avatar) || null,
+            username: cleanText(peer.username) || null,
+            uid: cleanText(peer.uid) || null,
+            chatPK: cleanText(peer.chatPK) || null,
+            walletPK: cleanText(peer.walletPK) || null,
+            avatar: cleanText(peer.avatar) || null,
             active: !!peer.active,
             bot: !!peer.bot,
         };
@@ -87,54 +80,53 @@ export default function ChatSettingsRoute() {
     const { chats, dropChat, setChatTtl } = useChat() || {};
     const { peerByUsername, peerByUid, peerByChatPK, peerByWalletPK, addPeer, dropPeer } = usePeer() || {};
     const backTap = useTap({ onPress: router.back });
-    const routeLockRef = useRef(false);
-    const routeLockTimerRef = useRef(null);
+    const { lockRoute } = useRouteLock();
     const submitReport = useMemo(() => httpsCallable(functions, 'submitReport'), []);
     const [fetchedPeer, setFetchedPeer] = useState(null);
     const [headerHeight, setHeaderHeight] = useState(0);
 
     const routePeer = useMemo(() => parsePeer(params?.peer), [params?.peer]);
-    const chatId = pick(params?.chatId).trim();
+    const chatId = textRouteParam(params?.chatId).trim();
     const username = routePeer?.username || '';
-    const peerChatPKParam = routePeer?.chatPK || pick(params?.peerchatpk).trim() || pick(params?.chatPK).trim();
-    const uid = routePeer?.uid || pick(params?.uid).trim();
-    const walletPK = routePeer?.walletPK || pick(params?.walletPK).trim();
+    const routeChatPK = routePeer?.chatPK || textRouteParam(params?.peerchatpk).trim() || textRouteParam(params?.chatPK).trim();
+    const uid = routePeer?.uid || textRouteParam(params?.uid).trim();
+    const walletPK = routePeer?.walletPK || textRouteParam(params?.walletPK).trim();
 
     const knownPeer = useMemo(() => {
         return (
             (username ? peerByUsername?.get(username) : null) ??
             (uid ? peerByUid?.get(uid) : null) ??
-            (peerChatPKParam ? peerByChatPK?.get(peerChatPKParam) : null) ??
+            (routeChatPK ? peerByChatPK?.get(routeChatPK) : null) ??
             (walletPK ? peerByWalletPK?.get(walletPK) : null) ??
             null
         );
-    }, [peerByChatPK, peerByUid, peerByUsername, peerByWalletPK, peerChatPKParam, uid, username, walletPK]);
+    }, [peerByChatPK, peerByUid, peerByUsername, peerByWalletPK, routeChatPK, uid, username, walletPK]);
 
     const peer = useMemo(
         () =>
             knownPeer ??
             fetchedPeer ??
             routePeer ??
-            (username || uid || peerChatPKParam || walletPK
+            (username || uid || routeChatPK || walletPK
                 ? {
                       username: username || null,
                       uid: uid || null,
-                      chatPK: peerChatPKParam || null,
+                      chatPK: routeChatPK || null,
                       walletPK: walletPK || null,
                   }
                 : null),
-        [fetchedPeer, knownPeer, peerChatPKParam, routePeer, uid, username, walletPK]
+        [fetchedPeer, knownPeer, routeChatPK, routePeer, uid, username, walletPK]
     );
 
     const title = useMemo(() => formatUserDisplay(peer || { username }), [peer, username]);
     const avatar = peer?.avatar ? { uri: peer.avatar } : null;
-    const peerChatPK = peer?.chatPK || peerChatPKParam;
+    const peerChatPK = peer?.chatPK || routeChatPK;
     const settingsChat = useMemo(() => {
         if (!Array.isArray(chats) || (!chatId && (!ownChatPK || !peerChatPK))) return null;
         return (
             chats.find((item) => {
                 if (chatId && item?.id === chatId) return true;
-                return !!(ownChatPK && peerChatPK && getPeerChatPKFromChatId(item?.id, ownChatPK) === peerChatPK);
+                return !!(ownChatPK && peerChatPK && getChatPeerPK(item, ownChatPK) === peerChatPK);
             }) ?? null
         );
     }, [chatId, chats, ownChatPK, peerChatPK]);
@@ -151,23 +143,6 @@ export default function ChatSettingsRoute() {
     const settingsChatIdRef = useRef(settingsChatId);
     const savePendingRetentionRef = useRef(null);
     const openRef = useRef(true);
-
-    const lockRoute = useCallback((ms = 1200) => {
-        if (routeLockRef.current) return false;
-        routeLockRef.current = true;
-        if (routeLockTimerRef.current) clearTimeout(routeLockTimerRef.current);
-        routeLockTimerRef.current = setTimeout(() => {
-            routeLockRef.current = false;
-            routeLockTimerRef.current = null;
-        }, ms);
-        return true;
-    }, []);
-
-    useEffect(() => {
-        return () => {
-            if (routeLockTimerRef.current) clearTimeout(routeLockTimerRef.current);
-        };
-    }, []);
 
     useEffect(() => {
         const chatChanged = lastSettingsChatIdRef.current !== settingsChatId;
@@ -275,7 +250,7 @@ export default function ChatSettingsRoute() {
         const partial = {
             ...(username ? { username } : {}),
             ...(uid ? { uid } : {}),
-            ...(peerChatPKParam ? { chatPK: peerChatPKParam } : {}),
+            ...(routeChatPK ? { chatPK: routeChatPK } : {}),
             ...(walletPK ? { walletPK } : {}),
         };
         if (!Object.keys(partial).length) return;
@@ -288,11 +263,11 @@ export default function ChatSettingsRoute() {
         return () => {
             cancelled = true;
         };
-    }, [addPeer, knownPeer, peerChatPKParam, uid, username, walletPK]);
+    }, [addPeer, knownPeer, routeChatPK, uid, username, walletPK]);
 
     const handleOpenHistory = useCallback(() => {
         const nextWalletPK = peer?.walletPK || walletPK;
-        const nextChatPK = peer?.chatPK || peerChatPKParam;
+        const nextChatPK = peer?.chatPK || routeChatPK;
         if (!nextWalletPK || !nextChatPK) {
             return;
         }
@@ -304,7 +279,7 @@ export default function ChatSettingsRoute() {
                 chatPK: nextChatPK,
             },
         });
-    }, [lockRoute, peer?.chatPK, peer?.walletPK, peerChatPKParam, router, walletPK]);
+    }, [lockRoute, peer?.chatPK, peer?.walletPK, routeChatPK, router, walletPK]);
 
     const promptReportNote = useCallback((onSubmit) => {
         Alert.prompt(
@@ -416,7 +391,7 @@ export default function ChatSettingsRoute() {
                 <View style={{ alignItems: 'center', paddingHorizontal: 24 }}>
                     <Avatar source={avatar} size={160} active={!!peer?.active} bot={!!peer?.bot} />
                     <View style={{ marginTop: 24, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
-                        <GlassIcon glassEffectStyle="regular" rounded={16} icon={History} onPress={handleOpenHistory} disabled={!(peer?.walletPK || walletPK) || !(peer?.chatPK || peerChatPKParam)} />
+                        <GlassIcon glassEffectStyle="regular" rounded={16} icon={History} onPress={handleOpenHistory} disabled={!(peer?.walletPK || walletPK) || !(peer?.chatPK || routeChatPK)} />
                         <GlassIcon glassEffectStyle="regular" rounded={16} icon={UserX} onPress={handleBlock} disabled={!(peer?.uid || uid)} />
                         <GlassIcon glassEffectStyle="regular" rounded={16} icon={Flag} onPress={handleReport} disabled={!(peer?.uid || uid)} />
                     </View>

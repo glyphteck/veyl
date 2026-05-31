@@ -3,7 +3,8 @@ import Constants from 'expo-constants';
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import { httpsCallable } from 'firebase/functions';
-import { randomBytes, toHex } from '@glyphteck/shared/crypto/core';
+import { randomBytes, toHex } from '@veyl/shared/crypto/core';
+import { normalizeVeylVariant } from '@veyl/shared/variant';
 import { auth, functions } from '@/lib/firebase';
 
 const DID_KEY = 'push.did';
@@ -11,10 +12,6 @@ const SYNC_KEY = 'push.sync';
 const INFO_KEY = 'push.info';
 const SYNC_VERSION = 'v2';
 const inflightSync = new Set();
-const variantAliases = {
-    development: 'dev',
-    production: 'prod',
-};
 const pushVariants = {
     dev: {
         appVariant: 'dev',
@@ -58,8 +55,7 @@ export async function getDid() {
 }
 
 function getPushMeta() {
-    const rawVariant = String(Constants?.expoConfig?.extra?.variant || 'dev').trim().toLowerCase();
-    const appVariant = variantAliases[rawVariant] || rawVariant;
+    const appVariant = normalizeVeylVariant(Constants?.expoConfig?.extra?.variant, 'dev');
     return pushVariants[appVariant] || pushVariants.dev;
 }
 

@@ -10,11 +10,12 @@ import { useDialog } from '@/components/providers/dialogprovider';
 import { usePeer } from '@/components/providers/peerprovider';
 import { useUser } from '@/components/providers/userprovider';
 import { useWallet } from '@/components/providers/walletprovider';
-import { useCloak } from '@glyphteck/shared/providers/cloakprovider';
-import { formatUserDisplay, renderMoney } from '@/lib/utils';
-import { qr, readQr } from '@glyphteck/shared/qrutils';
-import { isAddressOnNetwork } from '@glyphteck/shared/network';
-import { canSendOnScan } from '@glyphteck/shared/settings';
+import { useCloak } from '@veyl/shared/providers/cloakprovider';
+import { formatUserDisplay } from '@veyl/shared/profile';
+import { renderMoney } from '@veyl/shared/money';
+import { qr, readQr } from '@veyl/shared/qr';
+import { isAddressOnNetwork } from '@veyl/shared/network';
+import { canSendOnScan } from '@veyl/shared/settings';
 
 export default function QRPage() {
     const router = useRouter();

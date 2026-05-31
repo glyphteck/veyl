@@ -2,6 +2,7 @@
 
 import { addMessageKeys, collectMessageKeys, indexMessagesByKey, keySet, messageHasKey, targetMessageMs } from '../messagekeys.js';
 import { getMessageKey, getMessageOrderMs } from '../state.js';
+import { cleanText } from '../../utils/text.js';
 import {
     canShowMsg,
     getHiddenDisplayMessages,
@@ -125,7 +126,7 @@ export function getAutoDeleteMessages(messages, chatPK, peerChatPK, options = {}
 }
 
 function autoDeleteKey(chatId, msg) {
-    const id = typeof msg?.id === 'string' ? msg.id.trim() : '';
+    const id = cleanText(msg?.id);
     return chatId && id ? `${chatId}/${id}` : '';
 }
 

@@ -1,4 +1,5 @@
 import { randomBytes, toHex } from '../crypto/core.js';
+import { timestampMs } from '../utils/time.js';
 
 export function makeCid() {
     return `${Date.now().toString(36)}${toHex(randomBytes(3))}`;
@@ -19,7 +20,7 @@ function getCidMs(cid) {
 }
 
 export function getMessageOrderMs(message) {
-    return getCidMs(message?.cid) ?? (typeof message?.ts?.toMillis === 'function' ? message.ts.toMillis() : Infinity);
+    return getCidMs(message?.cid) ?? timestampMs(message?.ts, Infinity);
 }
 
 export function sortMessages(messages) {

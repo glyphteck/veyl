@@ -1,5 +1,5 @@
 {
-    "name": "@glyphteck/shared",
+    "name": "@veyl/shared",
     "version": "0.0.0",
     "private": true,
     "type": "module",
@@ -9,12 +9,15 @@
     },
     "exports": {
         "./bot/*": "./bot/*.js",
+        "./cache/*": "./cache/*.js",
         "./chat/*": "./chat/*.js",
         "./crypto/*": "./crypto/*.js",
         "./logos": "./logos/index.js",
         "./logos/*": "./logos/*",
+        "./navigation/*": "./navigation/*.js",
         "./providers/*": "./providers/*.js",
         "./search/*": "./search/*.js",
+        "./utils/*": "./utils/*.js",
         "./wallet": "./wallet/provider.js",
         "./wallet/*": "./wallet/*.js",
         "./*": "./*.js"

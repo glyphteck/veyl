@@ -110,7 +110,7 @@ Chat system contract:
 
 ### QR codes
 
-veyl-specific QR codes are HTTPS wrappers at `/qr` on the active veyl web host. Use `shared/qrutils.js` to write and read them; do not emit raw `veyl:` strings or base64 JSON payloads.
+veyl-specific QR codes are HTTPS wrappers at `/qr` on the active veyl web host. Use `shared/qr.js` to write and read them; do not emit raw `veyl:` strings or base64 JSON payloads.
 
 Current QR structures:
 
@@ -148,11 +148,11 @@ The wrapper URL is intentional for veyl-specific actions. On iOS, the veyl web h
 - The durable payload is AES-GCM ciphertext with AAD bound to cache version, user id, and wallet network.
 - Chat media bytes are stored as separate AES-GCM media blobs with opaque local ids; the encrypted main payload stores the media index.
 - Chat message lists are not cached as durable state. Visible messages must come from server-confirmed Firestore reads; cached media bytes are used only after the server confirms the message document still exists.
-- iOS stores the encrypted main blob and media blobs in app document storage through `apps/veyl/ios/src/lib/localdatacache.js`.
-- iOS also materializes decrypted media into a transient deterministic render-file cache under the app cache directory through `apps/veyl/ios/src/lib/msgimagecache.js`. That URI layer is separate from the vaulted media blob cache and can be rebuilt from the vaulted bytes after unlock.
-- Web stores the encrypted main blob and media blobs in IndexedDB through `apps/veyl/web/src/lib/localdatacache.js`.
+- iOS stores the encrypted main blob and media blobs in app document storage through `apps/veyl/ios/src/lib/cache/localdata.js`.
+- iOS also materializes decrypted media into a transient deterministic render-file cache under the app cache directory through `apps/veyl/ios/src/lib/chat/imagecache.js`. That URI layer is separate from the vaulted media blob cache and can be rebuilt from the vaulted bytes after unlock.
+- Web stores the encrypted main blob and media blobs in IndexedDB through `apps/veyl/web/src/lib/cache/localdata.js`.
 - Vaulted cache storage is scoped by uid and wallet network before encryption, so multiple accounts on one device keep separate encrypted cache slots instead of overwriting each other. The ciphertext AAD is also bound to uid and network.
-- Shared schema, crypto, timestamp revival, and cache helpers live in `shared/localdatacache.js`.
+- Shared schema, crypto, timestamp revival, and cache helpers live in `shared/cache/localdata.js`.
 - The cache key is derived from the local master seed with a domain-separated label and is never stored in Keychain, SecureStore, IndexedDB, AsyncStorage, localStorage, or React state as raw key material.
 - Wallet balance is not cached as authoritative state. Unlock may render cached transaction history immediately, but spendable balance still comes from fresh Spark balance calls and wallet events.
 - Account deletion clears the durable local cache before sign-out.
@@ -200,7 +200,7 @@ The wrapper URL is intentional for veyl-specific actions. On iOS, the veyl web h
 │       ├── bot   Node bot runtime
 │       ├── ios   Expo / React Native veyl client
 │       └── web   Next.js veyl client
-├── shared        Shared workspace package `@glyphteck/shared`
+├── shared        Shared workspace package `@veyl/shared`
 ├── functions     Firebase Functions package (separate npm package)
 ├── firestore.rules
 ├── firebase.json
@@ -210,20 +210,39 @@ The wrapper URL is intentional for veyl-specific actions. On iOS, the veyl web h
 └── README.md
 ```
 
+## Source Boundaries
+
+Current source folders are intentional:
+
+- `apps/veyl/web/src/app`: Next.js routes and route shells.
+- `apps/veyl/web/src/components`: visual web components, app providers, dialogs, and reusable UI primitives owned by Veyl. There is no shadcn `components.json` or `components/ui` layer.
+- `apps/veyl/web/src/lib`: web-only logic grouped by owner: `admin`, `cache`, `chat`, `crypto`, `firebase`, `media`, `search`, and `user`, plus small root platform helpers such as `passkey.js`, `routeguards.js`, `vault.js`, and `classes.js`.
+- `apps/veyl/ios/app`: Expo Router route files.
+- `apps/veyl/ios/src/components`: visual iOS components.
+- `apps/veyl/ios/src/providers`: iOS provider wiring around shared provider factories and native services.
+- `apps/veyl/ios/src/lib`: iOS-only logic grouped by owner: `cache`, `camera`, `chat`, `crypto`, `navigation`, `search`, and `user`, plus small root platform helpers.
+- `shared`: cross-platform product logic in the `@veyl/shared` package. Generic primitives live in `shared/utils/*`; feature logic lives in folders such as `shared/chat`, `shared/wallet`, `shared/search`, `shared/cache`, `shared/navigation`, and `shared/bot`.
+- `functions`: Firebase Functions package. Feature entrypoints live under `passkey`, `user`, `chat`, `wallet`, `btc`, and `admin`; deploy-local shared helpers live under `functions/lib`.
+- `scripts`: repo operations and local tooling. Admin CLI command helpers live under `scripts/admin`.
+
 ## Main Entry Points
 
 If you want the quickest path into the codebase, start here:
 
 - Web auth/session: `apps/veyl/web/src/lib/passkey.js`, `apps/veyl/web/src/lib/routeguards.js`
 - iOS auth: `apps/veyl/ios/src/lib/passkeys.js`
-- Vault boot: `shared/vaultutils.js`
-- Vaulted local cache: `shared/localdatacache.js`, `apps/veyl/ios/src/lib/localdatacache.js`, `apps/veyl/web/src/lib/localdatacache.js`
+- Vault boot: `shared/vault.js`
+- Vaulted local cache: `shared/cache/localdata.js`, `apps/veyl/ios/src/lib/cache/localdata.js`, `apps/veyl/web/src/lib/cache/localdata.js`
 - Seed crypto: `shared/crypto/seed.js`
 - Wallet provider factory: `shared/wallet/provider.js`
 - Chat provider factory: `shared/providers/chatprovider.js`
 - Chat message sessions and warming config: `shared/chat/messages/session/`
 - Chat transport, crypto, and messages: `shared/chat/rows.js`, `shared/chat/messages/query.js`, `shared/chat/messages/write.js`, `shared/crypto/chat.js`, `shared/chat/messages.js`
 - Chat user actions: `shared/chat/actions/`
+- Web chat render/cache helpers: `apps/veyl/web/src/lib/chat/*`
+- iOS chat media and render-file helpers: `apps/veyl/ios/src/lib/chat/*`
+- Search: `shared/search/*`, `apps/veyl/web/src/lib/search/usesearch.js`, `apps/veyl/ios/src/lib/search/usesearch.js`
+- Legal copy: `shared/legal.js`
 - Shared user, peer, and tx providers: `shared/providers/*`
 - Backend entrypoint: `functions/index.js`
 - Security model: `firestore.rules`

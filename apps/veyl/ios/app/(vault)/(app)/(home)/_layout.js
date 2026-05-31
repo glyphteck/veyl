@@ -1,12 +1,11 @@
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useRef } from 'react';
-import { useIsFocused } from 'expo-router/react-navigation';
-import { usePathname } from 'expo-router';
-import { readLastAppRoute, writeLastAppTarget } from '@glyphteck/shared/localdatacache';
+import { useIsFocused, usePathname } from 'expo-router';
+import { readResumeRoute, writeResumeTarget } from '@veyl/shared/cache/localdata';
 import { useTheme } from '@/providers/themeprovider';
 import { useVault } from '@/providers/vaultprovider';
-import { HomePager as HomeTabs } from '@/lib/homepager';
-import { HOME_TAB_NAMES, homeTabForLastAppRoute, isHomeTabRootPath, targetForHomeTab, warmHomeTab } from '@/lib/hometabs';
+import { HomePager as HomeTabs } from '@/lib/navigation/homepager';
+import { HOME_TAB_NAMES, homeTabForResumeRoute, isHomeTabRootPath, targetForHomeTab, warmHomeTab } from '@/lib/navigation/hometabs';
 import MainMenu from '@/components/mainmenu';
 
 export default function TabsLayout() {
@@ -15,7 +14,7 @@ export default function TabsLayout() {
     const focused = useIsFocused();
     const pathname = usePathname();
     const tabSwipeEnabled = focused && isHomeTabRootPath(pathname);
-    const initialRouteNameRef = useRef(homeTabForLastAppRoute(readLastAppRoute(localCache)));
+    const initialRouteNameRef = useRef(homeTabForResumeRoute(readResumeRoute(localCache)));
     const savedInitialRouteRef = useRef(false);
     const saveHomeRoute = useCallback(
         (name) => {
@@ -24,7 +23,7 @@ export default function TabsLayout() {
                 return;
             }
             const target = targetForHomeTab(name);
-            if (target) writeLastAppTarget(localCache, target);
+            if (target) writeResumeTarget(localCache, target);
         },
         [localCache]
     );

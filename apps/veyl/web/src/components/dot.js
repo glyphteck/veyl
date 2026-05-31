@@ -1,11 +1,8 @@
 'use client';
 
 import React from 'react';
-import { cn } from '@/lib/utils';
-
-function cleanId(id) {
-    return `dot-clip-${id.replace(/[^a-zA-Z0-9_-]/g, '') || 'id'}`;
-}
+import { prefixedId } from '@veyl/shared/utils/display';
+import { cn } from '@/lib/classes';
 
 const AVATAR_DOT_CENTER = 0.85355;
 const AVATAR_DOT_RADIUS = 1 / 6;
@@ -19,7 +16,7 @@ const avatarClipPath = [
 export function Dot({ show = false, type = 'alert', compact = false, vectorMask = false, className, maskTargetClassName, dotClassName, children, ...props }) {
     const dotColorClass = type === 'active' ? 'bg-active' : 'bg-alert';
     const id = React.useId();
-    const clipId = React.useMemo(() => cleanId(id), [id]);
+    const clipId = React.useMemo(() => prefixedId('dot-clip', id), [id]);
     const useVectorMask = show && vectorMask && !compact;
 
     const dotVars = {

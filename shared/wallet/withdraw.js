@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 
 import { isAddressOnNetwork } from '../network.js';
+import { cleanText } from '../utils/text.js';
 import { DEFAULT_EXIT_SPEED, getExitSpeed, getWithdrawalFeeAmountSats, normalizeWithdrawalFeeQuote, toSafeNonNegativeSats, toSafeSats } from './fees.js';
 
 export function useWithdrawal({ wallet, network, updateWalletData }) {
@@ -10,7 +11,7 @@ export function useWithdrawal({ wallet, network, updateWalletData }) {
                 return { success: false, error: new Error('wallet not ready') };
             }
 
-            const address = typeof onchainAddress === 'string' ? onchainAddress.trim() : '';
+            const address = cleanText(onchainAddress);
             if (!isAddressOnNetwork(address, network)) {
                 return { success: false, error: new Error(`refusing to withdraw — address is not a ${network} address`) };
             }
@@ -48,7 +49,7 @@ export function useWithdrawal({ wallet, network, updateWalletData }) {
             if (!wallet) {
                 return { success: false, error: new Error('wallet not ready') };
             }
-            const address = typeof onchainAddress === 'string' ? onchainAddress.trim() : '';
+            const address = cleanText(onchainAddress);
             if (!isAddressOnNetwork(address, network)) {
                 return { success: false, error: new Error(`refusing to withdraw — address is not a ${network} address`) };
             }

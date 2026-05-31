@@ -8,9 +8,10 @@ import { auth, db } from '@/lib/firebase';
 import GlassButton from '@/components/glass/glassbutton';
 import GlassField from '@/components/glass/glassfield';
 import Icon from '@/components/icon';
-import { packSeedData } from '@glyphteck/shared/crypto/pack';
+import { packSeedData } from '@veyl/shared/crypto/pack';
 import { encryptSeed } from '@/lib/crypto/seed';
-import { getPasswordFeedback, isPassword, MAX_PASSWORD, normalizePassword } from '@glyphteck/shared/password';
+import { yieldToUi } from '@veyl/shared/utils/async';
+import { getPasswordFeedback, isPassword, MAX_PASSWORD, normalizePassword } from '@veyl/shared/password';
 import { useTap } from '@/lib/tap';
 
 export default function NewUserPassword() {
@@ -34,11 +35,6 @@ export default function NewUserPassword() {
     const canContinue = status === 'valid' && isPassword(password) && !isSubmitting;
     const rulesFeedback = useTap({ disabled: isSubmitting, onPress: () => router.push('/passwordrules') });
     const eyeFeedback = useTap({ disabled: isSubmitting, onPress: () => setShowPassword((prev) => !prev) });
-
-    const yieldToUi = async () => {
-        await new Promise((r) => requestAnimationFrame(r));
-        await new Promise((r) => setTimeout(r, 0));
-    };
 
     const handleSubmit = async () => {
         if (!canContinue) return;

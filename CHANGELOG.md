@@ -2,6 +2,13 @@
 
 Repo-level changes are listed newest first. Keep entries short and concrete. Broad pushes get grouped bullets, while narrow fixes can use one concise bugfix or cleanup bullet that still names the actual change.
 
+## 4.14.3 - 2026-05-31
+
+- Reorganized shared, web, and iOS helpers around feature-owned folders for cache, chat, media, navigation, user, wallet, and generic primitives.
+- Renamed the shared package surface to `@veyl/shared` and removed stale flat helper paths, deprecated imports, and shadcn config residue.
+- Centralized legal copy in shared code and exposed the public web legal route from the shared source of truth.
+- Updated agent-facing docs, active todos, and repo remarks to match the current architecture and remaining follow-up boundaries.
+
 ## 4.14.2 - 2026-05-30
 
 - Renamed the local Veyl dev launcher from `bun veyl` to `bun dev` and updated command docs.

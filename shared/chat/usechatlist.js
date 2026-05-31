@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CHAT_LIST_LIVE_COUNT, CHAT_LIST_PAGE_SIZE } from '../config.js';
 import { getChatId } from '../crypto/chat.js';
-import { readCachedChats, writeCachedChats } from '../localdatacache.js';
+import { readCachedChats, writeCachedChats } from '../cache/localdata.js';
 import {
     getLatestOwnReadReceiptTarget,
     getLatestReadReceiptTarget,
@@ -20,27 +20,15 @@ import {
     sameChats,
     sameLastChat,
     setLocalChats,
-    timestampMs,
     trimExpiredChatPreviews,
 } from './chats.js';
 import { collectMessageKeys } from './messagekeys.js';
 import { markChatsRead } from './read.js';
 import { CHAT_RETENTION_24H, normalizeChatSettings } from './ttl.js';
 import { getChatRowLastMsgKey as getRowLastMsgKey } from './ids.js';
-
-function markDiag(diag, label, data) {
-    try {
-        diag?.(label, data);
-    } catch {}
-}
-
-function markDone(diag, label, startedAt, data = {}) {
-    markDiag(diag, `${label}.done`, { ...data, elapsedMs: Date.now() - startedAt });
-}
-
-function markError(diag, label, startedAt, error, data = {}) {
-    markDiag(diag, `${label}.error`, { ...data, elapsedMs: Date.now() - startedAt, code: error?.code || '', message: error?.message || String(error) });
-}
+import { uniqueSet } from '../utils/array.js';
+import { markDiag, markDone, markError } from '../utils/diagnostics.js';
+import { timestampMs } from '../utils/time.js';
 
 export function sortedUniqueChatRows(...groups) {
     const byId = new Map();
@@ -360,7 +348,7 @@ export function useChatList({
                     setHasMoreChats((prev) => (prev === chatHasMoreRef.current ? prev : chatHasMoreRef.current));
                 }
 
-                const hiddenIds = new Set([...deletingChatIds, ...pendingDeleteIdsRef.current]);
+                const hiddenIds = uniqueSet([...deletingChatIds, ...pendingDeleteIdsRef.current]);
                 const preservedChats = lastServerChatsRef.current.filter((chatItem) => chatItem?.id && !nextChatIdsSet.has(chatItem.id) && !hiddenIds.has(chatItem.id));
                 const shownChats = commitServerChats(sortedUniqueChatRows(nextChatsWithRead, preservedChats));
                 setSelectedChat((currentId) => {
@@ -437,7 +425,7 @@ export function useChatList({
                 clearDeletedChatState(pageDeletingIds);
             }
 
-            const hiddenIds = new Set([...pendingDeleteIdsRef.current, ...deletingIds]);
+            const hiddenIds = uniqueSet([...pendingDeleteIdsRef.current, ...deletingIds]);
             const pageChats = clearChatPreviewsByHiddenKeys(
                 trimExpiredChatPreviews(applyReadCache(Array.isArray(page?.chats) ? page.chats : [], chatPK, readCacheRef.current), { skipChatId: selectedChatIdRef.current }),
                 hiddenChatPreviewKeysRef.current

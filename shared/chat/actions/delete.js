@@ -2,10 +2,11 @@
 
 import { useCallback, useRef } from 'react';
 import { getChatId } from '../../crypto/chat.js';
-import { dropCachedChat } from '../../localdatacache.js';
+import { dropCachedChat } from '../../cache/localdata.js';
 import { filterPendingDeleteChats, getLastChat, sameChats, sameLastChat, setLocalChats } from '../chats.js';
 import { getPeerChatPKFromChatId } from '../ids.js';
 import { clearReadWrite } from '../read.js';
+import { uniqueSet } from '../../utils/array.js';
 
 export function useChatDelete({
     chat,
@@ -164,9 +165,9 @@ export function useChatDelete({
 
     const syncLiveDeleting = useCallback(
         (nextChatIds, deletingChatIds) => {
-            const deletingChatIdsSet = new Set((deletingChatIds || []).filter(Boolean));
+            const deletingChatIdsSet = uniqueSet(deletingChatIds);
             deletingChatIdsRef.current = deletingChatIdsSet;
-            const liveChatIdsSet = new Set([...(nextChatIds || []), ...deletingChatIdsSet]);
+            const liveChatIdsSet = uniqueSet([...(nextChatIds || []), ...deletingChatIdsSet]);
             if (pendingDeleteIdsRef.current.size) {
                 for (const chatId of [...pendingDeleteIdsRef.current]) {
                     if (!liveChatIdsSet.has(chatId)) {
@@ -182,7 +183,7 @@ export function useChatDelete({
     );
 
     const mergeDeletingIds = useCallback((deletingChatIds) => {
-        const deletingIds = new Set([...deletingChatIdsRef.current, ...(deletingChatIds || []).filter(Boolean)]);
+        const deletingIds = uniqueSet([...deletingChatIdsRef.current, ...(deletingChatIds || [])]);
         deletingChatIdsRef.current = deletingIds;
         return deletingIds;
     }, []);

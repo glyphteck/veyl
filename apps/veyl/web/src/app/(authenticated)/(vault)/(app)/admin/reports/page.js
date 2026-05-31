@@ -8,12 +8,8 @@ import { Button } from '@/components/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/avatar';
 import { Card } from '@/components/card';
 import { useAdminData } from '@/components/providers/adminprovider';
-import { formatUserDisplay } from '@/lib/utils';
+import { displayUser } from '@/lib/admin/format';
 import { toast } from 'sonner';
-
-function displayUser(user) {
-    return user?.username || user?.uid || formatUserDisplay(user);
-}
 
 export default function AdminPage() {
     const { offenders, offendersReady, banUser, unbanUser } = useAdminData();

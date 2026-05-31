@@ -7,22 +7,15 @@ import { Field } from '@/components/field';
 import { Input } from '@/components/input';
 import { Button } from '@/components/button';
 import { Loader, Coins, ScanQrCode } from 'lucide-react';
-import { formatUserDisplay, toSats, toDisplay, renderMoney } from '@/lib/utils';
+import { formatUserDisplay } from '@veyl/shared/profile';
+import { MONEY_UNITS, moneyUnitLabel, toSats, toDisplay, renderMoney } from '@veyl/shared/money';
 import { useBitcoin } from '@/components/providers/bitcoinprovider';
 import { useWallet } from '@/components/providers/walletprovider';
 import { useUser } from '@/components/providers/userprovider';
 import { useDialog } from '@/components/providers/dialogprovider';
-import { useCloak } from '@glyphteck/shared/providers/cloakprovider';
+import { useCloak } from '@veyl/shared/providers/cloakprovider';
 import { toast } from 'sonner';
 import PeerSelector from '@/components/peerselector';
-
-const MONEY_UNITS = ['sats', 'btc', 'usd'];
-
-function unitLabel(unit) {
-    if (unit === 'btc') return '₿';
-    if (unit === 'usd') return '$';
-    return 'sats';
-}
 
 export default function SendMoney({ peer, amount = '', inputUnit, onPeerChange, onAmountChange, onInputUnitChange }) {
     const [receiver, setReceiver] = useState(null);
@@ -42,7 +35,7 @@ export default function SendMoney({ peer, amount = '', inputUnit, onPeerChange, 
         z
             .object({
                 receiver: z.object({}).passthrough(),
-                inputUnit: z.enum(['sats', 'btc', 'usd']),
+                inputUnit: z.enum(MONEY_UNITS),
                 amount: z.string().regex(/^\d+(\.\d{0,8})?$/, 'invalid number'),
             })
             .superRefine((data, ctx) => {
@@ -279,7 +272,7 @@ export default function SendMoney({ peer, amount = '', inputUnit, onPeerChange, 
                                 onClick={cycleUnit}
                                 disabled={isSubmitting}
                             >
-                                {unitLabel(watchedInputUnit)}
+                                {moneyUnitLabel(watchedInputUnit)}
                             </Button>
                         </div>
                     )}

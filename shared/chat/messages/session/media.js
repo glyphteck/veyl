@@ -1,11 +1,11 @@
 import { filterChatMessages } from '../../ids.js';
-import { hasStoredFileRef, isExpiredAttachmentMsg } from '../../messages.js';
+import { hasStoredFileRef, isExpiredAttachmentMsg, storedFileKey } from '../../messages.js';
 import { IDLE_CALLBACK_MIN_TIMEOUT_MS } from '../../../config.js';
+import { waitForIdle as waitForGlobalIdle } from '../../../utils/async.js';
+import { nonNegativeNumber } from '../../../utils/number.js';
 
 export function isRemoteMediaMessage(message, mediaConfig) {
-    const path = typeof message?.p === 'string' ? message.p.trim() : '';
-    const fileKey = typeof message?.k === 'string' ? message.k.trim() : '';
-    if (!path || !fileKey || path.startsWith('local:') || fileKey === 'local' || message?.pending || message?.failed || isExpiredAttachmentMsg(message) || !hasStoredFileRef(message)) {
+    if (message?.pending || message?.failed || isExpiredAttachmentMsg(message) || !hasStoredFileRef(message)) {
         return false;
     }
 
@@ -19,17 +19,11 @@ export function isRemoteMediaMessage(message, mediaConfig) {
     return !(Number.isFinite(maxBytes) && maxBytes > 0 && Number.isFinite(size) && size > maxBytes);
 }
 
-export function mediaKey(peerChatPK, message) {
-    return `${peerChatPK || ''}:${message?.t || ''}:${message?.p || ''}:${message?.k || ''}`;
-}
-
-export function waitForIdle(delayMs) {
-    return new Promise((resolve) => {
-        if (typeof globalThis.requestIdleCallback === 'function') {
-            globalThis.requestIdleCallback(() => resolve(), { timeout: Math.max(IDLE_CALLBACK_MIN_TIMEOUT_MS, Number(delayMs) || 0) });
-            return;
-        }
-        setTimeout(resolve, Math.max(0, Number(delayMs) || 0));
+export function waitForMediaIdle(delayMs) {
+    const delay = nonNegativeNumber(delayMs, 0);
+    return waitForGlobalIdle({
+        timeout: Math.max(IDLE_CALLBACK_MIN_TIMEOUT_MS, delay),
+        delay,
     });
 }
 
@@ -46,7 +40,7 @@ export function getMediaTasks({ ids, batches, chatPK, mediaConfig, attempts }) {
             if (!isRemoteMediaMessage(message, mediaConfig)) {
                 continue;
             }
-            const key = mediaKey(entry.peerChatPK, message);
+            const key = storedFileKey(entry.peerChatPK, message, { type: true });
             if (!key || queued.has(key) || attempts?.has?.(key)) {
                 continue;
             }

@@ -12,11 +12,12 @@ import GlassButton from '@/components/glass/glassbutton';
 import GlassField from '@/components/glass/glassfield';
 import GlassHeader from '@/components/glass/glassheader';
 import Icon from '@/components/icon';
-import { hasQuickLoginAccount } from '@/lib/quicklogin';
+import { hasQuickLoginAccount } from '@/lib/user/quicklogin';
 import { useTap } from '@/lib/tap';
-import { logout } from '@/lib/useractions';
+import { logout } from '@/lib/user/actions';
 import { mark } from '@/lib/diagnostics';
-import { isPassword, MAX_PASSWORD, normalizePassword } from '@glyphteck/shared/password';
+import { sleep, yieldToUi } from '@veyl/shared/utils/async';
+import { isPassword, MAX_PASSWORD, normalizePassword } from '@veyl/shared/password';
 
 export default function UnlockScreen() {
     const { theme } = useTheme();
@@ -66,14 +67,9 @@ export default function UnlockScreen() {
 
     // Guards in (vault)/_layout.js handle navigation once unlocked
 
-    const yieldToUi = async () => {
-        await new Promise((r) => requestAnimationFrame(r));
-        await new Promise((r) => setTimeout(r, 0));
-    };
-
     const fadeCover = async (toValue, duration = 180) => {
         cover.value = withTiming(toValue, { duration });
-        await new Promise((r) => setTimeout(r, duration));
+        await sleep(duration);
     };
 
     const swap = async (next) => {

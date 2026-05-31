@@ -1,5 +1,5 @@
 import { SecretManagerServiceClient } from '@google-cloud/secret-manager';
-import { BOT_SEEDS_SECRET_ID, botSeedKey } from '@glyphteck/shared/bot/events';
+import { BOT_SEEDS_SECRET_ID, botSeedKey } from '@veyl/shared/bot/events';
 
 function secretName(projectId) {
     return `projects/${projectId}/secrets/${BOT_SEEDS_SECRET_ID}`;

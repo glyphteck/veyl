@@ -11,17 +11,19 @@ import {
     BOT_RUNTIME_ACTIONS,
     BOT_RUNTIME_DOC_ID,
     BOT_RUNTIME_LEASE_MS,
-} from '../../shared/bot/events.js';
+} from '@veyl/shared/bot/events';
+import { cleanBurstCount, cleanBurstDelayMs } from '@veyl/shared/bot/burst';
 import {
     BOT_BURST_DEFAULT_COUNT,
     BOT_BURST_DEFAULT_DELAY_MS,
-    BOT_BURST_MAX_COUNT,
-    BOT_BURST_MIN_DELAY_MS,
-} from '../../shared/config.js';
+} from '@veyl/shared/config';
 import { resolveBotUid, setBotPowerState } from '../../functions/lib/bots.js';
 import { provisionBot } from '../../apps/veyl/bot/src/newbot.js';
 import { createSecretClient, deleteBotSeed } from '../../apps/veyl/bot/src/secrets.js';
-import { cliArgs, resolveUid } from './common.mjs';
+import { cliArgs, resolveUid } from './cli.mjs';
+import { timestampMs } from '@veyl/shared/utils/time';
+import { sleep } from '@veyl/shared/utils/async';
+import { cleanText, lowerText } from '@veyl/shared/utils/text';
 
 const DEFAULT_BURST_TARGET = '@zxrl';
 const BURST_WAIT_POLL_MS = 2000;
@@ -37,17 +39,17 @@ function usage() {
 }
 
 function normalizeTarget(value) {
-    const raw = String(value ?? '').trim();
+    const raw = cleanText(value);
     if (!raw) {
         return 'all';
     }
 
-    const clean = raw.replace(/^@/, '').trim().toLowerCase();
+    const clean = lowerText(raw.replace(/^@/, ''));
     return clean || 'all';
 }
 
 function normalizePower(value) {
-    const raw = String(value ?? '').trim().toLowerCase();
+    const raw = lowerText(value);
     if (['1', 'on', 'true', 'enable', 'enabled'].includes(raw)) {
         return true;
     }
@@ -61,27 +63,12 @@ function plural(count, word) {
     return `${count} ${word}${count === 1 ? '' : 's'}`;
 }
 
-function tsMs(value) {
-    if (typeof value?.toMillis === 'function') {
-        return value.toMillis();
-    }
-    if (value instanceof Date) {
-        return value.getTime();
-    }
-    const ms = Number(value);
-    return Number.isFinite(ms) ? ms : 0;
-}
-
-function sleep(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 function runtimeRef() {
     return db.collection('runtimes').doc(BOT_RUNTIME_DOC_ID);
 }
 
 function isRuntimeActive(data) {
-    return data?.running === true && tsMs(data?.heartbeatAt) > Date.now() - BOT_RUNTIME_LEASE_MS;
+    return data?.running === true && timestampMs(data?.heartbeatAt, 0) > Date.now() - BOT_RUNTIME_LEASE_MS;
 }
 
 function supportsRuntimeAction(data, actionType) {
@@ -93,20 +80,11 @@ function msLabel(ms) {
 }
 
 function parseCount(value) {
-    const count = Number(value);
-    if (!Number.isInteger(count) || count <= 0 || count > BOT_BURST_MAX_COUNT) {
-        throw new Error(`count must be an integer from 1 to ${BOT_BURST_MAX_COUNT}`);
-    }
-    return count;
+    return cleanBurstCount(value, 'count');
 }
 
 function parseDelayMs(value) {
-    const raw = String(value ?? '').trim().toLowerCase();
-    const ms = raw.endsWith('ms') ? Number(raw.slice(0, -2)) : raw.endsWith('s') ? Number(raw.slice(0, -1)) * 1000 : Number(raw);
-    if (!Number.isFinite(ms) || ms < BOT_BURST_MIN_DELAY_MS) {
-        throw new Error(`delay must be at least ${BOT_BURST_MIN_DELAY_MS}ms`);
-    }
-    return Math.round(ms);
+    return cleanBurstDelayMs(value, { name: 'delay', text: true });
 }
 
 function splitOption(arg) {
@@ -203,7 +181,7 @@ async function resolveBotTargets(target) {
         for (const docSnap of botsSnap.docs) {
             targets.set(docSnap.id, {
                 uid: docSnap.id,
-                username: String(docSnap.data()?.username || '').trim().toLowerCase() || null,
+                username: lowerText(docSnap.data()?.username) || null,
             });
         }
 
@@ -214,7 +192,7 @@ async function resolveBotTargets(target) {
 
             targets.set(docSnap.id, {
                 uid: docSnap.id,
-                username: String(docSnap.data()?.username || '').trim().toLowerCase() || null,
+                username: lowerText(docSnap.data()?.username) || null,
             });
         }
 
@@ -233,7 +211,7 @@ async function resolveBotTargets(target) {
 
     return [{
         uid,
-        username: String(botSnap.data()?.username || profileSnap.data()?.username || '').trim().toLowerCase() || null,
+        username: lowerText(botSnap.data()?.username || profileSnap.data()?.username) || null,
     }];
 }
 
@@ -261,8 +239,8 @@ async function deleteBot(target, options = {}) {
     const [botSnap, profileSnap] = await Promise.all([botRef.get(), profileRef.get()]);
     const botData = botSnap.exists ? botSnap.data() : {};
     const profileData = profileSnap.exists ? profileSnap.data() : {};
-    const username = String(botData?.username || profileData?.username || target.username || '').trim().toLowerCase();
-    const chatPK = String(botData?.chatPK || profileData?.chatPK || '').trim();
+    const username = lowerText(botData?.username || profileData?.username || target.username);
+    const chatPK = cleanText(botData?.chatPK || profileData?.chatPK);
 
     await setBotPowerState(target.uid, false).catch(() => {});
 
@@ -451,7 +429,7 @@ async function waitForAction(actionRef, timeoutMs) {
 
 async function main() {
     const [action, arg1, arg2] = cliArgs();
-    const cmd = String(action ?? '').trim().toLowerCase();
+    const cmd = lowerText(action);
 
     if (!cmd) {
         usage();

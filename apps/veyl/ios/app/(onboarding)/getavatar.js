@@ -2,15 +2,16 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Animated, Pressable, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { ImageUp } from 'lucide-react-native';
+import { hasCurrentCommunityRules } from '@veyl/shared/community';
 import { useTheme } from '@/providers/themeprovider';
 import AvatarPicker from '@/components/avatarpicker';
 import GlassButton from '@/components/glass/glassbutton';
 import { auth } from '@/lib/firebase';
 import { skipAvatar, uploadAvatar } from '@/lib/avatarupload';
-import { hasCurrentCommunityRules } from '@/lib/community';
 import { useTap } from '@/lib/tap';
 import { useUser } from '@/providers/userprovider';
 import { useVault } from '@/providers/vaultprovider';
+import { useRouteLock } from '@/lib/navigation/routelock';
 
 const ACTION_SWITCH_MS = 80;
 
@@ -30,29 +31,11 @@ export default function NewUserAvatar() {
     const visibleActionRef = useRef(desiredAction);
     const actionScaleValue = useRef(new Animated.Value(1)).current;
     const actionTransitionRef = useRef(0);
-    const routeLockRef = useRef(false);
-    const routeLockTimerRef = useRef(null);
+    const { lockRoute } = useRouteLock();
     const acceptedRules = hasCurrentCommunityRules({ communityRulesVersion, communityRulesAcceptedAt, communityRulesPending });
     const isOnboarding = !hasAvatarEntry || !encSeed || !acceptedRules;
     const pendingLabel = pendingAction === 'upload' ? 'uploading avatar' : pendingAction === 'skip' ? 'confirming' : '';
     const title = pendingLabel || 'set your avatar';
-    const lockRoute = useCallback((ms = 1200) => {
-        if (routeLockRef.current) return false;
-        routeLockRef.current = true;
-        if (routeLockTimerRef.current) clearTimeout(routeLockTimerRef.current);
-        routeLockTimerRef.current = setTimeout(() => {
-            routeLockRef.current = false;
-            routeLockTimerRef.current = null;
-        }, ms);
-        return true;
-    }, []);
-
-    useEffect(() => {
-        return () => {
-            if (routeLockTimerRef.current) clearTimeout(routeLockTimerRef.current);
-        };
-    }, []);
-
     const canContinue = hasSelectedAsset && !isUploading;
 
     useEffect(() => {

@@ -31,29 +31,34 @@ import { useWallet } from '@/components/providers/walletprovider';
 import { useVault } from '@/components/providers/vaultprovider';
 import { useTxData } from '@/components/providers/txdataprovider';
 import { usePeer } from '@/components/providers/peerprovider';
-import { useCloak } from '@glyphteck/shared/providers/cloakprovider';
-import { mergeProfiles } from '@glyphteck/shared/search/merge';
-import { completeCommandPrefix, getTypingUsername, matchCommands, parseCommand, parseCommandAmountSats } from '@glyphteck/shared/commands';
+import { useCloak } from '@veyl/shared/providers/cloakprovider';
+import { formatCacheSize } from '@veyl/shared/utils/display';
+import { mergeProfiles } from '@veyl/shared/search/merge';
+import { sameText } from '@veyl/shared/utils/text';
+import { completeCommandPrefix, getTypingUsername, matchCommands, parseCommand, parseCommandAmountSats } from '@veyl/shared/commands';
+import { hasAvailableBalance } from '@veyl/shared/wallet/balance';
 import { useChat } from '@/components/providers/chatprovider';
-import { cn, formatUserDisplay, renderMoney, formatFullDateTime } from '@/lib/utils';
+import { cn } from '@/lib/classes';
+import { formatUserDisplay } from '@veyl/shared/profile';
+import { renderMoney } from '@veyl/shared/money';
+import { formatFullDateTime } from '@veyl/shared/utils/time';
 import {
-    MAINMENU_LIST_HEIGHT,
-    MAINMENU_ROW_HEIGHT,
-    countMainMenuRows,
-    findMainMenuRow,
-    formatCacheSize,
-    getMainMenuPeers,
-    getMainMenuWindow,
+    LIST_HEIGHT,
+    ROW_HEIGHT,
+    countRows,
+    findRow,
+    getOrderedPeers,
+    getVisibleWindow,
     textMatches,
 } from '@/lib/mainmenu';
 import { useSearch } from '@/lib/search/usesearch';
 import { shortcuts } from '@/lib/shortcuts';
 import { isEditableTarget, listNavigationStep } from '@/lib/focus';
 import { Bitcoin } from '@/components/bitcoin';
-import { getMsgPreview as displayLastMsg, makeReq, makeTxt } from '@glyphteck/shared/chat/messages';
+import { getMsgPreview as displayLastMsg, makeReq, makeTxt } from '@veyl/shared/chat/messages';
 import { Dot } from '@/components/dot';
-import { qr } from '@glyphteck/shared/qrutils';
-import { getChatId } from '@glyphteck/shared/crypto/chat';
+import { qr } from '@veyl/shared/qr';
+import { getChatId } from '@veyl/shared/crypto/chat';
 
 function rowsSection(key, rows) {
     return {
@@ -123,12 +128,12 @@ function MainMenuEmpty({ children }) {
 function MainMenuList({ id, resetKey, sections, activeIndex, setActiveIndex, empty }) {
     const ref = useRef(null);
     const [scrollTop, setScrollTop] = useState(0);
-    const total = countMainMenuRows(sections);
-    const { start, end } = getMainMenuWindow({ scrollTop, total });
+    const total = countRows(sections);
+    const { start, end } = getVisibleWindow({ scrollTop, total });
     const visible = [];
 
     for (let index = start; index < end; index += 1) {
-        const row = findMainMenuRow(sections, index);
+        const row = findRow(sections, index);
         if (!row) continue;
         visible.push(
             <div
@@ -137,7 +142,7 @@ function MainMenuList({ id, resetKey, sections, activeIndex, setActiveIndex, emp
                 role="option"
                 aria-selected={index === activeIndex}
                 className="absolute inset-x-0"
-                style={{ top: index * MAINMENU_ROW_HEIGHT, height: MAINMENU_ROW_HEIGHT }}
+                style={{ top: index * ROW_HEIGHT, height: ROW_HEIGHT }}
             >
                 {row.section.render(row.localIndex, index === activeIndex, () => setActiveIndex(index), index > 0 && row.localIndex === 0)}
             </div>
@@ -147,8 +152,8 @@ function MainMenuList({ id, resetKey, sections, activeIndex, setActiveIndex, emp
     useEffect(() => {
         const node = ref.current;
         if (!node || activeIndex < 0) return;
-        const top = activeIndex * MAINMENU_ROW_HEIGHT;
-        const bottom = top + MAINMENU_ROW_HEIGHT;
+        const top = activeIndex * ROW_HEIGHT;
+        const bottom = top + ROW_HEIGHT;
         if (top < node.scrollTop) {
             node.scrollTop = top;
         } else if (bottom > node.scrollTop + node.clientHeight) {
@@ -172,11 +177,11 @@ function MainMenuList({ id, resetKey, sections, activeIndex, setActiveIndex, emp
             id={id}
             role="listbox"
             className="min-h-0 overflow-y-auto"
-            style={{ maxHeight: MAINMENU_LIST_HEIGHT }}
+            style={{ maxHeight: LIST_HEIGHT }}
             onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
             onWheel={(event) => event.stopPropagation()}
         >
-            <div className="relative" style={{ height: total * MAINMENU_ROW_HEIGHT }}>
+            <div className="relative" style={{ height: total * ROW_HEIGHT }}>
                 {visible}
             </div>
         </div>
@@ -232,7 +237,7 @@ export default function MainMenu({ close, data, open = true }) {
         let peer =
             [...(peers || []), ...(results || [])].find((p) => {
                 if (!p?.username || !parsed.args.username) return false;
-                return p.username.toLowerCase() === parsed.args.username.toLowerCase();
+                return sameText(p.username, parsed.args.username);
             }) ?? null;
         if (!peer && parsed.args.username) {
             peer = await addPeer?.({ username: parsed.args.username });
@@ -401,7 +406,7 @@ export default function MainMenu({ close, data, open = true }) {
     const matchedPeers = useMemo(() => {
         if (!query) return [];
         if (browseUsers) {
-            return getMainMenuPeers({ peers, recentPeers, excludeUid: uid });
+            return getOrderedPeers({ peers, recentPeers, excludeUid: uid });
         }
         return mergeProfiles({ local: peers || [], remote: results || [], parsed: query, excludeUid: uid });
     }, [browseUsers, peers, query, recentPeers?.all, results, uid]);
@@ -689,7 +694,7 @@ export default function MainMenu({ close, data, open = true }) {
                     </>
                 ),
             },
-            Number(balance ?? 0) > 0 && {
+            hasAvailableBalance(balance) && {
                     key: 'withdraw',
                     label: 'withdraw funds',
                     select: () => openDialog('withdraw'),
@@ -858,7 +863,7 @@ export default function MainMenu({ close, data, open = true }) {
         });
     }
 
-    const menuTotal = countMainMenuRows(menuSections);
+    const menuTotal = countRows(menuSections);
     const menuSignature = menuSections.map((section) => `${section.key}:${section.count}`).join('|');
     const listId = 'mainmenu-list';
     const activeId = menuTotal > 0 && activeIndex >= 0 ? `${listId}-item-${activeIndex}` : '';
@@ -902,7 +907,7 @@ export default function MainMenu({ close, data, open = true }) {
                 return index <= 0 ? menuTotal - 1 : index - 1;
             });
         } else if (event.key === 'Enter') {
-            const row = findMainMenuRow(menuSections, activeIndex);
+            const row = findRow(menuSections, activeIndex);
             if (!row) return;
             event.preventDefault();
             row.section.select?.(row.localIndex);

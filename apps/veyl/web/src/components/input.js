@@ -1,5 +1,5 @@
 import { forwardRef } from 'react';
-import { cn } from '@/lib/utils';
+import { cn } from '@/lib/classes';
 
 const base =
     'flex w-full rounded-full bg-background/70 px-2.75 py-1.5 shadow outline-none backdrop-blur-sm placeholder:text-muted disabled:cursor-not-allowed disabled:opacity-50';

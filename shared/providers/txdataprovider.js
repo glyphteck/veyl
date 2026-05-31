@@ -2,25 +2,9 @@
 
 import { createContext, useContext, useMemo, useRef } from 'react';
 import { DAY_MS, HOUR_MS } from '../config.js';
+import { dayHourKey, dayKey, hourKey } from '../utils/time.js';
+import { isCompletedTransfer, isVisibleTransfer, txCreatedMs } from '../wallet/tx.js';
 
-const formatDay = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-const formatHour = (d) => String(d.getHours()).padStart(2, '0');
-const timeMs = (value) => {
-    if (typeof value?.toMillis === 'function') {
-        const ms = value.toMillis();
-        return Number.isFinite(ms) ? ms : 0;
-    }
-    if (value instanceof Date) {
-        const ms = value.getTime();
-        return Number.isFinite(ms) ? ms : 0;
-    }
-    if (Number.isFinite(value)) return value;
-    if (typeof value === 'string') {
-        const ms = Date.parse(value);
-        return Number.isFinite(ms) ? ms : 0;
-    }
-    return 0;
-};
 const byRecentTx = (a, b) => {
     const delta = (b?.createdMs || 0) - (a?.createdMs || 0);
     if (delta !== 0) return delta;
@@ -45,11 +29,6 @@ function coveredUnitsSince(oldestLoadedMs, unitMs, nowMs = Date.now()) {
     return Math.max(1, Math.ceil((nowMs - oldestLoadedMs) / unitMs) + 1);
 }
 
-const isValidTx = (tx) => {
-    if (!tx.status) return true;
-    return !['TRANSFER_STATUS_EXPIRED', 'TRANSFER_STATUS_RETURNED', 'UNRECOGNIZED'].includes(tx.status);
-};
-
 const enrichTx = (tx) => {
     const isStaticDeposit = tx.type === 'UTXO_SWAP' && tx.transferDirection === 'INCOMING';
     const incoming = tx.transferDirection === 'INCOMING';
@@ -58,14 +37,14 @@ const enrichTx = (tx) => {
     const peerPK = incoming ? tx.senderIdentityPublicKey : tx.receiverIdentityPublicKey;
     return {
         ...tx,
-        createdMs: timeMs(tx.createdTime),
+        createdMs: txCreatedMs(tx),
         incoming,
         peerPK,
         totalValue: tx.totalValue,
         amount: incoming ? tx.totalValue : -tx.totalValue,
         funding: isFunding,
         withdrawal: isWithdrawal,
-        pending: tx.status !== 'TRANSFER_STATUS_COMPLETED',
+        pending: !isCompletedTransfer(tx),
     };
 };
 
@@ -83,7 +62,7 @@ const aggregateTxs = (transfers, userPK) => {
 
     for (const raw of transfers) {
         const tx = enrichTx(raw);
-        if (!isValidTx(tx)) continue;
+        if (!isVisibleTransfer(tx)) continue;
         enrichedTxs.push(tx);
         if (tx.id) {
             txById.set(tx.id, tx);
@@ -131,12 +110,12 @@ const aggregateTxs = (transfers, userPK) => {
             peerTxsByPK.get(tx.peerPK).push(tx);
         }
 
-        const dayKey = formatDay(txDate);
-        const hourKey = `${dayKey}-${formatHour(txDate)}`;
-        if (!dayMap.has(dayKey)) dayMap.set(dayKey, { net: 0, vol: 0, cnt: 0, txIds: [] });
-        if (!hourMap.has(hourKey)) hourMap.set(hourKey, { net: 0, vol: 0, cnt: 0, txIds: [] });
-        const dayBucket = dayMap.get(dayKey);
-        const hourBucket = hourMap.get(hourKey);
+        const day = dayKey(txDate);
+        const hour = dayHourKey(txDate);
+        if (!dayMap.has(day)) dayMap.set(day, { net: 0, vol: 0, cnt: 0, txIds: [] });
+        if (!hourMap.has(hour)) hourMap.set(hour, { net: 0, vol: 0, cnt: 0, txIds: [] });
+        const dayBucket = dayMap.get(day);
+        const hourBucket = hourMap.get(hour);
         dayBucket.net += tx.amount;
         dayBucket.vol += tx.totalValue;
         dayBucket.cnt++;
@@ -245,7 +224,7 @@ export function createTxDataProvider({ useWallet, useUser }) {
                 for (let i = 0; i < actualDays; i++) {
                     const d = new Date(today);
                     d.setDate(d.getDate() - i);
-                    const key = formatDay(d);
+                    const key = dayKey(d);
                     series.push({ date: key, balance: runningBalance });
                     const dayData = aggregatedData.dayMap.get(key);
                     if (dayData) {
@@ -266,8 +245,8 @@ export function createTxDataProvider({ useWallet, useUser }) {
                 const now = new Date();
                 const series = [];
                 let runningBalance = Number(balance);
-                const today = formatDay(now);
-                const yesterday = formatDay(new Date(now.getTime() - DAY_MS));
+                const today = dayKey(now);
+                const yesterday = dayKey(new Date(now.getTime() - DAY_MS));
                 const coveredHours = txHistoryComplete ? hours : coveredUnitsSince(oldestTxMs, HOUR_MS, now.getTime());
                 const actualHours = Math.min(hours, coveredHours);
 
@@ -275,16 +254,17 @@ export function createTxDataProvider({ useWallet, useUser }) {
                     const currentHour = now.getHours();
                     const maxHour = Math.min(actualHours - 1, currentHour);
                     for (let i = 0; i <= maxHour; i++) {
-                        const hourKey = `${today}-${String(i).padStart(2, '0')}`;
-                        const hourData = aggregatedData.hourMap.get(hourKey);
+                        const key = `${today}-${hourKey(i)}`;
+                        const hourData = aggregatedData.hourMap.get(key);
                         if (hourData) {
                             runningBalance -= hourData.net;
                         }
                     }
                     for (let i = 0; i <= maxHour; i++) {
-                        series.push({ hour: String(i).padStart(2, '0'), balance: runningBalance });
-                        const hourKey = `${today}-${String(i).padStart(2, '0')}`;
-                        const hourData = aggregatedData.hourMap.get(hourKey);
+                        const hour = hourKey(i);
+                        series.push({ hour, balance: runningBalance });
+                        const key = `${today}-${hour}`;
+                        const hourData = aggregatedData.hourMap.get(key);
                         if (hourData) {
                             runningBalance += hourData.net;
                         }
@@ -294,25 +274,27 @@ export function createTxDataProvider({ useWallet, useUser }) {
                     const currentHour = now.getHours();
                     const firstOffset = Math.max(0, 24 - actualHours);
                     for (let i = 0; i <= currentHour; i++) {
-                        const hourKey = `${today}-${String(i).padStart(2, '0')}`;
-                        const hourData = aggregatedData.hourMap.get(hourKey);
+                        const key = `${today}-${hourKey(i)}`;
+                        const hourData = aggregatedData.hourMap.get(key);
                         if (hourData) runningBalance -= hourData.net;
                     }
                     for (let i = Math.max(currentHour + 1, firstOffset); i < 24; i++) {
-                        const hourKey = `${yesterday}-${String(i).padStart(2, '0')}`;
-                        const hourData = aggregatedData.hourMap.get(hourKey);
+                        const key = `${yesterday}-${hourKey(i)}`;
+                        const hourData = aggregatedData.hourMap.get(key);
                         if (hourData) runningBalance -= hourData.net;
                     }
                     for (let i = Math.max(currentHour + 1, firstOffset); i < 24; i++) {
-                        series.push({ hour: String(i).padStart(2, '0'), balance: runningBalance });
-                        const hourKey = `${yesterday}-${String(i).padStart(2, '0')}`;
-                        const hourData = aggregatedData.hourMap.get(hourKey);
+                        const hour = hourKey(i);
+                        series.push({ hour, balance: runningBalance });
+                        const key = `${yesterday}-${hour}`;
+                        const hourData = aggregatedData.hourMap.get(key);
                         if (hourData) runningBalance += hourData.net;
                     }
                     for (let i = firstOffset > currentHour ? firstOffset : 0; i <= currentHour; i++) {
-                        series.push({ hour: String(i).padStart(2, '0'), balance: runningBalance });
-                        const hourKey = `${today}-${String(i).padStart(2, '0')}`;
-                        const hourData = aggregatedData.hourMap.get(hourKey);
+                        const hour = hourKey(i);
+                        series.push({ hour, balance: runningBalance });
+                        const key = `${today}-${hour}`;
+                        const hourData = aggregatedData.hourMap.get(key);
                         if (hourData) runningBalance += hourData.net;
                     }
                 }

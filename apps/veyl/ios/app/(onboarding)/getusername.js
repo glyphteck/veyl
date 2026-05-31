@@ -7,11 +7,7 @@ import { functions } from '@/lib/firebase';
 import GlassButton from '@/components/glass/glassbutton';
 import GlassField from '@/components/glass/glassfield';
 import Icon from '@/components/icon';
-import { MAX_USERNAME, cleanUsername, isUsername, normalizeUsername } from '@glyphteck/shared/regex';
-
-function isTakenError(error) {
-    return error?.code === 'functions/already-exists' || error?.code === 'already-exists' || error?.details?.reason === 'taken';
-}
+import { MAX_USERNAME, cleanUsername, isUsername, isUsernameTakenError, normalizeUsername } from '@veyl/shared/username';
 
 export default function NewUserUsername() {
     const { theme } = useTheme();
@@ -85,7 +81,7 @@ export default function NewUserUsername() {
         } catch (err) {
             console.warn('set username failed', err);
             setUsername('');
-            setStatus(isTakenError(err) ? 'taken' : 'unavailable');
+            setStatus(isUsernameTakenError(err) ? 'taken' : 'unavailable');
             clearTimeout(resetRef.current);
             resetRef.current = setTimeout(() => setStatus('idle'), 1500);
         }

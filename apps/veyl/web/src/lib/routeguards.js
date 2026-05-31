@@ -4,10 +4,9 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
-import { hasCurrentCommunityRules } from '@glyphteck/shared/community';
+import { hasCurrentCommunityRules } from '@veyl/shared/community';
 import Loading from '@/components/loading';
 import { auth, db } from '@/lib/firebase/firebaseclient';
-import { replaceDocument } from '@/lib/documentnav';
 
 const STEP_HREF = {
     username: '/getusername',
@@ -29,6 +28,11 @@ function leaveAuth() {
     if (typeof window === 'undefined' || leavingAuth) return;
     leavingAuth = true;
     replaceDocument('/');
+}
+
+function replaceDocument(href) {
+    if (typeof window === 'undefined') return;
+    window.location.replace(href);
 }
 
 export async function readOnboardingState(uid) {

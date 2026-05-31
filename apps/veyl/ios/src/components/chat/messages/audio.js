@@ -8,11 +8,12 @@ import { Pause, Play } from 'lucide-react-native';
 import { useChat } from '@/providers/chatprovider';
 import { useAudio, useAudioState } from '@/providers/audioprovider';
 import { useTheme } from '@/providers/themeprovider';
-import { getCachedMessageFileUri, resolveMessageFileUri } from '@/lib/chatdownloads';
-import { bubbleTint } from '@/lib/messages';
+import { getCachedMessageFileUri, resolveMessageFileUri } from '@/lib/chat/downloads';
+import { bubbleTint } from '@/lib/chat/messages';
 import { useMessageGestureBlockers } from '@/components/chat/messagegesturecontext';
-import { getAttachmentCaption, getAttachmentTitle } from '@glyphteck/shared/chat/messages';
-import { formatDuration } from '@glyphteck/shared/utils';
+import { getAttachmentCaption, getAttachmentTitle, hasStoredFileRef } from '@veyl/shared/chat/messages';
+import { fileUri } from '@/lib/file';
+import { formatDuration } from '@veyl/shared/utils/time';
 import GlassView from '@/components/glass/glassview';
 import Icon from '@/components/icon';
 import Menu from '@/components/menu';
@@ -28,13 +29,6 @@ const PLAY_TAP_SPRING = {
     damping: 18,
 };
 
-function normalizeUri(uri) {
-    if (typeof uri !== 'string' || !uri) {
-        return '';
-    }
-    return /^[a-z][a-z0-9+.-]*:\/\//i.test(uri) ? uri : `file://${uri}`;
-}
-
 export default function AudioMessage({ msg, peerChatPK, fromPeer = false, menuItems, menuId, reactions = [], reactionUsers, reactionPreviewInset = 0 }) {
     const { theme } = useTheme();
     const { readMessageFile } = useChat();
@@ -42,9 +36,9 @@ export default function AudioMessage({ msg, peerChatPK, fromPeer = false, menuIt
     const { status: audioStatus } = useAudioState();
     const blockExternalGestures = useMessageGestureBlockers({ includeLike: true });
     const playScale = useSharedValue(1);
-    const initialUri = normalizeUri(getCachedMessageFileUri(msg, peerChatPK));
+    const initialUri = fileUri(getCachedMessageFileUri(msg, peerChatPK));
     const [uri, setUri] = useState(() => initialUri);
-    const [loading, setLoading] = useState(() => msg?.t === 'mp3' && !initialUri && !!msg?.p && !!msg?.k);
+    const [loading, setLoading] = useState(() => msg?.t === 'mp3' && !initialUri && hasStoredFileRef(msg));
     const [error, setError] = useState('');
     const title = getAttachmentTitle(msg);
     const caption = getAttachmentCaption(msg);
@@ -62,7 +56,7 @@ export default function AudioMessage({ msg, peerChatPK, fromPeer = false, menuIt
 
     useEffect(() => {
         let cancelled = false;
-        const localUri = normalizeUri(getCachedMessageFileUri(msg, peerChatPK));
+        const localUri = fileUri(getCachedMessageFileUri(msg, peerChatPK));
 
         if (localUri) {
             setUri(localUri);
@@ -71,7 +65,7 @@ export default function AudioMessage({ msg, peerChatPK, fromPeer = false, menuIt
             return;
         }
 
-        if (msg?.t !== 'mp3' || !peerChatPK || !msg?.p || !msg?.k) {
+        if (msg?.t !== 'mp3' || !peerChatPK || !hasStoredFileRef(msg)) {
             setUri('');
             setLoading(false);
             setError('');
@@ -86,7 +80,7 @@ export default function AudioMessage({ msg, peerChatPK, fromPeer = false, menuIt
                 if (cancelled) {
                     return;
                 }
-                setUri(normalizeUri(nextUri));
+                setUri(fileUri(nextUri));
                 setLoading(false);
             })
             .catch((nextError) => {

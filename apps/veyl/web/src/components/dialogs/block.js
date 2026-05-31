@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Loader } from 'lucide-react';
-import { formatUserDisplay } from '@/lib/utils';
+import { formatUserDisplay } from '@veyl/shared/profile';
 import { useUser } from '@/components/providers/userprovider';
 import Alert from './alert';
 

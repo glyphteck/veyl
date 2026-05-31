@@ -2,9 +2,9 @@
 
 import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { MAX_USERNAME, isUsername, normalizeUsername } from '@veyl/shared/username';
 import admin, { db } from '../../functions/lib/admin.js';
-import { MAX_USERNAME, isUsername, normalizeUsername } from '../../functions/lib/regex.js';
-import { cliArgs } from './common.mjs';
+import { cliArgs } from './cli.mjs';
 
 const ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789';
 

@@ -1,49 +1,12 @@
 import { deleteField, doc, setDoc } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
+import { cleanText, lowerText } from '@veyl/shared/utils/text';
+import { timestampMs } from '@veyl/shared/utils/time';
 import { db, getFunctions, getStorage } from '@/lib/firebase/firebaseclient';
-import { timestampMs } from './reports';
-import { dropAvatar } from '@glyphteck/shared/files';
-
-function cleanText(value) {
-    return typeof value === 'string' ? value.trim() : '';
-}
-
-export function getBanUntilMs(ban) {
-    if (!ban || typeof ban !== 'object' || Array.isArray(ban)) {
-        return null;
-    }
-
-    if (ban.until == null) {
-        return null;
-    }
-
-    if (typeof ban.until?.toMillis === 'function') {
-        return ban.until.toMillis();
-    }
-
-    if (ban.until instanceof Date) {
-        return ban.until.getTime();
-    }
-
-    const ms = Number(ban.until);
-    return Number.isFinite(ms) ? ms : null;
-}
-
-export function getActiveBan(ban) {
-    if (!ban || typeof ban !== 'object' || Array.isArray(ban)) {
-        return null;
-    }
-
-    const untilMs = getBanUntilMs(ban);
-    if (untilMs == null) {
-        return ban;
-    }
-
-    return untilMs > Date.now() ? ban : null;
-}
+import { dropAvatar } from '@veyl/shared/files';
 
 function botRank(bot) {
-    const status = cleanText(bot?.status).toLowerCase();
+    const status = lowerText(bot?.status);
     if (bot?.enabled) {
         if (status === 'booting') return 0;
         if (status === 'running') return 1;
@@ -59,7 +22,7 @@ export function sortBots(rows = []) {
         const byRank = botRank(a) - botRank(b);
         if (byRank) return byRank;
 
-        const byRun = timestampMs(b?.lastRunAt) - timestampMs(a?.lastRunAt);
+        const byRun = timestampMs(b?.lastRunAt, 0, { parseString: true }) - timestampMs(a?.lastRunAt, 0, { parseString: true });
         if (byRun) return byRun;
 
         return cleanText(a?.id).localeCompare(cleanText(b?.id));

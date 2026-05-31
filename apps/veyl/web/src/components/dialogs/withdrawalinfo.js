@@ -1,6 +1,6 @@
 'use client';
 
-import { COOPERATIVE_EXIT_FLAT_FEE_SATS, COOPERATIVE_EXIT_TX_VBYTES, formatOnchainFeeAmount, formatOnchainFeeFormula } from '@glyphteck/shared/wallet/fees';
+import { COOPERATIVE_EXIT_FLAT_FEE_SATS, COOPERATIVE_EXIT_TX_VBYTES, formatOnchainFeeAmount, formatOnchainFeeFormula } from '@veyl/shared/wallet/fees';
 import { Button } from '@/components/button';
 import { Card } from '@/components/card';
 import { useBitcoin } from '@/components/providers/bitcoinprovider';

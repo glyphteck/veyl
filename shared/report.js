@@ -1,8 +1,6 @@
-function cleanText(value) {
-    return typeof value === 'string' ? value.trim() : '';
-}
+import { cleanText } from './utils/text.js';
 
-function fallbackAttachmentName(kind) {
+export function reportAttachmentName(kind) {
     switch (kind) {
         case 'img':
             return 'image';
@@ -15,6 +13,19 @@ function fallbackAttachmentName(kind) {
     }
 }
 
+export function reportAttachmentMime(kind) {
+    switch (kind) {
+        case 'img':
+            return 'image/webp';
+        case 'mp3':
+            return 'audio/mpeg';
+        case 'mp4':
+            return 'video/mp4';
+        default:
+            return 'application/octet-stream';
+    }
+}
+
 export function getReportAttachmentMeta(msg) {
     const kind = cleanText(msg?.t);
     if (!['img', 'file', 'mp3', 'mp4'].includes(kind)) {
@@ -23,8 +34,8 @@ export function getReportAttachmentMeta(msg) {
 
     return {
         kind,
-        name: cleanText(msg?.n) || fallbackAttachmentName(kind),
-        mimeType: cleanText(msg?.m) || (kind === 'img' ? 'image/webp' : kind === 'mp3' ? 'audio/mpeg' : kind === 'mp4' ? 'video/mp4' : 'application/octet-stream'),
+        name: cleanText(msg?.n) || reportAttachmentName(kind),
+        mimeType: cleanText(msg?.m) || reportAttachmentMime(kind),
     };
 }
 

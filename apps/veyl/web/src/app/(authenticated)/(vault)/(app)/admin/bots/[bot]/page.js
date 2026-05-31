@@ -4,58 +4,14 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { ArrowLeft, Copy, KeyRound, Loader, MessageCircleOff, Power, Wallet } from 'lucide-react';
+import { firstRouteParam } from '@veyl/shared/navigation/params';
 import Loading from '@/components/loading';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/avatar';
 import { Button } from '@/components/button';
 import { Card } from '@/components/card';
 import { useAdminData } from '@/components/providers/adminprovider';
-import { formatUserDisplay } from '@/lib/utils';
+import { botPowerClass, displayUser, formatDateTime, formatSats } from '@/lib/admin/format';
 import { toast } from 'sonner';
-
-function displayBot(bot) {
-    return bot?.username || bot?.uid || formatUserDisplay(bot);
-}
-
-function formatDateTime(value) {
-    let date = null;
-
-    if (typeof value?.toDate === 'function') {
-        date = value.toDate();
-    } else if (value instanceof Date) {
-        date = value;
-    } else if (typeof value === 'number') {
-        date = new Date(value);
-    } else if (typeof value?.seconds === 'number') {
-        date = new Date(value.seconds * 1000 + Math.floor((value.nanoseconds || 0) / 1000000));
-    } else if (typeof value?._seconds === 'number') {
-        date = new Date(value._seconds * 1000 + Math.floor((value._nanoseconds || 0) / 1000000));
-    } else if (typeof value === 'string') {
-        date = new Date(value);
-    }
-
-    if (!date || Number.isNaN(date.getTime())) {
-        return 'not yet';
-    }
-
-    return new Intl.DateTimeFormat('en-US', {
-        dateStyle: 'medium',
-        timeStyle: 'short',
-    }).format(date);
-}
-
-function powerButtonClass(bot) {
-    if (!bot?.enabled) return 'text-destructive';
-    if (bot?.active) return 'text-active';
-    return 'text-pending';
-}
-
-function formatBalance(balance) {
-    const n = Number(balance);
-    if (!Number.isFinite(n)) {
-        return null;
-    }
-    return `${n.toLocaleString()} sats`;
-}
 
 function MetaRow({ label, value, copyValue = '' }) {
     const text = value || 'not set';
@@ -82,7 +38,7 @@ function MetaRow({ label, value, copyValue = '' }) {
 
 export default function BotDetailPage() {
     const params = useParams();
-    const slug = Array.isArray(params?.bot) ? params.bot[0] : params?.bot;
+    const slug = firstRouteParam(params?.bot);
     const { botDetails, loadBot, powerBot, banUser, unbanUser } = useAdminData();
     const entry = slug ? botDetails[slug] : null;
     const bot = entry?.data?.bot || null;
@@ -119,7 +75,7 @@ export default function BotDetailPage() {
         setPendingPower(true);
         try {
             await powerBot(bot.uid, !bot.enabled);
-            toast(bot.enabled ? `paused ${displayBot(bot)}` : `enabled ${displayBot(bot)}`, { icon: <Power /> });
+            toast(bot.enabled ? `paused ${displayUser(bot)}` : `enabled ${displayUser(bot)}`, { icon: <Power /> });
         } catch (error) {
             console.error('bot power update failed', error);
             toast(bot.enabled ? 'pause failed' : 'enable failed');
@@ -143,10 +99,10 @@ export default function BotDetailPage() {
         try {
             if (isBanned) {
                 await unbanUser(bot.uid, feature);
-                toast(`${feature} unbanned ${displayBot(bot)}`);
+                toast(`${feature} unbanned ${displayUser(bot)}`);
             } else {
                 await banUser(bot.uid, feature);
-                toast(`${feature} banned ${displayBot(bot)}`);
+                toast(`${feature} banned ${displayUser(bot)}`);
             }
         } catch (error) {
             console.error('bot ban update failed', error);
@@ -169,17 +125,17 @@ export default function BotDetailPage() {
                                     </Link>
                                 </Button>
                                 <Avatar active={bot.active} bot={!!bot?.bot} className="size-10">
-                                    <AvatarImage src={bot.avatar} alt={displayBot(bot)} />
+                                    <AvatarImage src={bot.avatar} alt={displayUser(bot)} />
                                     <AvatarFallback />
                                 </Avatar>
                                 <Button type="button" onClick={copyUid} className="h-auto min-w-0 justify-start rounded-none p-0 text-left">
                                     <p className="truncate">
-                                        <span>{displayBot(bot)}</span>
+                                        <span>{displayUser(bot)}</span>
                                         <span className="text-muted"> · {bot.uid}</span>
                                     </p>
                                     <p className="truncate text-sm text-muted">
                                         <span>{bot.mode || 'mirror'}</span>
-                                        {formatBalance(bot.balance) ? <span> · {formatBalance(bot.balance)}</span> : null}
+                                        {formatSats(bot.balance) ? <span> · {formatSats(bot.balance)}</span> : null}
                                     </p>
                                 </Button>
                             </div>
@@ -226,16 +182,16 @@ export default function BotDetailPage() {
                                         <AvatarFallback />
                                     </Avatar>
                                 </Button>
-                                <Button className={`grower-lg px-2 py-2 ${powerButtonClass(bot)}`} onClick={handlePower} disabled={pendingPower} title={bot.enabled ? 'turn bot off' : 'turn bot on'}>
+                                <Button className={`grower-lg px-2 py-2 ${botPowerClass(bot)}`} onClick={handlePower} disabled={pendingPower} title={bot.enabled ? 'turn bot off' : 'turn bot on'}>
                                     {pendingPower ? <Loader className="size-6 animate-spin" /> : <Power className="size-6" />}
                                 </Button>
                             </div>
                         </div>
                         <section className="space-y-2 px-3 py-3">
                             <div className="grid gap-1.5">
-                                <MetaRow label="resume at" value={formatDateTime(bot.resumeAt)} />
-                                <MetaRow label="last boot" value={formatDateTime(bot.lastBootAt)} />
-                                <MetaRow label="last run" value={formatDateTime(bot.lastRunAt)} />
+                                <MetaRow label="resume at" value={formatDateTime(bot.resumeAt, 'not yet')} />
+                                <MetaRow label="last boot" value={formatDateTime(bot.lastBootAt, 'not yet')} />
+                                <MetaRow label="last run" value={formatDateTime(bot.lastRunAt, 'not yet')} />
                                 <MetaRow label="last error" value={bot.lastError || 'clear'} copyValue={bot.lastError || ''} />
                             </div>
                         </section>

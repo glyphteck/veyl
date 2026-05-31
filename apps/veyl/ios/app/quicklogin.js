@@ -4,9 +4,10 @@ import { X } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 
 import Avatar, { AvatarAdornment, getAvatarAdornmentMetrics } from '@/components/avatar';
-import { forgetQuickLoginAccount, listQuickLoginAccounts, requestQuickLogin } from '@/lib/quicklogin';
+import { forgetQuickLoginAccount, listQuickLoginAccounts, requestQuickLogin } from '@/lib/user/quicklogin';
 import { useTap } from '@/lib/tap';
 import { useTheme } from '@/providers/themeprovider';
+import { truncateLabel } from '@veyl/shared/utils/display';
 
 const INLINE_ACCOUNT_LIMIT = 2;
 const QUICK_AVATAR_SIZE = 72;
@@ -20,11 +21,6 @@ const QUICK_LIST_PAD_TOP = 24;
 const QUICK_LIST_PAD_BOTTOM = 32;
 const QUICK_REMOVE_METRICS = getAvatarAdornmentMetrics(QUICK_AVATAR_SIZE, { type: 'action' });
 const QUICK_REMOVE_MASKS = [QUICK_REMOVE_METRICS];
-
-function truncateLabel(label, max = 8) {
-    if (!label || label.length <= max) return label || '';
-    return `${label.slice(0, max)}...`;
-}
 
 function overflowAccounts(accounts) {
     return (accounts || []).slice(INLINE_ACCOUNT_LIMIT);

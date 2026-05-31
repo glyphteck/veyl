@@ -11,8 +11,8 @@ import { TxDataProvider } from '@/components/providers/txdataprovider';
 import { useUser } from '@/components/providers/userprovider';
 import { useVault } from '@/components/providers/vaultprovider';
 import { WalletProvider } from '@/components/providers/walletprovider';
-import { writeLastAppTarget } from '@glyphteck/shared/localdatacache';
-import { lastAppTargetForPathname } from '@/lib/approute';
+import { writeResumeTarget } from '@veyl/shared/cache/localdata';
+import { resumeTargetFromPath } from '@veyl/shared/navigation/resume';
 
 function ChatDialogFocusRestore() {
     const pathname = usePathname();
@@ -81,9 +81,9 @@ export default function AppLayout({ children }) {
     useEffect(() => {
         function saveCurrentRoute() {
             if (!unlockedRef.current) return;
-            const target = lastAppTargetForPathname(pathnameRef.current);
+            const target = resumeTargetFromPath(pathnameRef.current);
             if (!target) return;
-            writeLastAppTarget(cacheRef.current, target);
+            writeResumeTarget(cacheRef.current, target);
             void cacheRef.current?.flush?.();
         }
 
@@ -104,9 +104,9 @@ export default function AppLayout({ children }) {
 
     useEffect(() => {
         if (wasUnlockedRef.current && lockState !== 'unlocked') {
-            const target = lastAppTargetForPathname(pathnameRef.current);
+            const target = resumeTargetFromPath(pathnameRef.current);
             if (target) {
-                writeLastAppTarget(cacheRef.current, target);
+                writeResumeTarget(cacheRef.current, target);
                 void cacheRef.current?.flush?.();
             }
         }

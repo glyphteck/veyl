@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 
+import { cleanText } from '../utils/text.js';
 import { normalizeLightningFeeEstimate, normalizeLightningPaymentResult, normalizeLightningReceiveRequest, toSafeNonNegativeSats, toSafeSats } from './fees.js';
 
 export function useLightning({ wallet, updateWalletData }) {
@@ -45,7 +46,7 @@ export function useLightning({ wallet, updateWalletData }) {
                 return { success: false, error: new Error('wallet not ready') };
             }
 
-            const encodedInvoice = typeof invoice === 'string' ? invoice.trim() : '';
+            const encodedInvoice = cleanText(invoice);
             if (!encodedInvoice) {
                 return { success: false, error: new Error('lightning invoice required') };
             }
@@ -75,7 +76,7 @@ export function useLightning({ wallet, updateWalletData }) {
                 return { success: false, error: new Error('wallet not ready') };
             }
 
-            const encodedInvoice = typeof invoice === 'string' ? invoice.trim() : '';
+            const encodedInvoice = cleanText(invoice);
             if (!encodedInvoice) {
                 return { success: false, error: new Error('lightning invoice required') };
             }
@@ -113,7 +114,7 @@ export function useLightning({ wallet, updateWalletData }) {
                 return { success: false, error: new Error('wallet not ready') };
             }
 
-            const requestId = typeof id === 'string' ? id.trim() : '';
+            const requestId = cleanText(id);
             if (!requestId) {
                 return { success: false, error: new Error('lightning receive request id required') };
             }
@@ -138,7 +139,7 @@ export function useLightning({ wallet, updateWalletData }) {
                 return { success: false, error: new Error('wallet not ready') };
             }
 
-            const requestId = typeof id === 'string' ? id.trim() : '';
+            const requestId = cleanText(id);
             if (!requestId) {
                 return { success: false, error: new Error('lightning send request id required') };
             }

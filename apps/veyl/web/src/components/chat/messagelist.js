@@ -7,14 +7,17 @@ import { useUser } from '@/components/providers/userprovider';
 import { usePeer } from '@/components/providers/peerprovider';
 import { useWallet } from '@/components/providers/walletprovider';
 import { useDialog } from '@/components/providers/dialogprovider';
-import { canShareAttachmentMsg, canShowMsg, collapseSystemMessages, getLatestReadOutgoingReceipt, getMessageUnsaveTtlMs, isPeerMsg, isSystemMsg, setReqTx } from '@glyphteck/shared/chat/messages';
-import { useOptimisticMessageReactions } from '@glyphteck/shared/chat/usereactions';
-import { formatUserDisplay, formatFullDateTime } from '@/lib/utils';
-import { getPeerChatPKFromChatId } from '@glyphteck/shared/chat/ids';
-import { getMessageOrderMs } from '@glyphteck/shared/chat/state';
-import { useChatMessages } from './usechatmessages';
+import { canShareAttachmentMsg, canShowMsg, canToggleSaveForeverMsg, collapseSystemMessages, getLatestReadOutgoingReceipt, getMessageUnsaveTtlMs, isPeerMsg, isSavedForeverMsg, setReqTx } from '@veyl/shared/chat/messages';
+import { useOptimisticMessageReactions } from '@veyl/shared/chat/usereactions';
+import { formatUserDisplay } from '@veyl/shared/profile';
+import { formatFullDateTime } from '@veyl/shared/utils/time';
+import { getPeerChatPKFromChatId } from '@veyl/shared/chat/ids';
+import { sameArray } from '@veyl/shared/utils/array';
+import { messageKeys } from '@veyl/shared/chat/messagekeys';
+import { getMessageKey, getMessageOrderMs } from '@veyl/shared/chat/state';
+import { useChatMessages } from '@/lib/chat/usemessages';
 import { useState, useRef, useEffect, useCallback, useLayoutEffect, useMemo } from 'react';
-import { canSaveMsgFile, saveMsgFile } from '@/lib/messages';
+import { canSaveMsgFile, saveMsgFile } from '@/lib/chat/messages';
 import { MemoMessageRow } from './messagerow';
 import { MESSAGE_ROW_LEAVE_MS, afterNextPaint } from './rowmotion';
 
@@ -43,14 +46,6 @@ function rememberChatScroll(chatId, scrollTop) {
     }
 }
 
-function getMsgKey(msg) {
-    return msg?.cid || msg?.id;
-}
-
-function getMsgKeys(msg) {
-    return [...new Set([getMsgKey(msg), msg?.id, msg?.cid].filter(Boolean))];
-}
-
 function rowHasKey(row, keys) {
     if (!keys?.size) {
         return false;
@@ -58,43 +53,16 @@ function rowHasKey(row, keys) {
     if (row?.key && keys.has(row.key)) {
         return true;
     }
-    return getMsgKeys(row?.msg).some((key) => keys.has(key));
+    return messageKeys(row?.msg).some((key) => keys.has(key));
 }
 
 function isInteractiveTarget(target) {
     return !!target?.closest?.('button,a,input,textarea,select,video,audio,[role="button"]');
 }
 
-function hasOwnMessageTtl(msg) {
-    return Object.prototype.hasOwnProperty.call(msg || {}, 'ttl');
-}
-
-function isSavedForeverMsg(msg) {
-    return !!(msg?.id && !String(msg.id).startsWith('local:') && !msg.pending && !msg.failed && hasOwnMessageTtl(msg) && msg.ttl == null);
-}
-
-function canToggleSaveForeverMsg(msg) {
-    return !!(msg?.id && !String(msg.id).startsWith('local:') && !msg.pending && !msg.failed && !isSystemMsg(msg));
-}
-
 function formatMsgFullDateTime(msg) {
     const ms = getMessageOrderMs(msg);
     return Number.isFinite(ms) && ms !== Infinity ? formatFullDateTime(ms) : '';
-}
-
-function sameRowList(left, right) {
-    if (left === right) {
-        return true;
-    }
-    if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) {
-        return false;
-    }
-    for (let index = 0; index < left.length; index += 1) {
-        if (left[index] !== right[index]) {
-            return false;
-        }
-    }
-    return true;
 }
 
 function getReverseBottomDistance(node) {
@@ -119,7 +87,7 @@ function scrollToReverseBottom(node) {
 function makePresentRows(messages, hiddenKeys = EMPTY_MESSAGE_KEY_SET) {
     return messages
         .map((msg) => ({
-            key: getMsgKey(msg),
+            key: getMessageKey(msg),
             msg,
             state: 'present',
         }))
@@ -191,7 +159,7 @@ function useAnimatedMessageRows(messages, scopeKey, hiddenKeys = EMPTY_MESSAGE_K
             }
 
             pushDroppedRowsBefore(prev.rows.length);
-            if (sameRowList(prev.rows, result)) {
+            if (sameArray(prev.rows, result)) {
                 return prev;
             }
             return { scopeKey, rows: result, animated: true };
@@ -491,7 +459,7 @@ export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
         onError: (error) => console.error('message like failed', error),
     });
     const latestReadReceipt = useMemo(() => getLatestReadOutgoingReceipt(msgs, chatPK, peerChatPK), [chatPK, msgs, peerChatPK]);
-    const latestReadReceiptKey = latestReadReceipt?.message?.cid || latestReadReceipt?.message?.id || null;
+    const latestReadReceiptKey = getMessageKey(latestReadReceipt?.message);
     const latestReadReceiptTime = useMemo(() => formatMsgFullDateTime(latestReadReceipt?.receipt), [latestReadReceipt?.receipt]);
     const latestReceiptMeta = useMemo(
         () =>
@@ -530,7 +498,7 @@ export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
 
             const byKey = new Map();
             for (const message of msgs || []) {
-                for (const key of getMsgKeys(message)) {
+                for (const key of messageKeys(message)) {
                     byKey.set(key, message);
                 }
             }
@@ -570,7 +538,7 @@ export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
                 return;
             }
 
-            const key = getMsgKey(msg);
+            const key = getMessageKey(msg);
             if (key) {
                 setSavingMessages((prev) => new Set(prev).add(key));
             }
@@ -601,7 +569,7 @@ export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
                 return;
             }
 
-            const key = getMsgKey(msg);
+            const key = getMessageKey(msg);
             const saved = isSavedForeverMsg(msg);
             const targetSaved = !saved;
             const unsaveTtlMs = saved ? getMessageUnsaveTtlMs(msg, msgs, chatPK, peerChatPK) : null;
@@ -650,7 +618,7 @@ export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
                 return;
             }
 
-            const key = getMsgKey(msg);
+            const key = getMessageKey(msg);
             if (!key) {
                 return;
             }
@@ -701,7 +669,7 @@ export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
     );
 
     const markReported = useCallback((msg) => {
-        const key = getMsgKey(msg);
+        const key = getMessageKey(msg);
         if (!key) {
             return;
         }
@@ -713,7 +681,7 @@ export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
     }, []);
 
     const clearDeletingMessage = useCallback((msg) => {
-        const keys = getMsgKeys(msg);
+        const keys = messageKeys(msg);
         if (!keys.length) {
             return;
         }
@@ -739,7 +707,7 @@ export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
     }, []);
 
     const startDeletingMessage = useCallback((msg) => {
-        const keys = getMsgKeys(msg);
+        const keys = messageKeys(msg);
         if (!keys.length) {
             return;
         }
@@ -759,7 +727,7 @@ export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
 
     const finishDeletingMessage = useCallback(
         (id, msg) => {
-            const keys = getMsgKeys(msg);
+            const keys = messageKeys(msg);
             const timeout = setTimeout(() => {
                 removeMessage(id);
                 clearDeletingMessage(msg);
@@ -852,7 +820,7 @@ export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
                 {displayRows.map(({ key, msg, state: rowState }, index) => {
                     const fromPeer = isPeerMsg(msg, chatPK);
                     const userSent = !fromPeer;
-                    const msgKey = getMsgKey(msg);
+                    const msgKey = getMessageKey(msg);
                     const isReported = !!msgKey && reportedMessageKeys.has(msgKey);
                     const saving = !!msgKey && savingMessages.has(msgKey);
                     const savingForever = !!msgKey && savingForeverMessages.has(msgKey);

@@ -1,12 +1,10 @@
 import { collection, getDocs, limit, orderBy, query, where } from 'firebase/firestore';
 import { SEARCH_USERNAME_LIMIT } from '../config.js';
+import { hasPeerKeys } from '../profile.js';
+import { compareProfilesByUsername } from './sort.js';
 import { getRole } from './roles.js';
 
 const USERNAME_LIMIT = SEARCH_USERNAME_LIMIT;
-
-function hasPeerKeys(profile) {
-    return !!(profile?.walletPK || profile?.chatPK);
-}
 
 // Firestore-backed profile queries. The peer api supplies the doc->profile
 // adapter and the cache writer so this layer doesn't need to know how peers
@@ -47,7 +45,7 @@ export function createProfileQueries({ db, createProfileFromDoc, cachePeer }) {
         if (!role) return [];
         const snapshot = await getDocs(role.buildQuery(db));
         const profiles = collect(snapshot, excludeUid);
-        return profiles.sort((a, b) => (a.username || '').localeCompare(b.username || ''));
+        return profiles.sort(compareProfilesByUsername);
     }
 
     return { byUsername, byRole };

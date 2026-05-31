@@ -8,7 +8,7 @@ import { useWallet } from '@/components/providers/walletprovider';
 import { useDialog } from '@/components/providers/dialogprovider';
 import { Button } from '@/components/button';
 import { BanknoteArrowDown } from 'lucide-react';
-import { qr } from '@glyphteck/shared/qrutils';
+import { qr } from '@veyl/shared/qr';
 
 export default function WalletPage() {
     const txData = useTxData();

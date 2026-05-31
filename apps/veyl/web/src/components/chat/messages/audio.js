@@ -3,20 +3,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Loader, Pause, Play } from 'lucide-react';
 import { useChat } from '@/components/providers/chatprovider';
-import { bubbleBg } from '@/lib/messages';
-import { clear, play } from '@/lib/media';
-import { getAudioCacheKey, loadAudioObjectUrl, releaseAudio, retainAudio } from '@/components/chat/audiocache';
-import { getAttachmentCaption, getAttachmentTitle, isExpiredAttachmentMsg } from '@glyphteck/shared/chat/messages';
-import { useCloak } from '@glyphteck/shared/providers/cloakprovider';
-import { formatDuration } from '@glyphteck/shared/utils';
-import { stopClick } from './utils';
+import { bubbleBg, stopClick } from '@/lib/chat/messages';
+import { clear, play } from '@/lib/media/playback';
+import { getAudioCacheKey, loadAudioObjectUrl, releaseAudio, retainAudio } from '@/lib/chat/audiocache';
+import { getAttachmentCaption, getAttachmentTitle, hasStoredFileRef, isExpiredAttachmentMsg } from '@veyl/shared/chat/messages';
+import { useCloak } from '@veyl/shared/providers/cloakprovider';
+import { formatDuration } from '@veyl/shared/utils/time';
 
 export default function AudioMessage({ msg, peerChatPK, fromPeer = false }) {
     const { readMessageFile } = useChat();
     const { cloaked } = useCloak();
     const audioRef = useRef(null);
     const [src, setSrc] = useState(() => (!isExpiredAttachmentMsg(msg) && typeof msg?.localUri === 'string' && msg.localUri ? msg.localUri : ''));
-    const [loading, setLoading] = useState(() => msg?.t === 'mp3' && !msg?.localUri && !!msg?.p && !!msg?.k);
+    const [loading, setLoading] = useState(() => msg?.t === 'mp3' && !msg?.localUri && hasStoredFileRef(msg));
     const [error, setError] = useState('');
     const [playing, setPlaying] = useState(false);
     const [time, setTime] = useState(0);
@@ -53,7 +52,7 @@ export default function AudioMessage({ msg, peerChatPK, fromPeer = false }) {
             return;
         }
 
-        if (msg?.t !== 'mp3' || !peerChatPK || !msg?.p || !msg?.k) {
+        if (msg?.t !== 'mp3' || !peerChatPK || !hasStoredFileRef(msg)) {
             setSrc('');
             setLoading(false);
             setError('');

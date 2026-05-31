@@ -1,4 +1,4 @@
-import { matchesProfile } from './predicate.js';
+import { matchesProfile } from './match.js';
 import { sortProfiles } from './sort.js';
 
 // Merges already-loaded local peers with freshly-fetched remote results,

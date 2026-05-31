@@ -3,6 +3,7 @@ import { Alert, Animated, Pressable, Text, View, ScrollView } from 'react-native
 import { useRouter } from 'expo-router';
 import { ChevronLeft } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { COMMUNITY_RULES_EFFECTIVE, COMMUNITY_RULES_VERSION, COMMUNITY_SECTIONS, hasCurrentCommunityRules } from '@veyl/shared/community';
 
 import GlassButton from '@/components/glass/glassbutton';
 import GlassFooter from '@/components/glass/glassfooter';
@@ -10,7 +11,6 @@ import GlassHeader from '@/components/glass/glassheader';
 import GlassView from '@/components/glass/glassview';
 import Icon from '@/components/icon';
 import { useTap } from '@/lib/tap';
-import { COMMUNITY_RULES_EFFECTIVE, COMMUNITY_RULES_VERSION, COMMUNITY_SECTIONS, hasCurrentCommunityRules } from '@/lib/community';
 import { useTheme } from '@/providers/themeprovider';
 import { useUser } from '@/providers/userprovider';
 

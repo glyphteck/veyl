@@ -2,15 +2,16 @@ import { useCallback, useMemo } from 'react';
 import { Alert, Animated, Pressable, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { X } from 'lucide-react-native';
+import { avatarSourceKey } from '@veyl/shared/avatar';
 import { useTap } from '@/lib/tap';
 import { usePop } from '@/lib/pop';
 import { useTheme } from '@/providers/themeprovider';
-import Avatar, { getAvatarSourceKey } from './avatar';
+import Avatar from './avatar';
 import Icon from './icon';
 
 export default function AvatarPicker({ size = 88, source, onPick, onRemove, disabled = false, removeDisabled = false, showRemove = false, style }) {
     const { theme } = useTheme();
-    const sourceKey = getAvatarSourceKey(source);
+    const sourceKey = avatarSourceKey(source);
     const canRemove = !!sourceKey && showRemove && typeof onRemove === 'function';
     const removeOpen = canRemove && !disabled && !removeDisabled;
     const removeMetrics = useMemo(() => {

@@ -1,34 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Loader, Search } from 'lucide-react';
 import { Card } from '@/components/card';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/avatar';
 import { Button } from '@/components/button';
 import { Input } from '@/components/input';
+import { PEER_GRID_HEIGHT, PeerGridCell, usePeerGrid } from '@/components/peergrid';
 import { usePeer } from '@/components/providers/peerprovider';
 import { useUser } from '@/components/providers/userprovider';
 import { useSearch } from '@/lib/search/usesearch';
-import { formatUserDisplay } from '@/lib/utils';
-import { mergeProfiles } from '@glyphteck/shared/search/merge';
-
-const PEER_RENDER_BATCH = 24;
-const PEER_LOAD_MARGIN = 48;
+import { formatUserDisplay } from '@veyl/shared/profile';
+import { mergeProfiles } from '@veyl/shared/search/merge';
 
 function defaultSubmitLabel(peers) {
     if (peers.length > 1) return `send to ${peers.length} people`;
     if (peers.length === 1) return `send to ${formatUserDisplay(peers[0], true)}`;
     return 'send';
-}
-
-function PeerCell({ peer, onToggle, selected }) {
-    return (
-        <Button type="button" onClick={() => onToggle(peer)} className="h-auto flex-col rounded-none p-0 shrinker">
-            <Avatar active={peer?.active} selected={selected} bot={!!peer?.bot} className="size-16">
-                <AvatarImage src={peer?.avatar} alt={peer?.username} />
-                <AvatarFallback />
-            </Avatar>
-            <span className="text-sm font-bold truncate max-w-20">{formatUserDisplay(peer, true)}</span>
-        </Button>
-    );
 }
 
 export default function Share({ onShare, disabled = false, busy = false, label }) {
@@ -37,7 +22,6 @@ export default function Share({ onShare, disabled = false, busy = false, label }
     const { searching, results, query, search, clearSearch } = useSearch('profiles');
     const [searchValue, setSearchValue] = useState('');
     const [selected, setSelected] = useState([]);
-    const [peerLimit, setPeerLimit] = useState(PEER_RENDER_BATCH);
     const inputRef = useRef(null);
     const lastSelectedRef = useRef([]);
 
@@ -63,25 +47,12 @@ export default function Share({ onShare, disabled = false, busy = false, label }
     );
 
     const displayPeers = query ? searchPeers : allPeers;
-    const visiblePeers = useMemo(() => displayPeers.slice(0, peerLimit), [displayPeers, peerLimit]);
+    const { visiblePeers, handlePeerScroll } = usePeerGrid(displayPeers);
     const selectedUids = useMemo(() => new Set(selected.map((peer) => peer.uid)), [selected]);
     const hasSelection = selected.length > 0;
     if (hasSelection) lastSelectedRef.current = selected;
     const labelPeers = hasSelection ? selected : lastSelectedRef.current;
     const submitLabel = label?.(labelPeers) || defaultSubmitLabel(labelPeers);
-
-    useEffect(() => {
-        setPeerLimit(PEER_RENDER_BATCH);
-    }, [displayPeers]);
-
-    const handlePeerScroll = useCallback(
-        (event) => {
-            const el = event.currentTarget;
-            if (el.scrollHeight - el.scrollTop - el.clientHeight > PEER_LOAD_MARGIN) return;
-            setPeerLimit((limit) => Math.min(displayPeers.length, limit + PEER_RENDER_BATCH));
-        },
-        [displayPeers.length]
-    );
 
     const handleSearchChange = useCallback(
         (event) => {
@@ -117,7 +88,7 @@ export default function Share({ onShare, disabled = false, busy = false, label }
                 autoFocus
             />
             <Card>
-                <div className="overflow-y-scroll p-4" style={{ height: 'calc((80px + 24px) * 3 + 16px)' }} onScroll={handlePeerScroll}>
+                <div className="overflow-y-scroll p-4" style={{ height: PEER_GRID_HEIGHT }} onScroll={handlePeerScroll}>
                     {searching && query && !displayPeers.length ? (
                         <div className="flex items-center justify-center h-full">
                             <Loader className="animate-spin size-6 text-muted" />
@@ -125,7 +96,7 @@ export default function Share({ onShare, disabled = false, busy = false, label }
                     ) : displayPeers.length > 0 ? (
                         <div className="grid grid-cols-4 gap-4">
                             {visiblePeers.map((peer) => (
-                                <PeerCell key={peer.uid} peer={peer} onToggle={togglePeer} selected={selectedUids.has(peer.uid)} />
+                                <PeerGridCell key={peer.uid} peer={peer} onClick={togglePeer} selected={selectedUids.has(peer.uid)} />
                             ))}
                         </div>
                     ) : (

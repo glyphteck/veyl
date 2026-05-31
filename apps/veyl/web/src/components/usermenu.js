@@ -1,7 +1,8 @@
 'use client';
 
-import { makeUserQr, qr } from '@glyphteck/shared/qrutils';
-import { formatUserDisplay } from '@/lib/utils';
+import { makeUserQr, qr } from '@veyl/shared/qr';
+import { hasAvailableBalance } from '@veyl/shared/wallet/balance';
+import { formatUserDisplay } from '@veyl/shared/profile';
 import { shortcuts } from '@/lib/shortcuts';
 import { Button } from '@/components/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/avatar';
@@ -68,7 +69,7 @@ export default function UserMenu({
                             <BanknoteArrowDown />
                             <span className="pr-4">fund wallet</span>
                         </DropdownMenuItem>
-                        {Number(balance ?? 0) > 0 && (
+                        {hasAvailableBalance(balance) && (
                             <DropdownMenuItem onSelect={() => openDialog('withdraw')}>
                                 <BanknoteArrowUp />
                                 <span className="pr-4">withdraw funds</span>

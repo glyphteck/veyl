@@ -1,18 +1,20 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { readCachedMedia, writeCachedMedia } from '../../../localdatacache.js';
+import { readCachedMedia, writeCachedMedia } from '../../../cache/localdata.js';
 import { saveMedia } from '../../attachments.js';
 import { filterChatMessages, getChatPeerPK, getChatRowLastMsgKey, getPeerChatPKFromChatId } from '../../ids.js';
 import { collectMessageKeys } from '../../messagekeys.js';
 import { canShowMsg, getDisplayMessages, getHiddenDisplayMessages, isControlMsg } from '../../messages.js';
 import { makeMessagePreviewMedia, MESSAGE_PREVIEW_MIME } from '../../previews.js';
 import { getMessageKey } from '../../state.js';
-import { MESSAGE_VIEW_CACHE_SIZE, normalizeChatWarming, positive } from './config.js';
-import { getMediaTasks, waitForIdle } from './media.js';
+import { MESSAGE_VIEW_CACHE_SIZE, normalizeChatWarming } from './config.js';
+import { nonNegativeNumber, positiveNumber } from '../../../utils/number.js';
+import { getMediaTasks, waitForMediaIdle } from './media.js';
 import { getBatchLastMsgKey, isBatchFresh, makeMessageSessionSnapshot, nextTrimMs, removeEntryMessages, trimExpiredEntry } from './state.js';
 import { createMessageViewCache } from './viewcache.js';
-import { markDiag, markDone, markError, warmCandidates, warmTaskKey } from './warm.js';
+import { warmCandidates, warmTaskKey } from './warm.js';
+import { markDiag, markDone, markError } from '../../../utils/diagnostics.js';
 
 function latestVisiblePreviewMessage(messages) {
     for (let index = (messages?.length || 0) - 1; index >= 0; index -= 1) {
@@ -222,7 +224,7 @@ export function useChatMessageSessions({ chat, chatPK, chatPrivateKey, chatBanne
                 if (runId !== mediaRunRef.current || chatBanned || !isActive || !chatPK || !chatPrivateKey) {
                     return;
                 }
-                await waitForIdle(mediaConfig.stepDelayMs);
+                await waitForMediaIdle(mediaConfig.stepDelayMs);
                 if (runId !== mediaRunRef.current || chatBanned || !isActive || !chatPK || !chatPrivateKey || mediaAttemptsRef.current.has(task.key)) {
                     continue;
                 }
@@ -257,13 +259,13 @@ export function useChatMessageSessions({ chat, chatPK, chatPrivateKey, chatBanne
         mediaTimerRef.current = setTimeout(() => {
             mediaTimerRef.current = null;
             void runMedia(runId);
-        }, Math.max(0, Number(mediaConfig.startDelayMs) || 0));
+        }, nonNegativeNumber(mediaConfig.startDelayMs, 0));
     }, [chatBanned, chatPK, chatPrivateKey, isActive, runMedia, warming.media]);
 
     const ensureMessageBatch = useCallback(
         (chatId, options = {}) => {
             const source = options.source || 'route';
-            const pageSize = positive(options.pageSize, warming.pageSize);
+            const pageSize = positiveNumber(options.pageSize, warming.pageSize);
             const peerChatPK = options.peerChatPK || getPeerChatPKFromChatId(chatId, chatPK);
             const hasRowLastMsgKey = Object.prototype.hasOwnProperty.call(options, 'rowLastMsgKey');
             const rowLastMsgKey = hasRowLastMsgKey ? (options.rowLastMsgKey ?? null) : undefined;

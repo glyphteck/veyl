@@ -1,4 +1,5 @@
-import { cleanUsername, MAX_USERNAME } from '../regex.js';
+import { cleanUsername, MAX_USERNAME } from '../username.js';
+import { lowerText } from '../utils/text.js';
 import { resolveRole } from './roles.js';
 
 // Parses a raw input string into a typed query object that downstream search
@@ -15,7 +16,7 @@ import { resolveRole } from './roles.js';
 //   kind 'role'     — { value: roleId, role: roleId, raw }
 //   kind 'key'      — { value, raw }                      (length > MAX_USERNAME)
 export function parseQuery(input, { mode = 'profiles' } = {}) {
-    const raw = String(input ?? '').trim().toLowerCase();
+    const raw = lowerText(input);
     if (!raw) return null;
 
     const hasPrefix = raw.startsWith('@');

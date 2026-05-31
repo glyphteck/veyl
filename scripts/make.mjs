@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, relative, resolve } from 'node:path';
+import { uniqueValues } from '@veyl/shared/utils/array';
 import { writeFunctionsLinks, writeIosLinks, writeStorageCors } from './links.mjs';
 
 const rawArgs = process.argv.slice(2);
@@ -129,7 +130,7 @@ function failureDetailLines(output, limit = 4) {
 }
 
 function emitWarningSummary(label, output) {
-    const lines = [...new Set(warningLines(output).map(clipLine))];
+    const lines = uniqueValues(warningLines(output).map(clipLine));
     if (!lines.length) {
         return;
     }
@@ -151,7 +152,7 @@ function writeRunLogs(label, output, logDir) {
     const fullLog = resolve(logDir, `${slug}.log`);
     writeTextLog(fullLog, String(output || ''));
 
-    const warnings = [...new Set(warningLines(output))];
+    const warnings = uniqueValues(warningLines(output));
     if (!warnings.length) {
         return { fullLog };
     }

@@ -4,9 +4,10 @@ import { useUser } from '@/components/providers/userprovider';
 import { useChat } from '@/components/providers/chatprovider';
 import { usePeer } from '@/components/providers/peerprovider';
 import { useBitcoin } from '@/components/providers/bitcoinprovider';
-import { useCloak } from '@glyphteck/shared/providers/cloakprovider';
-import { formatUserDisplay } from '@/lib/utils';
-import { getMsgPreview as displayLastMsg } from '@glyphteck/shared/chat/messages';
+import { useCloak } from '@veyl/shared/providers/cloakprovider';
+import { formatUserDisplay } from '@veyl/shared/profile';
+import { getChatPeerPK } from '@veyl/shared/chat/ids';
+import { getMsgPreview as displayLastMsg } from '@veyl/shared/chat/messages';
 import { useEffect } from 'react';
 
 export default function ChatTitleLayout({ children }) {
@@ -28,7 +29,7 @@ export default function ChatTitleLayout({ children }) {
             return;
         }
         // Find peer info for the selected chat
-        const peerChatPK = selectedChat.participants.find((p) => p !== chatPK);
+        const peerChatPK = getChatPeerPK(selectedChat, chatPK);
         const profile = peerByChatPK.get(peerChatPK) ?? null;
         const displayName = formatUserDisplay({
             username: profile?.username,

@@ -10,9 +10,9 @@ import { Input } from '@/components/input';
 import { getFunctions, getStorage } from '@/lib/firebase/firebaseclient';
 import { useChat } from '@/components/providers/chatprovider';
 import { useUser } from '@/components/providers/userprovider';
-import { formatUserDisplay } from '@/lib/utils';
-import { makeFileId, putReportEvidence } from '@glyphteck/shared/files';
-import { buildReportFields, getReportAttachmentMeta } from '@glyphteck/shared/report';
+import { formatUserDisplay } from '@veyl/shared/profile';
+import { makeFileId, putReportEvidence } from '@veyl/shared/files';
+import { buildReportFields, getReportAttachmentMeta } from '@veyl/shared/report';
 
 function MsgPreview({ msg }) {
     if (!msg) return null;

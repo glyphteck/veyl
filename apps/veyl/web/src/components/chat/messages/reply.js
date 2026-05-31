@@ -7,13 +7,13 @@ import { useBitcoin } from '@/components/providers/bitcoinprovider';
 import { useChat } from '@/components/providers/chatprovider';
 import { useTxData } from '@/components/providers/txdataprovider';
 import { useUser } from '@/components/providers/userprovider';
-import { bubbleBg, imageWidth } from '@/lib/messages';
-import { renderMoney } from '@/lib/utils';
-import { UNAVAILABLE_REPLY_MSG_TYPE, getAttachmentCaption, getAttachmentTitle, getImageAspect, isExpiredAttachmentMsg, makeUnavailableReply } from '@glyphteck/shared/chat/messages';
-import { getMessagePreviewCacheKey } from '@glyphteck/shared/chat/previews';
-import { useCloak } from '@glyphteck/shared/providers/cloakprovider';
-import { useMsgImage } from '../usemsgimage';
-import { getReadyPoster, getVideoCacheKey, loadVideoObjectUrl, loadVideoPoster } from '../videomediacache';
+import { bubbleBg, imageWidth } from '@/lib/chat/messages';
+import { renderMoney } from '@veyl/shared/money';
+import { UNAVAILABLE_REPLY_MSG_TYPE, getAttachmentCaption, getAttachmentTitle, getImageAspect, isExpiredAttachmentMsg, makeUnavailableReply } from '@veyl/shared/chat/messages';
+import { getMessagePreviewCacheKey } from '@veyl/shared/chat/previews';
+import { useCloak } from '@veyl/shared/providers/cloakprovider';
+import { useMsgImage } from '@/lib/chat/useimage';
+import { getReadyPoster, getVideoCacheKey, loadVideoObjectUrl, loadVideoPoster } from '@/lib/chat/videocache';
 import { TextBubble } from './text';
 
 function ReplyButton({ onReplyPress, children }) {

@@ -8,9 +8,9 @@ import { scheduleOnRN } from 'react-native-worklets';
 import { TextBubble } from '@/components/chat/messages';
 import { MessageGestureProvider } from '@/components/chat/messagegesturecontext';
 import Icon from '@/components/icon';
-import { getSystemMsgText } from '@glyphteck/shared/chat/messages';
-import { getMessageOrderMs } from '@glyphteck/shared/chat/state';
-import { formatTimeHHMM } from '@glyphteck/shared/utils';
+import { getSystemMsgText } from '@veyl/shared/chat/messages';
+import { getMessageOrderMs } from '@veyl/shared/chat/state';
+import { formatTimeHHMM } from '@veyl/shared/utils/time';
 import {
     MESSAGE_ROW_DROP_MS,
     MESSAGE_ROW_EASING,

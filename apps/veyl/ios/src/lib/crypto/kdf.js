@@ -1,5 +1,5 @@
 import argon2 from 'react-native-argon2';
-import { toHex } from '@glyphteck/shared/crypto/core';
+import { toHex } from '@veyl/shared/crypto/core';
 
 function fromHex(hex) {
     if (typeof hex !== 'string' || !/^[0-9a-fA-F]+$/.test(hex) || hex.length % 2 !== 0) {

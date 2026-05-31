@@ -1,8 +1,8 @@
 'use client';
 
-import { createPeersApi } from '@glyphteck/shared/peers';
-import { createProfileQueries } from '@glyphteck/shared/search/remote';
-import { resolveNetwork } from '@glyphteck/shared/network';
+import { createPeersApi } from '@veyl/shared/peers';
+import { createProfileQueries } from '@veyl/shared/search/remote';
+import { resolveNetwork } from '@veyl/shared/network';
 import { db, getStorage } from '@/lib/firebase/firebaseclient';
 
 const peerApi = createPeersApi({

@@ -3,6 +3,8 @@ import { Animated as RNAnimated, Pressable, StyleSheet, View } from 'react-nativ
 import { Image as ExpoImage } from 'expo-image';
 import Animated, { useAnimatedProps, useSharedValue, withTiming } from 'react-native-reanimated';
 import Svg, { Circle, Defs, G, Image as SvgImage, Mask, Path, Rect } from 'react-native-svg';
+import { avatarSourceKey } from '@veyl/shared/avatar';
+import { prefixedId } from '@veyl/shared/utils/display';
 import { getDotMetrics } from './dot';
 import Icon from '@/components/icon';
 import { useTap } from '@/lib/tap';
@@ -15,20 +17,13 @@ const AnimatedG = Animated.createAnimatedComponent(G);
 const AnimatedSvgImage = Animated.createAnimatedComponent(SvgImage);
 const loadedSourceKeys = new Set();
 
-export function getAvatarSourceKey(source) {
-    if (!source) return '';
-    if (typeof source === 'number') return String(source);
-    if (typeof source === 'string') return source;
-    return source.uri || '';
-}
-
 export function isAvatarSourceLoaded(source) {
-    const sourceKey = getAvatarSourceKey(source);
+    const sourceKey = avatarSourceKey(source);
     return !!sourceKey && loadedSourceKeys.has(sourceKey);
 }
 
 function useAvatarImageSource(source) {
-    const sourceKey = getAvatarSourceKey(source);
+    const sourceKey = avatarSourceKey(source);
     const sourceNumber = typeof source === 'number' ? source : null;
     const cachedSource = useCachedAvatarSource(sourceKey);
     const resolvedKey = cachedSource || sourceKey;
@@ -245,7 +240,7 @@ const AvatarImageLayer = memo(
 );
 
 function getMaskId(id) {
-    return `avatar-mask-${id.replace(/[^a-zA-Z0-9_-]/g, '') || 'id'}`;
+    return prefixedId('avatar-mask', id);
 }
 
 function getAdornmentSize(metrics) {

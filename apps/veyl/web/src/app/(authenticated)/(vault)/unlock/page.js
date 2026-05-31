@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useState, useEffect } from 'react';
-import { makeUserQr, qr } from '@glyphteck/shared/qrutils';
+import { makeUserQr, qr } from '@veyl/shared/qr';
 import Loading from '@/components/loading';
 import { useChat } from '@/components/providers/chatprovider';
 import { useVault } from '@/components/providers/vaultprovider';
@@ -14,8 +14,9 @@ import { Input } from '@/components/input';
 import { Controller, useForm } from 'react-hook-form';
 import { Lock, LockOpen, Loader, AlertCircle, Eye, EyeOff, ShieldUser } from 'lucide-react';
 import { Button } from '@/components/button';
-import { logout } from '@/lib/useractions';
-import { isPassword, MAX_PASSWORD, normalizePassword } from '@glyphteck/shared/password';
+import { logout } from '@/lib/user/actions';
+import { yieldToUi } from '@veyl/shared/utils/async';
+import { isPassword, MAX_PASSWORD, normalizePassword } from '@veyl/shared/password';
 import RegtestTag from '@/components/regtesttag';
 import UserMenu from '@/components/usermenu';
 
@@ -93,7 +94,7 @@ export default function UnlockPage() {
 
     const onSubmit = async ({ password: raw }) => {
         setStatus('loading');
-        await new Promise((r) => setTimeout(r, 0));
+        await yieldToUi();
         const password = normalizePassword(raw);
         if (!isPassword(password)) return;
         if (!auth.currentUser?.uid) return;

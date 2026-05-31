@@ -4,7 +4,7 @@ import { existsSync, lstatSync, readdirSync, rmSync } from 'node:fs';
 import net from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
-import { webApps } from '../shared/links.js';
+import { webApps } from '@veyl/shared/links';
 
 const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const defaultWebCacheMaxBytes = 5 * 1024 * 1024 * 1024;
@@ -65,7 +65,7 @@ function getPortOwner(port) {
     }
 }
 
-function formatBytes(bytes) {
+function formatBinaryBytes(bytes) {
     if (bytes < 1024) {
         return `${bytes} B`;
     }
@@ -129,7 +129,7 @@ function maybeClearNextCache(config, force, env) {
     if (currentBytes <= maxBytes) {
         return;
     }
-    console.warn(`[web] .next cache is ${formatBytes(currentBytes)}; clearing before launch because it exceeds ${formatBytes(maxBytes)}.`);
+    console.warn(`[web] .next cache is ${formatBinaryBytes(currentBytes)}; clearing before launch because it exceeds ${formatBinaryBytes(maxBytes)}.`);
     rmSync(nextDir, { recursive: true, force: true });
 }
 

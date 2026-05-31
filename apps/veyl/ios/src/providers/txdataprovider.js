@@ -1,4 +1,4 @@
-import { createTxDataProvider } from '@glyphteck/shared/providers/txdataprovider';
+import { createTxDataProvider } from '@veyl/shared/providers/txdataprovider';
 import { useWallet } from '@/providers/walletprovider';
 import { useUser } from '@/providers/userprovider';
 

@@ -1,24 +1,21 @@
-import { formatBytes } from '@glyphteck/shared/utils';
+import { lowerText } from '@veyl/shared/utils/text';
+import { compareProfilesByName } from '@veyl/shared/search/sort';
 
-export const MAINMENU_ROW_HEIGHT = 36;
-export const MAINMENU_LIST_HEIGHT = 384;
-export const MAINMENU_MIN_RENDER_ROWS = 44;
-
-export function formatCacheSize(bytes) {
-    return formatBytes(bytes, { fallback: '0 B', minValue: 0 });
-}
+export const ROW_HEIGHT = 36;
+export const LIST_HEIGHT = 384;
+export const MIN_RENDER_ROWS = 44;
 
 export function textMatches(row, raw) {
-    const needle = raw.trim().toLowerCase();
+    const needle = lowerText(raw);
     if (!needle) return true;
-    return [row?.label, row?.value, ...(row?.keywords || [])].some((text) => String(text || '').toLowerCase().includes(needle));
+    return [row?.label, row?.value, ...(row?.keywords || [])].some((text) => lowerText(text).includes(needle));
 }
 
-export function countMainMenuRows(sections) {
+export function countRows(sections) {
     return sections.reduce((total, section) => total + (section.count || 0), 0);
 }
 
-export function findMainMenuRow(sections, index) {
+export function findRow(sections, index) {
     if (index < 0) return null;
     let start = 0;
     for (const section of sections) {
@@ -36,12 +33,12 @@ export function findMainMenuRow(sections, index) {
     return null;
 }
 
-export function getMainMenuWindow({
+export function getVisibleWindow({
     scrollTop,
     total,
-    rowHeight = MAINMENU_ROW_HEIGHT,
-    listHeight = MAINMENU_LIST_HEIGHT,
-    minRows = MAINMENU_MIN_RENDER_ROWS,
+    rowHeight = ROW_HEIGHT,
+    listHeight = LIST_HEIGHT,
+    minRows = MIN_RENDER_ROWS,
 }) {
     if (!total) return { start: 0, end: 0 };
 
@@ -58,7 +55,7 @@ export function getMainMenuWindow({
     return { start, end };
 }
 
-export function getMainMenuPeers({ peers = [], recentPeers, excludeUid } = {}) {
+export function getOrderedPeers({ peers = [], recentPeers, excludeUid } = {}) {
     const seen = new Set();
     const ordered = [];
     const add = (peer) => {
@@ -75,7 +72,7 @@ export function getMainMenuPeers({ peers = [], recentPeers, excludeUid } = {}) {
             remaining.push(peer);
         }
     }
-    remaining.sort((a, b) => String(a?.username || a?.uid || '').localeCompare(String(b?.username || b?.uid || '')));
+    remaining.sort(compareProfilesByName);
     remaining.forEach(add);
 
     return ordered;

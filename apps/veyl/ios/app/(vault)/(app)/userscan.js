@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Text, View } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
-import { makeQr, makeUserQr, qr } from '@glyphteck/shared/qrutils';
+import { makeQr, makeUserQr, qr } from '@veyl/shared/qr';
 
 import Avatar from '@/components/avatar';
 import { useTheme } from '@/providers/themeprovider';

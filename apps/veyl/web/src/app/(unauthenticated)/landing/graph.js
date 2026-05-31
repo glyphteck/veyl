@@ -31,6 +31,7 @@ const PATH_ALPHA = 0.2;
 const PAYLOAD_RADIUS = 4;
 const PAYLOAD_ALPHA = 1;
 const FULLSCREEN_NODE_FADE_MS = 1280;
+const PING_COLOR_SEQUENCE = ['bitcoin', 'muted', 'bitcoin', 'muted', 'muted', 'bitcoin', 'muted', 'muted', 'muted', 'muted'];
 
 const ROUTING_ALGORITHM_WEIGHTS = [
     { routing: dijkstraRouting, weight: 0.5 },
@@ -99,8 +100,23 @@ function pointsDecayPerSecond(node) {
     return Math.max(NODE_POINTS_DECAY_MIN_PER_SECOND, Math.exp(node.points * NODE_POINTS_DECAY_EXPONENT) - 1);
 }
 
-function currentColor() {
-    return getComputedStyle(document.documentElement).getPropertyValue('--muted').trim() || 'oklch(0.6 0 0)';
+function currentThemeColors() {
+    const styles = getComputedStyle(document.documentElement);
+    const muted = styles.getPropertyValue('--muted').trim() || 'oklch(0.6 0 0)';
+
+    return {
+        bitcoin: styles.getPropertyValue('--bitcoin').trim() || muted,
+        muted,
+    };
+}
+
+function randomPingColorIndex() {
+    return Math.floor(Math.random() * PING_COLOR_SEQUENCE.length);
+}
+
+function choosePingColor(colors, index) {
+    const key = PING_COLOR_SEQUENCE[index % PING_COLOR_SEQUENCE.length];
+    return colors[key] || colors.muted;
 }
 
 function chooseRoutingAlgorithm() {
@@ -235,7 +251,8 @@ export function Graph({ className = 'pointer-events-none absolute inset-0 h-full
         let nextNodeSpawnAt = 0;
         let fullscreenNode = null;
         let graphDirty = true;
-        let color = currentColor();
+        let colors = currentThemeColors();
+        let nextPingColorIndex = randomPingColorIndex();
         const routing = chooseRoutingAlgorithm();
         const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
@@ -246,6 +263,7 @@ export function Graph({ className = 'pointer-events-none absolute inset-0 h-full
             fullscreenNode = null;
             targetNodeCount = nodeCountForSize(width, height);
             nextNodeSpawnAt = now;
+            nextPingColorIndex = randomPingColorIndex();
             graphDirty = true;
         }
 
@@ -262,7 +280,7 @@ export function Graph({ className = 'pointer-events-none absolute inset-0 h-full
             canvas.width = Math.round(width * dpr);
             canvas.height = Math.round(height * dpr);
             context.setTransform(dpr, 0, 0, dpr, 0, 0);
-            color = currentColor();
+            colors = currentThemeColors();
             resetGraph(performance.now());
         }
 
@@ -399,6 +417,8 @@ export function Graph({ className = 'pointer-events-none absolute inset-0 h-full
 
             if (!startNextHop(ping, now)) return;
 
+            ping.color = choosePingColor(colors, nextPingColorIndex);
+            nextPingColorIndex = (nextPingColorIndex + 1) % PING_COLOR_SEQUENCE.length;
             markPingNode(ping, source, now, 'source');
             activePings.push(ping);
         }
@@ -428,6 +448,9 @@ export function Graph({ className = 'pointer-events-none absolute inset-0 h-full
             if (!head || !nodes[ping.path[0]]) return;
 
             const lastCompletePathIndex = ping.fadeStartedAt == null ? Math.max(0, ping.path.length - 2) : ping.path.length - 1;
+            const pingColor = ping.color || colors.muted;
+            context.strokeStyle = pingColor;
+            context.fillStyle = pingColor;
             context.globalAlpha = PATH_ALPHA * alpha;
             context.lineWidth = PATH_LINE_WIDTH;
             context.beginPath();
@@ -495,6 +518,7 @@ export function Graph({ className = 'pointer-events-none absolute inset-0 h-full
                 const radius = nodeRadius(node, now);
                 if (radius <= 0.25) return;
 
+                context.fillStyle = colors.muted;
                 context.globalAlpha = 1;
                 context.beginPath();
                 context.arc(node.x, node.y, radius, 0, Math.PI * 2);
@@ -536,6 +560,7 @@ export function Graph({ className = 'pointer-events-none absolute inset-0 h-full
                 return true;
             }
 
+            context.fillStyle = colors.muted;
             context.globalAlpha = alpha;
             context.beginPath();
             context.arc(fullscreenNode.x, fullscreenNode.y, fullscreenNode.radius, 0, Math.PI * 2);
@@ -553,8 +578,8 @@ export function Graph({ className = 'pointer-events-none absolute inset-0 h-full
         function draw(time = 0) {
             const now = reduceMotion ? performance.now() : time;
             context.clearRect(0, 0, width, height);
-            context.strokeStyle = color;
-            context.fillStyle = color;
+            context.strokeStyle = colors.muted;
+            context.fillStyle = colors.muted;
             context.lineCap = 'round';
             context.lineJoin = 'round';
 

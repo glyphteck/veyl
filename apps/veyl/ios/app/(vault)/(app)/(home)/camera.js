@@ -2,8 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Animated as RNAnimated, DeviceEventEmitter, Linking, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import * as MediaLibrary from 'expo-media-library';
 import { Image } from 'expo-image';
-import { useIsFocused } from 'expo-router/react-navigation';
-import { router, usePathname } from 'expo-router';
+import { router, useIsFocused, usePathname } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { Camera as VCamera, CommonResolutions, useCameraDevice, useCameraPermission, useOrientation, usePhotoOutput, useVideoOutput } from 'react-native-vision-camera';
@@ -19,12 +18,13 @@ import Reanimated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
 import { ArrowDownToLine, ArrowUpRight, Lock, MessageCircle, X } from 'lucide-react-native';
-import { qr, readQr } from '@glyphteck/shared/qrutils';
-import { isAddressOnNetwork } from '@glyphteck/shared/network';
-import { getChatId } from '@glyphteck/shared/crypto/chat';
-import { randomBytes, toHex } from '@glyphteck/shared/crypto/core';
-import { readLastCameraFacing, writeLastCameraFacing } from '@glyphteck/shared/localdatacache';
-import { canSendOnScan } from '@glyphteck/shared/settings';
+import { qr, readQr } from '@veyl/shared/qr';
+import { isAddressOnNetwork } from '@veyl/shared/network';
+import { getChatId } from '@veyl/shared/crypto/chat';
+import { randomFilename } from '@veyl/shared/utils/filename';
+import { fileUri } from '@/lib/file';
+import { readLastCameraFacing, writeLastCameraFacing } from '@veyl/shared/cache/localdata';
+import { canSendOnScan } from '@veyl/shared/settings';
 import { useTheme } from '@/providers/themeprovider';
 import { useChat } from '@/providers/chatprovider';
 import { usePeer } from '@/providers/peerprovider';
@@ -34,6 +34,7 @@ import { useWallet } from '@/providers/walletprovider';
 import { usePop } from '@/lib/pop';
 import { mark } from '@/lib/diagnostics';
 import { useCameraWarming } from '@/lib/camera/warming';
+import { useRouteLock } from '@/lib/navigation/routelock';
 import { alpha } from '@/lib/colors';
 
 const BACK_REGULAR_LENS = { physicalDevices: ['wide-angle'] };
@@ -101,11 +102,6 @@ function getCaptureRotate(orientation) {
     return '0deg';
 }
 
-function makeCaptureName(ext) {
-    const cleanExt = String(ext || '').replace(/^\./, '').toLowerCase() || 'bin';
-    return `${toHex(randomBytes(8))}.${cleanExt}`;
-}
-
 function getGestureTouch(event) {
     'worklet';
     const touch = event?.allTouches?.[0] || event?.changedTouches?.[0];
@@ -140,19 +136,13 @@ function stageCapturedPhoto(photo, uri, orientation) {
         uri,
         width: size.width,
         height: size.height,
-        name: makeCaptureName('jpg'),
+        name: randomFilename('jpg'),
         rotate: getCaptureRotate(orientation || photo?.orientation),
     };
 }
 
-function normalizeFileUri(path) {
-    const value = String(path || '').trim();
-    if (!value) return '';
-    return /^[a-z][a-z0-9+.-]*:\/\//i.test(value) ? value : `file://${value}`;
-}
-
 function stageCapturedVideo(path, orientation) {
-    const uri = normalizeFileUri(path);
+    const uri = fileUri(path);
     if (!uri) {
         throw new Error('video unavailable');
     }
@@ -160,7 +150,7 @@ function stageCapturedVideo(path, orientation) {
         kind: 'video',
         uri,
         mimeType: VIDEO_MIME,
-        name: makeCaptureName('mp4'),
+        name: randomFilename('mp4'),
         rotate: getCaptureRotate(orientation),
     };
 }
@@ -317,7 +307,7 @@ function CameraContent({ cameraActive, pageOpen, warming }) {
     const photoOutput = usePhotoOutput({ targetResolution: CAMERA_PHOTO_RESOLUTION, qualityPrioritization: 'speed' });
     const videoOutput = useVideoOutput({ targetResolution: CAMERA_VIDEO_RESOLUTION, fileType: 'mp4', enablePersistentRecorder: true });
     const cameraRef = useRef(null);
-    const routeLockRef = useRef(false);
+    const { lockRoute, routeLockedRef } = useRouteLock(2000);
     const recorderRef = useRef(null);
     const recordingRef = useRef(false);
     const recordingLockedRef = useRef(false);
@@ -854,15 +844,6 @@ function CameraContent({ cameraActive, pageOpen, warming }) {
         [clearPreviewTimer]
     );
 
-    const lockRoute = useCallback((ms = 2000) => {
-        if (routeLockRef.current) return false;
-        routeLockRef.current = true;
-        setTimeout(() => {
-            routeLockRef.current = false;
-        }, ms);
-        return true;
-    }, []);
-
     const showUserPreview = useCallback(
         async (nextUsername) => {
             if (!nextUsername || nextUsername === username) return;
@@ -871,7 +852,7 @@ function CameraContent({ cameraActive, pageOpen, warming }) {
             if (previewRef.current.key === key) {
                 return;
             }
-            if (previewRef.current.loading || routeLockRef.current) return;
+            if (previewRef.current.loading || routeLockedRef.current) return;
 
             previewRef.current.loading = true;
 
@@ -889,7 +870,7 @@ function CameraContent({ cameraActive, pageOpen, warming }) {
                 previewRef.current.loading = false;
             }
         },
-        [addPeer, holdPreview, username]
+        [addPeer, holdPreview, routeLockedRef, username]
     );
 
     const handleShutterPress = useCallback(() => {
@@ -1063,7 +1044,7 @@ function CameraContent({ cameraActive, pageOpen, warming }) {
             last.busy = true;
 
             try {
-                if (previewRef.current.loading || routeLockRef.current) return;
+                if (previewRef.current.loading || routeLockedRef.current) return;
 
                 if (qrData?.kind === qr.request && qrData.to === ownWalletPK) {
                     return;
@@ -1119,7 +1100,7 @@ function CameraContent({ cameraActive, pageOpen, warming }) {
                 scanRef.current.busy = false;
             }
         },
-        [addPeer, hidePreview, lockRoute, network, ownWalletPK, scanOpen, settings?.sendOnScan, showUserPreview]
+        [addPeer, hidePreview, lockRoute, network, ownWalletPK, routeLockedRef, scanOpen, settings?.sendOnScan, showUserPreview]
     );
 
     const barcodeOutput = useBarcodeScannerOutput({

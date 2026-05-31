@@ -2,7 +2,7 @@ import { collection, limit, query, where } from 'firebase/firestore';
 import { SEARCH_ROLE_LIMIT } from '../config.js';
 
 // A "role" is a category of profile the user can search for with `@<role>`.
-// Each role owns its local predicate and its Firestore query so adding a new
+// Each role owns its local match check and its Firestore query so adding a new
 // role is one entry here and zero changes anywhere else.
 
 const ROLE_LIMIT = SEARCH_ROLE_LIMIT;
@@ -11,13 +11,13 @@ export const ROLES = {
     bots: {
         id: 'bots',
         aliases: ['bot'],
-        predicate: (profile) => !!profile?.bot,
+        matches: (profile) => !!profile?.bot,
         buildQuery: (db) => query(collection(db, 'profiles'), where('bot', '!=', false), limit(ROLE_LIMIT)),
     },
     active: {
         id: 'active',
         aliases: ['online'],
-        predicate: (profile) => !!profile?.active,
+        matches: (profile) => !!profile?.active,
         buildQuery: (db) => query(collection(db, 'profiles'), where('active', '==', true), limit(ROLE_LIMIT)),
     },
 };

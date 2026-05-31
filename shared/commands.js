@@ -1,4 +1,5 @@
 // Shared command definitions and parser used across web, iOS, and chat inputs.
+import { lowerText } from './utils/text.js';
 
 const COMMAND_SETS = {
     mainmenu: [
@@ -40,7 +41,7 @@ function getCommands(mode = 'mainmenu') {
 }
 
 function resolveCommand(name, mode = 'mainmenu') {
-    const value = String(name ?? '').trim().toLowerCase();
+    const value = lowerText(name);
     if (!value) {
         return null;
     }
@@ -78,7 +79,7 @@ export function getTypingUsername(input, { mode = 'mainmenu' } = {}) {
 export function matchCommands(input, { mode = 'mainmenu' } = {}) {
     const raw = String(input ?? '').trim();
     if (!raw.startsWith('/')) return [];
-    const namePart = raw.slice(1).split(/\s+/)[0].toLowerCase();
+    const namePart = lowerText(raw.slice(1).split(/\s+/)[0]);
     const commands = getCommands(mode);
     if (!namePart) return commands;
     return commands.filter((cmd) => cmd.name.startsWith(namePart) || cmd.aliases?.some((alias) => alias.startsWith(namePart)));
@@ -89,7 +90,7 @@ export function completeCommandPrefix(input, { mode = 'mainmenu' } = {}) {
     const match = raw.match(/^\/([^\s]*)/);
     if (!match) return null;
 
-    const namePart = match[1].toLowerCase();
+    const namePart = lowerText(match[1]);
     if (!namePart) return null;
 
     const matched = matchCommands(`/${namePart}`, { mode });
@@ -110,7 +111,7 @@ export function parseCommand(input, { mode = 'mainmenu' } = {}) {
     if (!raw.startsWith('/')) return null;
 
     const tokens = raw.slice(1).trim().split(/\s+/);
-    const commandToken = tokens[0]?.toLowerCase();
+    const commandToken = lowerText(tokens[0]);
     if (!commandToken) return { name: null, args: {}, complete: false };
 
     const cmd = resolveCommand(commandToken, mode);

@@ -4,6 +4,7 @@ export const MINUTE_MS = 60 * MS_PER_SECOND;
 export const HOUR_MS = 60 * MINUTE_MS;
 export const DAY_MS = 24 * HOUR_MS;
 export const MIB_BYTES = 1024 * 1024;
+export const SATS_PER_BITCOIN = 100_000_000n;
 
 // Account validation and taste knobs. These are product choices, not cost controls.
 export const USERNAME_MAX_CHARS = 12;
@@ -14,11 +15,17 @@ export const PASSWORD_MAX_CHARS = 64;
 export const AUTOLOCK_MIN_MINUTES = 1;
 export const AUTOLOCK_MAX_MINUTES = 60;
 
+// Money display fallback used before live BTC pricing is available.
+export const BTC_PRICE_FALLBACK = 100_000;
+
 // Client-side cache and render optimization knobs.
 export const LOCAL_CACHE_WRITE_DELAY_MS = 350;
 export const LOCAL_MEDIA_CACHE_MAX_BYTES = 128 * MIB_BYTES;
 export const LOCAL_MEDIA_CACHE_MAX_ITEMS = 96;
 export const LOCAL_MEDIA_ACCESS_TOUCH_MIN_MS = MINUTE_MS;
+export const AVATAR_IMAGE_MAX_BYTES = 8 * MIB_BYTES;
+export const CHAT_READY_DOWNLOAD_MAX_BYTES = 8 * MIB_BYTES;
+export const CHAT_MESSAGE_FILE_CACHE_MAX_BYTES = 64 * MIB_BYTES;
 export const IDLE_CALLBACK_MIN_TIMEOUT_MS = 50;
 export const ATTACHMENT_CACHE_IDLE_TIMEOUT_MS = 2500;
 export const ATTACHMENT_CACHE_FALLBACK_DELAY_MS = 250;
@@ -99,6 +106,9 @@ export const RECENT_PEER_REFRESH_THROTTLE_MS = 120;
 
 // Moderation refresh timing. This is a client responsiveness knob.
 export const BAN_REFRESH_GRACE_MS = 50;
+
+// Wallet product and validation knobs.
+export const REQUEST_MONEY_MAX_SATS = SATS_PER_BITCOIN * 100_000n;
 
 // Wallet network/API cost knobs. These trade freshness against Spark calls and pagination work.
 export const WALLET_UPDATE_RATE_LIMIT_MS = 5 * MS_PER_SECOND;

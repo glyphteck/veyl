@@ -4,16 +4,16 @@ import { doc, onSnapshot } from 'firebase/firestore';
 
 import { auth, db } from '@/lib/firebase';
 import { stageFaceIdPassword, shouldStageFaceIdPassword } from '@/lib/faceid';
-import { openLocalDataCache } from '@/lib/localdatacache';
-import { clearMsgImageCache } from '@/lib/msgimagecache';
+import { openLocalDataCache } from '@/lib/cache/localdata';
+import { clearMsgImageCache } from '@/lib/chat/imagecache';
 import { useUser } from '@/providers/userprovider';
-import { unpackSeedData } from '@glyphteck/shared/crypto/pack';
-import { deriveSeed, deriveWalletMnemonic } from '@glyphteck/shared/crypto/seed';
-import { LOCAL_DATA_CACHE_LABEL } from '@glyphteck/shared/localdatacache';
+import { unpackSeedData } from '@veyl/shared/crypto/pack';
+import { deriveSeed, deriveWalletMnemonic } from '@veyl/shared/crypto/seed';
+import { LOCAL_DATA_CACHE_LABEL } from '@veyl/shared/cache/localdata';
 import { decryptSeed } from '@/lib/crypto/seed';
-import { normalizePassword } from '@glyphteck/shared/password';
-import { writePresence } from '@glyphteck/shared/presence';
-import { bootWallet, bootChat, lockWallet, lockChat } from '@/lib/vaultutils';
+import { normalizePassword } from '@veyl/shared/password';
+import { writePresence } from '@veyl/shared/presence';
+import { bootWallet, bootChat, lockWallet, lockChat } from '@/lib/vault';
 import { mark } from '@/lib/diagnostics';
 
 const VaultContext = createContext(null);

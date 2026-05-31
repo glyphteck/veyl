@@ -1,6 +1,21 @@
 import { useCallback, useState } from 'react';
 
-import { markDiag, markDone, markError } from './diag.js';
+import { markDiag, markDone, markError } from '../utils/diagnostics.js';
+
+export function availableBalanceSats(balance, fallback = 0n) {
+    if (balance == null) {
+        return fallback;
+    }
+    const value = Number(balance);
+    if (!Number.isFinite(value) || value < 0) {
+        return 0n;
+    }
+    return BigInt(Math.floor(value));
+}
+
+export function hasAvailableBalance(balance) {
+    return Number(balance ?? 0) > 0;
+}
 
 function getBalanceValue(result) {
     return result?.satsBalance?.available ?? result?.balance ?? null;

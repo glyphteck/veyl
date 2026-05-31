@@ -6,12 +6,13 @@ import { useChat } from '@/providers/chatprovider';
 import { useMediaViewer } from '@/providers/mediaviewerprovider';
 import { useTheme } from '@/providers/themeprovider';
 import { useMessageGestureBlockers } from '@/components/chat/messagegesturecontext';
-import { getCachedMessageFileUri, resolveMessageFileUri } from '@/lib/chatdownloads';
-import { getMediaViewerKey } from '@/lib/chatmediaitems';
-import { getCachedVideoPreviewUri, loadVideoPreviewUri } from '@/lib/chatvideopreview';
-import { imageWidth } from '@/lib/messages';
-import { getAttachmentCaption, getImageAspect, isExpiredAttachmentMsg } from '@glyphteck/shared/chat/messages';
-import { getMessagePreviewCacheKey } from '@glyphteck/shared/chat/previews';
+import { getCachedMessageFileUri, resolveMessageFileUri } from '@/lib/chat/downloads';
+import { getMediaViewerKey } from '@/lib/chat/viewer';
+import { getCachedVideoPreviewUri, loadVideoPreviewUri } from '@/lib/chat/videopreview';
+import { imageWidth } from '@/lib/chat/messages';
+import { getAttachmentCaption, getImageAspect, hasStoredFileRef, isExpiredAttachmentMsg } from '@veyl/shared/chat/messages';
+import { getMessagePreviewCacheKey } from '@veyl/shared/chat/previews';
+import { fileUri } from '@/lib/file';
 import Icon from '@/components/icon';
 import Menu from '@/components/menu';
 import ReactionTray from './reactiontray';
@@ -20,13 +21,6 @@ import { useMediaTapGesture } from './usemediatap';
 const VIDEO_LONG_SCALE = 0.94;
 const VIDEO_RADIUS = 22;
 const MEDIA_ACTIVE_STYLE = { opacity: 0.01 };
-
-function normalizeUri(uri) {
-    if (typeof uri !== 'string' || !uri) {
-        return '';
-    }
-    return /^[a-z][a-z0-9+.-]*:\/\//i.test(uri) ? uri : `file://${uri}`;
-}
 
 export default function VideoMessage({ msg, peerChatPK, fromPeer = false, menuItems, menuId, onLike, reactions = [], reactionUsers, reactionPreviewInset = 0 }) {
     const { theme } = useTheme();
@@ -45,9 +39,9 @@ export default function VideoMessage({ msg, peerChatPK, fromPeer = false, menuIt
         [msgExpiresAt, msgKey, msgLocalUri, msgMime, msgName, msgPath, msgType]
     );
     const expired = isExpiredAttachmentMsg(fileMsg);
-    const initialUri = normalizeUri(getCachedMessageFileUri(fileMsg, peerChatPK));
+    const initialUri = fileUri(getCachedMessageFileUri(fileMsg, peerChatPK));
     const [uri, setUri] = useState(() => initialUri);
-    const [loading, setLoading] = useState(() => msgType === 'mp4' && !initialUri && !!msgPath && !!msgKey);
+    const [loading, setLoading] = useState(() => msgType === 'mp4' && !initialUri && hasStoredFileRef(fileMsg));
     const [error, setError] = useState('');
     const key = getMediaViewerKey(peerChatPK, msg);
     const previewKey = getMessagePreviewCacheKey(peerChatPK, fileMsg);
@@ -90,7 +84,7 @@ export default function VideoMessage({ msg, peerChatPK, fromPeer = false, menuIt
 
     useEffect(() => {
         let cancelled = false;
-        const localUri = normalizeUri(getCachedMessageFileUri(fileMsg, peerChatPK));
+        const localUri = fileUri(getCachedMessageFileUri(fileMsg, peerChatPK));
 
         if (localUri) {
             setUri(localUri);
@@ -99,7 +93,7 @@ export default function VideoMessage({ msg, peerChatPK, fromPeer = false, menuIt
             return;
         }
 
-        if (msgType !== 'mp4' || !peerChatPK || !msgPath || !msgKey) {
+        if (msgType !== 'mp4' || !peerChatPK || !hasStoredFileRef(fileMsg)) {
             setUri('');
             setLoading(false);
             setError('');
@@ -112,7 +106,7 @@ export default function VideoMessage({ msg, peerChatPK, fromPeer = false, menuIt
         resolveMessageFileUri(fileMsg, peerChatPK, readMessageFile, { defer: true })
             .then((nextUri) => {
                 if (cancelled) return;
-                setUri(normalizeUri(nextUri));
+                setUri(fileUri(nextUri));
                 setLoading(false);
             })
             .catch((nextError) => {

@@ -16,7 +16,11 @@ import { useTheme } from '@/providers/themeprovider';
 import { useTxData } from '@/providers/txdataprovider';
 import { useUser } from '@/providers/userprovider';
 import { useWallet } from '@/providers/walletprovider';
-import { formatFullDateTime, formatUserDisplay, renderMoney, renderNet } from '@glyphteck/shared/utils';
+import { BTC_PRICE_FALLBACK } from '@veyl/shared/config';
+import { renderMoney, renderNet } from '@veyl/shared/money';
+import { formatUserDisplay } from '@veyl/shared/profile';
+import { textRouteParam } from '@veyl/shared/navigation/params';
+import { formatFullDateTime } from '@veyl/shared/utils/time';
 
 function TxRow({ tx, theme, moneyFormat, btcPrice, peerAvatarSource, userAvatarSource, isPeerActive, isPeerBot, isLast }) {
     const isInflow = (tx?.amount ?? 0) > 0;
@@ -85,10 +89,10 @@ export default function HistoryRoute() {
         void loadMoreTxs?.();
     }, [hasMoreTxs, isTxLoading, loadMoreTxs]);
 
-    const peerWalletPK = typeof params?.walletPK === 'string' ? params.walletPK : Array.isArray(params?.walletPK) ? params.walletPK[0] : '';
-    const peerChatPK = typeof params?.chatPK === 'string' ? params.chatPK : Array.isArray(params?.chatPK) ? params.chatPK[0] : '';
+    const peerWalletPK = textRouteParam(params?.walletPK);
+    const peerChatPK = textRouteParam(params?.chatPK);
     const moneyFormat = settings?.moneyFormat ?? 'usd';
-    const btcPrice = bitcoin?.price ?? 100000;
+    const btcPrice = bitcoin?.price ?? BTC_PRICE_FALLBACK;
 
     const peerProfile = useMemo(() => {
         return (peerWalletPK ? peerByWalletPK?.get(peerWalletPK) : null) ?? (peerChatPK ? peerByChatPK?.get(peerChatPK) : null) ?? null;

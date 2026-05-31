@@ -10,7 +10,7 @@
     },
     "dependencies": {
         "@buildonspark/spark-sdk": "catalog:",
-        "@glyphteck/shared": "workspace:*",
+        "@veyl/shared": "workspace:*",
         "@google-cloud/secret-manager": "^6.1.2",
         "firebase-admin": "^13.10.0"
     }

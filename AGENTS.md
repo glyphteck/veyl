@@ -44,6 +44,15 @@ Detailed workflow rules live in [guidelines/workflow.md](guidelines/workflow.md)
 - The individual todo task file is the coordination record. Do not maintain a central todo list.
 - When the task is done, remove or trim the todo file, move shipped behavior into durable docs when useful, and clean up merged or abandoned branches and worktrees.
 
+## Current Architecture Map
+
+- Web routes live in `apps/veyl/web/src/app`; web UI, providers, dialogs, and local primitives live in `apps/veyl/web/src/components`; web-only logic lives in feature folders under `apps/veyl/web/src/lib`.
+- iOS routes live in `apps/veyl/ios/app`; iOS UI lives in `apps/veyl/ios/src/components`; iOS provider wiring lives in `apps/veyl/ios/src/providers`; iOS-only logic lives in feature folders under `apps/veyl/ios/src/lib`.
+- Shared cross-platform product logic lives in `shared` as `@veyl/shared`. Generic primitives belong in `shared/utils/*`; feature logic belongs in folders such as `shared/chat`, `shared/wallet`, `shared/search`, `shared/cache`, `shared/navigation`, and `shared/bot`.
+- Firebase Functions live in `functions`, outside the Bun workspace. Functions-local helpers stay in `functions/lib` unless the deploy package shape changes.
+- Repo tooling lives in `scripts`; admin command helpers live in `scripts/admin`.
+- Do not recreate deleted catch-all files such as root `shared/utils.js`, `shared/localdatacache.js`, web/iOS flat chat-media helpers, or shadcn `components.json` / `components/ui` scaffolding.
+
 ## Guideline Index
 
 - [guidelines/workflow.md](guidelines/workflow.md): task sizing, todo files, branch/worktree policy, handoff, cleanup

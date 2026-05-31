@@ -2,14 +2,15 @@
 import { createContext, useContext, useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { getDoc, doc } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase/firebaseclient';
-import { openLocalDataCache } from '@/lib/localdatacache';
-import { unpackSeedData } from '@glyphteck/shared/crypto/pack';
-import { deriveSeed, deriveWalletMnemonic } from '@glyphteck/shared/crypto/seed';
-import { LOCAL_DATA_CACHE_LABEL } from '@glyphteck/shared/localdatacache';
+import { openLocalDataCache } from '@/lib/cache/localdata';
+import { unpackSeedData } from '@veyl/shared/crypto/pack';
+import { deriveSeed, deriveWalletMnemonic } from '@veyl/shared/crypto/seed';
+import { yieldToUi } from '@veyl/shared/utils/async';
+import { LOCAL_DATA_CACHE_LABEL } from '@veyl/shared/cache/localdata';
 import { decryptSeed } from '@/lib/crypto/seed';
-import { normalizePassword } from '@glyphteck/shared/password';
-import { writePresence } from '@glyphteck/shared/presence';
-import { bootWallet, lockWallet, bootChat, lockChat } from '@/lib/vaultutils';
+import { normalizePassword } from '@veyl/shared/password';
+import { writePresence } from '@veyl/shared/presence';
+import { bootWallet, lockWallet, bootChat, lockChat } from '@/lib/vault';
 import { useUser } from '@/components/providers/userprovider';
 import { toast } from 'sonner';
 import { Lock } from 'lucide-react';
@@ -17,10 +18,6 @@ import { Lock } from 'lucide-react';
 export const VaultCtx = createContext(null);
 
 const UNLOCK_STATES = new Set(['decrypting', 'deriving', 'wallet', 'chat', 'launching']);
-
-function nextTick() {
-    return new Promise((resolve) => setTimeout(resolve, 0));
-}
 
 export function VaultProvider({ children }) {
     const user = useUser();
@@ -206,7 +203,7 @@ export function VaultProvider({ children }) {
 
                 // Mark as unlocked
                 setLockState('launching');
-                await nextTick();
+                await yieldToUi();
                 if (!isCurrentUnlock()) {
                     throw new Error('account changed during unlock');
                 }

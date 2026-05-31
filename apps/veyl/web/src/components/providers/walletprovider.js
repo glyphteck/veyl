@@ -1,10 +1,10 @@
 'use client';
 
 import { useCallback, useMemo } from 'react';
-import { createWalletProvider } from '@glyphteck/shared/wallet';
-import { resolveNetwork } from '@glyphteck/shared/network';
+import { createWalletProvider } from '@veyl/shared/wallet';
+import { resolveNetwork } from '@veyl/shared/network';
 import { useVault } from '@/components/providers/vaultprovider';
-import { useCloak } from '@glyphteck/shared/providers/cloakprovider';
+import { useCloak } from '@veyl/shared/providers/cloakprovider';
 import { useUser } from '@/components/providers/userprovider';
 import { toast } from 'sonner';
 import { Copy } from 'lucide-react';

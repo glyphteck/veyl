@@ -11,9 +11,13 @@ import {
     CHAT_TTL_DELETE_CHUNK_SIZE,
 } from '../../config.js';
 import { collectMessageKeys, messageKeys } from '../messagekeys.js';
-import { canShowMsg, canStoreMsg, collapseSystemMessages, getDisplayMessages, hasStoredFileRef, isAttachmentMsgType, isExpiredMsg } from '../messages.js';
+import { canShowMsg, canStoreMsg, collapseSystemMessages, getDisplayMessages, isExpiredMsg, savedMediaStayRef } from '../messages.js';
 import { getCachedPair } from '../pairs.js';
-import { toMillis, valueMillis } from '../time.js';
+import { getChatPeerPK } from '../ids.js';
+import { sameBytes, sameHead } from '../equal.js';
+import { positiveInt } from '../../utils/number.js';
+import { cleanText } from '../../utils/text.js';
+import { timestampKey, timestampMs } from '../../utils/time.js';
 
 export const MSG_BATCH_SIZE = CHAT_MESSAGE_BATCH_SIZE;
 export const MSG_QUERY_MAX_DOCS = CHAT_MESSAGE_QUERY_MAX_DOCS;
@@ -27,7 +31,7 @@ function messageDataExpired(msgData, now = Date.now()) {
 }
 
 function messageDataClientDeleteExpired(msgData, now = Date.now()) {
-    const ttlMs = toMillis(msgData?.ttl, null);
+    const ttlMs = timestampMs(msgData?.ttl, null);
     return ttlMs != null && ttlMs <= now - TTL_CLIENT_DELETE_GRACE_MS;
 }
 
@@ -141,8 +145,9 @@ function addMessageDocKeys(keys, docSnap) {
         keys.add(docSnap.id);
     }
     const cid = docSnap.data?.()?.head?.cid;
-    if (typeof cid === 'string' && cid.trim()) {
-        keys.add(cid.trim());
+    const key = cleanText(cid);
+    if (key) {
+        keys.add(key);
     }
 }
 
@@ -153,15 +158,7 @@ function getCursorMillis(cursor) {
     if (Number.isFinite(cursor?.ms)) {
         return cursor.ms;
     }
-    if (typeof cursor?.toMillis === 'function') {
-        const ms = cursor.toMillis();
-        return Number.isFinite(ms) ? ms : null;
-    }
-    if (typeof cursor?.ts?.toMillis === 'function') {
-        const ms = cursor.ts.toMillis();
-        return Number.isFinite(ms) ? ms : null;
-    }
-    return null;
+    return timestampMs(cursor, null) ?? timestampMs(cursor?.ts, null);
 }
 
 function normalizeDecryptedMsg(msgData, message) {
@@ -177,45 +174,11 @@ function normalizeDecryptedMsg(msgData, message) {
     return canStoreMsg(normalized) ? normalized : null;
 }
 
-function bytesEqual(a, b) {
-    if (a === b) {
-        return true;
-    }
-    if (typeof a?.isEqual === 'function') {
-        return a.isEqual(b);
-    }
-    if (typeof b?.isEqual === 'function') {
-        return b.isEqual(a);
-    }
-    if (typeof a?.toUint8Array !== 'function' || typeof b?.toUint8Array !== 'function') {
-        return false;
-    }
-
-    const left = a.toUint8Array();
-    const right = b.toUint8Array();
-    if (left.length !== right.length) {
-        return false;
-    }
-    for (let index = 0; index < left.length; index += 1) {
-        if (left[index] !== right[index]) {
-            return false;
-        }
-    }
-    return true;
-}
-
 function messageDocDataEqual(a, b) {
     if (a === b) {
         return true;
     }
-    return !!a && !!b && headsEqual(a?.head, b?.head) && bytesEqual(a?.body, b?.body) && valueMillis(a?.ttl ?? null) === valueMillis(b?.ttl ?? null) && valueMillis(a?.ts ?? null) === valueMillis(b?.ts ?? null);
-}
-
-function headsEqual(a, b) {
-    if (a === b) {
-        return true;
-    }
-    return a?.from === b?.from && a?.cid === b?.cid;
+    return !!a && !!b && sameHead(a?.head, b?.head) && sameBytes(a?.body, b?.body) && timestampKey(a?.ttl ?? null) === timestampKey(b?.ttl ?? null) && timestampKey(a?.ts ?? null) === timestampKey(b?.ts ?? null);
 }
 
 function messageDocsEqual(prev, docs) {
@@ -234,12 +197,12 @@ function messageDocsEqual(prev, docs) {
 
 function cachedMessageBody(cacheEntry, msgData, docId) {
     const head = msgData?.head;
-    if (!cacheEntry || !head || cacheEntry.from !== head.from || cacheEntry.cid !== head.cid || !bytesEqual(cacheEntry.body, msgData?.body)) {
+    if (!cacheEntry || !head || cacheEntry.from !== head.from || cacheEntry.cid !== head.cid || !sameBytes(cacheEntry.body, msgData?.body)) {
         return null;
     }
 
-    const tsKey = valueMillis(msgData?.ts ?? null);
-    const ttlKey = valueMillis(msgData?.ttl ?? null);
+    const tsKey = timestampKey(msgData?.ts ?? null);
+    const ttlKey = timestampKey(msgData?.ttl ?? null);
     if (cacheEntry.tsKey === tsKey && cacheEntry.ttlKey === ttlKey) {
         return cacheEntry.message;
     }
@@ -265,8 +228,8 @@ function cacheMessageBody(cache, docId, msgData, message) {
         from: msgData?.head?.from,
         cid: msgData?.head?.cid,
         body: msgData?.body,
-        tsKey: valueMillis(msgData?.ts ?? null),
-        ttlKey: valueMillis(msgData?.ttl ?? null),
+        tsKey: timestampKey(msgData?.ts ?? null),
+        ttlKey: timestampKey(msgData?.ttl ?? null),
         message: next,
     });
     return next;
@@ -313,11 +276,6 @@ async function decryptDocEntries(docs, userChatPK, userPrivKey, peerChatPK, cach
         })
     );
     return entries.filter(Boolean);
-}
-
-function positiveInt(value, fallback) {
-    const next = Math.trunc(Number(value));
-    return Number.isFinite(next) && next > 0 ? next : fallback;
 }
 
 function messageQueryLimit(pageSize) {
@@ -398,19 +356,6 @@ export async function decryptMsg(msgData, userChatPK, userPrivKey, peerChatPK) {
     }
 }
 
-function savedMediaStay(message) {
-    const stayId = typeof message?.stay === 'string' ? message.stay.trim() : '';
-    const stayKey = typeof message?.stayKey === 'string' ? message.stayKey.trim() : '';
-    if (!stayId || !stayKey || !isAttachmentMsgType(message?.t) || !hasStoredFileRef(message)) {
-        return null;
-    }
-    return {
-        path: message.p,
-        stayId,
-        stayKey,
-    };
-}
-
 export async function collectSavedMediaStays(db, chatId, userChatPK, userPrivKey, peerChatPK, options = {}) {
     if (!db || !chatId || !userChatPK || !userPrivKey || !peerChatPK) {
         return [];
@@ -435,7 +380,7 @@ export async function collectSavedMediaStays(db, chatId, userChatPK, userPrivKey
         const entries = await Promise.all(
             snap.docs.map(async (docSnap) => {
                 const message = await decryptMsg(docSnap.data(), userChatPK, userPrivKey, peerChatPK);
-                return message ? savedMediaStay(message) : null;
+                return message ? savedMediaStayRef(message) : null;
             })
         );
         for (const stay of entries) {
@@ -463,8 +408,7 @@ export async function collectAccountSavedMediaStays(db, userChatPK, userPrivKey,
     const stays = new Map();
 
     for (const chatSnap of chatsSnap.docs) {
-        const participants = Array.isArray(chatSnap.data()?.participants) ? chatSnap.data().participants : [];
-        const peerChatPK = participants.find((participant) => participant && participant !== userChatPK);
+        const peerChatPK = getChatPeerPK({ id: chatSnap.id, participants: chatSnap.data()?.participants }, userChatPK);
         if (!peerChatPK) {
             continue;
         }
@@ -568,10 +512,10 @@ export function listenToLatestMsgs(db, chatId, userChatPK, userPrivKey, peerChat
                 const visibleStart = docIndexById(docs, visibleDocs[0]?.id);
                 const carry = visibleStart > 0 ? docs[visibleStart - 1] : null;
                 const queryFilled = snap.docs.length >= limitCount;
-                const queryStartMs = toMillis(docs[0]?.data?.()?.ts, null);
+                const queryStartMs = timestampMs(docs[0]?.data?.()?.ts, null);
                 const deletedKeys = new Set();
                 for (const docSnap of removedDocs) {
-                    const removedMs = toMillis(docSnap.data()?.ts, null);
+                    const removedMs = timestampMs(docSnap.data()?.ts, null);
                     if (!queryFilled || queryStartMs == null || removedMs == null || removedMs >= queryStartMs) {
                         addMessageDocKeys(deletedKeys, docSnap);
                     }

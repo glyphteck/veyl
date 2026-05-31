@@ -1,6 +1,7 @@
 import { AppState, Platform } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import Constants from 'expo-constants';
+import { ensureDirectory } from '@/lib/file';
 
 const DIR = FileSystem.documentDirectory ? `${FileSystem.documentDirectory}diagnostics/` : null;
 const FILE = DIR ? `${DIR}breadcrumbs.log` : null;
@@ -70,18 +71,12 @@ function line(label, data) {
     return `${new Date().toISOString()} ${label}${payload}`;
 }
 
-async function ensureDir() {
-    if (!DIR) return false;
-    await FileSystem.makeDirectoryAsync(DIR, { intermediates: true }).catch(() => {});
-    return true;
-}
-
 function persist(nextLine) {
     if (!FILE) return;
     lines = [...lines, nextLine].slice(-MAX_LINES);
     writeChain = writeChain
         .then(async () => {
-            if (!(await ensureDir())) return;
+            if (!(await ensureDirectory(DIR, { quiet: true }))) return;
             await FileSystem.writeAsStringAsync(FILE, `${lines.join('\n')}\n`).catch(() => {});
         })
         .catch(() => {});
@@ -100,7 +95,7 @@ export function mark(label, data) {
 
 async function clearPrevious() {
     if (!FILE) return;
-    await ensureDir();
+    await ensureDirectory(DIR, { quiet: true });
     lines = [];
     await FileSystem.deleteAsync(FILE, { idempotent: true }).catch(() => {});
 }

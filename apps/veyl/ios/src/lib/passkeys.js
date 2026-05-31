@@ -3,46 +3,15 @@ import { signInWithCustomToken } from 'firebase/auth';
 import { create, get } from 'react-native-passkeys';
 
 import { auth, functions } from '@/lib/firebase';
-import { generateLabel } from '@glyphteck/shared/labelgenerator';
-import { getPasskeyOrigin } from '@glyphteck/shared/network';
+import { randomPasskeyLabel } from '@veyl/shared/passkeylabel';
+import { getPasskeyOrigin } from '@veyl/shared/network';
+import { isPasskeyRpMismatchError, isUnlinkedPasskeyError, normalizePasskeyLoginError, normalizePasskeyRegisterError } from '@veyl/shared/passkey';
 
-function normalizeLoginError(error) {
-    if (error?.code === 'functions/not-found') {
-        const next = new Error('This passkey is no longer linked to an account.');
-        next.code = 'passkey-unlinked';
-        next.cause = error;
-        return next;
-    }
-    if (error?.code === 'functions/failed-precondition') {
-        const next = new Error('This passkey belongs to a different Glyphteck passkey setup.');
-        next.code = 'passkey-rp-mismatch';
-        next.cause = error;
-        return next;
-    }
-    return error;
-}
-
-function normalizeRegisterError(error) {
-    if (error?.code === 'functions/failed-precondition') {
-        const next = new Error('This passkey belongs to a different Glyphteck passkey setup.');
-        next.code = 'passkey-rp-mismatch';
-        next.cause = error;
-        return next;
-    }
-    return error;
-}
-
-export function isUnlinkedPasskeyError(error) {
-    return error?.code === 'passkey-unlinked';
-}
-
-export function isPasskeyRpMismatchError(error) {
-    return error?.code === 'passkey-rp-mismatch';
-}
+export { isPasskeyRpMismatchError, isUnlinkedPasskeyError };
 
 export async function passkeyRegister({ onPrompt, onVerified, label: providedLabel } = {}) {
     try {
-        const label = providedLabel?.trim() || generateLabel();
+        const label = providedLabel?.trim() || randomPasskeyLabel();
         const origin = getPasskeyOrigin();
 
         const {
@@ -81,7 +50,7 @@ export async function passkeyRegister({ onPrompt, onVerified, label: providedLab
 
         return { success: true };
     } catch (error) {
-        throw normalizeRegisterError(error);
+        throw normalizePasskeyRegisterError(error);
     }
 }
 
@@ -115,6 +84,6 @@ export async function passkeyLogin({ uid, onPrompt } = {}) {
 
         return { success: true };
     } catch (error) {
-        throw normalizeLoginError(error);
+        throw normalizePasskeyLoginError(error);
     }
 }

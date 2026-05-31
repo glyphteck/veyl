@@ -1,6 +1,6 @@
 import { Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import { COOPERATIVE_EXIT_FLAT_FEE_SATS, COOPERATIVE_EXIT_TX_VBYTES, formatOnchainFeeAmount, formatOnchainFeeFormula } from '@glyphteck/shared/wallet/fees';
+import { COOPERATIVE_EXIT_FLAT_FEE_SATS, COOPERATIVE_EXIT_TX_VBYTES, formatOnchainFeeAmount, formatOnchainFeeFormula } from '@veyl/shared/wallet/fees';
 
 import GlassButton from '@/components/glass/glassbutton';
 import { useBitcoin } from '@/providers/bitcoinprovider';

@@ -1,7 +1,7 @@
 import { useCallback, useRef } from 'react';
 
 import { WALLET_AUTO_CLAIM_MAX_FEE_SATS, WALLET_CLAIM_PAGE_SIZE } from '../config.js';
-import { markDiag, markDone } from './diag.js';
+import { markDiag, markDone } from '../utils/diagnostics.js';
 
 const AUTO_CLAIM_MAX_FEE_SATS = WALLET_AUTO_CLAIM_MAX_FEE_SATS;
 const CLAIM_PAGE_SIZE = WALLET_CLAIM_PAGE_SIZE;

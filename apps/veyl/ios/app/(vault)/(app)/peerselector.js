@@ -5,10 +5,15 @@ import Animated, { Easing, scrollTo, useAnimatedRef, useAnimatedStyle, useDerive
 import { scheduleOnRN } from 'react-native-worklets';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowDownLeft, ArrowUpRight, MessageCircle, Search } from 'lucide-react-native';
-import { mergeProfiles } from '@glyphteck/shared/search/merge';
-import { toSats, toDisplay, formatUserDisplay, satsInABitcoin } from '@glyphteck/shared/utils';
-import { getChatId } from '@glyphteck/shared/crypto/chat';
-import { makeReq } from '@glyphteck/shared/chat/messages';
+import { mergeProfiles } from '@veyl/shared/search/merge';
+import { yieldToUi } from '@veyl/shared/utils/async';
+import { MONEY_UNITS, toDisplay, toSats } from '@veyl/shared/money';
+import { formatUserDisplay, peerKey } from '@veyl/shared/profile';
+import { truncateLabel } from '@veyl/shared/utils/display';
+import { getChatId } from '@veyl/shared/crypto/chat';
+import { makeReq } from '@veyl/shared/chat/messages';
+import { BTC_PRICE_FALLBACK, REQUEST_MONEY_MAX_SATS } from '@veyl/shared/config';
+import { availableBalanceSats } from '@veyl/shared/wallet/balance';
 
 import { useBitcoin } from '@/providers/bitcoinprovider';
 import { useTheme } from '@/providers/themeprovider';
@@ -26,8 +31,8 @@ import Icon from '@/components/icon';
 import SearchInput from '@/components/search';
 import { KeyboardStickyView, useReanimatedKeyboardAnimation } from '@/components/keyboardscroll';
 import { tap } from '@/lib/tap';
+import { useRouteLock } from '@/lib/navigation/routelock';
 
-const UNITS = ['sats', 'btc', 'usd'];
 const FOOTER_OFFSCREEN = 260;
 const FOOTER_HEIGHT_FALLBACK = 122;
 const FOOTER_LIST_CLEARANCE = 12;
@@ -43,17 +48,6 @@ const PEER_ROW_HEIGHT_FALLBACK = 112;
 const LIST_CROP_TOP = 20;
 const LIST_CONTENT_TOP = 18 + 24;
 const LIST_DEFAULT_BOTTOM_GAP = 12;
-const MAX_REQUEST_AMOUNT = satsInABitcoin * 100000n;
-
-function getPeerLabel(peer) {
-    if (!peer) return '';
-    return peer?.username || formatUserDisplay({ username: peer?.username, chatPK: peer?.chatPK, walletPK: peer?.walletPK });
-}
-
-function truncateLabel(label, max = 8) {
-    if (!label || label.length <= max) return label || '';
-    return `${label.slice(0, max)}…`;
-}
 
 function samePeer(a, b) {
     if (!a || !b) return false;
@@ -74,7 +68,7 @@ const PeerCell = memo(function PeerCell({ item, onSelect, theme, selected, disab
     const scaleStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
 
     const avatar = useMemo(() => (item?.avatar ? { uri: item.avatar } : null), [item?.avatar]);
-    const label = truncateLabel(getPeerLabel(item), 8);
+    const label = truncateLabel(formatUserDisplay(item), 8, '…');
 
     return (
         <Pressable {...pressFeedback} style={{ width: '33.333%', alignItems: 'center', paddingVertical: 10 }}>
@@ -123,8 +117,7 @@ export default function PeerSelectorScreen() {
     const activePeer = useRef(null);
     const openRef = useRef(true);
     const busyRef = useRef(false);
-    const routeLockRef = useRef(false);
-    const routeLockTimerRef = useRef(null);
+    const { lockRoute } = useRouteLock();
 
     const [selectedPeer, setSelectedPeer] = useState(null);
     const [footerPeer, setFooterPeer] = useState(null);
@@ -155,7 +148,6 @@ export default function PeerSelectorScreen() {
         return () => {
             openRef.current = false;
             clearSearch();
-            if (routeLockTimerRef.current) clearTimeout(routeLockTimerRef.current);
         };
     }, [clearSearch]);
 
@@ -164,17 +156,6 @@ export default function PeerSelectorScreen() {
             setMode('send');
         }
     }, [chatBanned]);
-
-    const lockRoute = useCallback((ms = 1200) => {
-        if (routeLockRef.current) return false;
-        routeLockRef.current = true;
-        if (routeLockTimerRef.current) clearTimeout(routeLockTimerRef.current);
-        routeLockTimerRef.current = setTimeout(() => {
-            routeLockRef.current = false;
-            routeLockTimerRef.current = null;
-        }, ms);
-        return true;
-    }, []);
 
     const pickPeer = useCallback((peer) => {
         activePeer.current = peer;
@@ -310,15 +291,15 @@ export default function PeerSelectorScreen() {
         searchInputRef.current?.blur?.();
         amountInputRef.current?.blur?.();
         Keyboard.dismiss();
-        await new Promise((resolve) => requestAnimationFrame(resolve));
+        await yieldToUi();
         if (!openRef.current) return;
         router.dismiss();
     }, [router]);
 
     const cycleUnit = useCallback(() => {
-        const price = bitcoin?.price ?? 100000;
-        const idx = UNITS.indexOf(inputUnit);
-        const next = UNITS[(idx + 1) % UNITS.length];
+        const price = bitcoin?.price ?? BTC_PRICE_FALLBACK;
+        const idx = MONEY_UNITS.indexOf(inputUnit);
+        const next = MONEY_UNITS[(idx + 1) % MONEY_UNITS.length];
         if (amount) {
             const sats = toSats(amount, inputUnit, price);
             setAmount(sats === 0n ? '' : toDisplay(sats, next, price));
@@ -328,8 +309,8 @@ export default function PeerSelectorScreen() {
 
     const validSats = useMemo(() => {
         if (!amount) return 0n;
-        const price = bitcoin?.price ?? 100000;
-        const max = mode === 'request' ? MAX_REQUEST_AMOUNT : balance != null ? BigInt(Math.floor(Number(balance))) : 0n;
+        const price = bitcoin?.price ?? BTC_PRICE_FALLBACK;
+        const max = mode === 'request' ? REQUEST_MONEY_MAX_SATS : availableBalanceSats(balance);
         try {
             const sats = toSats(amount, inputUnit, price);
             if (sats <= 0n || sats > max) return 0n;
@@ -445,7 +426,7 @@ export default function PeerSelectorScreen() {
         [handleSelectPeer, selectedPeer, theme]
     );
 
-    const peerKey = useCallback((item, index) => item?.uid || item?.chatPK || item?.walletPK || `${index}`, []);
+    const keyExtractor = useCallback((item, index) => peerKey(item, `${index}`), []);
     const cycleStyle = useAnimatedStyle(() => ({ transform: [{ scale: cycleScale.value }] }));
     const slideStyle = useAnimatedStyle(() => {
         if (!footerLive.value && footerProgress.value <= 0) {
@@ -505,7 +486,7 @@ export default function PeerSelectorScreen() {
                 <Animated.FlatList
                     ref={listRef}
                     data={filteredPeers}
-                    keyExtractor={peerKey}
+                    keyExtractor={keyExtractor}
                     renderItem={renderPeer}
                     numColumns={3}
                     keyboardDismissMode="interactive"

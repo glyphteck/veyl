@@ -1,11 +1,12 @@
 import { deriveSeed, deriveWalletMnemonic, getKeyPair } from '../crypto/seed.js';
 import { cleanBytes, toHex } from '../crypto/core.js';
+import { cleanText } from '../utils/text.js';
 
 function walletPubkey(value) {
     if (value instanceof Uint8Array) {
         return toHex(value);
     }
-    const key = String(value ?? '').trim();
+    const key = cleanText(value);
     if (!key) {
         throw new Error('wallet identity missing');
     }

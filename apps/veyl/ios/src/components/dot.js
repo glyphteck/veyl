@@ -1,6 +1,7 @@
 import { useId, useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 import Svg, { Circle, Defs, G, Mask, Path, Rect } from 'react-native-svg';
+import { prefixedId } from '@veyl/shared/utils/display';
 
 import { useTheme } from '@/providers/themeprovider';
 
@@ -29,7 +30,7 @@ export function getDotMetrics(size, { compact = false } = {}) {
 }
 
 function getMaskId(id) {
-    return `dot-mask-${id.replace(/[^a-zA-Z0-9_-]/g, '') || 'id'}`;
+    return prefixedId('dot-mask', id);
 }
 
 function getDotColor(theme, type) {

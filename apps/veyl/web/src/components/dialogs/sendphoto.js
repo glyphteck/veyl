@@ -2,9 +2,9 @@ import { useCallback, useState } from 'react';
 import { CircleCheck } from 'lucide-react';
 import { useUser } from '@/components/providers/userprovider';
 import { useChat } from '@/components/providers/chatprovider';
-import { getChatId } from '@glyphteck/shared/crypto/chat';
-import { formatUserDisplay } from '@/lib/utils';
-import { prepareChatFile } from '@/lib/chatfiles';
+import { getChatId } from '@veyl/shared/crypto/chat';
+import { formatUserDisplay } from '@veyl/shared/profile';
+import { prepareFile } from '@/lib/chat/files';
 import { toast } from 'sonner';
 import Share from './share';
 
@@ -35,7 +35,7 @@ export default function SendPhoto({ data, close }) {
         try {
             let payload;
             if (kind === 'video') {
-                payload = await prepareChatFile(media.file);
+                payload = await prepareFile(media.file);
             } else {
                 const blob = dataUriToBlob(photo);
                 const img = new Image();

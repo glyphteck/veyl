@@ -1,6 +1,6 @@
 'use client';
 
-import { createPeerProvider } from '@glyphteck/shared/providers/peerprovider';
+import { createPeerProvider } from '@veyl/shared/providers/peerprovider';
 import { useChat } from '@/components/providers/chatprovider';
 import { useUser } from '@/components/providers/userprovider';
 import { useTxData } from '@/components/providers/txdataprovider';

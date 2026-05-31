@@ -3,10 +3,15 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { collection, deleteDoc, doc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
+import { avatarUrlWithVersion, readAvatarVersion } from '../avatar.js';
 import { avatarPath, getFileUrl, readFile } from '../files.js';
 import { BAN_REFRESH_GRACE_MS } from '../config.js';
 import { COMMUNITY_RULES_DATE, COMMUNITY_RULES_VERSION } from '../community.js';
+import { markDiag, markDone, markError } from '../utils/diagnostics.js';
+import { banState, nextBanRefreshMs } from '../moderation.js';
+import { peerUid } from '../profile.js';
 import { defaultSettings, writeUserSettings } from '../settings.js';
+import { cleanText } from '../utils/text.js';
 import { resolveWalletPK } from '../wallet/keys.js';
 
 export const defaultUser = {
@@ -39,67 +44,6 @@ export const defaultUser = {
         },
     },
 };
-
-function getBanUntilMs(ban) {
-    if (!ban || typeof ban !== 'object' || Array.isArray(ban)) {
-        return null;
-    }
-
-    if (ban.until == null) {
-        return null;
-    }
-
-    if (typeof ban.until?.toMillis === 'function') {
-        return ban.until.toMillis();
-    }
-
-    if (ban.until instanceof Date) {
-        return ban.until.getTime();
-    }
-
-    const ms = Number(ban.until);
-    return Number.isFinite(ms) ? ms : null;
-}
-
-function getActiveBan(ban) {
-    if (!ban || typeof ban !== 'object' || Array.isArray(ban)) {
-        return null;
-    }
-
-    const untilMs = getBanUntilMs(ban);
-    if (untilMs == null) {
-        return ban;
-    }
-
-    return untilMs > Date.now() ? ban : null;
-}
-
-function readAvatarVersion(value) {
-    if (value == null || value === '' || (typeof value !== 'number' && typeof value !== 'string')) {
-        return null;
-    }
-    const version = Number(value);
-    return Number.isSafeInteger(version) && version >= 0 ? version : null;
-}
-
-function avatarUrlWithVersion(url, version) {
-    if (!url) return null;
-    return version == null ? url : `${url}${url.includes('?') ? '&' : '?'}v=${encodeURIComponent(String(version))}`;
-}
-
-function markDiag(diag, label, data) {
-    try {
-        diag?.(label, data);
-    } catch {}
-}
-
-function markDone(diag, label, startedAt, data = {}) {
-    markDiag(diag, `${label}.done`, { ...data, elapsedMs: Date.now() - startedAt });
-}
-
-function markError(diag, label, startedAt, error, data = {}) {
-    markDiag(diag, `${label}.error`, { ...data, elapsedMs: Date.now() - startedAt, code: error?.code || '', message: error?.message || String(error) });
-}
 
 export function createUserProvider({ auth, db, storage, getStorage, network, avatarCache = null, diag = null }) {
     if (!auth || !db) {
@@ -520,8 +464,7 @@ export function createUserProvider({ auth, db, storage, getStorage, network, ava
         }, [auth, db, diag, fetchAvatar, network]);
 
         useEffect(() => {
-            const untilMs = [getBanUntilMs(user?.banned?.full), getBanUntilMs(user?.banned?.chat)].filter((value) => Number.isFinite(value) && value > Date.now()).sort((a, b) => a - b)[0];
-
+            const untilMs = nextBanRefreshMs(user?.banned);
             if (!untilMs) {
                 return;
             }
@@ -537,33 +480,31 @@ export function createUserProvider({ auth, db, storage, getStorage, network, ava
         }, [user?.banned?.avatar, user?.banned?.chat, user?.banned?.full]);
 
         const blockedSet = useMemo(() => new Set(user.blocked), [user.blocked]);
-        const activeFullBan = useMemo(() => getActiveBan(user?.banned?.full), [user?.banned?.full]);
-        const activeChatBan = useMemo(() => getActiveBan(user?.banned?.chat), [user?.banned?.chat]);
-        const activeAvatarBan = useMemo(() => getActiveBan(user?.banned?.avatar), [user?.banned?.avatar]);
-        const activeBan = activeFullBan || activeChatBan;
-        const chatBanUntil = useMemo(() => activeBan?.until ?? null, [activeBan]);
-        const chatBanned = !!activeBan;
-        const avatarBanned = !!(activeFullBan || activeAvatarBan);
+        const bans = useMemo(() => banState(user?.banned), [user?.banned]);
+        const userBan = bans.full || bans.chat;
+        const chatBanUntil = useMemo(() => userBan?.until ?? null, [userBan]);
+        const chatBanned = bans.chatBanned;
+        const avatarBanned = bans.avatarBanned;
 
         const blockPeer = useCallback(
             async (peer) => {
-                const peerUid = typeof peer === 'string' ? peer.trim() : typeof peer?.uid === 'string' ? peer.uid.trim() : '';
+                const nextPeerUid = peerUid(peer);
                 const uid = auth.currentUser?.uid;
                 if (!uid) throw new Error('auth');
-                if (!peerUid) throw new Error('peer uid required');
-                if (peerUid === uid) return;
-                await setDoc(doc(db, 'users', uid, 'blocked', peerUid), {});
+                if (!nextPeerUid) throw new Error('peer uid required');
+                if (nextPeerUid === uid) return;
+                await setDoc(doc(db, 'users', uid, 'blocked', nextPeerUid), {});
             },
             [auth, db]
         );
 
         const unblockPeer = useCallback(
             async (peer) => {
-                const peerUid = typeof peer === 'string' ? peer.trim() : typeof peer?.uid === 'string' ? peer.uid.trim() : '';
+                const nextPeerUid = peerUid(peer);
                 const uid = auth.currentUser?.uid;
                 if (!uid) throw new Error('auth');
-                if (!peerUid) throw new Error('peer uid required');
-                await deleteDoc(doc(db, 'users', uid, 'blocked', peerUid));
+                if (!nextPeerUid) throw new Error('peer uid required');
+                await deleteDoc(doc(db, 'users', uid, 'blocked', nextPeerUid));
             },
             [auth, db]
         );
@@ -571,7 +512,7 @@ export function createUserProvider({ auth, db, storage, getStorage, network, ava
         const acceptCommunityRules = useCallback(
             async (version) => {
                 const uid = auth.currentUser?.uid;
-                const nextVersion = typeof version === 'string' ? version.trim() : '';
+                const nextVersion = cleanText(version);
                 if (!uid) throw new Error('auth');
                 if (!nextVersion) throw new Error('community rules version required');
                 await setDoc(
@@ -617,8 +558,8 @@ export function createUserProvider({ auth, db, storage, getStorage, network, ava
 
         const isBlocked = useCallback(
             (peer) => {
-                const peerUid = typeof peer === 'string' ? peer.trim() : typeof peer?.uid === 'string' ? peer.uid.trim() : '';
-                return !!peerUid && blockedSet.has(peerUid);
+                const nextPeerUid = peerUid(peer);
+                return !!nextPeerUid && blockedSet.has(nextPeerUid);
             },
             [blockedSet]
         );

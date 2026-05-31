@@ -35,7 +35,7 @@ Target a package when the change is local:
 bun --filter @glyphteck/veyl-web lint
 bun --filter @glyphteck/veyl-ios lint
 bun --filter @glyphteck/veyl-bot lint
-bun --filter @glyphteck/shared lint
+bun --filter @veyl/shared lint
 cd functions && npm run lint
 ```
 

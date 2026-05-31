@@ -1,5 +1,7 @@
 'use client';
 
+import { lowerText } from '../utils/text.js';
+
 const VALID_WALLET_NETWORKS = new Set(['MAINNET', 'REGTEST', 'TESTNET', 'SIGNET', 'LOCAL']);
 
 export function normalizeWalletNetwork(network) {
@@ -22,7 +24,7 @@ export function resolveWalletPK(data, network) {
 }
 
 function normalizeWalletPK(walletPK) {
-    return typeof walletPK === 'string' ? walletPK.trim().toLowerCase() : walletPK;
+    return typeof walletPK === 'string' ? lowerText(walletPK) : walletPK;
 }
 
 export function hasWalletPKForNetwork(data, network) {

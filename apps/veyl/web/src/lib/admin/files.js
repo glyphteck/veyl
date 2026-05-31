@@ -2,12 +2,13 @@
 
 import { useEffect, useState } from 'react';
 import { getDownloadURL, ref } from 'firebase/storage';
+import { cleanText } from '@veyl/shared/utils/text';
 import { getStorage } from '@/lib/firebase/firebaseclient';
 
 const fileUrlCache = new Map();
 
-export function loadAdminFileUrl(path) {
-    const key = typeof path === 'string' ? path.trim() : '';
+function loadFileUrl(path) {
+    const key = cleanText(path);
     if (!key) {
         return Promise.resolve(null);
     }
@@ -23,13 +24,13 @@ export function loadAdminFileUrl(path) {
     return fileUrlCache.get(key);
 }
 
-export function useAdminFile(path) {
+export function useFileUrl(path) {
     const [url, setUrl] = useState(null);
 
     useEffect(() => {
         let live = true;
 
-        loadAdminFileUrl(path).then((nextUrl) => {
+        loadFileUrl(path).then((nextUrl) => {
             if (live) {
                 setUrl(nextUrl || null);
             }

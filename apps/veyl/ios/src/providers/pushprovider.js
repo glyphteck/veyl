@@ -7,7 +7,8 @@ import { useVault } from '@/providers/vaultprovider';
 import { useChat } from '@/providers/chatprovider';
 import { dropPush, getPushState, setPush } from '@/lib/push';
 import { mark } from '@/lib/diagnostics';
-import { getPeerChatPKFromChatId } from '@glyphteck/shared/chat/ids';
+import { getPeerChatPKFromChatId } from '@veyl/shared/chat/ids';
+import { firstRouteParam } from '@veyl/shared/navigation/params';
 
 Notifications.setNotificationHandler({
     handleNotification: async () => {
@@ -32,14 +33,10 @@ function getNotificationData(response) {
     return payloadBody && typeof payloadBody === 'object' ? payloadBody : null;
 }
 
-function getChatId(response) {
+function notificationChatId(response) {
     const data = getNotificationData(response);
     const chatId = typeof data?.chatId === 'string' ? data.chatId : null;
     return data?.type === 'chat' && chatId ? chatId : null;
-}
-
-function readParam(value) {
-    return Array.isArray(value) ? value[0] : value;
 }
 
 export function PushProvider({ children }) {
@@ -52,7 +49,7 @@ export function PushProvider({ children }) {
     const lastKeyRef = useRef(null);
     const pendingChatRef = useRef(null);
     const protectedAppReady = !!uid && !!chatPK && lockState === 'unlocked' && settingsReady && typeof settings?.faceID === 'boolean';
-    const activeChatPeer = pathname?.startsWith('/chat/') ? readParam(params?.peerchatpk) : null;
+    const activeChatPeer = pathname?.startsWith('/chat/') ? firstRouteParam(params?.peerchatpk) : null;
 
     const openChat = useCallback(
         (chatId, key = chatId) => {
@@ -111,14 +108,14 @@ export function PushProvider({ children }) {
     useEffect(() => {
         const sub = Notifications.addNotificationResponseReceivedListener((response) => {
             const key = response?.notification?.request?.identifier;
-            const chatId = getChatId(response);
+            const chatId = notificationChatId(response);
             openChat(chatId, key ?? chatId);
         });
 
         void Notifications.getLastNotificationResponseAsync()
             .then((response) => {
                 const key = response?.notification?.request?.identifier;
-                const chatId = getChatId(response);
+                const chatId = notificationChatId(response);
                 openChat(chatId, key ?? chatId);
             })
             .catch(() => {});

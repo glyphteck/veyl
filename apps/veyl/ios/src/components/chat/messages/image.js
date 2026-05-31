@@ -1,14 +1,14 @@
 import { useCallback } from 'react';
 import { ActivityIndicator, Text, View } from 'react-native';
-import { useIsFocused } from 'expo-router/react-navigation';
+import { useIsFocused } from 'expo-router';
 import { Image } from 'expo-image';
 import { useMediaViewer } from '@/providers/mediaviewerprovider';
 import { useTheme } from '@/providers/themeprovider';
 import { useMessageGestureBlockers } from '@/components/chat/messagegesturecontext';
-import { getMediaViewerKey } from '@/lib/chatmediaitems';
-import { imageWidth } from '@/lib/messages';
-import { useMsgImage } from '@/lib/usemsgimage';
-import { getImageAspect } from '@glyphteck/shared/chat/messages';
+import { getMediaViewerKey } from '@/lib/chat/viewer';
+import { imageWidth } from '@/lib/chat/messages';
+import { useMsgImage } from '@/lib/chat/useimage';
+import { getImageAspect, hasLocalFileRef, hasStoredFileRef, hasText, isPngMsg } from '@veyl/shared/chat/messages';
 import Menu from '@/components/menu';
 import ReactionTray from './reactiontray';
 import { useMediaTapGesture } from './usemediatap';
@@ -24,10 +24,10 @@ export default function ImageMessage({ msg, peerChatPK, fromPeer = false, menuIt
     const { source, loading } = useMsgImage(peerChatPK, msg, focused);
     const aspect = getImageAspect(msg);
     const width = imageWidth(aspect);
-    const hasCaption = typeof msg?.c === 'string' && msg.c.trim();
-    const barePng = String(msg?.m || '').toLowerCase() === 'image/png' && !hasCaption;
+    const hasCaption = hasText(msg?.c);
+    const barePng = isPngMsg(msg) && !hasCaption;
     const key = getMediaViewerKey(peerChatPK, msg);
-    const hasFile = !!(msg?.localUri || (msg?.p && msg?.k));
+    const hasFile = !!msg?.localUri || hasLocalFileRef(msg) || hasStoredFileRef(msg);
     const disabled = !key || !hasFile;
     const openFullscreen = useCallback(() => {
         if (disabled) {

@@ -9,23 +9,25 @@ import {
     BOT_RUNTIME_DOC_ID,
     BOT_RUNTIME_LEASE_MS,
     BOT_UNDERFUNDED_TEXT,
-} from '@glyphteck/shared/bot/events';
-import { bootBotAccount, closeBotAccount } from '@glyphteck/shared/bot/account';
-import { clearBotChatPairCache, decryptBotChatSettings, decryptBotMsg, hasBotMsg, readBotMsgAttachment, sendBotMsg, updateBotMsg, uploadBotAttachmentMsg } from '@glyphteck/shared/bot/chat';
-import { getBotBalance, mirrorBotTransfer } from '@glyphteck/shared/bot/wallet';
-import { isControlMsg, isSystemMsg, makeHiddenCheckpoint, makeReadReceipt, makeReq, makeTxt, setReqTx } from '@glyphteck/shared/chat/messages';
-import { makeCid } from '@glyphteck/shared/chat/state';
-import { getChatId } from '@glyphteck/shared/crypto/chat';
+} from '@veyl/shared/bot/events';
+import { bootBotAccount, closeBotAccount } from '@veyl/shared/bot/account';
+import { cleanBurstCount, cleanBurstDelayMs } from '@veyl/shared/bot/burst';
+import { clearBotChatPairCache, decryptBotChatSettings, decryptBotMsg, hasBotMsg, readBotMsgAttachment, sendBotMsg, updateBotMsg, uploadBotAttachmentMsg } from '@veyl/shared/bot/chat';
+import { getBotBalance, mirrorBotTransfer } from '@veyl/shared/bot/wallet';
+import { getChatPeerPK } from '@veyl/shared/chat/ids';
+import { hasStoredFileRef, isControlMsg, isSystemMsg, makeHiddenCheckpoint, makeReadReceipt, makeReq, makeTxt, setReqTx } from '@veyl/shared/chat/messages';
+import { getMessageKey, makeCid } from '@veyl/shared/chat/state';
+import { getChatId } from '@veyl/shared/crypto/chat';
 import {
-    BOT_BURST_DEFAULT_COUNT,
-    BOT_BURST_DEFAULT_DELAY_MS,
-    BOT_BURST_MAX_COUNT,
-    BOT_BURST_MIN_DELAY_MS,
     BOT_BURST_SESSION_WAIT_MS,
     BOT_REPLY_AFTER_READ_DELAY_MS,
-} from '@glyphteck/shared/config';
-import { resolveNetwork } from '@glyphteck/shared/network';
-import { resolveWalletPK } from '@glyphteck/shared/wallet/keys';
+} from '@veyl/shared/config';
+import { banState } from '@veyl/shared/moderation';
+import { resolveNetwork } from '@veyl/shared/network';
+import { lowerText, sameText } from '@veyl/shared/utils/text';
+import { timestampMs } from '@veyl/shared/utils/time';
+import { resolveWalletPK } from '@veyl/shared/wallet/keys';
+import { sleep } from '@veyl/shared/utils/async';
 import { SparkWallet, SparkWalletEvent } from '@buildonspark/spark-sdk';
 import { randomUUID } from 'node:crypto';
 import { hostname } from 'node:os';
@@ -73,12 +75,16 @@ function botReplyId(context, kind = 'reply') {
 }
 
 function botReplyCid(context, kind = 'reply') {
-    const ms = Math.max(1, tsMs(context?.msgTs));
+    const ms = Math.max(1, timestampMs(context?.msgTs, 0));
     const base = ms.toString(36);
     const suffix = cleanDocPart(`${kind}${context?.msgId || ''}`)
         .padEnd(6, '0')
         .slice(0, 6);
     return `${base}${suffix}`;
+}
+
+function receiptTarget(msgSnap, data) {
+    return getMessageKey({ ...(data?.head || {}), id: msgSnap?.id });
 }
 
 function verboseLog(...args) {
@@ -87,22 +93,7 @@ function verboseLog(...args) {
     }
 }
 
-function tsMs(value) {
-    if (typeof value?.toMillis === 'function') {
-        return value.toMillis();
-    }
-    if (value instanceof Date) {
-        return value.getTime();
-    }
-    const ms = Number(value);
-    return Number.isFinite(ms) ? ms : 0;
-}
-
-function hasAttachment(msg) {
-    return typeof msg?.p === 'string' && !!msg.p && typeof msg?.k === 'string' && !!msg.k;
-}
-
-function attachmentMeta(msg) {
+function attachmentFields(msg) {
     return {
         ...(msg?.m ? { m: msg.m } : {}),
         ...(Number.isFinite(msg?.z) ? { z: msg.z } : {}),
@@ -123,17 +114,6 @@ function cleanPayload(message) {
     delete payload.cid;
     delete payload.retention;
     return payload;
-}
-
-function sameKey(left, right) {
-    return (
-        String(left ?? '')
-            .trim()
-            .toLowerCase() ===
-        String(right ?? '')
-            .trim()
-            .toLowerCase()
-    );
 }
 
 function statusMessage(error) {
@@ -200,28 +180,8 @@ function setLimitedMap(map, key, value, max) {
     }
 }
 
-function sleep(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 function runtimeRef() {
     return db.collection('runtimes').doc(BOT_RUNTIME_DOC_ID);
-}
-
-function cleanBurstCount(value) {
-    const count = Number(value ?? BOT_BURST_DEFAULT_COUNT);
-    if (!Number.isInteger(count) || count <= 0 || count > BOT_BURST_MAX_COUNT) {
-        throw new Error(`burst count must be an integer from 1 to ${BOT_BURST_MAX_COUNT}`);
-    }
-    return count;
-}
-
-function cleanBurstDelayMs(value) {
-    const delayMs = Number(value ?? BOT_BURST_DEFAULT_DELAY_MS);
-    if (!Number.isFinite(delayMs) || delayMs < BOT_BURST_MIN_DELAY_MS) {
-        throw new Error(`burst delay must be at least ${BOT_BURST_MIN_DELAY_MS}ms`);
-    }
-    return Math.round(delayMs);
 }
 
 const BURST_OPENERS = Object.freeze([
@@ -284,15 +244,7 @@ async function isChatBanned(uid) {
         return false;
     }
     const snap = await db.collection('moderation').doc(uid).get();
-    const banned = snap.data()?.banned;
-    const activeBan = banned?.full || banned?.chat;
-    if (!activeBan || typeof activeBan !== 'object') {
-        return false;
-    }
-    if (activeBan.until == null) {
-        return true;
-    }
-    return tsMs(activeBan.until) > Date.now();
+    return banState(snap.data()?.banned).chatBanned;
 }
 
 async function getProfile(uid) {
@@ -432,7 +384,7 @@ export class BotRuntime {
         await db.runTransaction(async (tx) => {
             const snap = await tx.get(ref);
             const data = snap.exists ? snap.data() : {};
-            const heartbeatMs = tsMs(data?.heartbeatAt);
+            const heartbeatMs = timestampMs(data?.heartbeatAt, 0);
             const active = data?.running === true && heartbeatMs > Date.now() - BOT_RUNTIME_LEASE_MS;
             if (active && data?.runtimeId !== this.runtimeId) {
                 throw new Error(`bot runtime already running (${data?.host || 'unknown host'} pid ${data?.pid || 'unknown'})`);
@@ -709,7 +661,7 @@ export class BotRuntime {
             }
             return {
                 msgId: msgSnap.id,
-                target: data?.head?.cid || msgSnap.id,
+                target: receiptTarget(msgSnap, data),
                 ts: data?.ts,
             };
         }
@@ -752,7 +704,7 @@ export class BotRuntime {
         if (current?.key === sessionKey) {
             current.ref = bot.ref;
             current.username = bot.username;
-            current.resumeAtMs = tsMs(bot.resumeAt);
+            current.resumeAtMs = timestampMs(bot.resumeAt, 0);
             current.mode = bot.mode || BOT_MODE;
             return;
         }
@@ -783,7 +735,7 @@ export class BotRuntime {
     async startSession(bot, session) {
         session.ref = bot.ref;
         session.username = bot.username;
-        session.resumeAtMs = tsMs(bot.resumeAt);
+        session.resumeAtMs = timestampMs(bot.resumeAt, 0);
         session.mode = bot.mode || BOT_MODE;
 
         if (session.started) {
@@ -918,7 +870,7 @@ export class BotRuntime {
 
     async readChatMs(session, chatId) {
         if (session.chatRead?.has(chatId)) {
-            return tsMs(session.chatRead.get(chatId));
+            return timestampMs(session.chatRead.get(chatId), 0);
         }
         let snap;
         try {
@@ -926,7 +878,7 @@ export class BotRuntime {
         } catch {
             return 0;
         }
-        const readMs = tsMs(snap?.data()?.readAt);
+        const readMs = timestampMs(snap?.data()?.readAt, 0);
         setLimitedMap(session.chatRead, chatId, readMs, MAX_BOT_READ_CACHE);
         return readMs;
     }
@@ -935,7 +887,7 @@ export class BotRuntime {
         if (!chatId || !Number.isFinite(readMs) || readMs <= 0) {
             return;
         }
-        if (tsMs(session.chatRead?.get(chatId)) >= readMs) {
+        if (timestampMs(session.chatRead?.get(chatId), 0) >= readMs) {
             return;
         }
         await this.readRef(session, chatId).set(
@@ -958,7 +910,7 @@ export class BotRuntime {
         if (current?.key === sessionKey) {
             current.ref = bot.ref;
             current.username = bot.username;
-            current.resumeAtMs = tsMs(bot.resumeAt);
+            current.resumeAtMs = timestampMs(bot.resumeAt, 0);
             current.mode = bot.mode || BOT_MODE;
             return current;
         }
@@ -972,7 +924,7 @@ export class BotRuntime {
                 network: SPARK_NETWORK,
             });
 
-            if (!sameKey(account.walletPK, bot.walletPK) || !sameKey(account.chatPK, bot.chatPK)) {
+            if (!sameText(account.walletPK, bot.walletPK) || !sameText(account.chatPK, bot.chatPK)) {
                 closeBotAccount(account);
                 throw new Error(`bot @${bot.username} key mismatch`);
             }
@@ -983,7 +935,7 @@ export class BotRuntime {
                 username: bot.username,
                 key: sessionKey,
                 ref: bot.ref,
-                resumeAtMs: tsMs(bot.resumeAt),
+                resumeAtMs: timestampMs(bot.resumeAt, 0),
                 mode: bot.mode || BOT_MODE,
                 started: false,
                 closing: false,
@@ -1054,9 +1006,7 @@ export class BotRuntime {
     }
 
     async resolvePeerByChatPK(chatPK) {
-        const key = String(chatPK ?? '')
-            .trim()
-            .toLowerCase();
+        const key = lowerText(chatPK);
         if (!key) {
             return null;
         }
@@ -1075,13 +1025,12 @@ export class BotRuntime {
             return;
         }
 
-        const participants = Array.isArray(chat?.participants) ? chat.participants.filter(Boolean) : [];
-        const peerChatPK = participants.find((participant) => participant !== session.chatPK);
+        const peerChatPK = getChatPeerPK(chat, session.chatPK);
         if (!peerChatPK) {
             return;
         }
 
-        const chatRecencyMs = tsMs(chat?.ts);
+        const chatRecencyMs = timestampMs(chat?.ts, 0);
         if (!chatRecencyMs) {
             return;
         }
@@ -1102,7 +1051,7 @@ export class BotRuntime {
             return;
         }
 
-        const latestMs = tsMs(msgsSnap.docs[msgsSnap.docs.length - 1]?.data()?.ts);
+        const latestMs = timestampMs(msgsSnap.docs[msgsSnap.docs.length - 1]?.data()?.ts, 0);
         const hasPeerDocs = msgsSnap.docs.some((msgSnap) => msgSnap.data()?.head?.from === peerChatPK);
         if (!hasPeerDocs) {
             await this.ackChat(session, chat.id, latestMs);
@@ -1125,7 +1074,7 @@ export class BotRuntime {
 
             const msgData = msgSnap.data();
             const senderChatPK = typeof msgData?.head?.from === 'string' ? msgData.head.from : '';
-            const msgMs = tsMs(msgData?.ts);
+            const msgMs = timestampMs(msgData?.ts, 0);
 
             if (senderChatPK !== peerChatPK) {
                 readMs = Math.max(readMs, msgMs);
@@ -1148,7 +1097,7 @@ export class BotRuntime {
                 replies.push({ context, msg });
                 receipt = {
                     context,
-                    target: msgData?.head?.cid || msgSnap.id,
+                    target: receiptTarget(msgSnap, msgData),
                 };
             }
 
@@ -1224,7 +1173,7 @@ export class BotRuntime {
             return;
         }
 
-        if (hasAttachment(msg)) {
+        if (hasStoredFileRef(msg)) {
             const msgId = botReplyId(context, 'file');
             if (await hasBotMsg(db, context.chatId, msgId)) {
                 return;
@@ -1234,7 +1183,7 @@ export class BotRuntime {
                 cid: botReplyCid(context, 'file'),
                 type: msg.t,
                 data: body,
-                meta: attachmentMeta(msg),
+                meta: attachmentFields(msg),
             }, { msgId, retention: context.retention });
             return;
         }

@@ -5,12 +5,12 @@ import { BanknoteArrowUp, Copy, Eye, EyeOff, KeyRound, Loader, Lock } from 'luci
 import { Card } from '@/components/card';
 import { Input } from '@/components/input';
 import { Button } from '@/components/button';
-import { normalizePassword } from '@glyphteck/shared/password';
+import { normalizePassword } from '@veyl/shared/password';
 import { decryptWalletMnemonic, zeroBytes } from '@/lib/crypto/seed';
 import { useVault } from '@/components/providers/vaultprovider';
 import { useDialog } from '@/components/providers/dialogprovider';
 import { toast } from 'sonner';
-import { cn } from '@/lib/utils';
+import { cn } from '@/lib/classes';
 
 export default function ExportWallet() {
     const { encSeed } = useVault();

@@ -3,9 +3,12 @@ import { Alert, Keyboard, Pressable, Text, TextInput, View } from 'react-native'
 import { router, useLocalSearchParams } from 'expo-router';
 import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import { PiggyBank, ScanQrCode } from 'lucide-react-native';
-import { toSats, toDisplay } from '@glyphteck/shared/utils';
-import { COOPERATIVE_EXIT_FLAT_FEE_SATS, COOPERATIVE_EXIT_TX_VBYTES, formatOnchainFeeAmount, getWithdrawalFeeRisk } from '@glyphteck/shared/wallet/fees';
-import { isAddressOnNetwork, isMainnet } from '@glyphteck/shared/network';
+import { MONEY_UNITS, toDisplay, toSats } from '@veyl/shared/money';
+import { COOPERATIVE_EXIT_FLAT_FEE_SATS, COOPERATIVE_EXIT_TX_VBYTES, formatOnchainFeeAmount, getWithdrawalFeeRisk } from '@veyl/shared/wallet/fees';
+import { availableBalanceSats } from '@veyl/shared/wallet/balance';
+import { isAddressOnNetwork, isMainnet } from '@veyl/shared/network';
+import { textRouteParam } from '@veyl/shared/navigation/params';
+import { BTC_PRICE_FALLBACK } from '@veyl/shared/config';
 
 import { useBitcoin } from '@/providers/bitcoinprovider';
 import { useTheme } from '@/providers/themeprovider';
@@ -17,27 +20,19 @@ import GlassIcon from '@/components/glass/glassicon';
 import Icon from '@/components/icon';
 import { warmCamera } from '@/lib/camera/warming';
 import { tap } from '@/lib/tap';
-
-const UNITS = ['sats', 'btc', 'usd'];
-
-function balanceToSats(balance) {
-    if (balance == null) return null;
-    const value = Number(balance);
-    if (!Number.isFinite(value) || value < 0) return 0n;
-    return BigInt(Math.floor(value));
-}
+import { useRouteLock } from '@/lib/navigation/routelock';
 
 export default function Withdraw() {
     const { theme, isDark } = useTheme();
     const { settings } = useUser();
     const bitcoin = useBitcoin();
     const { balance, withdrawFunds, network } = useWallet();
-    const { address: prefillAddress = '' } = useLocalSearchParams();
+    const params = useLocalSearchParams();
+    const prefillAddress = textRouteParam(params?.address);
 
     const amountInputRef = useRef(null);
     const openRef = useRef(true);
-    const routeLockRef = useRef(false);
-    const routeLockTimerRef = useRef(null);
+    const { lockRoute } = useRouteLock();
 
     const [receivingAddress, setReceivingAddress] = useState(prefillAddress);
 
@@ -49,7 +44,6 @@ export default function Withdraw() {
     useEffect(() => {
         return () => {
             openRef.current = false;
-            if (routeLockTimerRef.current) clearTimeout(routeLockTimerRef.current);
         };
     }, []);
 
@@ -62,9 +56,9 @@ export default function Withdraw() {
     const feeHelpScale = useSharedValue(1);
 
     const cycleUnit = useCallback(() => {
-        const price = bitcoin?.price ?? 100000;
-        const idx = UNITS.indexOf(inputUnit);
-        const next = UNITS[(idx + 1) % UNITS.length];
+        const price = bitcoin?.price ?? BTC_PRICE_FALLBACK;
+        const idx = MONEY_UNITS.indexOf(inputUnit);
+        const next = MONEY_UNITS[(idx + 1) % MONEY_UNITS.length];
         if (amount) {
             const sats = toSats(amount, inputUnit, price);
             setAmount(sats === 0n ? '' : toDisplay(sats, next, price));
@@ -72,10 +66,10 @@ export default function Withdraw() {
         setInputUnit(next);
     }, [amount, inputUnit, bitcoin?.price]);
 
-    const balanceSats = useMemo(() => balanceToSats(balance), [balance]);
+    const balanceSats = useMemo(() => availableBalanceSats(balance, null), [balance]);
     const enteredSats = useMemo(() => {
         if (!amount) return null;
-        const price = bitcoin?.price ?? 100000;
+        const price = bitcoin?.price ?? BTC_PRICE_FALLBACK;
         try {
             return toSats(amount, inputUnit, price);
         } catch {
@@ -86,7 +80,7 @@ export default function Withdraw() {
     const validSats = enteredSats != null && enteredSats > 0n && !amountAboveBalance ? enteredSats : 0n;
     const setMaxAmount = useCallback(() => {
         if (balanceSats == null || balanceSats <= 0n) return;
-        const price = bitcoin?.price ?? 100000;
+        const price = bitcoin?.price ?? BTC_PRICE_FALLBACK;
         setAmount(toDisplay(balanceSats, inputUnit, price));
         amountInputRef.current?.focus?.();
     }, [balanceSats, bitcoin?.price, inputUnit]);
@@ -115,17 +109,6 @@ export default function Withdraw() {
     const feeText = formatOnchainFeeAmount(feeEstimate, settings?.moneyFormat, bitcoin.price);
     const feeColor = withdrawalFeeRisk?.high ? theme.destructive : theme.foreground;
     const buttonLabel = isSubmitting ? 'withdrawing...' : buttonFeedback || 'withdraw';
-    const lockRoute = useCallback((ms = 1200) => {
-        if (routeLockRef.current) return false;
-        routeLockRef.current = true;
-        if (routeLockTimerRef.current) clearTimeout(routeLockTimerRef.current);
-        routeLockTimerRef.current = setTimeout(() => {
-            routeLockRef.current = false;
-            routeLockTimerRef.current = null;
-        }, ms);
-        return true;
-    }, []);
-
     const handleWithdraw = useCallback(async () => {
         if (!canSubmit) return;
         if (!withdrawFunds) {

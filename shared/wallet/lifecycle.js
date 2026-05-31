@@ -6,7 +6,7 @@ import {
     WALLET_TRANSFER_POLL_MS,
     WALLET_UPDATE_RATE_LIMIT_MS,
 } from '../config.js';
-import { markDiag, markDone } from './diag.js';
+import { markDiag, markDone } from '../utils/diagnostics.js';
 
 const RATE_LIMIT = WALLET_UPDATE_RATE_LIMIT_MS;
 const POLL_TXS_RATE = WALLET_TRANSFER_POLL_MS;

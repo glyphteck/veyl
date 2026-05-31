@@ -1,5 +1,8 @@
 'use client';
 
+import { timestampMs } from '../utils/time.js';
+import { getMessageKey } from './state.js';
+
 export function clearReadWrite(pendingRead, chatId) {
     const pending = pendingRead?.get?.(chatId);
     if (pending?.timeoutId) {
@@ -41,7 +44,7 @@ export function scheduleReadReceiptWrite({ pendingRead, chatId, message, lastMsg
 
     pendingRead.set(chatId, {
         timeoutId,
-        target: message.cid || message.id,
+        target: getMessageKey(message),
         peerChatPK: message.from || message.s,
         lastMsgMs,
     });
@@ -53,12 +56,12 @@ export function readCandidate({ chatId, chatPK, chatPrivateKey, message, readCac
     }
 
     const peerChatPK = message?.from || message?.s || null;
-    const target = message?.cid || message?.id || null;
+    const target = getMessageKey(message);
     if (!message?.ts || !target || !peerChatPK || peerChatPK === chatPK || message.pending || message.failed) {
         return null;
     }
 
-    const lastMsgMs = typeof message.ts?.toMillis === 'function' ? message.ts.toMillis() : null;
+    const lastMsgMs = timestampMs(message.ts, null);
     if (lastMsgMs == null) {
         return null;
     }

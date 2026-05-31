@@ -3,9 +3,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { StaticAvatar } from '@/components/avatar';
 import GlassView from '@/components/glass/glassview';
-import { bubbleTint } from '@/lib/messages';
+import { bubbleTint } from '@/lib/chat/messages';
 import { useTheme } from '@/providers/themeprovider';
-import { DEFAULT_REACTION_EMOJI, MAX_REACTIONS, getMsgReactions } from '@glyphteck/shared/chat/messages';
+import { DEFAULT_REACTION_EMOJI, MAX_REACTIONS, getMsgReactions } from '@veyl/shared/chat/messages';
 
 export const REACTION_MARK_H = 24;
 export const REACTION_MARK_INSET = 12;

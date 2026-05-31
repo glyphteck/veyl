@@ -10,16 +10,6 @@ export function isEditableTarget(target) {
     return tag === 'input' || tag === 'textarea' || tag === 'select' || element.isContentEditable;
 }
 
-export function blurActiveElement() {
-    if (typeof document === 'undefined') return false;
-    const active = document.activeElement;
-    if (active && typeof active.blur === 'function') {
-        active.blur();
-        return true;
-    }
-    return false;
-}
-
 export function listNavigationStep(event, { ignoreEditable = true, includeJk = true, includeHorizontal = true } = {}) {
     if (!event || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) {
         return 0;

@@ -12,6 +12,7 @@ import {
     CHAT_MEDIA_TTL_MS as CONFIG_CHAT_MEDIA_TTL_MS,
 } from '../config.js';
 import { cleanBytes, randomBytes, toBytes, toHex } from '../crypto/core.js';
+import { cleanText } from '../utils/text.js';
 
 export const CHAT_MEDIA_ROOT = 'media';
 export const CHAT_SLOT = 'main';
@@ -110,12 +111,6 @@ export function fitChatImageSize(width, height, maxEdge = MAX_CHAT_IMAGE_EDGE) {
     };
 }
 
-export function filenameWithExtension(name, ext = 'bin', fallback = 'file') {
-    const raw = String(name || fallback).trim();
-    const base = raw.replace(/\.[^.]+$/, '') || fallback;
-    return `${base}.${ext}`;
-}
-
 async function toUploadBytes(data) {
     if (typeof Blob !== 'undefined' && data instanceof Blob) {
         if (typeof data.arrayBuffer === 'function') {
@@ -143,8 +138,8 @@ export async function makeChatFileUploadPayload(_pair, cid, data, { slot = CHAT_
     const mediaId = makeMediaId();
     const path = mediaFilePath(mediaId, slot);
     const expiresAt = Date.now() + CHAT_MEDIA_TTL_MS;
-    const stayId = typeof stay === 'string' ? stay.trim() : '';
-    const mediaStayKey = typeof stayKey === 'string' ? stayKey.trim() : '';
+    const stayId = cleanText(stay);
+    const mediaStayKey = cleanText(stayKey);
     const key = createFileKey();
     try {
         const uploadBytes = await toUploadBytes(data);

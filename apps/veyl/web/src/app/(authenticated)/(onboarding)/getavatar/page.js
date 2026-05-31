@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/button';
-import { skipAvatar, uploadAvatar } from '@/lib/useractions';
+import { skipAvatar, uploadAvatar } from '@/lib/user/actions';
 import { useUser } from '@/components/providers/userprovider';
 import UpdateAvatar from '@/components/updateavatar';
 import { ImageUp, Loader } from 'lucide-react';

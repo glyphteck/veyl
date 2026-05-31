@@ -13,7 +13,7 @@ import { useTap } from '@/lib/tap';
 import { usePeer } from '@/providers/peerprovider';
 import { useTheme } from '@/providers/themeprovider';
 import { useUser } from '@/providers/userprovider';
-import { formatUserDisplay } from '@glyphteck/shared/utils';
+import { formatUserDisplay } from '@veyl/shared/profile';
 
 function BlockedRow({ item, onUnblock, busyUid }) {
     const { theme } = useTheme();

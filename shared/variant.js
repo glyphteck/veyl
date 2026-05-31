@@ -1,3 +1,5 @@
+import { lowerText } from './utils/text.js';
+
 const VARIANT_ALIASES = Object.freeze({
     development: 'dev',
     testing: 'test',
@@ -7,7 +9,7 @@ const VARIANT_ALIASES = Object.freeze({
 const VEYL_VARIANTS = new Set(['dev', 'test', 'prod']);
 
 export function normalizeVeylVariant(value, fallback = 'dev') {
-    const raw = String(value || '').trim().toLowerCase();
+    const raw = lowerText(value);
     const variant = VARIANT_ALIASES[raw] || raw;
     return VEYL_VARIANTS.has(variant) ? variant : fallback;
 }

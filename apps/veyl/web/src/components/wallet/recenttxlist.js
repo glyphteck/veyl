@@ -6,14 +6,16 @@ import { Avatar, AvatarImage, AvatarFallback } from '@/components/avatar';
 import { Button } from '@/components/button';
 import { Card } from '@/components/card';
 import { History } from 'lucide-react';
-import { formatUserDisplay, formatFullDateTime, renderMoney } from '@/lib/utils';
+import { formatUserDisplay } from '@veyl/shared/profile';
+import { renderMoney } from '@veyl/shared/money';
+import { formatFullDateTime } from '@veyl/shared/utils/time';
 import { useBitcoin } from '@/components/providers/bitcoinprovider';
 import { useWallet } from '@/components/providers/walletprovider';
 import { useUser } from '@/components/providers/userprovider';
 import { useTxData } from '@/components/providers/txdataprovider';
 import { useDialog } from '@/components/providers/dialogprovider';
 import { usePeer } from '@/components/providers/peerprovider';
-import { useCloak } from '@glyphteck/shared/providers/cloakprovider';
+import { useCloak } from '@veyl/shared/providers/cloakprovider';
 import { listNavigationStep, loopListIndex } from '@/lib/focus';
 
 export function RecentTxList() {

@@ -1,8 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
-import { userAvatarCache } from '@/lib/useravatarcache';
-import { replaceDocument } from '@/lib/documentnav';
+import { userAvatarCache } from '@/lib/user/avatarcache';
 
 export default function RootRedirect() {
     useEffect(() => {
@@ -18,7 +17,7 @@ export default function RootRedirect() {
                 target = '/landing';
             }
             if (active) {
-                replaceDocument(target);
+                window.location.replace(target);
             }
         }
 

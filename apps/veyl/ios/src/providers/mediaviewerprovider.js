@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { View } from 'react-native';
+import { cleanText } from '@veyl/shared/utils/text';
 import { FullscreenRail } from '@/components/media/mediaviewer';
 
 const MediaViewerContext = createContext(null);
@@ -18,7 +19,7 @@ export function MediaViewerProvider({ children }) {
         const cleanItems = [];
 
         for (const item of Array.isArray(nextItems) ? nextItems : []) {
-            const id = typeof item?.id === 'string' ? item.id.trim() : '';
+            const id = cleanText(item?.id);
             if (!id || seen.has(id) || (item?.type !== 'img' && item?.type !== 'mp4')) {
                 continue;
             }
@@ -31,7 +32,7 @@ export function MediaViewerProvider({ children }) {
     }, []);
 
     const openMedia = useCallback((id) => {
-        const key = typeof id === 'string' ? id.trim() : '';
+        const key = cleanText(id);
         if (!key || !itemsRef.current.some((item) => item.id === key)) {
             return false;
         }

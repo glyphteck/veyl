@@ -1,38 +1,23 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card } from '@/components/card';
-import { Avatar, AvatarImage, AvatarFallback } from '@/components/avatar';
 import { Button } from '@/components/button';
 import { Input } from '@/components/input';
+import { PEER_GRID_HEIGHT, PeerGridCell, usePeerGrid } from '@/components/peergrid';
 import { CircleArrowRight, CircleCheck, HandCoins, Loader, Paperclip, Search } from 'lucide-react';
 import { useUser } from '@/components/providers/userprovider';
 import { useChat } from '@/components/providers/chatprovider';
 import { usePeer } from '@/components/providers/peerprovider';
 import { useDialog } from '@/components/providers/dialogprovider';
-import { useCloak } from '@glyphteck/shared/providers/cloakprovider';
+import { useCloak } from '@veyl/shared/providers/cloakprovider';
 import { useWallet } from '@/components/providers/walletprovider';
 import { useSearch } from '@/lib/search/usesearch';
-import { makeTxt } from '@glyphteck/shared/chat/messages';
-import { getChatId } from '@glyphteck/shared/crypto/chat';
-import { mergeProfiles } from '@glyphteck/shared/search/merge';
-import { formatUserDisplay } from '@/lib/utils';
-import { chatUploadErrorMessage, getChatUploadFiles, queueChatFileMessages } from '@/lib/chatfiles';
+import { makeTxt } from '@veyl/shared/chat/messages';
+import { getChatId } from '@veyl/shared/crypto/chat';
+import { mergeProfiles } from '@veyl/shared/search/merge';
+import { formatUserDisplay } from '@veyl/shared/profile';
+import { chatUploadErrorMessage, getUploadFiles, queueMessages } from '@/lib/chat/files';
 import { toast } from 'sonner';
-
-const PEER_RENDER_BATCH = 24;
-const PEER_LOAD_MARGIN = 48;
-
-function PeerCell({ peer, onSelect, selected }) {
-    return (
-        <Button type="button" onClick={() => onSelect(peer)} className="h-auto flex-col rounded-none p-0 shrinker">
-            <Avatar active={peer?.active} selected={selected} bot={!!peer?.bot} className="size-16">
-                <AvatarImage src={peer?.avatar} alt={peer?.username} />
-                <AvatarFallback />
-            </Avatar>
-            <span className="text-sm font-bold truncate max-w-20">{formatUserDisplay(peer, true)}</span>
-        </Button>
-    );
-}
 
 export default function NewChat({ close }) {
     const router = useRouter();
@@ -46,7 +31,6 @@ export default function NewChat({ close }) {
     const [searchValue, setSearchValue] = useState('');
     const [selectedPeer, setSelectedPeer] = useState(null);
     const [msgContent, setMsgContent] = useState('');
-    const [peerLimit, setPeerLimit] = useState(PEER_RENDER_BATCH);
     const inputRef = useRef(null);
     const msgRef = useRef(null);
     const fileRef = useRef(null);
@@ -83,20 +67,7 @@ export default function NewChat({ close }) {
     );
 
     const displayPeers = query ? searchPeers : defaultPeers;
-    const visiblePeers = useMemo(() => displayPeers.slice(0, peerLimit), [displayPeers, peerLimit]);
-
-    useEffect(() => {
-        setPeerLimit(PEER_RENDER_BATCH);
-    }, [displayPeers]);
-
-    const handlePeerScroll = useCallback(
-        (event) => {
-            const el = event.currentTarget;
-            if (el.scrollHeight - el.scrollTop - el.clientHeight > PEER_LOAD_MARGIN) return;
-            setPeerLimit((limit) => Math.min(displayPeers.length, limit + PEER_RENDER_BATCH));
-        },
-        [displayPeers.length]
-    );
+    const { visiblePeers, handlePeerScroll } = usePeerGrid(displayPeers);
 
     const handleSearchChange = (e) => {
         const value = e.target.value;
@@ -127,7 +98,7 @@ export default function NewChat({ close }) {
     const handleFileChange = async (e) => {
         let files;
         try {
-            files = getChatUploadFiles(e.target.files);
+            files = getUploadFiles(e.target.files);
         } catch (error) {
             toast.error(chatUploadErrorMessage(error));
             e.target.value = '';
@@ -139,7 +110,7 @@ export default function NewChat({ close }) {
         selectChat(getChatId(chatPK, selectedPeer.chatPK));
         router.push('/chat');
         try {
-            const result = await queueChatFileMessages(files, (attachment) => sendAttachment(selectedPeer.chatPK, attachment));
+            const result = await queueMessages(files, (attachment) => sendAttachment(selectedPeer.chatPK, attachment));
             const label = result.sent === 1 ? 'attachment' : `${result.sent} attachments`;
             toast(`sent ${label} to ${formatUserDisplay(selectedPeer, false)}`, { icon: <CircleCheck /> });
         } catch (error) {
@@ -185,7 +156,7 @@ export default function NewChat({ close }) {
                 autoFocus
             />
             <Card>
-                <div className="overflow-y-scroll p-4" style={{ height: 'calc((80px + 24px) * 3 + 16px)' }} onScroll={handlePeerScroll}>
+                <div className="overflow-y-scroll p-4" style={{ height: PEER_GRID_HEIGHT }} onScroll={handlePeerScroll}>
                     {searching && query && !displayPeers.length ? (
                         <div className="flex items-center justify-center h-full">
                             <Loader className="animate-spin size-6 text-muted" />
@@ -193,7 +164,7 @@ export default function NewChat({ close }) {
                     ) : displayPeers.length > 0 ? (
                         <div className="grid grid-cols-4 gap-4">
                             {visiblePeers.map((peer) => (
-                                <PeerCell key={peer.uid} peer={peer} onSelect={handleSelect} selected={selectedPeer?.uid === peer.uid} />
+                                <PeerGridCell key={peer.uid} peer={peer} onClick={handleSelect} selected={selectedPeer?.uid === peer.uid} />
                             ))}
                         </div>
                     ) : (

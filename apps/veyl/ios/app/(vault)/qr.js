@@ -1,9 +1,9 @@
 import { useEffect, useRef } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
-import { qr, readQr } from '@glyphteck/shared/qrutils';
-import { isAddressOnNetwork } from '@glyphteck/shared/network';
-import { getChatId } from '@glyphteck/shared/crypto/chat';
-import { canSendOnScan } from '@glyphteck/shared/settings';
+import { qr, readQr } from '@veyl/shared/qr';
+import { isAddressOnNetwork } from '@veyl/shared/network';
+import { getChatId } from '@veyl/shared/crypto/chat';
+import { canSendOnScan } from '@veyl/shared/settings';
 
 import { useChat } from '@/providers/chatprovider';
 import { usePeer } from '@/providers/peerprovider';

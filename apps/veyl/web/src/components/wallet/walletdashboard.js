@@ -10,11 +10,11 @@ import { useUser } from '@/components/providers/userprovider';
 import { useTxData } from '@/components/providers/txdataprovider';
 import { usePeer } from '@/components/providers/peerprovider';
 import { useDialog } from '@/components/providers/dialogprovider';
-import { useCloak } from '@glyphteck/shared/providers/cloakprovider';
-import { formatToUSD } from '@glyphteck/shared/formatmoney';
-import { formatUserDisplay, renderBalance, renderMoney, renderNet } from '@/lib/utils';
-
-const DAY_MS = 24 * 60 * 60 * 1000;
+import { useCloak } from '@veyl/shared/providers/cloakprovider';
+import { DAY_MS } from '@veyl/shared/config';
+import { formatToUSD } from '@veyl/shared/money';
+import { formatUserDisplay } from '@veyl/shared/profile';
+import { renderBalance, renderMoney, renderNet } from '@veyl/shared/money';
 
 const TIME_RANGE_OPTIONS = [
     { value: 'today', label: 'today' },
@@ -40,6 +40,21 @@ function pickTimeRange(preferred, available) {
     return available[0] ?? 'today';
 }
 
+function txDateMs(value) {
+    const ms = new Date(value).getTime();
+    return Number.isFinite(ms) ? ms : null;
+}
+
+function elapsedTxDays(value, nowMs = Date.now()) {
+    const ms = txDateMs(value);
+    return ms == null ? 1 : Math.max(1, Math.ceil((nowMs - ms) / DAY_MS));
+}
+
+function chartTxDays(value, nowMs = Date.now()) {
+    const ms = txDateMs(value);
+    return ms == null ? 1 : Math.max(1, Math.ceil((nowMs - ms) / DAY_MS) + 1);
+}
+
 export function WalletDashboard() {
     const bitcoin = useBitcoin();
     const { balance } = useWallet();
@@ -60,8 +75,8 @@ export function WalletDashboard() {
         if (!transactions?.length || !first) return ['today'];
 
         const nowMs = Date.now();
-        const firstTxMs = new Date(first).getTime();
-        if (!Number.isFinite(firstTxMs)) return ['today'];
+        const firstTxMs = txDateMs(first);
+        if (firstTxMs == null) return ['today'];
 
         const today = new Date(nowMs);
         today.setHours(0, 0, 0, 0);
@@ -92,8 +107,7 @@ export function WalletDashboard() {
             if (activeTimeRange === 'today') return getHourlySeries(24, 'today');
             if (activeTimeRange === '24h') return getHourlySeries(24, '24h');
             if (activeTimeRange === 'all-time') {
-                const daysSinceFirst = first ? Math.ceil((Date.now() - new Date(first).getTime()) / (1000 * 60 * 60 * 24)) + 1 : 1;
-                return getSeries(daysSinceFirst);
+                return getSeries(chartTxDays(first));
             }
             return getSeries(Number(activeTimeRange));
         })();
@@ -133,10 +147,8 @@ export function WalletDashboard() {
         if (activeTimeRange === 'today' || activeTimeRange === '24h') {
             avgDailyVolume = Math.round(volume / 24);
         } else if (activeTimeRange === 'all-time') {
-            const firstTxDate = first ? new Date(first) : null;
-            if (firstTxDate) {
-                const daysSinceFirst = Math.max(1, Math.ceil((Date.now() - firstTxDate.getTime()) / (1000 * 60 * 60 * 24)));
-                avgDailyVolume = Math.round(volume / daysSinceFirst);
+            if (first) {
+                avgDailyVolume = Math.round(volume / elapsedTxDays(first));
             }
         } else if (activeTimeRange > 0) {
             avgDailyVolume = Math.round(volume / activeTimeRange);

@@ -2,7 +2,7 @@
 
 import { Card } from '@/components/card';
 import { Button } from '@/components/button';
-import { rules } from '@glyphteck/shared/password';
+import { rules } from '@veyl/shared/password';
 
 export default function PasswordRules({ close }) {
     return (

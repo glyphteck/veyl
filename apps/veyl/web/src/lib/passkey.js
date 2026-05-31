@@ -3,47 +3,9 @@
 import { signInWithCustomToken } from 'firebase/auth';
 import { httpsCallable } from 'firebase/functions';
 import { auth, getFunctions } from '@/lib/firebase/firebaseclient';
-import { generateLabel } from '@glyphteck/shared/labelgenerator';
+import { randomPasskeyLabel } from '@veyl/shared/passkeylabel';
+import { isPasskeyEnvironmentMismatchError, isPasskeyRpMismatchError, isUnlinkedPasskeyError, normalizePasskeyLoginError, normalizePasskeyRegisterError } from '@veyl/shared/passkey';
 
-function normalizeLoginError(error) {
-    if (error?.code === 'functions/failed-precondition' && error?.message?.includes('Localhost uses a separate passkey silo')) {
-        const next = new Error('This passkey belongs to glyphteck.com, not localhost.');
-        next.code = 'passkey-environment-mismatch';
-        next.cause = error;
-        return next;
-    }
-    if (error?.code === 'functions/not-found') {
-        const next = new Error('This passkey is no longer linked to an account.');
-        next.code = 'passkey-unlinked';
-        next.cause = error;
-        return next;
-    }
-    if (error?.code === 'functions/failed-precondition') {
-        const next = new Error('This passkey belongs to a different Glyphteck passkey setup.');
-        next.code = 'passkey-rp-mismatch';
-        next.cause = error;
-        return next;
-    }
-    return error;
-}
-
-function normalizeRegisterError(error) {
-    if (error?.code === 'functions/failed-precondition') {
-        const next = new Error('This passkey belongs to a different Glyphteck passkey setup.');
-        next.code = 'passkey-rp-mismatch';
-        next.cause = error;
-        return next;
-    }
-    if (error?.code === 'functions/invalid-argument' && error?.message) {
-        const next = new Error(error.message);
-        next.code = 'passkey-register-invalid';
-        next.cause = error;
-        return next;
-    }
-    return error;
-}
-
-// Passkey utility functions
 export function abToB64(ab) {
     return btoa(String.fromCharCode(...new Uint8Array(ab)))
         .replace(/\+/g, '-')
@@ -72,19 +34,8 @@ export function optsFromServer(o) {
     };
 }
 
-export function isUnlinkedPasskeyError(error) {
-    return error?.code === 'passkey-unlinked';
-}
+export { isPasskeyEnvironmentMismatchError, isPasskeyRpMismatchError, isUnlinkedPasskeyError };
 
-export function isPasskeyRpMismatchError(error) {
-    return error?.code === 'passkey-rp-mismatch';
-}
-
-export function isPasskeyEnvironmentMismatchError(error) {
-    return error?.code === 'passkey-environment-mismatch';
-}
-
-// Passkey authentication functions
 export async function passkeyLogin({ uid, onPrompt } = {}) {
     try {
         const origin = window.location.origin;
@@ -119,13 +70,13 @@ export async function passkeyLogin({ uid, onPrompt } = {}) {
 
         return { success: true };
     } catch (error) {
-        throw normalizeLoginError(error);
+        throw normalizePasskeyLoginError(error, { localhostSilo: true });
     }
 }
 
 export async function passkeyRegister({ label: providedLabel } = {}) {
     try {
-        const label = providedLabel?.trim() || generateLabel();
+        const label = providedLabel?.trim() || randomPasskeyLabel();
         const origin = window.location.origin;
         const functions = getFunctions();
 
@@ -154,6 +105,6 @@ export async function passkeyRegister({ label: providedLabel } = {}) {
 
         return { success: true };
     } catch (error) {
-        throw normalizeRegisterError(error);
+        throw normalizePasskeyRegisterError(error, { invalidArgument: true });
     }
 }

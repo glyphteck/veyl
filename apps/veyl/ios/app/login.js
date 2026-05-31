@@ -4,23 +4,19 @@ import { Fingerprint, UserRoundPlus, UsersRound, X } from 'lucide-react-native';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'expo-router';
 import { passkeyLogin, isUnlinkedPasskeyError, isPasskeyRpMismatchError } from '@/lib/passkeys';
-import { forgetQuickLoginAccount, listQuickLoginAccounts, subscribeQuickLoginRequest, touchQuickLoginAccount } from '@/lib/quicklogin';
+import { forgetQuickLoginAccount, listQuickLoginAccounts, subscribeQuickLoginRequest, touchQuickLoginAccount } from '@/lib/user/quicklogin';
 import { useTheme } from '@/providers/themeprovider';
 import Avatar, { AvatarAdornment, getAvatarAdornmentMetrics } from '@/components/avatar';
 import GlassButton from '@/components/glass/glassbutton';
 import GlassIcon from '@/components/glass/glassicon';
 import { walletLogoSource } from '@/lib/brand';
 import { useTap } from '@/lib/tap';
+import { truncateLabel } from '@veyl/shared/utils/display';
 
 const REMEMBERED_INLINE_LIMIT = 2;
 const QUICK_AVATAR_SIZE = 72;
 const QUICK_REMOVE_METRICS = getAvatarAdornmentMetrics(QUICK_AVATAR_SIZE, { type: 'action' });
 const QUICK_REMOVE_MASKS = [QUICK_REMOVE_METRICS];
-
-function truncateLabel(label, max = 8) {
-    if (!label || label.length <= max) return label || '';
-    return `${label.slice(0, max)}...`;
-}
 
 function QuickLoginCell({ account, disabled = false, onPress, onForget }) {
     const { theme } = useTheme();

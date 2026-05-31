@@ -1,4 +1,4 @@
-import { cn } from '@/lib/utils';
+import { cn } from '@/lib/classes';
 
 export function Bitcoin({ className, ...props }) {
     return (

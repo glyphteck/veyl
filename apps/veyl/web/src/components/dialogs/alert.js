@@ -3,6 +3,7 @@
 import { useEffect, useRef } from 'react';
 import { Card } from '@/components/card';
 import { Button } from '@/components/button';
+import { cn } from '@/lib/classes';
 
 function focusButton(button) {
     if (!button || button.disabled) return false;
@@ -69,7 +70,7 @@ export default function Alert({
     };
 
     return (
-        <div className={`flex flex-col gap-3 ${width}`} onKeyDown={handleKeyDown}>
+        <div className={cn('flex flex-col gap-3', width)} onKeyDown={handleKeyDown}>
             <Card className="p-2">
                 <div className="px-4 pt-2 text-2xl leading-none font-black">{title ?? data?.title}</div>
                 {content ? <div className="flex flex-col gap-3 px-4 py-2">{content}</div> : null}
@@ -78,7 +79,7 @@ export default function Alert({
                 <Button ref={cancelRef} className="button-outline shrinker flex-1" onClick={handleCancel} disabled={busy}>
                     {cancelLabel}
                 </Button>
-                <Button ref={confirmRef} className={`${confirmClassName} shrinker flex-1`} onClick={handleConfirm} disabled={disabled || busy}>
+                <Button ref={confirmRef} className={cn('shrinker flex-1', confirmClassName)} onClick={handleConfirm} disabled={disabled || busy}>
                     {confirmIcon}
                     {confirmLabel}
                 </Button>

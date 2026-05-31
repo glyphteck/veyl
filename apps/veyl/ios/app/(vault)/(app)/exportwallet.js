@@ -15,7 +15,8 @@ import Icon from '@/components/icon';
 import { useTap } from '@/lib/tap';
 import { useTheme } from '@/providers/themeprovider';
 import { useVault } from '@/providers/vaultprovider';
-import { isPassword, MAX_PASSWORD, normalizePassword } from '@glyphteck/shared/password';
+import { isPassword, MAX_PASSWORD, normalizePassword } from '@veyl/shared/password';
+import { yieldToUi } from '@veyl/shared/utils/async';
 import { decryptWalletMnemonic, zeroBytes } from '@/lib/crypto/seed';
 
 export default function ExportWalletScreen() {
@@ -53,11 +54,6 @@ export default function ExportWalletScreen() {
 
     const canLoad = !!encSeed && !isLoading && isPassword(password);
     const mnemonicWords = walletMnemonic ? walletMnemonic.trim().split(/\s+/).filter(Boolean) : [];
-
-    const yieldToUi = useCallback(async () => {
-        await new Promise((resolve) => requestAnimationFrame(resolve));
-        await new Promise((resolve) => setTimeout(resolve, 0));
-    }, []);
 
     const handlePasswordChange = useCallback(
         (value) => {

@@ -6,8 +6,9 @@ import { Button } from '@/components/button';
 import { Input } from '@/components/input';
 import { StaticAvatar } from '@/components/avatar';
 import { toast } from 'sonner';
+import { sleep } from '@veyl/shared/utils/async';
 import { isPasskeyRpMismatchError, passkeyRegister } from '@/lib/passkey';
-import { cn } from '@/lib/utils';
+import { cn } from '@/lib/classes';
 
 const PASSKEY_AVATAR_SUCCESS_MS = 500;
 const PASSKEY_AVATAR_PULSE_MS = 1600;
@@ -50,7 +51,7 @@ export default function NewAccountPage() {
             setAuthState('preparing');
             await registration;
             setAuthState('success');
-            await new Promise((resolve) => setTimeout(resolve, PASSKEY_AVATAR_SUCCESS_MS));
+            await sleep(PASSKEY_AVATAR_SUCCESS_MS);
             router.refresh();
         } catch (error) {
             registeringRef.current = false;

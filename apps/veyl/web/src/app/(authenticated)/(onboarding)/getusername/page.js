@@ -9,15 +9,11 @@ import { Controller, useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Loader, TriangleAlert } from 'lucide-react';
-import { MAX_USERNAME, cleanUsername, isUsername, isUsernameKey, normalizeUsername } from '@glyphteck/shared/regex';
+import { MAX_USERNAME, cleanUsername, isUsername, isUsernameKey, isUsernameTakenError, normalizeUsername } from '@veyl/shared/username';
 
 const usernameSchema = z.object({
     username: z.string().refine(isUsername),
 });
-
-function isTakenError(error) {
-    return error?.code === 'functions/already-exists' || error?.code === 'already-exists' || error?.details?.reason === 'taken';
-}
 
 const GetUsername = () => {
     const router = useRouter();
@@ -67,7 +63,7 @@ const GetUsername = () => {
             router.refresh();
         } catch (err) {
             form.reset({ username: '' });
-            setStatus(isTakenError(err) ? 'taken' : 'unavailable');
+            setStatus(isUsernameTakenError(err) ? 'taken' : 'unavailable');
             clearTimeout(resetRef.current);
             resetRef.current = setTimeout(() => {
                 setStatus('idle');

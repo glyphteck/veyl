@@ -1,7 +1,8 @@
 #!/usr/bin/env bun
 
 import { db } from '../../functions/lib/admin.js';
-import { cliArgs, resolveUid } from './common.mjs';
+import { cliArgs, resolveUid } from './cli.mjs';
+import { lowerText } from '@veyl/shared/utils/text';
 
 function usage() {
     console.error('usage: bun admin <add|drop> <uid|@username>');
@@ -22,7 +23,7 @@ async function main() {
         usage();
     }
 
-    const cmd = String(action).trim().toLowerCase();
+    const cmd = lowerText(action);
     if (!['add', 'drop'].includes(cmd)) {
         usage();
     }

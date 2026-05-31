@@ -1,4 +1,7 @@
 import { CHAT_MEDIA_TTL_MS, getMediaFileId } from '../filepayload.js';
+import { formatBytes } from '../../utils/display.js';
+import { cleanText, lowerText } from '../../utils/text.js';
+import { nonNegativeInt } from '../../utils/number.js';
 import { ATTACHMENT_MSG_TYPES, UNAVAILABLE_REPLY_MSG_TYPE, UNAVAILABLE_REPLY_TEXT } from './types.js';
 import { hasText } from './text.js';
 
@@ -25,8 +28,30 @@ export function hasStoredFileRef(msg) {
     }
 }
 
+export function mediaStayRef(msg) {
+    const id = cleanText(msg?.stay);
+    const key = cleanText(msg?.stayKey);
+    return id && key ? { id, key } : null;
+}
+
 export function hasMediaStay(msg) {
-    return hasText(msg?.stay) && hasText(msg?.stayKey);
+    return !!mediaStayRef(msg);
+}
+
+export function savedMediaStayRef(msg) {
+    const stay = mediaStayRef(msg);
+    if (!stay || !isAttachmentMsgType(msg?.t) || !hasStoredFileRef(msg)) {
+        return null;
+    }
+    return {
+        path: msg.p,
+        stayId: stay.id,
+        stayKey: stay.key,
+    };
+}
+
+export function storedFileKey(peerChatPK, msg, { type = false } = {}) {
+    return [peerChatPK || '', ...(type ? [msg?.t || 'file'] : []), msg?.p || '', msg?.k || ''].join(':');
 }
 
 function hasFileRef(msg) {
@@ -34,19 +59,7 @@ function hasFileRef(msg) {
 }
 
 export function formatAttachmentSize(value) {
-    if (!Number.isFinite(value) || value <= 0) {
-        return null;
-    }
-
-    const units = ['B', 'KB', 'MB', 'GB'];
-    let size = value;
-    let unitIndex = 0;
-    while (size >= 1024 && unitIndex < units.length - 1) {
-        size /= 1024;
-        unitIndex += 1;
-    }
-
-    return `${size >= 10 || unitIndex === 0 ? Math.round(size) : size.toFixed(1)} ${units[unitIndex]}`;
+    return formatBytes(value);
 }
 
 export function getAttachmentTitle(msg) {
@@ -87,8 +100,17 @@ export function getImageAspect(msg, fallback = 4 / 3) {
     return fallback;
 }
 
+export function isPngMsg(msg) {
+    return lowerText(msg?.m) === 'image/png';
+}
+
 export function isAttachmentMsgType(type) {
     return ATTACHMENT_MSG_TYPES.includes(type);
+}
+
+function numberField(key, value) {
+    const next = nonNegativeInt(value, null);
+    return next == null ? {} : { [key]: next };
 }
 
 export function makeAttachment(t, file) {
@@ -96,8 +118,8 @@ export function makeAttachment(t, file) {
         throw new Error('attachment type required');
     }
 
-    const p = typeof file?.p === 'string' ? file.p.trim() : '';
-    const k = typeof file?.k === 'string' ? file.k.trim() : '';
+    const p = cleanText(file?.p);
+    const k = cleanText(file?.k);
     if (!p || !k) {
         throw new Error('file path and key required');
     }
@@ -107,15 +129,15 @@ export function makeAttachment(t, file) {
         p,
         k,
         ...(file?.m ? { m: String(file.m) } : {}),
-        ...(Number.isFinite(file?.z) ? { z: Math.max(0, Math.trunc(file.z)) } : {}),
-        ...(Number.isFinite(file?.w) ? { w: Math.max(0, Math.trunc(file.w)) } : {}),
-        ...(Number.isFinite(file?.h) ? { h: Math.max(0, Math.trunc(file.h)) } : {}),
-        ...(Number.isFinite(file?.d) ? { d: Math.max(0, Math.trunc(file.d)) } : {}),
-        ...(Number.isFinite(file?.x) ? { x: Math.max(0, Math.trunc(file.x)) } : {}),
-        ...(hasText(file?.stay) ? { stay: String(file.stay).trim() } : {}),
-        ...(hasText(file?.stay) && hasText(file?.stayKey) ? { stayKey: String(file.stayKey).trim() } : {}),
+        ...numberField('z', file?.z),
+        ...numberField('w', file?.w),
+        ...numberField('h', file?.h),
+        ...numberField('d', file?.d),
+        ...numberField('x', file?.x),
+        ...(hasText(file?.stay) ? { stay: cleanText(file.stay) } : {}),
+        ...(hasText(file?.stay) && hasText(file?.stayKey) ? { stayKey: cleanText(file.stayKey) } : {}),
         ...(file?.n ? { n: String(file.n) } : {}),
-        ...(typeof file?.c === 'string' && file.c.trim() ? { c: file.c.trim() } : {}),
+        ...(hasText(file?.c) ? { c: cleanText(file.c) } : {}),
     };
 }
 
@@ -152,7 +174,7 @@ export function makeSharedAttachment(msg) {
         ...(Number.isFinite(msg?.d) ? { d: msg.d } : {}),
         ...(Number.isFinite(x) ? { x } : {}),
         ...(msg?.n ? { n: msg.n } : {}),
-        ...(typeof msg?.c === 'string' && msg.c.trim() ? { c: msg.c } : {}),
+        ...(hasText(msg?.c) ? { c: cleanText(msg.c) } : {}),
     });
 }
 

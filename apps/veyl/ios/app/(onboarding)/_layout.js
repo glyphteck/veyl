@@ -1,9 +1,9 @@
 import { Stack } from 'expo-router';
+import { hasCurrentCommunityRules } from '@veyl/shared/community';
 import { useTheme } from '@/providers/themeprovider';
 import { useUser } from '@/providers/userprovider';
 import { useVault } from '@/providers/vaultprovider';
-import { hasCurrentCommunityRules } from '@/lib/community';
-import { stackScreenOptions } from '@/lib/stackoptions';
+import { stackScreenOptions } from '@/lib/navigation/stackoptions';
 
 const SHEET_ROUTES = new Set(['passwordrules']);
 

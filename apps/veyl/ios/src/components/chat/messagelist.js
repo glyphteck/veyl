@@ -21,19 +21,20 @@ import MsgDot from '@/components/chat/msgdot';
 import { MessageRow, ReportedBubble, SystemMessageRow } from '@/components/chat/messagerow';
 import { MESSAGE_ROW_ENTER_STATE_MS, MESSAGE_ROW_LAYOUT, MESSAGE_ROW_LEAVE_MS, REPLY_SPRING, STAMP_TRAY, positivePx, rubberBand } from '@/components/chat/rowmotion';
 import { mark } from '@/lib/diagnostics';
-import { useChatMessages } from '@/lib/usechatmessages';
-import { uploadStorageBytesNative } from '@/lib/chatmedia';
-import { getMediaViewerKey, isMediaViewerMsg } from '@/lib/chatmediaitems';
-import { copyMessageImage, copyMessageText, saveMessageFile, saveMessageImage } from '@/lib/chatdownloads';
-import { cancelPendingMsgFileLoads } from '@/lib/msgimagecache';
-import { stageShareMedia } from '@/lib/sharemedia';
+import { useChatMessages } from '@/lib/chat/usemessages';
+import { uploadStorageBytesNative } from '@/lib/chat/media';
+import { getMediaViewerKey, isMediaViewerMsg } from '@/lib/chat/viewer';
+import { copyMessageImage, copyMessageText, saveMessageFile, saveMessageImage } from '@/lib/chat/downloads';
+import { cancelPendingMsgFileLoads } from '@/lib/chat/imagecache';
+import { stageShareMedia } from '@/lib/chat/share';
 import { functions, storage } from '@/lib/firebase';
-import { canReplyToMsg, canShareAttachmentMsg, canShowMsg, collapseSystemMessages, getLatestReadOutgoingReceipt, getMessageUnsaveTtlMs, isPeerMsg, isSystemMsg, setReqTx } from '@glyphteck/shared/chat/messages';
-import { useOptimisticMessageReactions } from '@glyphteck/shared/chat/usereactions';
-import { makeFileId, reportEvidencePath } from '@glyphteck/shared/files';
-import { buildReportFields, getReportAttachmentMeta } from '@glyphteck/shared/report';
-import { formatTimeHHMM } from '@glyphteck/shared/utils';
-import { getMessageOrderMs } from '@glyphteck/shared/chat/state';
+import { canReplyToMsg, canShareAttachmentMsg, canShowMsg, canToggleSaveForeverMsg, collapseSystemMessages, getLatestReadOutgoingReceipt, getMessageUnsaveTtlMs, isPeerMsg, isSavedForeverMsg, isSystemMsg, setReqTx } from '@veyl/shared/chat/messages';
+import { useOptimisticMessageReactions } from '@veyl/shared/chat/usereactions';
+import { makeFileId, reportEvidencePath } from '@veyl/shared/files';
+import { buildReportFields, getReportAttachmentMeta } from '@veyl/shared/report';
+import { formatTimeHHMM } from '@veyl/shared/utils/time';
+import { messageKeys } from '@veyl/shared/chat/messagekeys';
+import { getMessageKey, getMessageOrderMs } from '@veyl/shared/chat/state';
 
 const NEWEST_MESSAGE_GAP = 8;
 const SCROLL_BOTTOM_SHOW_MIN_DISTANCE = 360;
@@ -45,14 +46,6 @@ const SCROLL_BOTTOM_DIRECTION_EPSILON = 2;
 const LIKE_PREVIEW_INSET = 22;
 const KEYBOARD_DISMISS_MODE = 'interactive';
 const CHAT_KEYBOARD_GAP = 8;
-
-function getMsgKey(msg) {
-    return msg?.cid || msg?.id;
-}
-
-function getMsgKeys(msg) {
-    return [...new Set([getMsgKey(msg), msg?.id, msg?.cid].filter(Boolean))];
-}
 
 function sameRowList(a, b) {
     if (a === b) {
@@ -72,7 +65,7 @@ function sameRowList(a, b) {
 function makePresentRows(messages) {
     return (messages || [])
         .map((msg) => ({
-            key: getMsgKey(msg),
+            key: getMessageKey(msg),
             msg,
             state: 'present',
             dotExitToken: 0,
@@ -240,18 +233,6 @@ function useAnimatedMessageRows(messages, scopeKey, animate = true) {
     return reset ? presentRows : state.rows;
 }
 
-function hasOwnMessageTtl(msg) {
-    return Object.prototype.hasOwnProperty.call(msg || {}, 'ttl');
-}
-
-function isSavedForeverMsg(msg) {
-    return !!(msg?.id && !String(msg.id).startsWith('local:') && !msg.pending && !msg.failed && hasOwnMessageTtl(msg) && msg.ttl == null);
-}
-
-function canToggleSaveForeverMsg(msg) {
-    return !!(msg?.id && !String(msg.id).startsWith('local:') && !msg.pending && !msg.failed && !isSystemMsg(msg));
-}
-
 function hasMsgText(msg) {
     return typeof msg?.c === 'string' && msg.c.trim().length > 0;
 }
@@ -333,7 +314,7 @@ export default function MessageList({
     const displayRows = useAnimatedMessageRows(messages, chatId || '', ready);
     const rowLayoutAnimation = useMemo(() => (displayRows.some((row) => row?.state === 'entering') ? MESSAGE_ROW_LAYOUT : undefined), [displayRows]);
     const latestReadReceipt = useMemo(() => getLatestReadOutgoingReceipt(activeMessagesAsc, chatPK, peerChatPK), [activeMessagesAsc, chatPK, peerChatPK]);
-    const latestReadReceiptKey = getMsgKey(latestReadReceipt?.message);
+    const latestReadReceiptKey = getMessageKey(latestReadReceipt?.message);
     const latestReadReceiptStamp = useMemo(() => getMsgStamp(latestReadReceipt?.receipt), [latestReadReceipt?.receipt?.cid, latestReadReceipt?.receipt?.id, latestReadReceipt?.receipt?.ts]);
     const latestReceiptMeta = useMemo(
         () =>
@@ -369,7 +350,7 @@ export default function MessageList({
 
             const byKey = new Map();
             for (const message of messagesAsc || []) {
-                for (const key of getMsgKeys(message)) {
+                for (const key of messageKeys(message)) {
                     byKey.set(key, message);
                 }
             }
@@ -390,7 +371,7 @@ export default function MessageList({
         () =>
             visibleMessagesAsc
                 .filter((msg) => {
-                    const key = getMsgKey(msg);
+                    const key = getMessageKey(msg);
                     return isMediaViewerMsg(msg) && hasMsgFile(msg) && (!key || !reportedMessageKeys.has(key));
                 })
                 .map((msg) => ({
@@ -603,7 +584,7 @@ export default function MessageList({
                     ...report,
                     ...(path ? { path } : {}),
                     onDone: () => {
-                        const key = getMsgKey(msg);
+                        const key = getMessageKey(msg);
                         if (!key) return;
                         setReportedMessageKeys((prev) => {
                             const next = new Set(prev);
@@ -700,7 +681,7 @@ export default function MessageList({
                 return;
             }
 
-            const key = getMsgKey(msg);
+            const key = getMessageKey(msg);
             const saved = isSavedForeverMsg(msg);
             const targetSaved = !saved;
             const unsaveTtlMs = saved ? getMessageUnsaveTtlMs(msg, messagesAsc, chatPK, peerChatPK) : null;
@@ -733,7 +714,7 @@ export default function MessageList({
     const getMenuItems = useCallback(
         (msg) => {
             const fromPeer = isPeerMsg(msg, chatPK);
-            const msgKey = getMsgKey(msg);
+            const msgKey = getMessageKey(msg);
             const savingForever = !!msgKey && savingForeverMessages.has(msgKey);
             const savedForever = savingForever ? savingForeverMessages.get(msgKey) === true : isSavedForeverMsg(msg);
             const canReport = fromPeer && !!peerUid && msg?.t !== 'req';
@@ -892,7 +873,7 @@ export default function MessageList({
 
             const fromPeer = isPeerMsg(msg, chatPK);
             const userSent = !fromPeer;
-            const msgKey = getMsgKey(msg);
+            const msgKey = getMessageKey(msg);
             const isReported = !!msgKey && reportedMessageKeys.has(msgKey);
             const savingForever = !!msgKey && savingForeverMessages.has(msgKey);
             const saveForeverTargetSaved = savingForever ? savingForeverMessages.get(msgKey) === true : null;

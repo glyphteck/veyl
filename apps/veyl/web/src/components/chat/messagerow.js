@@ -3,9 +3,10 @@
 import { Bookmark, Download, Flag, Loader, Reply, RotateCcw, Share2, SquarePen, Trash2 } from 'lucide-react';
 import { forwardRef, memo, useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Avatar, AvatarFallback, StaticAvatar } from '@/components/avatar';
-import { canReplyToMsg, canShareAttachmentMsg, getSystemMsgText, isSystemMsg } from '@glyphteck/shared/chat/messages';
-import { formatFullDateTime } from '@/lib/utils';
-import { bubbleBg, canSaveMsgFile } from '@/lib/messages';
+import { canReplyToMsg, canShareAttachmentMsg, getSystemMsgText, isSystemMsg } from '@veyl/shared/chat/messages';
+import { formatFullDateTime } from '@veyl/shared/utils/time';
+import { bubbleBg, canSaveMsgFile } from '@/lib/chat/messages';
+import { cn } from '@/lib/classes';
 import { ChatMessageType } from './messages';
 import MsgDot from './msgdot';
 import {
@@ -27,7 +28,7 @@ function ActionButton({ title, icon: Icon, className = 'text-muted', iconClassNa
         <button
             type="button"
             title={title}
-            className={`grower-lg flex size-4 items-center justify-center rounded-full px-0 py-0 disabled:cursor-default disabled:opacity-50 disabled:hover:scale-100 ${className}`}
+            className={cn('grower-lg flex size-4 items-center justify-center rounded-full px-0 py-0 disabled:cursor-default disabled:opacity-50 disabled:hover:scale-100', className)}
             disabled={disabled}
             onClick={(event) => {
                 event.stopPropagation();
@@ -37,7 +38,7 @@ function ActionButton({ title, icon: Icon, className = 'text-muted', iconClassNa
                 onClick?.();
             }}
         >
-            <Icon className={`${MESSAGE_ACTION_ICON} ${iconClassName}`.trim()} />
+            <Icon className={cn(MESSAGE_ACTION_ICON, iconClassName)} />
         </button>
     );
 }
@@ -436,7 +437,7 @@ function InteractiveMessageRow({
     }, [dropped]);
 
     return (
-        <MessageRowShell ref={setRowRef} rowState={rowState} hasRowAbove={hasRowAbove} className={`${dropped ? '' : 'group'} flex w-full shrink-0 flex-col ${userSent ? 'items-end' : 'items-start'}`}>
+        <MessageRowShell ref={setRowRef} rowState={rowState} hasRowAbove={hasRowAbove} className={cn(!dropped && 'group', 'flex w-full shrink-0 flex-col', userSent ? 'items-end' : 'items-start')}>
             <div className={`flex w-full items-center gap-2 flex-row ${userSent ? 'justify-end' : 'justify-start'}`}>
                 <div
                     data-message-exit-target

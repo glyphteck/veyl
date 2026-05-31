@@ -2,9 +2,9 @@ import { useCallback, useState } from 'react';
 import { CircleCheck } from 'lucide-react';
 import { useUser } from '@/components/providers/userprovider';
 import { useChat } from '@/components/providers/chatprovider';
-import { canShareAttachmentMsg, getAttachmentTitle } from '@glyphteck/shared/chat/messages';
-import { getChatId } from '@glyphteck/shared/crypto/chat';
-import { formatUserDisplay } from '@/lib/utils';
+import { canShareAttachmentMsg, getAttachmentTitle } from '@veyl/shared/chat/messages';
+import { getChatId } from '@veyl/shared/crypto/chat';
+import { formatUserDisplay } from '@veyl/shared/profile';
 import { toast } from 'sonner';
 import Share from './share';
 

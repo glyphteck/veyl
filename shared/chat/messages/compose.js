@@ -1,5 +1,6 @@
 import { canShowMsg, isSystemMsg } from './control.js';
 import { retentionPatch } from './retention.js';
+import { getMessageKey } from '../state.js';
 
 export function setReply(msg, replyId) {
     const nextReplyId = String(replyId ?? '').trim();
@@ -22,7 +23,7 @@ export function canReplyToMsg(msg) {
     if (!canShowMsg(msg) || isSystemMsg(msg)) {
         return false;
     }
-    return !!(msg.id || msg.cid);
+    return !!getMessageKey(msg);
 }
 
 export function makeReq(amount) {

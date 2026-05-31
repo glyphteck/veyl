@@ -10,6 +10,7 @@ import GlassHeader from '@/components/glass/glassheader';
 import { ChevronLeft } from 'lucide-react-native';
 import Icon from '@/components/icon';
 import Avatar from '@/components/avatar';
+import { sleep } from '@veyl/shared/utils/async';
 
 const PASSKEY_AVATAR_SIZE = 72;
 const PASSKEY_AVATAR_GLYPH_SCALE = 1.12;
@@ -96,7 +97,7 @@ export default function NewAccount() {
             onPrompt: () => setAuthState('prompt'),
             onVerified: async () => {
                 setAuthState('success');
-                await new Promise((resolve) => setTimeout(resolve, PASSKEY_AVATAR_SUCCESS_MS));
+                await sleep(PASSKEY_AVATAR_SUCCESS_MS);
             },
         });
         try {

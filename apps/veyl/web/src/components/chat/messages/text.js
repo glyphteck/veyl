@@ -1,10 +1,10 @@
 'use client';
 
-import { useCloak } from '@glyphteck/shared/providers/cloakprovider';
-import { splitLinks } from '@glyphteck/shared/chat/messages';
-import { bubbleBg } from '@/lib/messages';
-import { getEmojiTextInfo } from '@/lib/utils';
-import { stopClick } from './utils';
+import { useCloak } from '@veyl/shared/providers/cloakprovider';
+import { splitLinks } from '@veyl/shared/chat/messages';
+import { bubbleBg, stopClick } from '@/lib/chat/messages';
+import { getEmojiTextInfo } from '@veyl/shared/utils/display';
+import { cn } from '@/lib/classes';
 
 export function EmojiMessage({ text }) {
     const { cloaked } = useCloak();
@@ -30,7 +30,14 @@ export function TextBubble({ msg, fromPeer = false, compact = false, singleLine 
 
     return (
         <div
-            className={`backdrop-blur-sm min-w-0 max-w-full shadow-sm select-text ${bubbleBg(fromPeer)} ${cloaked ? 'cloaked' : ''} ${compact ? 'rounded-[20px] px-2.5 py-1.5' : 'rounded-round px-3 py-1.5'} ${muted ? 'opacity-65' : ''} ${className}`}
+            className={cn(
+                'backdrop-blur-sm min-w-0 max-w-full shadow-sm select-text',
+                bubbleBg(fromPeer),
+                cloaked && 'cloaked',
+                compact ? 'rounded-[20px] px-2.5 py-1.5' : 'rounded-round px-3 py-1.5',
+                muted && 'opacity-65',
+                className
+            )}
             onClick={onClick}
         >
             <p className={`min-w-0 max-w-full ${singleLine ? 'truncate whitespace-nowrap text-[15px]' : 'wrap-anywhere whitespace-pre-wrap'}`}>

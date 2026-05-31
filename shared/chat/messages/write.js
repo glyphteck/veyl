@@ -6,42 +6,29 @@ import { makeHiddenCheckpoint, makeReaction, makeReadReceipt, makeRetentionSyste
 import { sealChatSettingsForPair } from '../settings.js';
 import { getOwnChatPKFromChatId } from '../ids.js';
 import { getCachedPair } from '../pairs.js';
+import { makeChatLastMsg, makeUpdatedChatLastMsg } from '../lastmsg.js';
 import { makeCid } from '../state.js';
 import { cleanChatRetention, newMessageTtlMs, withMessageRetention } from '../ttl.js';
 import { CHAT_DELETE_WRITE_BATCH_SIZE, CHAT_TTL_WRITE_BATCH_SIZE } from '../../config.js';
+import { cleanText } from '../../utils/text.js';
+import { timestampMs } from '../../utils/time.js';
 
 const TTL_WRITE_BATCH_SIZE = CHAT_TTL_WRITE_BATCH_SIZE;
 const DELETE_WRITE_BATCH_SIZE = CHAT_DELETE_WRITE_BATCH_SIZE;
 
-function makeTtl(value) {
+function makeTtlTimestamp(value) {
     if (value == null) {
         return null;
     }
     if (typeof value?.toMillis === 'function') {
         return value;
     }
-    const ms = Number(value);
-    return Number.isFinite(ms) && ms > 0 ? Timestamp.fromMillis(ms) : null;
+    const ms = timestampMs(value, null, { positive: true });
+    return ms == null ? null : Timestamp.fromMillis(ms);
 }
 
 function getMessageTtl(retention) {
-    return makeTtl(newMessageTtlMs(retention));
-}
-
-function makeChatLastMsg(msgData) {
-    return {
-        head: msgData.head,
-        body: msgData.body,
-        ttl: msgData.ttl,
-    };
-}
-
-function makeUpdatedChatLastMsg(lastMsg, fields = {}) {
-    return {
-        head: lastMsg?.head,
-        body: fields.body ?? lastMsg?.body,
-        ttl: 'ttl' in fields ? fields.ttl : (lastMsg?.ttl ?? null),
-    };
+    return makeTtlTimestamp(newMessageTtlMs(retention));
 }
 
 async function getServerSnap(ref) {
@@ -135,14 +122,14 @@ function messageMutationItems(messages, { allowString = false, include = () => t
     const items = [];
     for (const message of list || []) {
         const stringMessage = typeof message === 'string';
-        const id = stringMessage ? (allowString ? message.trim() : '') : typeof message?.id === 'string' ? message.id.trim() : '';
+        const id = stringMessage ? (allowString ? cleanText(message) : '') : cleanText(message?.id);
         if (!id || id.startsWith('local:') || seen.has(id) || message?.pending || message?.failed || !include(message)) {
             continue;
         }
         seen.add(id);
         items.push({
             id,
-            cid: typeof message?.cid === 'string' ? message.cid : '',
+            cid: cleanText(message?.cid),
         });
     }
     return items;
@@ -165,7 +152,7 @@ export async function makeMsgTemporary(db, chatId, messages, ttlMs = newMessageT
         return 0;
     }
 
-    const ttl = makeTtl(ttlMs);
+    const ttl = makeTtlTimestamp(ttlMs);
     const items = messageTemporaryUpdateItems(messages);
     if (!ttl || !items.length) {
         return 0;
@@ -287,13 +274,13 @@ export async function uploadAttachmentMsg(db, storage, senderPubkey, senderPrivk
         throw new Error('vault locked');
     }
 
-    const nextCid = typeof attachment?.cid === 'string' ? attachment.cid.trim() : '';
+    const nextCid = cleanText(attachment?.cid);
     if (!nextCid) {
         throw new Error('message cid required');
     }
 
     const pair = await getCachedPair(senderPubkey, senderPrivkey, receiverChatPK);
-    const type = typeof attachment?.type === 'string' && attachment.type ? attachment.type : 'file';
+    const type = cleanText(attachment?.type) || 'file';
     const data = attachment?.data;
     const meta = attachment?.meta || {};
 

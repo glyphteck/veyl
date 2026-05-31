@@ -7,7 +7,7 @@ import { Card } from '@/components/card';
 import { Input } from '@/components/input';
 import { Button } from '@/components/button';
 import { getFunctions } from '@/lib/firebase/firebaseclient';
-import { logout } from '@/lib/useractions';
+import { logout } from '@/lib/user/actions';
 import { useVault } from '@/components/providers/vaultprovider';
 import { useDialog } from '@/components/providers/dialogprovider';
 import { useBitcoin } from '@/components/providers/bitcoinprovider';
@@ -15,7 +15,8 @@ import { useWallet } from '@/components/providers/walletprovider';
 import { useUser } from '@/components/providers/userprovider';
 import { useChat } from '@/components/providers/chatprovider';
 import { verifyVaultPassword } from '@/lib/crypto/seed';
-import { renderMoney } from '@/lib/utils';
+import { renderMoney } from '@veyl/shared/money';
+import { hasAvailableBalance } from '@veyl/shared/wallet/balance';
 
 export default function DeleteAccount({ close }) {
     const [step, setStep] = useState('risk');
@@ -30,7 +31,7 @@ export default function DeleteAccount({ close }) {
     const { settings, clearAvatar } = useUser();
     const { collectAccountSavedMediaStays, releaseSavedMediaStays } = useChat();
     const { encSeed, localCache, lock } = useVault();
-    const showWithdraw = Number(balance ?? 0) > 0;
+    const showWithdraw = hasAvailableBalance(balance);
     const balanceLabel = renderMoney(balance ?? 0n, settings.moneyFormat, bitcoin.price);
 
     const verifyPassword = useCallback(

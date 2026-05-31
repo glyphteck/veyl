@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { Animated, Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Camera } from 'lucide-react-native';
-import { isMainnet, resolveNetwork } from '@glyphteck/shared/network';
+import { isMainnet, resolveNetwork } from '@veyl/shared/network';
 import Avatar from './avatar';
 import { DotIcon, DOT_ICONS } from './dot';
 import GlassFooter from './glass/glassfooter';
@@ -13,19 +13,19 @@ import { useChat } from '../providers/chatprovider';
 import { alpha } from '@/lib/colors';
 import { useTap } from '@/lib/tap';
 
-export const MAIN_MENU_ICON_SIZE = 32;
-export const MAIN_MENU_AVATAR_SIZE = 34;
-export const MAIN_MENU_TOP_PADDING = 8;
-export const MAIN_MENU_ITEM_HEIGHT = Math.max(MAIN_MENU_ICON_SIZE, MAIN_MENU_AVATAR_SIZE);
-export const MAIN_MENU_HEIGHT = MAIN_MENU_TOP_PADDING + MAIN_MENU_ITEM_HEIGHT;
+const ICON_SIZE = 32;
+const AVATAR_SIZE = 34;
+const TOP_PADDING = 8;
+const ITEM_HEIGHT = Math.max(ICON_SIZE, AVATAR_SIZE);
+const HEIGHT = TOP_PADDING + ITEM_HEIGHT;
 
 export function getMainMenuHeight(bottomInset = 0) {
-    return MAIN_MENU_HEIGHT + Math.max(0, Number(bottomInset) || 0);
+    return HEIGHT + Math.max(0, Number(bottomInset) || 0);
 }
 
 const ITEM_STYLE = {
     flex: 1,
-    height: MAIN_MENU_ITEM_HEIGHT,
+    height: ITEM_HEIGHT,
     alignItems: 'center',
     justifyContent: 'center',
 };
@@ -100,21 +100,21 @@ export default function MainMenu({ state, navigation, position, onWarmRoute }) {
                     alignItems: 'flex-start',
                     justifyContent: 'space-between',
                     gap: 12,
-                    paddingTop: MAIN_MENU_TOP_PADDING,
+                    paddingTop: TOP_PADDING,
                 }}
             >
                 <MenuItem progress={tabProgress[routeIndexes.chat]} onPress={() => onSelect('chat')} onPressIn={() => warmRoute('chat')} disabled={chatBanned}>
-                    <DotIcon iconNode={DOT_ICONS.messageCircle} show={!chatBanned && hasUnseenChats} color={chatBanned ? theme.muted : theme.foreground} size={MAIN_MENU_ICON_SIZE} />
+                    <DotIcon iconNode={DOT_ICONS.messageCircle} show={!chatBanned && hasUnseenChats} color={chatBanned ? theme.muted : theme.foreground} size={ICON_SIZE} />
                 </MenuItem>
                 <MenuItem progress={tabProgress[routeIndexes.camera]} onPress={() => onSelect('camera')} onPressIn={() => warmRoute('camera')}>
-                    <Icon icon={Camera} color={theme.foreground} size={MAIN_MENU_ICON_SIZE} />
+                    <Icon icon={Camera} color={theme.foreground} size={ICON_SIZE} />
                 </MenuItem>
                 <MenuItem progress={tabProgress[routeIndexes.wallet]} onPress={() => onSelect('wallet')} onPressIn={() => warmRoute('wallet')}>
-                    <DotIcon iconNode={DOT_ICONS.wallet} show={showWalletDot} color={theme.foreground} size={MAIN_MENU_ICON_SIZE} />
+                    <DotIcon iconNode={DOT_ICONS.wallet} show={showWalletDot} color={theme.foreground} size={ICON_SIZE} />
                 </MenuItem>
                 <MenuItem progress={tabProgress[routeIndexes.settings]} onPress={() => onSelect('settings')} onPressIn={() => warmRoute('settings')}>
                     <View pointerEvents="none">
-                        <Avatar size={MAIN_MENU_AVATAR_SIZE} source={avatar ? { uri: avatar } : null} />
+                        <Avatar size={AVATAR_SIZE} source={avatar ? { uri: avatar } : null} />
                     </View>
                 </MenuItem>
             </GlassFooter>

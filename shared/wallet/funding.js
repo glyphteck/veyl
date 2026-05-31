@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 
-import { markDiag, markDone, markError } from './diag.js';
+import { markDiag, markDone, markError } from '../utils/diagnostics.js';
 
 export function useFundingAddress({ wallet, diag }) {
     const [fundingAddress, setFundingAddress] = useState(null);

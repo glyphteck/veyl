@@ -8,14 +8,15 @@ import { useDialog } from '@/components/providers/dialogprovider';
 import { usePeer } from '@/components/providers/peerprovider';
 import { useUser } from '@/components/providers/userprovider';
 import { useWallet } from '@/components/providers/walletprovider';
-import { useCloak } from '@glyphteck/shared/providers/cloakprovider';
-import { formatUserDisplay, renderMoney } from '@/lib/utils';
+import { useCloak } from '@veyl/shared/providers/cloakprovider';
+import { formatUserDisplay } from '@veyl/shared/profile';
+import { renderMoney } from '@veyl/shared/money';
 import { toast } from 'sonner';
 import { Loader, Coins, ArrowUpRight, X, Download, Lock } from 'lucide-react';
-import { qr, readQr } from '@glyphteck/shared/qrutils';
-import { isAddressOnNetwork } from '@glyphteck/shared/network';
-import { randomBytes, toHex } from '@glyphteck/shared/crypto/core';
-import { canSendOnScan } from '@glyphteck/shared/settings';
+import { qr, readQr } from '@veyl/shared/qr';
+import { isAddressOnNetwork } from '@veyl/shared/network';
+import { randomFilename } from '@veyl/shared/utils/filename';
+import { canSendOnScan } from '@veyl/shared/settings';
 
 const SCAN_INTERVAL = 200;
 const VIDEO_HOLD_MS = 220;
@@ -73,12 +74,7 @@ function videoFileType(mimeType) {
 
 function videoFileName(mimeType) {
     const ext = videoFileType(mimeType) === 'video/mp4' ? 'mp4' : 'webm';
-    return makeCaptureName(ext);
-}
-
-function makeCaptureName(ext) {
-    const cleanExt = String(ext || '').replace(/^\./, '').toLowerCase() || 'bin';
-    return `${toHex(randomBytes(8))}.${cleanExt}`;
+    return randomFilename(ext);
 }
 
 function makeRecordingStream(video) {
@@ -336,7 +332,7 @@ export default function CameraPage() {
     const takePhoto = useCallback(async () => {
         const src = webcamRef.current?.getScreenshot();
         if (!src) return;
-        const name = makeCaptureName('jpg');
+        const name = randomFilename('jpg');
         try {
             setCapture({ kind: 'photo', uri: await mirrorPhotoDataUri(src), name });
         } catch (error) {
@@ -455,7 +451,7 @@ export default function CameraPage() {
         if (!capture) return;
         const a = document.createElement('a');
         a.href = capture.uri;
-        a.download = capture.kind === 'video' ? capture.file?.name || videoFileName(capture.file?.type) : capture.name || makeCaptureName('jpg');
+        a.download = capture.kind === 'video' ? capture.file?.name || videoFileName(capture.file?.type) : capture.name || randomFilename('jpg');
         a.click();
     }, [capture]);
 

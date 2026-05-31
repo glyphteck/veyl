@@ -2,8 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Animated, AppState, Linking, Pressable, ScrollView, Switch, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CircleDollarSign, FileText, KeyRound, Lock, LogOut, QrCode, ScanQrCode, Settings, Shield, Timer, Trash2, UserX } from 'lucide-react-native';
-import { useIsFocused } from 'expo-router/react-navigation';
-import { useNavigation, useRouter } from 'expo-router';
+import { useIsFocused, useNavigation, useRouter } from 'expo-router';
 
 import AvatarPicker from '@/components/avatarpicker';
 import GlassHeader from '@/components/glass/glassheader';
@@ -14,15 +13,17 @@ import SearchInput from '@/components/search';
 import { deleteAvatar, uploadAvatar } from '@/lib/avatarupload';
 import { clearFaceIdPassword, FaceIdIcon } from '@/lib/faceid';
 import { auth } from '@/lib/firebase';
-import { clearMsgImageCache } from '@/lib/msgimagecache';
-import { hasQuickLoginAccount } from '@/lib/quicklogin';
+import { clearMsgImageCache } from '@/lib/chat/imagecache';
+import { hasQuickLoginAccount } from '@/lib/user/quicklogin';
+import { useRouteLock } from '@/lib/navigation/routelock';
 import { useTap } from '@/lib/tap';
-import { logout } from '@/lib/useractions';
+import { logout } from '@/lib/user/actions';
 import { useTheme } from '@/providers/themeprovider';
 import { useUser } from '@/providers/userprovider';
 import { useVault } from '@/providers/vaultprovider';
-import { defaultSettings, SEND_ON_SCAN_ENABLED } from '@glyphteck/shared/settings';
-import { formatBytes } from '@glyphteck/shared/utils';
+import { defaultSettings, SEND_ON_SCAN_ENABLED } from '@veyl/shared/settings';
+import { lowerText } from '@veyl/shared/utils/text';
+import { formatCacheSize } from '@veyl/shared/utils/display';
 import Constants from 'expo-constants';
 
 const MONEY_FORMATS = ['btc', 'sats', 'usd'];
@@ -96,10 +97,6 @@ function timerLabel(value) {
     }
 
     return `${value}m`;
-}
-
-function formatCacheSize(bytes) {
-    return formatBytes(bytes, { fallback: '0 B', minValue: 0 });
 }
 
 function SectionDivider() {
@@ -206,24 +203,7 @@ function ClearCacheRow({ localCache, disabled = false, focused = true }) {
 function SettingsHeader({ value, onChangeText, onClear, onLayout, disabled = false }) {
     const { theme } = useTheme();
     const router = useRouter();
-    const routeLockRef = useRef(false);
-    const routeLockTimerRef = useRef(null);
-    const lockRoute = useCallback((ms = 1200) => {
-        if (routeLockRef.current) return false;
-        routeLockRef.current = true;
-        if (routeLockTimerRef.current) clearTimeout(routeLockTimerRef.current);
-        routeLockTimerRef.current = setTimeout(() => {
-            routeLockRef.current = false;
-            routeLockTimerRef.current = null;
-        }, ms);
-        return true;
-    }, []);
-
-    useEffect(() => {
-        return () => {
-            if (routeLockTimerRef.current) clearTimeout(routeLockTimerRef.current);
-        };
-    }, []);
+    const { lockRoute } = useRouteLock();
 
     const qrFeedback = useTap({
         disabled,
@@ -555,14 +535,14 @@ export default function SettingsScreen() {
     };
 
     const appVersion = Constants.expoConfig?.version || '';
-    const search = settingSearch.trim().toLowerCase();
+    const search = lowerText(settingSearch);
     const isSearching = !!search;
     const autoSendDescription = (
         <Text style={{ fontSize: 13, fontWeight: '500', lineHeight: 17, color: theme.muted }}>
             <Text style={{ color: theme.destructive }}>send immediately</Text> when the qr already includes an amount.
         </Text>
     );
-    const match = (...terms) => !search || terms.some((term) => String(term || '').toLowerCase().includes(search));
+    const match = (...terms) => !search || terms.some((term) => lowerText(term).includes(search));
     const showMoney = match('display currency', 'money format', 'btc sats usd');
     const showAutoSend = SEND_ON_SCAN_ENABLED && match('auto send on scan', 'qr payment behaviour', 'send immediately');
     const showLockTimer = match('lock timeout', 'autolock timer');

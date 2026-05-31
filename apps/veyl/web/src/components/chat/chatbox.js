@@ -10,11 +10,12 @@ import { usePeer } from '@/components/providers/peerprovider';
 import { useDialog } from '@/components/providers/dialogprovider';
 import { useBitcoin } from '@/components/providers/bitcoinprovider';
 import { useWallet } from '@/components/providers/walletprovider';
-import { formatUserDisplay, renderMoney } from '@/lib/utils';
-import { chatUploadErrorMessage, queueChatFileMessages } from '@/lib/chatfiles';
-import { getPeerChatPKFromChatId } from '@glyphteck/shared/chat/ids';
-import { canReplyToMsg, makeReq, makeTxt, setReply, setTxt } from '@glyphteck/shared/chat/messages';
-import { parseCommandAmountSats } from '@glyphteck/shared/commands';
+import { formatUserDisplay } from '@veyl/shared/profile';
+import { renderMoney } from '@veyl/shared/money';
+import { chatUploadErrorMessage, queueMessages } from '@/lib/chat/files';
+import { getPeerChatPKFromChatId } from '@veyl/shared/chat/ids';
+import { canReplyToMsg, makeReq, makeTxt, setReply, setTxt } from '@veyl/shared/chat/messages';
+import { parseCommandAmountSats } from '@veyl/shared/commands';
 import { toast } from 'sonner';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -109,7 +110,7 @@ export function Chatbox() {
             }
 
             try {
-                await queueChatFileMessages(files, (attachment) => sendAttachment(peerChatPK, attachment));
+                await queueMessages(files, (attachment) => sendAttachment(peerChatPK, attachment));
             } catch (error) {
                 toast.error(chatUploadErrorMessage(error));
             }

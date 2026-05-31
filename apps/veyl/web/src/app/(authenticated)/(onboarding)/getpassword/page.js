@@ -11,9 +11,9 @@ import { Controller, useForm } from 'react-hook-form';
 import { KeyRound, Loader, Eye, EyeOff, CircleQuestionMark, TriangleAlert } from 'lucide-react';
 import { Button } from '@/components/button';
 import { useDialog } from '@/components/providers/dialogprovider';
-import { packSeedData } from '@glyphteck/shared/crypto/pack';
+import { packSeedData } from '@veyl/shared/crypto/pack';
 import { encryptSeed } from '@/lib/crypto/seed';
-import { getPasswordFeedback, isPassword, MAX_PASSWORD, normalizePassword } from '@glyphteck/shared/password';
+import { getPasswordFeedback, isPassword, MAX_PASSWORD, normalizePassword } from '@veyl/shared/password';
 
 const passwordSchema = z.object({
     password: z.string().refine((value) => isPassword(value)),

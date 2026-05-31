@@ -13,6 +13,7 @@ import {
     CHAT_WARM_BATCH_SIZE as CONFIG_CHAT_WARM_BATCH_SIZE,
     CHAT_WARM_DELAY_MS as CONFIG_CHAT_WARM_DELAY_MS,
 } from '../../../config.js';
+import { nonNegativeNumber, positiveNumber } from '../../../utils/number.js';
 
 export const TOP_CHAT_WARM_COUNT = CHAT_TOP_WARM_COUNT;
 export const EAGER_CHAT_WARM_COUNT = CHAT_EAGER_WARM_COUNT;
@@ -67,16 +68,6 @@ export const WEB_CHAT_WARMING = Object.freeze({
     }),
 });
 
-export function count(value, fallback) {
-    const next = Number(value);
-    return Number.isFinite(next) && next >= 0 ? next : fallback;
-}
-
-export function positive(value, fallback) {
-    const next = Number(value);
-    return Number.isFinite(next) && next > 0 ? next : fallback;
-}
-
 function firstDefined(...values) {
     return values.find((value) => value !== undefined);
 }
@@ -97,10 +88,10 @@ export function normalizeMediaWarming(media, chatCount) {
         ...DEFAULT_MEDIA_WARMING,
         ...media,
         enabled: media.enabled !== false,
-        chatCount: count(firstDefined(media.chatCount, media.topChatCount), chatCount),
-        messagesPerChat: positive(firstDefined(media.messagesPerChat, media.batchMessages, media.messagesPerBatch), DEFAULT_MEDIA_WARMING.messagesPerChat),
-        startDelayMs: count(media.startDelayMs, DEFAULT_MEDIA_WARMING.startDelayMs),
-        stepDelayMs: count(media.stepDelayMs, DEFAULT_MEDIA_WARMING.stepDelayMs),
+        chatCount: nonNegativeNumber(firstDefined(media.chatCount, media.topChatCount), chatCount),
+        messagesPerChat: positiveNumber(firstDefined(media.messagesPerChat, media.batchMessages, media.messagesPerBatch), DEFAULT_MEDIA_WARMING.messagesPerChat),
+        startDelayMs: nonNegativeNumber(media.startDelayMs, DEFAULT_MEDIA_WARMING.startDelayMs),
+        stepDelayMs: nonNegativeNumber(media.stepDelayMs, DEFAULT_MEDIA_WARMING.stepDelayMs),
         types,
     };
 }
@@ -119,14 +110,14 @@ export function normalizeChatWarming(warming) {
                   ...warming,
                   enabled: warming.enabled !== false,
               };
-    const warmCount = count(firstDefined(raw.count, raw.preSubscribeCount, raw.topChatCount, config.count), DEFAULT_CHAT_WARMING.count);
-    const eagerCount = Math.min(count(firstDefined(raw.eagerCount, raw.eagerPreSubscribeCount, config.eagerCount), DEFAULT_CHAT_WARMING.eagerCount), warmCount);
+    const warmCount = nonNegativeNumber(firstDefined(raw.count, raw.preSubscribeCount, raw.topChatCount, config.count), DEFAULT_CHAT_WARMING.count);
+    const eagerCount = Math.min(nonNegativeNumber(firstDefined(raw.eagerCount, raw.eagerPreSubscribeCount, config.eagerCount), DEFAULT_CHAT_WARMING.eagerCount), warmCount);
     return {
         ...config,
         count: warmCount,
         eagerCount,
-        delayMs: count(firstDefined(raw.delayMs, raw.staggerDelayMs, config.delayMs), DEFAULT_CHAT_WARMING.delayMs),
-        pageSize: positive(firstDefined(raw.pageSize, raw.batchSize, config.pageSize), DEFAULT_CHAT_WARMING.pageSize),
+        delayMs: nonNegativeNumber(firstDefined(raw.delayMs, raw.staggerDelayMs, config.delayMs), DEFAULT_CHAT_WARMING.delayMs),
+        pageSize: positiveNumber(firstDefined(raw.pageSize, raw.batchSize, config.pageSize), DEFAULT_CHAT_WARMING.pageSize),
         media: normalizeMediaWarming(config.media, warmCount),
     };
 }

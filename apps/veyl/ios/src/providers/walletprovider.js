@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { AppState } from 'react-native';
-import { createWalletProvider } from '@glyphteck/shared/wallet';
-import { resolveNetwork } from '@glyphteck/shared/network';
+import { createWalletProvider } from '@veyl/shared/wallet';
+import { resolveNetwork } from '@veyl/shared/network';
 import { useVault } from '@/providers/vaultprovider';
 import { useUser } from '@/providers/userprovider';
 import { mark } from '@/lib/diagnostics';

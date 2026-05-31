@@ -2,7 +2,10 @@ import { execFileSync, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { createInterface, emitKeypressEvents } from 'node:readline';
-import { webApps } from '../shared/links.js';
+import { uniqueValues } from '@veyl/shared/utils/array';
+import { sleep } from '@veyl/shared/utils/async';
+import { webApps } from '@veyl/shared/links';
+import { lowerText } from '@veyl/shared/utils/text';
 
 const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
@@ -196,7 +199,7 @@ function shouldSkipResumeConnectionLog(idleMs, now) {
     return now < resumeConnectionQuietUntil;
 }
 
-function duplicateProneDiagnosticKey(name, line) {
+function diagnosticDedupeKey(name, line) {
     if (name !== 'web') {
         return null;
     }
@@ -224,8 +227,8 @@ function duplicateProneDiagnosticKey(name, line) {
     return `${name}:${normalized}`;
 }
 
-function shouldSkipDuplicateDiagnostic(name, line) {
-    const key = duplicateProneDiagnosticKey(name, line);
+function shouldSkipDiagnosticLine(name, line) {
+    const key = diagnosticDedupeKey(name, line);
     if (!key) {
         return false;
     }
@@ -255,8 +258,8 @@ function format(name, rawLine) {
 
     const webReadyUrl = name === 'web' ? getWebReadyUrl(line) : null;
     const iosReadyUrl = name === 'ios' ? getIosReadyUrl(line) : null;
-    const botReady = name === 'bot' ? line.match(/^bot @([a-z0-9]+) ready\b/i)?.[1]?.toLowerCase() : null;
-    const botClosed = name === 'bot' ? line.match(/^bot @([a-z0-9]+) (?:disabled|failed)\b/i)?.[1]?.toLowerCase() : null;
+    const botReady = name === 'bot' ? lowerText(line.match(/^bot @([a-z0-9]+) ready\b/i)?.[1]) : null;
+    const botClosed = name === 'bot' ? lowerText(line.match(/^bot @([a-z0-9]+) (?:disabled|failed)\b/i)?.[1]) : null;
 
     if (webReadyUrl) {
         readyUrls.set('web', webReadyUrl);
@@ -329,7 +332,7 @@ function format(name, rawLine) {
         return explicit(name, paint(`[${connectionSource}] lost connection`, ansi.yellow));
     }
 
-    if (shouldSkipDuplicateDiagnostic(name, line)) {
+    if (shouldSkipDiagnosticLine(name, line)) {
         return null;
     }
 
@@ -409,13 +412,10 @@ function getPortPids(port) {
         if (!output) {
             return [];
         }
-        return [...new Set(
-            output
-                .split('\n')
-                .slice(1)
-                .map((line) => line.trim().split(/\s+/)[1])
-                .filter(Boolean),
-        )];
+        return uniqueValues(output
+            .split('\n')
+            .slice(1)
+            .map((line) => line.trim().split(/\s+/)[1]));
     } catch {
         return [];
     }
@@ -440,9 +440,7 @@ async function clearPorts(ports) {
         if (!busy.length) {
             return;
         }
-        await new Promise((resolve) => {
-            setTimeout(resolve, 100);
-        });
+        await sleep(100);
         for (const port of busy) {
             killPort(port);
         }

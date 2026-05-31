@@ -4,7 +4,9 @@ import { orderChatKeys } from '../crypto/pair.js';
 import { putBotAttachment, readBotAttachment } from './storage.js';
 import { canStoreMsg } from '../chat/messages.js';
 import { openChatSettingsForPair } from '../chat/settings.js';
+import { makeChatLastMsg, makeUpdatedChatLastMsg } from '../chat/lastmsg.js';
 import { cleanChatRetention, newMessageTtlMs, withMessageRetention } from '../chat/ttl.js';
+import { cleanText } from '../utils/text.js';
 
 const pairCache = new Map();
 const MAX_PAIR_CACHE = CHAT_PAIR_CACHE_LIMIT;
@@ -16,7 +18,7 @@ function getPairKey(chatPK, peerChatPK) {
     return orderChatKeys(chatPK, peerChatPK).join('|');
 }
 
-async function getCachedPair(chatPK, chatPrivKey, peerChatPK) {
+async function getCachedBotPair(chatPK, chatPrivKey, peerChatPK) {
     const key = getPairKey(chatPK, peerChatPK);
     if (!key) {
         return openChatPair(chatPK, chatPrivKey, peerChatPK);
@@ -61,25 +63,9 @@ function normalizeMessage(msgData, message) {
     return canStoreMsg(normalized) ? normalized : null;
 }
 
-function makeTtl(retention) {
+function makeTtlDate(retention) {
     const ms = newMessageTtlMs(retention);
     return Number.isFinite(ms) ? new Date(ms) : null;
-}
-
-function makeChatLastMsg(msgData) {
-    return {
-        head: msgData.head,
-        body: msgData.body,
-        ttl: msgData.ttl,
-    };
-}
-
-function makeUpdatedChatLastMsg(lastMsg, fields = {}) {
-    return {
-        head: lastMsg?.head,
-        body: fields.body ?? lastMsg?.body,
-        ttl: 'ttl' in fields ? fields.ttl : (lastMsg?.ttl ?? null),
-    };
 }
 
 function isAlreadyExists(error) {
@@ -104,7 +90,7 @@ export async function decryptBotMsg(msgData, userChatPK, userChatPrivKey, peerCh
         return null;
     }
 
-    const pair = await getCachedPair(userChatPK, userChatPrivKey, peerChatPK);
+    const pair = await getCachedBotPair(userChatPK, userChatPrivKey, peerChatPK);
     const message = await openMsg(pair, msgData);
     return normalizeMessage(msgData, message);
 }
@@ -114,7 +100,7 @@ export async function decryptBotChatSettings(settingsData, userChatPK, userChatP
         return null;
     }
 
-    const pair = await getCachedPair(userChatPK, userChatPrivKey, peerChatPK);
+    const pair = await getCachedBotPair(userChatPK, userChatPrivKey, peerChatPK);
     return openChatSettingsForPair(pair, settingsData);
 }
 
@@ -127,10 +113,10 @@ export async function sendBotMsg(db, FieldValue, senderChatPK, senderChatPrivKey
     }
 
     const updateLastMsg = options?.updateLastMsg !== false;
-    const msgId = typeof options?.msgId === 'string' ? options.msgId.trim() : '';
+    const msgId = cleanText(options?.msgId);
     const sortedKeys = orderChatKeys(senderChatPK, receiverChatPK);
     const chatId = getChatId(senderChatPK, receiverChatPK);
-    const pair = await getCachedPair(senderChatPK, senderChatPrivKey, receiverChatPK);
+    const pair = await getCachedBotPair(senderChatPK, senderChatPrivKey, receiverChatPK);
     const retention = cleanChatRetention(options?.retention ?? options?.ttlMode);
     const { head, body } = await sealMsg(pair, withMessageRetention(message, retention));
     const rawBody = typeof body?.toUint8Array === 'function' ? Buffer.from(body.toUint8Array()) : body;
@@ -140,7 +126,7 @@ export async function sendBotMsg(db, FieldValue, senderChatPK, senderChatPrivKey
         head,
         body: rawBody,
         ts: FieldValue.serverTimestamp(),
-        ttl: makeTtl(retention),
+        ttl: makeTtlDate(retention),
     };
 
     const batch = db.batch();
@@ -178,7 +164,7 @@ export async function updateBotMsg(db, chatId, msgId, senderChatPrivKey, receive
         throw new Error('sender chat key missing');
     }
 
-    const pair = await getCachedPair(senderChatPK, senderChatPrivKey, receiverChatPK);
+    const pair = await getCachedBotPair(senderChatPK, senderChatPrivKey, receiverChatPK);
     const msgRef = db.collection('chats').doc(chatId).collection('messages').doc(msgId);
     const msgSnap = await msgRef.get();
     if (!msgSnap.exists) {
@@ -224,17 +210,17 @@ export async function uploadBotAttachment(bucket, senderChatPK, senderChatPrivKe
         throw new Error('bot chat keys required');
     }
 
-    const cid = typeof attachment?.cid === 'string' ? attachment.cid.trim() : '';
+    const cid = cleanText(attachment?.cid);
     if (!cid) {
         throw new Error('message cid required');
     }
 
-    const pair = await getCachedPair(senderChatPK, senderChatPrivKey, receiverChatPK);
+    const pair = await getCachedBotPair(senderChatPK, senderChatPrivKey, receiverChatPK);
     return putBotAttachment(bucket, pair, cid, attachment?.type, attachment?.data, attachment?.meta || {});
 }
 
 export async function uploadBotAttachmentMsg(db, FieldValue, bucket, senderChatPK, senderChatPrivKey, receiverChatPK, attachment = {}, options = {}) {
-    const cid = typeof attachment?.cid === 'string' ? attachment.cid.trim() : '';
+    const cid = cleanText(attachment?.cid);
     if (!cid) {
         throw new Error('message cid required');
     }

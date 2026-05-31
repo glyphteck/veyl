@@ -3,10 +3,9 @@
 import { useCallback, useState } from 'react';
 import { File, Loader } from 'lucide-react';
 import { useChat } from '@/components/providers/chatprovider';
-import { useCloak } from '@glyphteck/shared/providers/cloakprovider';
-import { attachmentMeta, bubbleBg, saveMsgFile } from '@/lib/messages';
-import { getAttachmentCaption, getAttachmentTitle } from '@glyphteck/shared/chat/messages';
-import { stopClick } from './utils';
+import { useCloak } from '@veyl/shared/providers/cloakprovider';
+import { attachmentMeta, bubbleBg, saveMsgFile, stopClick } from '@/lib/chat/messages';
+import { getAttachmentCaption, getAttachmentTitle, hasStoredFileRef } from '@veyl/shared/chat/messages';
 
 export default function AttachmentMessage({ msg, peerChatPK, fromPeer = false }) {
     const { readMessageFile } = useChat();
@@ -15,7 +14,7 @@ export default function AttachmentMessage({ msg, peerChatPK, fromPeer = false })
     const [error, setError] = useState('');
     const title = getAttachmentTitle(msg);
     const caption = getAttachmentCaption(msg);
-    const canDownload = !!peerChatPK && !!msg?.p && !!msg?.k && !loading;
+    const canDownload = !!peerChatPK && hasStoredFileRef(msg) && !loading;
 
     const handleDownload = useCallback(
         async (event) => {

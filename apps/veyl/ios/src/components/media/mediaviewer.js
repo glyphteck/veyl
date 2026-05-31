@@ -13,12 +13,12 @@ import { scheduleOnRN } from 'react-native-worklets';
 import { useAudio } from '@/providers/audioprovider';
 import { useTheme } from '@/providers/themeprovider';
 import { alpha } from '@/lib/colors';
-import { resolveMessageFileUri, saveMessageFile, saveMessageImage } from '@/lib/chatdownloads';
-import { stageShareMedia } from '@/lib/sharemedia';
+import { resolveMessageFileUri, saveMessageFile, saveMessageImage } from '@/lib/chat/downloads';
+import { stageShareMedia } from '@/lib/chat/share';
 import { usePop } from '@/lib/pop';
 import { useTap } from '@/lib/tap';
-import { canShareAttachmentMsg, getImageAspect } from '@glyphteck/shared/chat/messages';
-import { formatDuration } from '@glyphteck/shared/utils';
+import { canShareAttachmentMsg, getImageAspect } from '@veyl/shared/chat/messages';
+import { formatDuration } from '@veyl/shared/utils/time';
 import Icon from '@/components/icon';
 
 const DISMISS_DISTANCE = 240;

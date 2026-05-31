@@ -1,8 +1,8 @@
 import { Linking, Text, View } from 'react-native';
 import { useTheme } from '@/providers/themeprovider';
-import { bubbleTint } from '@/lib/messages';
-import { getEmojiTextInfo } from '@glyphteck/shared/utils';
-import { splitLinks } from '@glyphteck/shared/chat/messages';
+import { bubbleTint } from '@/lib/chat/messages';
+import { getEmojiTextInfo } from '@veyl/shared/utils/display';
+import { splitLinks } from '@veyl/shared/chat/messages';
 import { useMessageGestureBlockers } from '@/components/chat/messagegesturecontext';
 import GlassView from '@/components/glass/glassview';
 import Menu from '@/components/menu';

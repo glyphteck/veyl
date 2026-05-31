@@ -9,7 +9,7 @@ import {
     links,
     origins,
     storageCorsOrigins,
-} from '../shared/links.js';
+} from '@veyl/shared/links';
 
 const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 

@@ -1,4 +1,6 @@
 import { CHAT_MESSAGE_PREVIEW_COMPRESS, CHAT_MESSAGE_PREVIEW_MAX_EDGE, CHAT_MESSAGE_PREVIEW_MIN_WIDTH } from '../config.js';
+import { cleanText } from '../utils/text.js';
+import { hasStoredFileRef } from './messages/files.js';
 
 export const MESSAGE_PREVIEW_LABEL = 'preview';
 export const MESSAGE_PREVIEW_CACHE_LABEL = 'preview-v2';
@@ -9,11 +11,10 @@ export const MESSAGE_PREVIEW_MIN_WIDTH = CHAT_MESSAGE_PREVIEW_MIN_WIDTH;
 export const MESSAGE_PREVIEW_MAX_EDGE = CHAT_MESSAGE_PREVIEW_MAX_EDGE;
 
 export function makeMessagePreviewMedia(message, mimeType = MESSAGE_PREVIEW_MIME) {
-    const path = typeof message?.p === 'string' ? message.p.trim() : '';
-    const fileKey = typeof message?.k === 'string' ? message.k.trim() : '';
-    if (!path || !fileKey || path.startsWith('local:') || fileKey === 'local') {
+    if (!hasStoredFileRef(message)) {
         return null;
     }
+    const fileKey = cleanText(message?.k);
     return {
         ...message,
         t: 'img',
@@ -24,7 +25,9 @@ export function makeMessagePreviewMedia(message, mimeType = MESSAGE_PREVIEW_MIME
 
 export function getMessagePreviewCacheKey(peerChatPK, message) {
     const msg = message || peerChatPK;
-    return msg?.p && msg?.k ? `${MESSAGE_PREVIEW_CACHE_LABEL}:${msg.p}:${msg.k}` : '';
+    const path = cleanText(msg?.p);
+    const fileKey = cleanText(msg?.k);
+    return path && fileKey ? `${MESSAGE_PREVIEW_CACHE_LABEL}:${path}:${fileKey}` : '';
 }
 
 export function getMessagePreviewFileName(fileName) {

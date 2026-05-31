@@ -1,11 +1,11 @@
 'use client';
 
 import { Button } from '@/components/button';
-import { cn } from '@/lib/utils';
+import { cn } from '@/lib/classes';
 import { AudioLines, CircleArrowRight, File, Film, HandCoins, Image as ImageIcon, Paperclip, Reply, SquarePen, X } from 'lucide-react';
-import { useCloak } from '@glyphteck/shared/providers/cloakprovider';
+import { useCloak } from '@veyl/shared/providers/cloakprovider';
 import { forwardRef, useEffect, useRef, useState } from 'react';
-import { getCommandContext, parseCommand } from '@glyphteck/shared/commands';
+import { getCommandContext, parseCommand } from '@veyl/shared/commands';
 
 const ChatTextarea = forwardRef(function ChatTextarea({ className, maxRows = Infinity, onInput, ...props }, ref) {
     const handleInput = (event) => {

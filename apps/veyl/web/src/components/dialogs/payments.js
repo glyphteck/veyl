@@ -6,7 +6,8 @@ import { useWallet } from '@/components/providers/walletprovider';
 import { useUser } from '@/components/providers/userprovider';
 import SendMoney from '@/components/sendmoney';
 import RequestMoney from '@/components/requestmoney';
-import { toDisplay } from '@/lib/utils';
+import { toDisplay } from '@veyl/shared/money';
+import { hasAvailableBalance } from '@veyl/shared/wallet/balance';
 
 function pickTab(tab, canSend) {
     const requested = tab || 'send';
@@ -17,7 +18,7 @@ export default function Payments({ data, close }) {
     const bitcoin = useBitcoin();
     const { balance } = useWallet();
     const { settings, walletPK: currentUserWalletPK } = useUser();
-    const canSend = balance != null && balance > 0;
+    const canSend = hasAvailableBalance(balance);
     const peer = useMemo(() => (data?.peer?.walletPK === currentUserWalletPK ? null : data?.peer || null), [currentUserWalletPK, data?.peer]);
     const amount = useMemo(() => {
         if (data?.amount == null || data.amount === '') return '';

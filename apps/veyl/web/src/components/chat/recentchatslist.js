@@ -4,13 +4,15 @@ import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/avatar';
 import { Button } from '@/components/button';
 import { Card } from '@/components/card';
-import { formatUserDisplay, formatFullDateTime } from '@/lib/utils';
-import { getMsgPreview as displayLastMsg } from '@glyphteck/shared/chat/messages';
+import { formatUserDisplay } from '@veyl/shared/profile';
+import { formatFullDateTime } from '@veyl/shared/utils/time';
+import { getMsgPreview as displayLastMsg } from '@veyl/shared/chat/messages';
+import { getChatPeerPK } from '@veyl/shared/chat/ids';
 import { useBitcoin } from '@/components/providers/bitcoinprovider';
 import { useUser } from '@/components/providers/userprovider';
 import { useChat, useChatInput } from '@/components/providers/chatprovider';
 import { usePeer } from '@/components/providers/peerprovider';
-import { useCloak } from '@glyphteck/shared/providers/cloakprovider';
+import { useCloak } from '@veyl/shared/providers/cloakprovider';
 import { listNavigationStep, loopListIndex } from '@/lib/focus';
 
 function chatShortcutIndex(event) {
@@ -37,7 +39,7 @@ export function RecentChatsList() {
     const visibleChats = useMemo(() => {
         const list = Array.isArray(chats) ? chats : [];
         return list.filter((chat) => {
-            const peerChatPK = chat.participants.find((p) => p !== chatPK);
+            const peerChatPK = getChatPeerPK(chat, chatPK);
             return !isBlockedChatPK?.(peerChatPK);
         });
     }, [chatPK, chats, isBlockedChatPK]);
@@ -145,7 +147,7 @@ export function RecentChatsList() {
             <div className="overflow-y-auto" onKeyDown={handleListKeyDown} onScroll={handleScroll}>
                 <div className={`divide-y ${visibleChats.length < 12 ? 'border-b' : ''}`}>
                     {visibleChats.map((chat, index) => {
-                        const peerChatPK = chat.participants.find((p) => p !== chatPK);
+                        const peerChatPK = getChatPeerPK(chat, chatPK);
                         const profile = peerByChatPK.get(peerChatPK) ?? null;
                         const displayName = formatUserDisplay({
                             username: profile?.username,
