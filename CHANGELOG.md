@@ -2,6 +2,11 @@
 
 Repo-level changes are listed newest first. Keep entries short and concrete. Broad pushes get grouped bullets, while narrow fixes can use one concise bugfix or cleanup bullet that still names the actual change.
 
+## 4.14.9 - 2026-06-01
+
+- Added the allowlisted `veyl-oss` client export shape and guarded sync tooling for `bun push oss`.
+- Added curated public README and security-policy templates for the future client-only OSS repo.
+
 ## 4.14.8 - 2026-06-01
 
 - Reworked wallet transfer caching, history coverage, and transaction aggregation so wallet rows and balance charts stay scoped to the active wallet identity.

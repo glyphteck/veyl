@@ -47,6 +47,7 @@ bun lint
 bun lint:warn
 bun lint:fix
 bun push
+bun push oss
 bun merge
 bun bot add @mybot
 bun bot power @mybot on
@@ -65,10 +66,11 @@ The old VS Code task workflows are now repo CLI commands. The `.vscode/` folder 
 
 ```bash
 bun push
+bun push oss
 bun merge
 ```
 
-Both commands prompt in the terminal. Use the arrow keys and Enter to choose the version bump. Text prompts collect the commit message and merge PR number when omitted. After the required inputs are collected, the workflow runs quietly and prints the pushed commit id when it succeeds.
+These commands prompt in the terminal. Use the arrow keys and Enter to choose the version bump. Text prompts collect the commit message and merge PR number when omitted. After the required inputs are collected, the workflow runs quietly and prints the pushed commit id when it succeeds.
 
 Before running either workflow, inspect the staged or intended diff, update [../CHANGELOG.md](../CHANGELOG.md), and choose a concise, specific commit message that reflects the real change. Avoid vague messages like `update` unless the user explicitly requests that exact message.
 
@@ -77,12 +79,14 @@ Changelog entries carry the context that no single commit message can. Broad pus
 The workflows preserve the old task behavior while suppressing routine command output:
 
 - `bun push`: bumps the root package version, stages all changes, commits, and pushes `HEAD` to `main` plus force-updates `regtest`.
+- `bun push oss`: runs the same private push, then syncs the allowlisted client source into the sibling `veyl-oss` checkout and pushes that public repo.
 - `bun merge`: switches to `main`, fast-forward pulls, checks out the PR with `gh`, merges `FETCH_HEAD` with `--no-ff`, bumps the root package version, stages all changes, commits, and pushes `HEAD` to `main` plus force-updates `regtest`.
 
 Non-interactive forms are also available:
 
 ```bash
 bun push --version patch --message "document worktree task workflow"
+bun push oss --version patch --message "sync public client source"
 bun merge --pr 123 --version patch --message "merge wallet fee controls"
 ```
 
