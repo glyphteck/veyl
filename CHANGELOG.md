@@ -2,6 +2,12 @@
 
 Repo-level changes are listed newest first. Keep entries short and concrete. Broad pushes get grouped bullets, while narrow fixes can use one concise bugfix or cleanup bullet that still names the actual change.
 
+## 4.14.7 - 2026-06-01
+
+- Replaced bot burst load testing with runtime-owned traffic actions for mixed, message, solo-message, transfer, funding, and stop workflows.
+- Split bot traffic constants and message pools under `shared/bot/traffic/` and updated command, bot, and workflow docs.
+- Made the path checker tolerate deleted tracked files during file-move validation.
+
 ## 4.14.5 - 2026-05-31
 
 - Fixed stale shared and web relative imports exposed by the flattened app workspace build.

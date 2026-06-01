@@ -80,11 +80,13 @@ export const CHAT_SEND_QUEUE_RATE_LIMIT_WINDOW_MS = 10 * MS_PER_SECOND;
 
 // Bot chat timing knobs. These keep deterministic replies from landing at the same instant as bot read state.
 export const BOT_REPLY_AFTER_READ_DELAY_MS = 650;
-export const BOT_BURST_DEFAULT_COUNT = 60;
-export const BOT_BURST_MAX_COUNT = 300;
-export const BOT_BURST_DEFAULT_DELAY_MS = 3000;
-export const BOT_BURST_MIN_DELAY_MS = 250;
-export const BOT_BURST_SESSION_WAIT_MS = 30000;
+export const BOT_TRAFFIC_DEFAULT_COUNT = 60;
+export const BOT_TRAFFIC_MAX_COUNT = 2400;
+export const BOT_TRAFFIC_DEFAULT_DELAY_MS = 3000;
+export const BOT_TRAFFIC_FAST_DELAY_MS = 500;
+export const BOT_TRAFFIC_SLOW_DELAY_MS = 5000;
+export const BOT_TRAFFIC_MIN_DELAY_MS = 250;
+export const BOT_TRAFFIC_SESSION_WAIT_MS = 30000;
 
 // Chat product and taste knobs.
 export const CHAT_MAX_TEXT_CHARS = 2048;

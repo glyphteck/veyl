@@ -155,9 +155,12 @@ The CLI can do the same:
 - `bun bot add <count>` — provision N bots with random usernames
 - `bun bot power <@username|uid> on`
 - `bun bot power <@username|uid> off`
-- `bun bot burst [@username|uid]` — ask the running runtime to send a naturalized message burst to a user; defaults to `@zxrl`, 60 messages, and a 3-second delay
-- `bun bot burst stop` — request cancellation for queued/running burst actions; restarted runtimes also cancel stale running actions before accepting new work
-- `bun bot b [@username|uid]` — short alias for `bun bot burst`
+- `bun bot traffic [mixed/tx/msg] [@username/uid] [fast/slow]` — queue runtime-owned client load traffic; defaults to mixed message/transfer traffic for `@zxrl`
+- `bun bot traffic mixed [@username/uid] [fast/slow]` — queue message and 1-sat transfer traffic in parallel
+- `bun bot traffic msg [@username/uid] [fast/slow] [--solo] [--source @botname]` — send message traffic only, optionally pinned to one bot-owned chat
+- `bun bot traffic tx [@username/uid] [fast/slow]` — send 1-sat transfer traffic only
+- `bun bot traffic fund [--source @review] [--target 1000]` — send a flat funding transfer to each enabled non-`review` traffic bot
+- `bun bot traffic stop` — request cancellation for queued/running traffic actions; restarted runtimes also cancel stale queued/running traffic actions before accepting new work
 - `bun bot kill <@username|uid>` — fully delete the bot account
 - `bun bot kill all` — delete every bot
 
@@ -192,17 +195,68 @@ bun bot power @mybot on
 bun bot power @mybot off
 ```
 
-### Send a test burst
+### Traffic load testing
 
-The bot runtime must already be running. The command queues an action for the live runtime and waits for completion by default:
+Traffic commands are for client load testing. The bot runtime must already be running. The runtime uses every enabled bot except `review` as the traffic fleet.
+
+Start verbose runtimes before observing clients:
 
 ```bash
-bun bot burst
-bun bot burst @alice --count 20 --delay 1s
-bun bot b @alice --no-wait
+bun dev -v
 ```
 
-The burst action randomly picks from the non-`review` enabled bot sessions, then uses shared text-vs-request weights. Text messages come from the shared 100-item burst-message pool. Requests use weighted amount buckets from 1,000 to 1,000,000 sats, with most requests in the 10,000-99,999 sat range and fewer larger asks. The runtime still tries one final encrypted read receipt per bot chat when there is a recent user-authored message to acknowledge.
+Open and unlock web and iOS as `@zxrl`, then keep the relevant surface in view. Use the chat list for message traffic and the wallet transfer list for transfer traffic. Web may lock again after reload, so unlock it again before judging logs.
+
+Fund the traffic fleet from `review`:
+
+```bash
+bun bot traffic fund
+bun bot traffic fund --target 1000 --source @review
+```
+
+Funding sends the flat target amount to each enabled non-`review` bot. It does not inspect balances or top up to a threshold. `--amount` is accepted as the same per-bot amount when that reads more clearly. Use it before transfer traffic when the fleet needs sats.
+
+Queue mixed traffic:
+
+```bash
+bun bot traffic
+bun bot traffic mixed @alice fast --count 50
+bun bot traffic mixed @alice slow --duration 10m --no-wait
+```
+
+`fast` uses a 500ms delay and `slow` uses a 5s delay. Without a speed preset, traffic uses the default 3s delay. Message traffic randomly picks from the non-`review` enabled bot sessions, then uses shared text-vs-request weights. Text messages come from the shared 100-item traffic-msg pool. Requests use weighted amount buckets from 1,000 to 1,000,000 sats, with most requests in the 10,000-99,999 sat range and fewer larger asks. The runtime still tries one final encrypted read receipt per bot chat when there is a recent user-authored message to acknowledge.
+
+Queue focused traffic:
+
+```bash
+bun bot traffic msg @alice fast --count 60
+bun bot traffic msg @alice fast --solo --source @mybot
+bun bot traffic tx @alice fast --count 300 --no-wait
+```
+
+`msg --solo` sends every message through one bot-owned chat, either the requested `--source` bot or the first active traffic bot. Transfer traffic always sends 1 sat per transfer. Each transfer action randomly picks a traffic bot for every transfer and records sender counts plus tx ids in the action result when Spark returns them. For message, mixed, and transfer traffic, `--duration` derives the count from the selected delay and is capped by the shared traffic maximum.
+
+Stop queued or running traffic cleanly:
+
+```bash
+bun bot traffic stop
+```
+
+Use `stop` before changing the traffic shape or restarting runtimes. Runtime startup also cancels stale queued/running traffic actions so a previous run cannot keep leaking work into the next observation pass.
+
+Traffic action results keep the useful debugging data even when individual sends fail: requested count, sent count, sender distribution, tx ids where available, failure count, sampled failure messages, and cancellation state.
+
+If a wallet transfer list shows rows that the unlocked wallet does not own, stop traffic before debugging and treat local encrypted transfer cache as suspect first. Cached transfer history must be scoped to the current wallet public key, and clients must reject cache rows whose sender and receiver keys do not include that wallet key. Clearing browser storage can hide the symptom, but the durable fix belongs in the shared cache and wallet ownership checks.
+
+Agent checklist:
+
+1. Start `bun dev -v` and wait for web, iOS Metro, and bot runtime readiness.
+2. Ask the human to unlock web and iOS as the target account before judging client logs.
+3. Use `bun bot traffic fund --target 1000` before transfer traffic if the fleet may be low.
+4. Use `mixed` for combined chat/wallet pressure, `msg --solo` for single-chat pressure, `msg` for chat-list behavior, and `tx` for wallet-list behavior.
+5. Prefer `--no-wait` only when deliberately overlapping traffic or leaving a long observation run active.
+6. Use `bun bot traffic stop` before changing shape, restarting runtimes, or handing off.
+7. Inspect verbose client logs for cache churn, profile/avatar refetches, list-wide rerenders, repeated wallet aggregation, and tx pagination work.
 
 ### Delete a bot
 

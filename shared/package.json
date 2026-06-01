@@ -8,6 +8,8 @@
         "lint": "eslint . --quiet"
     },
     "exports": {
+        "./bot/traffic": "./bot/traffic/traffic.js",
+        "./bot/traffic/*": "./bot/traffic/*.js",
         "./bot/*": "./bot/*.js",
         "./cache/*": "./cache/*.js",
         "./chat/*": "./chat/*.js",

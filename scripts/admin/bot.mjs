@@ -8,18 +8,21 @@ import {
     BOT_ACTION_STATUS_CANCELLED,
     BOT_ACTION_STATUS_QUEUED,
     BOT_ACTION_STATUS_RUNNING,
-    BOT_ACTION_TYPE_BURST,
-    BOT_ACTION_TYPE_FUND_BOTS,
-    BOT_ACTION_TYPE_TRANSFER_BURST,
+    BOT_ACTION_TYPE_TRAFFIC_MSG,
+    BOT_ACTION_TYPE_TRAFFIC_FUND,
+    BOT_ACTION_TYPE_TRAFFIC_TX,
     BOT_MODE,
     BOT_RUNTIME_ACTIONS,
     BOT_RUNTIME_DOC_ID,
     BOT_RUNTIME_LEASE_MS,
 } from '@veyl/shared/bot/events';
-import { cleanBurstCount, cleanBurstDelayMs } from '@veyl/shared/bot/burst';
+import { cleanTrafficCount, cleanTrafficDelayMs } from '@veyl/shared/bot/traffic';
+import { BOT_TRAFFIC_TRANSFER_AMOUNT_SATS } from '@veyl/shared/bot/traffic/transfers';
 import {
-    BOT_BURST_DEFAULT_COUNT,
-    BOT_BURST_DEFAULT_DELAY_MS,
+    BOT_TRAFFIC_DEFAULT_COUNT,
+    BOT_TRAFFIC_DEFAULT_DELAY_MS,
+    BOT_TRAFFIC_FAST_DELAY_MS,
+    BOT_TRAFFIC_SLOW_DELAY_MS,
 } from '@veyl/shared/config';
 import { resolveBotUid, setBotPowerState } from '../../functions/lib/bots.js';
 import { provisionBot } from '../../apps/bot/src/newbot.js';
@@ -29,21 +32,25 @@ import { timestampMs } from '@veyl/shared/utils/time';
 import { sleep } from '@veyl/shared/utils/async';
 import { cleanText, lowerText } from '@veyl/shared/utils/text';
 
-const DEFAULT_BURST_TARGET = '@zxrl';
-const DEFAULT_TRANSFER_AMOUNT_SATS = 1;
+const DEFAULT_TRAFFIC_TARGET = '@zxrl';
 const DEFAULT_FUND_BOT_AMOUNT_SATS = 1000;
-const BURST_WAIT_POLL_MS = 2000;
-const BURST_WAIT_GRACE_MS = 60000;
+const DEFAULT_FUND_BOT_SOURCE = '@review';
+const TRAFFIC_WAIT_POLL_MS = 2000;
+const TRAFFIC_WAIT_GRACE_MS = 60000;
+const TRAFFIC_WAIT_SEND_GRACE_MS = 2500;
+const TRAFFIC_SPEEDS = Object.freeze({
+    fast: BOT_TRAFFIC_FAST_DELAY_MS,
+    slow: BOT_TRAFFIC_SLOW_DELAY_MS,
+});
 
 function usage() {
     console.error('usage: bun bot add [username|count]');
     console.error('usage: bun bot power <@username|uid|all> <on|off>');
     console.error('usage: bun bot kill <@username|uid|all>');
-    console.error('usage: bun bot burst [@username|uid] [--count 60] [--delay 3000|3s] [--no-wait]');
-    console.error('usage: bun bot burst stop');
-    console.error('usage: bun bot b [@username|uid] [--count 60] [--delay 3000|3s] [--no-wait]');
-    console.error('usage: bun bot fund-bots [--amount 1000] [--delay 250ms] [--no-wait]');
-    console.error('usage: bun bot transfer-burst [@username|uid] [--count 60] [--delay 3000|3s] [--amount 1] [--no-wait]');
+    console.error('usage: bun bot traffic [mixed/tx/msg] [@username/uid] [fast/slow] [--count 60] [--duration 10m] [--delay 3s] [--no-wait]');
+    console.error('usage: bun bot traffic msg [@username/uid] [fast/slow] [--solo] [--source @botname]');
+    console.error('usage: bun bot traffic fund [--source @review] [--target 1000] [--amount 1000] [--delay 250ms] [--no-wait]');
+    console.error('usage: bun bot traffic stop');
     process.exit(1);
 }
 
@@ -89,11 +96,19 @@ function msLabel(ms) {
 }
 
 function parseCount(value) {
-    return cleanBurstCount(value, 'count');
+    return cleanTrafficCount(value, 'count');
 }
 
 function parseDelayMs(value) {
-    return cleanBurstDelayMs(value, { name: 'delay', text: true });
+    return cleanTrafficDelayMs(value, { name: 'delay', text: true });
+}
+
+function parseDurationMs(value) {
+    return cleanTrafficDelayMs(value, { name: 'duration', text: true });
+}
+
+function countFromDuration(durationMs, delayMs) {
+    return parseCount(Math.max(1, Math.ceil(durationMs / delayMs)));
 }
 
 function parseAmountSats(value, fallback) {
@@ -126,59 +141,21 @@ function readOptionValue(args, index, inlineValue) {
     return { value: args[index + 1], index: index + 1 };
 }
 
-function parseBurstArgs(args) {
-    let target = DEFAULT_BURST_TARGET;
-    let targetSet = false;
-    let count = BOT_BURST_DEFAULT_COUNT;
-    let delayMs = BOT_BURST_DEFAULT_DELAY_MS;
-    let wait = true;
-
-    for (let i = 0; i < args.length; i++) {
-        const raw = String(args[i] ?? '').trim();
-        if (!raw) {
-            continue;
-        }
-
-        const { name, value } = splitOption(raw);
-        if (name === '--count' || name === '-c') {
-            const next = readOptionValue(args, i, value);
-            count = parseCount(next.value);
-            i = next.index;
-            continue;
-        }
-        if (name === '--delay' || name === '--delay-ms' || name === '-d') {
-            const next = readOptionValue(args, i, value);
-            delayMs = parseDelayMs(next.value);
-            i = next.index;
-            continue;
-        }
-        if (name === '--wait') {
-            wait = true;
-            continue;
-        }
-        if (name === '--no-wait') {
-            wait = false;
-            continue;
-        }
-        if (raw.startsWith('-')) {
-            usage();
-        }
-        if (targetSet) {
-            usage();
-        }
-        target = raw;
-        targetSet = true;
-    }
-
-    return { target, count, delayMs, wait };
+function trafficSpeedDelayMs(value) {
+    return TRAFFIC_SPEEDS[lowerText(value)] || null;
 }
 
-function parseTransferBurstArgs(args) {
-    let target = DEFAULT_BURST_TARGET;
+function parseTrafficLoadArgs(args, { allowSolo = false } = {}) {
+    let target = DEFAULT_TRAFFIC_TARGET;
     let targetSet = false;
-    let count = BOT_BURST_DEFAULT_COUNT;
-    let delayMs = BOT_BURST_DEFAULT_DELAY_MS;
-    let amountSats = DEFAULT_TRANSFER_AMOUNT_SATS;
+    let count = BOT_TRAFFIC_DEFAULT_COUNT;
+    let countSet = false;
+    let durationMs = null;
+    let delayMs = BOT_TRAFFIC_DEFAULT_DELAY_MS;
+    let delaySet = false;
+    let speed = null;
+    let source = null;
+    let solo = false;
     let wait = true;
 
     for (let i = 0; i < args.length; i++) {
@@ -191,18 +168,30 @@ function parseTransferBurstArgs(args) {
         if (name === '--count' || name === '-c') {
             const next = readOptionValue(args, i, value);
             count = parseCount(next.value);
+            countSet = true;
+            i = next.index;
+            continue;
+        }
+        if (name === '--duration' || name === '--duration-ms') {
+            const next = readOptionValue(args, i, value);
+            durationMs = parseDurationMs(next.value);
             i = next.index;
             continue;
         }
         if (name === '--delay' || name === '--delay-ms' || name === '-d') {
             const next = readOptionValue(args, i, value);
             delayMs = parseDelayMs(next.value);
+            delaySet = true;
             i = next.index;
             continue;
         }
-        if (name === '--amount' || name === '--amount-sats' || name === '-a') {
+        if (allowSolo && name === '--solo') {
+            solo = true;
+            continue;
+        }
+        if (allowSolo && (name === '--source' || name === '--from' || name === '-s')) {
             const next = readOptionValue(args, i, value);
-            amountSats = parseAmountSats(next.value, DEFAULT_TRANSFER_AMOUNT_SATS);
+            source = next.value;
             i = next.index;
             continue;
         }
@@ -217,6 +206,14 @@ function parseTransferBurstArgs(args) {
         if (raw.startsWith('-')) {
             usage();
         }
+        const speedDelayMs = trafficSpeedDelayMs(raw);
+        if (speedDelayMs != null) {
+            speed = lowerText(raw);
+            if (!delaySet) {
+                delayMs = speedDelayMs;
+            }
+            continue;
+        }
         if (targetSet) {
             usage();
         }
@@ -224,11 +221,22 @@ function parseTransferBurstArgs(args) {
         targetSet = true;
     }
 
-    return { target, count, delayMs, amountSats, wait };
+    if (countSet && durationMs != null) {
+        usage();
+    }
+    if (source && !solo) {
+        usage();
+    }
+    if (durationMs != null) {
+        count = countFromDuration(durationMs, delayMs);
+    }
+
+    return { target, count, delayMs, durationMs, wait, speed, source, solo };
 }
 
 function parseFundBotsArgs(args) {
     let amountSats = DEFAULT_FUND_BOT_AMOUNT_SATS;
+    let source = DEFAULT_FUND_BOT_SOURCE;
     let delayMs = 250;
     let wait = true;
 
@@ -239,9 +247,15 @@ function parseFundBotsArgs(args) {
         }
 
         const { name, value } = splitOption(raw);
-        if (name === '--amount' || name === '--amount-sats' || name === '-a') {
+        if (name === '--target' || name === '--amount' || name === '--amount-sats' || name === '-a') {
             const next = readOptionValue(args, i, value);
             amountSats = parseAmountSats(next.value, DEFAULT_FUND_BOT_AMOUNT_SATS);
+            i = next.index;
+            continue;
+        }
+        if (name === '--source' || name === '--from' || name === '-s') {
+            const next = readOptionValue(args, i, value);
+            source = next.value;
             i = next.index;
             continue;
         }
@@ -262,7 +276,7 @@ function parseFundBotsArgs(args) {
         usage();
     }
 
-    return { amountSats, delayMs, wait };
+    return { amountSats, source, delayMs, wait };
 }
 
 async function requireRuntimeAction(actionType) {
@@ -322,6 +336,52 @@ async function resolveBotTargets(target) {
         uid,
         username: lowerText(botSnap.data()?.username || profileSnap.data()?.username) || null,
     }];
+}
+
+async function resolveBotIdentity(target, label = 'bot') {
+    const raw = cleanText(target || '');
+    const id = lowerText(raw.replace(/^@/, ''));
+    const uid = await resolveBotUid(id);
+    if (!uid) {
+        throw new Error(`${label} not found: ${target}`);
+    }
+
+    const [botSnap, profileSnap] = await Promise.all([
+        db.collection('bots').doc(uid).get(),
+        db.collection('profiles').doc(uid).get(),
+    ]);
+
+    return {
+        uid,
+        username: lowerText(botSnap.data()?.username || profileSnap.data()?.username) || null,
+    };
+}
+
+function parseTrafficCommand(args) {
+    const first = lowerText(args[0]);
+    if (!first) {
+        return { mode: 'mixed', args: [] };
+    }
+    if (first === 'mixed') {
+        return { mode: 'mixed', args: args.slice(1) };
+    }
+    if (first === 'msg') {
+        return { mode: 'msg', args: args.slice(1) };
+    }
+    if (first === 'tx') {
+        return { mode: 'tx', args: args.slice(1) };
+    }
+    if (first === 'fund') {
+        return { mode: 'fund', args: args.slice(1) };
+    }
+    if (first === 'stop') {
+        if (args.length > 1) {
+            usage();
+        }
+        return { mode: 'stop', args: [] };
+    }
+
+    return { mode: 'mixed', args };
 }
 
 async function deleteBotChats(chatPK) {
@@ -449,21 +509,27 @@ export async function addBot(target) {
     return result;
 }
 
-export async function queueBurstAction(options = {}) {
-    await requireRuntimeAction(BOT_ACTION_TYPE_BURST);
+export async function queueTrafficMessageAction(options = {}) {
+    await requireRuntimeAction(BOT_ACTION_TYPE_TRAFFIC_MSG);
 
-    const target = await resolveUid(options.target || DEFAULT_BURST_TARGET);
-    const count = parseCount(options.count ?? BOT_BURST_DEFAULT_COUNT);
-    const delayMs = parseDelayMs(options.delayMs ?? BOT_BURST_DEFAULT_DELAY_MS);
+    const target = await resolveUid(options.target || DEFAULT_TRAFFIC_TARGET);
+    const source = options.source ? await resolveBotIdentity(options.source, 'traffic source bot') : null;
+    const count = parseCount(options.count ?? BOT_TRAFFIC_DEFAULT_COUNT);
+    const delayMs = parseDelayMs(options.delayMs ?? BOT_TRAFFIC_DEFAULT_DELAY_MS);
     const actionRef = runtimeRef().collection(BOT_RUNTIME_ACTIONS).doc();
 
     await actionRef.set({
-        type: BOT_ACTION_TYPE_BURST,
+        type: BOT_ACTION_TYPE_TRAFFIC_MSG,
         status: BOT_ACTION_STATUS_QUEUED,
         targetUid: target.uid,
         targetUsername: target.username || null,
+        sourceUid: source?.uid || null,
+        sourceUsername: source?.username || null,
+        solo: options.solo === true,
         count,
         delayMs,
+        durationMs: Number.isFinite(options.durationMs) ? options.durationMs : null,
+        speed: options.speed || null,
         requestedBy: 'cli',
         createdAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
@@ -473,22 +539,29 @@ export async function queueBurstAction(options = {}) {
         id: actionRef.id,
         ref: actionRef,
         target,
+        source,
+        solo: options.solo === true,
         count,
         delayMs,
+        durationMs: Number.isFinite(options.durationMs) ? options.durationMs : null,
+        speed: options.speed || null,
     };
 }
 
-export async function queueFundBotsAction(options = {}) {
-    await requireRuntimeAction(BOT_ACTION_TYPE_FUND_BOTS);
+export async function queueTrafficFundAction(options = {}) {
+    await requireRuntimeAction(BOT_ACTION_TYPE_TRAFFIC_FUND);
 
     const amountSats = parseAmountSats(options.amountSats ?? DEFAULT_FUND_BOT_AMOUNT_SATS, DEFAULT_FUND_BOT_AMOUNT_SATS);
+    const source = await resolveBotIdentity(options.source || DEFAULT_FUND_BOT_SOURCE, 'funding bot');
     const delayMs = parseDelayMs(options.delayMs ?? 250);
     const actionRef = runtimeRef().collection(BOT_RUNTIME_ACTIONS).doc();
 
     await actionRef.set({
-        type: BOT_ACTION_TYPE_FUND_BOTS,
+        type: BOT_ACTION_TYPE_TRAFFIC_FUND,
         status: BOT_ACTION_STATUS_QUEUED,
         amountSats,
+        sourceUid: source.uid,
+        sourceUsername: source.username || null,
         delayMs,
         requestedBy: 'cli',
         createdAt: FieldValue.serverTimestamp(),
@@ -499,27 +572,30 @@ export async function queueFundBotsAction(options = {}) {
         id: actionRef.id,
         ref: actionRef,
         amountSats,
+        source,
         delayMs,
     };
 }
 
-export async function queueTransferBurstAction(options = {}) {
-    await requireRuntimeAction(BOT_ACTION_TYPE_TRANSFER_BURST);
+export async function queueTrafficTransferAction(options = {}) {
+    await requireRuntimeAction(BOT_ACTION_TYPE_TRAFFIC_TX);
 
-    const target = await resolveUid(options.target || DEFAULT_BURST_TARGET);
-    const count = parseCount(options.count ?? BOT_BURST_DEFAULT_COUNT);
-    const delayMs = parseDelayMs(options.delayMs ?? BOT_BURST_DEFAULT_DELAY_MS);
-    const amountSats = parseAmountSats(options.amountSats ?? DEFAULT_TRANSFER_AMOUNT_SATS, DEFAULT_TRANSFER_AMOUNT_SATS);
+    const target = await resolveUid(options.target || DEFAULT_TRAFFIC_TARGET);
+    const count = parseCount(options.count ?? BOT_TRAFFIC_DEFAULT_COUNT);
+    const delayMs = parseDelayMs(options.delayMs ?? BOT_TRAFFIC_DEFAULT_DELAY_MS);
+    const amountSats = BOT_TRAFFIC_TRANSFER_AMOUNT_SATS;
     const actionRef = runtimeRef().collection(BOT_RUNTIME_ACTIONS).doc();
 
     await actionRef.set({
-        type: BOT_ACTION_TYPE_TRANSFER_BURST,
+        type: BOT_ACTION_TYPE_TRAFFIC_TX,
         status: BOT_ACTION_STATUS_QUEUED,
         targetUid: target.uid,
         targetUsername: target.username || null,
         count,
         delayMs,
+        durationMs: Number.isFinite(options.durationMs) ? options.durationMs : null,
         amountSats,
+        speed: options.speed || null,
         requestedBy: 'cli',
         createdAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
@@ -531,11 +607,34 @@ export async function queueTransferBurstAction(options = {}) {
         target,
         count,
         delayMs,
+        durationMs: Number.isFinite(options.durationMs) ? options.durationMs : null,
         amountSats,
+        speed: options.speed || null,
     };
 }
 
-export async function stopBurstActions() {
+export async function queueTrafficMixedActions(options = {}) {
+    await requireRuntimeAction(BOT_ACTION_TYPE_TRAFFIC_MSG);
+    await requireRuntimeAction(BOT_ACTION_TYPE_TRAFFIC_TX);
+
+    const [message, transfer] = await Promise.all([
+        queueTrafficMessageAction(options),
+        queueTrafficTransferAction(options),
+    ]);
+
+    return {
+        mode: 'mixed',
+        message,
+        transfer,
+        target: message.target,
+        count: message.count,
+        delayMs: message.delayMs,
+        durationMs: message.durationMs,
+        speed: message.speed || null,
+    };
+}
+
+export async function stopTrafficActions() {
     const snap = await runtimeRef().collection(BOT_RUNTIME_ACTIONS).where('status', 'in', [BOT_ACTION_STATUS_QUEUED, BOT_ACTION_STATUS_RUNNING]).get();
     const batch = db.batch();
     let queued = 0;
@@ -543,7 +642,7 @@ export async function stopBurstActions() {
 
     for (const docSnap of snap.docs) {
         const data = docSnap.data();
-        if (![BOT_ACTION_TYPE_BURST, BOT_ACTION_TYPE_FUND_BOTS, BOT_ACTION_TYPE_TRANSFER_BURST].includes(data?.type)) {
+        if (![BOT_ACTION_TYPE_TRAFFIC_MSG, BOT_ACTION_TYPE_TRAFFIC_FUND, BOT_ACTION_TYPE_TRAFFIC_TX].includes(data?.type)) {
             continue;
         }
 
@@ -554,10 +653,19 @@ export async function stopBurstActions() {
                 {
                     status: BOT_ACTION_STATUS_CANCELLED,
                     result: {
-                        type: data?.type || BOT_ACTION_TYPE_BURST,
-                        requested: data?.count || 0,
+                        type: data?.type || BOT_ACTION_TYPE_TRAFFIC_MSG,
+                        requested: Number.isFinite(data?.count) ? data.count : 0,
                         sent: 0,
                         cancelled: true,
+                        targetUid: data?.targetUid || null,
+                        targetUsername: data?.targetUsername || null,
+                        sourceUid: data?.sourceUid || null,
+                        sourceUsername: data?.sourceUsername || null,
+                        amountSats: Number.isFinite(data?.amountSats) ? data.amountSats : null,
+                        delayMs: Number.isFinite(data?.delayMs) ? data.delayMs : 0,
+                        durationMs: Number.isFinite(data?.durationMs) ? data.durationMs : null,
+                        errors: 0,
+                        errorMessages: [],
                     },
                     cancelRequested: true,
                     cancelRequestedAt: FieldValue.serverTimestamp(),
@@ -602,61 +710,96 @@ function printKillResult(result) {
     console.log(`deleted ${plural(result.count, 'bot account')}, ${plural(chatsDeleted, 'chat')}, auth users, and bot seed entries${suffix}`);
 }
 
-function printBurstQueued(action) {
+function printTrafficMessageQueued(action) {
     const target = action.target.username ? `@${action.target.username}` : action.target.uid;
-    console.log(`queued bot burst ${action.id}: ${plural(action.count, 'message')} to ${target} every ${msLabel(action.delayMs)}`);
+    const duration = Number.isFinite(action.durationMs) ? ` for ${msLabel(action.durationMs)}` : '';
+    const source = action.source?.username ? ` from @${action.source.username}` : '';
+    const mode = action.solo ? 'solo traffic' : 'message traffic';
+    console.log(`queued ${mode} ${action.id}: ${plural(action.count, 'message')} to ${target}${source} every ${msLabel(action.delayMs)}${duration}`);
 }
 
-function printFundBotsQueued(action) {
-    console.log(`queued bot funding ${action.id}: ${action.amountSats} sats per bot every ${msLabel(action.delayMs)}`);
+function printTrafficFundQueued(action) {
+    const source = action.source?.username ? `@${action.source.username}` : action.source?.uid || DEFAULT_FUND_BOT_SOURCE;
+    console.log(`queued traffic funding ${action.id}: ${action.amountSats} sats from ${source} to each traffic bot every ${msLabel(action.delayMs)}`);
 }
 
-function printTransferBurstQueued(action) {
+function printTrafficTransferQueued(action) {
     const target = action.target.username ? `@${action.target.username}` : action.target.uid;
-    console.log(`queued transfer burst ${action.id}: ${plural(action.count, 'transfer')} of ${action.amountSats} sats to ${target} every ${msLabel(action.delayMs)}`);
+    const duration = Number.isFinite(action.durationMs) ? ` for ${msLabel(action.durationMs)}` : '';
+    console.log(`queued transfer traffic ${action.id}: ${plural(action.count, 'transfer')} of ${action.amountSats} sats to ${target} every ${msLabel(action.delayMs)}${duration}`);
 }
 
-function printBurstResult(data) {
+function printTrafficMixedQueued(action) {
+    const target = action.target.username ? `@${action.target.username}` : action.target.uid;
+    const duration = Number.isFinite(action.durationMs) ? ` for ${msLabel(action.durationMs)}` : '';
+    console.log(`queued mixed traffic ${action.message.id}, ${action.transfer.id}: ${plural(action.count, 'message')} and ${plural(action.count, 'transfer')} to ${target} every ${msLabel(action.delayMs)}${duration}`);
+}
+
+function senderCountsLabel(result) {
+    const counts = result?.senderCounts;
+    if (!counts || typeof counts !== 'object' || Array.isArray(counts)) {
+        return '';
+    }
+
+    return Object.entries(counts)
+        .filter(([, count]) => Number(count) > 0)
+        .sort((a, b) => Number(b[1]) - Number(a[1]) || a[0].localeCompare(b[0]))
+        .map(([name, count]) => `@${name}x${count}`)
+        .join(', ');
+}
+
+function failureSuffix(result) {
+    const errors = Number.isFinite(result?.errors) ? result.errors : 0;
+    return errors ? `, ${plural(errors, 'failure')}` : '';
+}
+
+function printTrafficMessageResult(data) {
     const result = data?.result || {};
     const sent = Number.isFinite(result.sent) ? result.sent : 0;
     const requested = Number.isFinite(result.requested) ? result.requested : data?.count;
-    const botNames = Array.isArray(result.bots) ? result.bots.filter(Boolean).map((name) => `@${name}`).join(', ') : '';
+    const botNames = senderCountsLabel(result) || (Array.isArray(result.bots) ? result.bots.filter(Boolean).map((name) => `@${name}`).join(', ') : '');
     const botSuffix = botNames ? ` from ${botNames}` : '';
     const requests = Number.isFinite(result.requests) ? result.requests : 0;
     const requestSuffix = requests ? ` including ${plural(requests, 'request')}` : '';
     const receipts = Number.isFinite(result.readReceipts) ? result.readReceipts : 0;
     const receiptSuffix = receipts ? ` and ${plural(receipts, 'read receipt')}` : '';
-    const label = result.cancelled || data?.status === BOT_ACTION_STATUS_CANCELLED ? 'burst stopped' : 'burst complete';
-    console.log(`${label}: sent ${sent}/${requested} messages${requestSuffix}${receiptSuffix}${botSuffix}`);
+    const label = result.cancelled || data?.status === BOT_ACTION_STATUS_CANCELLED ? 'message traffic stopped' : 'message traffic complete';
+    console.log(`${label}: sent ${sent}/${requested} messages${requestSuffix}${receiptSuffix}${botSuffix}${failureSuffix(result)}`);
 }
 
-function printFundBotsResult(data) {
+function printTrafficFundResult(data) {
     const result = data?.result || {};
     const sent = Number.isFinite(result.sent) ? result.sent : 0;
     const requested = Number.isFinite(result.requested) ? result.requested : 0;
     const amount = Number.isFinite(result.amountSats) ? result.amountSats : data?.amountSats;
-    const label = result.cancelled || data?.status === BOT_ACTION_STATUS_CANCELLED ? 'bot funding stopped' : 'bot funding complete';
-    console.log(`${label}: sent ${sent}/${requested} funding transfers of ${amount} sats`);
+    const source = result.sourceUsername ? `@${result.sourceUsername}` : result.sourceUid || data?.sourceUsername || DEFAULT_FUND_BOT_SOURCE;
+    const label = result.cancelled || data?.status === BOT_ACTION_STATUS_CANCELLED ? 'traffic funding stopped' : 'traffic funding complete';
+    console.log(`${label}: sent ${sent}/${requested} funding transfers of ${amount} sats from ${source}${failureSuffix(result)}`);
 }
 
-function printTransferBurstResult(data) {
+function printTrafficTransferResult(data) {
     const result = data?.result || {};
     const sent = Number.isFinite(result.sent) ? result.sent : 0;
     const requested = Number.isFinite(result.requested) ? result.requested : data?.count;
-    const botNames = Array.isArray(result.bots) ? result.bots.filter(Boolean).map((name) => `@${name}`).join(', ') : '';
+    const botNames = senderCountsLabel(result) || (Array.isArray(result.bots) ? result.bots.filter(Boolean).map((name) => `@${name}`).join(', ') : '');
     const botSuffix = botNames ? ` from ${botNames}` : '';
     const amount = Number.isFinite(result.amountSats) ? result.amountSats : data?.amountSats;
-    const label = result.cancelled || data?.status === BOT_ACTION_STATUS_CANCELLED ? 'transfer burst stopped' : 'transfer burst complete';
-    console.log(`${label}: sent ${sent}/${requested} transfers of ${amount} sats${botSuffix}`);
+    const label = result.cancelled || data?.status === BOT_ACTION_STATUS_CANCELLED ? 'transfer traffic stopped' : 'transfer traffic complete';
+    console.log(`${label}: sent ${sent}/${requested} transfers of ${amount} sats${botSuffix}${failureSuffix(result)}`);
 }
 
-function printBurstStopResult(result) {
+function printTrafficMixedResult(messageData, transferData) {
+    printTrafficMessageResult(messageData);
+    printTrafficTransferResult(transferData);
+}
+
+function printTrafficStopResult(result) {
     if (!result.total) {
         console.log('no active bot actions');
         return;
     }
-    const queued = result.queued ? `${plural(result.queued, 'queued burst')}` : '';
-    const running = result.running ? `${plural(result.running, 'running burst')}` : '';
+    const queued = result.queued ? `${plural(result.queued, 'queued traffic action')}` : '';
+    const running = result.running ? `${plural(result.running, 'running traffic action')}` : '';
     const details = [queued, running].filter(Boolean).join(', ');
     console.log(`requested stop for ${plural(result.total, 'bot action')}${details ? `: ${details}` : ''}`);
 }
@@ -687,10 +830,16 @@ async function waitForAction(actionRef, timeoutMs) {
             throw new Error('bot runtime stopped before action finished');
         }
 
-        await sleep(Math.min(BURST_WAIT_POLL_MS, Math.max(0, deadline - Date.now())));
+        await sleep(Math.min(TRAFFIC_WAIT_POLL_MS, Math.max(0, deadline - Date.now())));
     }
 
     throw new Error('bot action did not finish before the wait timeout');
+}
+
+function trafficWaitTimeoutMs(action) {
+    const count = Number.isFinite(action?.count) ? action.count : BOT_TRAFFIC_DEFAULT_COUNT;
+    const delayMs = Number.isFinite(action?.delayMs) ? action.delayMs : BOT_TRAFFIC_DEFAULT_DELAY_MS;
+    return count * (delayMs + TRAFFIC_WAIT_SEND_GRACE_MS) + TRAFFIC_WAIT_GRACE_MS;
 }
 
 async function main() {
@@ -741,51 +890,61 @@ async function main() {
         return;
     }
 
-    if (cmd === 'burst' || cmd === 'b') {
-        if (arg1 === 'stop') {
-            const result = await stopBurstActions();
-            printBurstStopResult(result);
+    if (cmd === 'traffic') {
+        const traffic = parseTrafficCommand(cliArgs().slice(1));
+        if (traffic.mode === 'stop') {
+            const result = await stopTrafficActions();
+            printTrafficStopResult(result);
             return;
         }
 
-        const options = parseBurstArgs(cliArgs().slice(1));
-        const action = await queueBurstAction(options);
-        printBurstQueued(action);
+        if (traffic.mode === 'fund') {
+            const options = parseFundBotsArgs(traffic.args);
+            const action = await queueTrafficFundAction(options);
+            printTrafficFundQueued(action);
+            if (!options.wait) {
+                return;
+            }
+            const result = await waitForAction(action.ref, 300000);
+            printTrafficFundResult(result);
+            return;
+        }
+
+        if (traffic.mode === 'tx') {
+            const options = parseTrafficLoadArgs(traffic.args);
+            const action = await queueTrafficTransferAction(options);
+            printTrafficTransferQueued(action);
+            if (!options.wait) {
+                return;
+            }
+            const result = await waitForAction(action.ref, trafficWaitTimeoutMs(action));
+            printTrafficTransferResult(result);
+            return;
+        }
+
+        if (traffic.mode === 'mixed') {
+            const options = parseTrafficLoadArgs(traffic.args);
+            const action = await queueTrafficMixedActions(options);
+            printTrafficMixedQueued(action);
+            if (!options.wait) {
+                return;
+            }
+            const [messageResult, transferResult] = await Promise.all([
+                waitForAction(action.message.ref, trafficWaitTimeoutMs(action.message)),
+                waitForAction(action.transfer.ref, trafficWaitTimeoutMs(action.transfer)),
+            ]);
+            printTrafficMixedResult(messageResult, transferResult);
+            return;
+        }
+
+        const options = parseTrafficLoadArgs(traffic.args, { allowSolo: true });
+        const action = await queueTrafficMessageAction(options);
+        printTrafficMessageQueued(action);
         if (!options.wait) {
             return;
         }
-        const result = await waitForAction(action.ref, action.count * action.delayMs + BURST_WAIT_GRACE_MS);
-        printBurstResult(result);
-        return;
-    }
-
-    if (cmd === 'fund-bots') {
-        const options = parseFundBotsArgs(cliArgs().slice(1));
-        const action = await queueFundBotsAction(options);
-        printFundBotsQueued(action);
-        if (!options.wait) {
-            return;
-        }
-        const result = await waitForAction(action.ref, 300000);
-        printFundBotsResult(result);
-        return;
-    }
-
-    if (cmd === 'transfer-burst' || cmd === 'tb') {
-        if (arg1 === 'stop') {
-            const result = await stopBurstActions();
-            printBurstStopResult(result);
-            return;
-        }
-
-        const options = parseTransferBurstArgs(cliArgs().slice(1));
-        const action = await queueTransferBurstAction(options);
-        printTransferBurstQueued(action);
-        if (!options.wait) {
-            return;
-        }
-        const result = await waitForAction(action.ref, action.count * action.delayMs + BURST_WAIT_GRACE_MS);
-        printTransferBurstResult(result);
+        const result = await waitForAction(action.ref, trafficWaitTimeoutMs(action));
+        printTrafficMessageResult(result);
         return;
     }
 

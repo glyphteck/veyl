@@ -50,7 +50,12 @@ bun push
 bun merge
 bun bot add @mybot
 bun bot power @mybot on
-bun bot burst
+bun bot traffic
+bun bot traffic mixed @zxrl fast --count 50
+bun bot traffic msg @zxrl fast --solo --source @mybot
+bun bot traffic tx @zxrl fast --count 300
+bun bot traffic fund --amount 1000
+bun bot traffic stop
 bun bot kill @mybot
 ```
 
@@ -151,6 +156,32 @@ bun make lifecycle
 - `bun make ios prod` installs the standalone production `veyl` build on `MAINNET` with bundle id `com.glyphteck.veyl`.
 - `bun make ios` is quiet by default: it prints phase lines, writes child command output under `apps/ios/ios/build/<scheme>/logs/<timestamp>/`, logs warning details to `*.warnings.log`, and prints the first failure details plus the full log path when a child command fails. Add `-v` or `--verbose` to also show full child command output.
 - `bun dev mainnet` and `bun dev regtest` apply the selected network to web, iOS, and bot.
+
+## Bot Traffic Load Tests
+
+Use the runtime-owned bot action queue for client load testing:
+
+```bash
+bun dev -v
+bun bot traffic fund --target 1000
+bun bot traffic mixed @zxrl fast --count 50
+bun bot traffic msg @zxrl fast --solo --source @mybot
+bun bot traffic tx @zxrl fast --count 300
+bun bot traffic stop
+```
+
+`bun bot traffic` defaults to mixed message and transfer traffic targeting `@zxrl`. `mixed`, `msg`, and `tx` accept either `--count N` or `--duration 10m`; duration derives count from the selected delay. `fast` is 500ms between events, `slow` is 5s, and the default delay is 3s. Use `msg --solo` for one bot-owned chat. `tx` always sends 1 sat per transfer. `fund` sends the flat target amount from `@review` by default to every enabled bot except `review`; pass `--source @botname` to use another funding bot. `--amount` is accepted as the same per-bot fund amount.
+
+Run `bun dev -v` while testing so web, iOS, and bot logs show the full receive path. The human has to unlock web and iOS as the target user before observation; web may need to be unlocked again after reloads. Use `mixed` for combined chat/wallet pressure, `msg --solo` for a single chat, `msg` for chat-list behavior, and `tx` for wallet-list behavior.
+
+For parallel pressure, queue no-wait actions:
+
+```bash
+bun bot traffic msg @zxrl fast --count 50 --no-wait
+bun bot traffic tx @zxrl fast --count 50 --no-wait
+```
+
+Use `bun bot traffic stop` before changing the traffic shape, restarting runtimes, or handing work to another agent. Runtime startup also cancels stale queued/running traffic actions.
 
 ## iOS Production Builds
 

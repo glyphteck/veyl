@@ -1,4 +1,15 @@
-export const BOT_BURST_MESSAGES = Object.freeze([
+export const BOT_TRAFFIC_TEXT_WEIGHT = 85;
+export const BOT_TRAFFIC_REQUEST_WEIGHT = 15;
+export const BOT_TRAFFIC_REQUEST_MIN_SATS = 1000;
+export const BOT_TRAFFIC_REQUEST_MAX_SATS = 1_000_000;
+export const BOT_TRAFFIC_REQUEST_AMOUNT_BUCKETS = Object.freeze([
+    { min: 1000, max: 9999, step: 100, weight: 15 },
+    { min: 10000, max: 99999, step: 1000, weight: 65 },
+    { min: 100000, max: 299999, step: 5000, weight: 15 },
+    { min: 300000, max: 1_000_000, step: 10000, weight: 5 },
+]);
+
+export const BOT_TRAFFIC_MESSAGES = Object.freeze([
     'lmao',
     'lol',
     '😭',

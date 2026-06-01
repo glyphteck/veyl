@@ -4,9 +4,9 @@ import {
     BOT_ACTION_STATUS_CANCELLED,
     BOT_ACTION_STATUS_QUEUED,
     BOT_ACTION_STATUS_RUNNING,
-    BOT_ACTION_TYPE_BURST,
-    BOT_ACTION_TYPE_FUND_BOTS,
-    BOT_ACTION_TYPE_TRANSFER_BURST,
+    BOT_ACTION_TYPE_TRAFFIC_MSG,
+    BOT_ACTION_TYPE_TRAFFIC_FUND,
+    BOT_ACTION_TYPE_TRAFFIC_TX,
     BOT_MODE,
     BOT_RUNTIME_ACTIONS,
     BOT_RUNTIME_DOC_ID,
@@ -15,14 +15,20 @@ import {
 } from '@veyl/shared/bot/events';
 import { bootBotAccount, closeBotAccount } from '@veyl/shared/bot/account';
 import {
-    BOT_BURST_REQUEST_AMOUNT_BUCKETS,
-    BOT_BURST_EXCLUDED_USERNAMES,
-    BOT_BURST_REQUEST_WEIGHT,
-    BOT_BURST_TEXT_WEIGHT,
-    cleanBurstCount,
-    cleanBurstDelayMs,
-} from '@veyl/shared/bot/burst';
-import { BOT_BURST_MESSAGES } from '@veyl/shared/bot/burstmessages';
+    BOT_TRAFFIC_EXCLUDED_USERNAMES,
+    cleanTrafficCount,
+    cleanTrafficDelayMs,
+} from '@veyl/shared/bot/traffic';
+import {
+    BOT_TRAFFIC_MESSAGES,
+    BOT_TRAFFIC_REQUEST_AMOUNT_BUCKETS,
+    BOT_TRAFFIC_REQUEST_WEIGHT,
+    BOT_TRAFFIC_TEXT_WEIGHT,
+} from '@veyl/shared/bot/traffic/messages';
+import {
+    BOT_TRAFFIC_TRANSFER_AMOUNT_SATS,
+    BOT_TRAFFIC_TRANSFER_CONCURRENCY,
+} from '@veyl/shared/bot/traffic/transfers';
 import { clearBotChatPairCache, decryptBotChatSettings, decryptBotMsg, hasBotMsg, readBotMsgAttachment, sendBotMsg, updateBotMsg, uploadBotAttachmentMsg } from '@veyl/shared/bot/chat';
 import { getBotBalance, mirrorBotTransfer } from '@veyl/shared/bot/wallet';
 import { getChatPeerPK } from '@veyl/shared/chat/ids';
@@ -30,12 +36,12 @@ import { hasStoredFileRef, isControlMsg, isSystemMsg, makeHiddenCheckpoint, make
 import { getMessageKey, makeCid } from '@veyl/shared/chat/state';
 import { getChatId } from '@veyl/shared/crypto/chat';
 import {
-    BOT_BURST_SESSION_WAIT_MS,
+    BOT_TRAFFIC_SESSION_WAIT_MS,
     BOT_REPLY_AFTER_READ_DELAY_MS,
 } from '@veyl/shared/config';
 import { banState } from '@veyl/shared/moderation';
 import { resolveNetwork } from '@veyl/shared/network';
-import { lowerText, sameText } from '@veyl/shared/utils/text';
+import { cleanText, lowerText, sameText } from '@veyl/shared/utils/text';
 import { timestampMs } from '@veyl/shared/utils/time';
 import { resolveWalletPK } from '@veyl/shared/wallet/keys';
 import { sleep } from '@veyl/shared/utils/async';
@@ -50,13 +56,11 @@ const VERBOSE = process.env.VEYL_VERBOSE === '1';
 const MAX_BOT_PEER_CACHE = 512;
 const MAX_BOT_READ_CACHE = 2048;
 const REVIEW_BOT_USERNAME = 'review';
-const DEFAULT_TRANSFER_BURST_AMOUNT_SATS = 1;
 const DEFAULT_FUND_BOT_AMOUNT_SATS = 1000;
-const TRANSFER_BURST_CONCURRENCY = 8;
 const BOT_READS = 'reads';
 const RUNTIME_HEARTBEAT_MS = 15000;
-const RUNTIME_ACTIONS_SUPPORTED = Object.freeze([BOT_ACTION_TYPE_BURST, BOT_ACTION_TYPE_FUND_BOTS, BOT_ACTION_TYPE_TRANSFER_BURST]);
-const BURST_READ_RECEIPT_SCAN_LIMIT = 100;
+const RUNTIME_ACTIONS_SUPPORTED = Object.freeze([BOT_ACTION_TYPE_TRAFFIC_MSG, BOT_ACTION_TYPE_TRAFFIC_FUND, BOT_ACTION_TYPE_TRAFFIC_TX]);
+const TRAFFIC_READ_RECEIPT_SCAN_LIMIT = 100;
 const TRANSIENT_CONNECTION_CODES = new Set([
     4,
     14,
@@ -199,13 +203,26 @@ function runtimeRef() {
     return db.collection('runtimes').doc(BOT_RUNTIME_DOC_ID);
 }
 
-const burstExcludedUsernames = new Set(BOT_BURST_EXCLUDED_USERNAMES.map(lowerText));
+const trafficExcludedUsernames = new Set(BOT_TRAFFIC_EXCLUDED_USERNAMES.map(lowerText));
 
 function pickRandom(items) {
     if (!items.length) {
         return null;
     }
     return items[randomInt(items.length)];
+}
+
+function senderKey(session) {
+    return lowerText(session?.username) || cleanText(session?.uid) || 'unknown';
+}
+
+function incrementSender(map, session) {
+    const key = senderKey(session);
+    map.set(key, (map.get(key) || 0) + 1);
+}
+
+function senderCounts(map) {
+    return Object.fromEntries([...map.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])));
 }
 
 function pickWeighted(items) {
@@ -225,10 +242,10 @@ function pickWeighted(items) {
     return items[items.length - 1] || null;
 }
 
-function randomBurstRequestAmount() {
-    const bucket = pickWeighted(BOT_BURST_REQUEST_AMOUNT_BUCKETS);
+function randomTrafficRequestAmount() {
+    const bucket = pickWeighted(BOT_TRAFFIC_REQUEST_AMOUNT_BUCKETS);
     if (!bucket) {
-        throw new Error('burst request amount buckets are empty');
+        throw new Error('traffic request amount buckets are empty');
     }
 
     const min = Math.max(1, Math.floor(Number(bucket.min) || 0));
@@ -238,20 +255,20 @@ function randomBurstRequestAmount() {
     return min + randomInt(steps + 1) * step;
 }
 
-function randomBurstPayload() {
-    const totalWeight = BOT_BURST_TEXT_WEIGHT + BOT_BURST_REQUEST_WEIGHT;
-    if (totalWeight > 0 && randomInt(totalWeight) < BOT_BURST_REQUEST_WEIGHT) {
-        return { payload: makeReq(String(randomBurstRequestAmount())), request: true };
+function randomTrafficPayload() {
+    const totalWeight = BOT_TRAFFIC_TEXT_WEIGHT + BOT_TRAFFIC_REQUEST_WEIGHT;
+    if (totalWeight > 0 && randomInt(totalWeight) < BOT_TRAFFIC_REQUEST_WEIGHT) {
+        return { payload: makeReq(String(randomTrafficRequestAmount())), request: true };
     }
 
-    const text = pickRandom(BOT_BURST_MESSAGES);
+    const text = pickRandom(BOT_TRAFFIC_MESSAGES);
     if (!text) {
-        throw new Error('burst message pool is empty');
+        throw new Error('traffic message pool is empty');
     }
     return { payload: makeTxt(text), request: false };
 }
 
-function cleanTransferAmount(value, fallback = DEFAULT_TRANSFER_BURST_AMOUNT_SATS) {
+function cleanTransferAmount(value, fallback = BOT_TRAFFIC_TRANSFER_AMOUNT_SATS) {
     const amount = Number(value ?? fallback);
     if (!Number.isInteger(amount) || amount <= 0) {
         throw new Error('transfer amount must be a positive integer sat amount');
@@ -317,7 +334,7 @@ export class BotRuntime {
         this.running = true;
         this.stopped = false;
         await this.acquireRuntimeLease();
-        await this.cancelStaleRunningActions();
+        await this.cancelStaleTrafficActions();
         this.startHeartbeat();
         console.log(`bot runtime started on ${SPARK_NETWORK}`);
         this.subscribeBots();
@@ -408,27 +425,52 @@ export class BotRuntime {
         );
     }
 
-    async cancelStaleRunningActions() {
-        const snap = await runtimeRef().collection(BOT_RUNTIME_ACTIONS).where('status', '==', BOT_ACTION_STATUS_RUNNING).get();
+    async cancelStaleTrafficActions() {
+        const snap = await runtimeRef().collection(BOT_RUNTIME_ACTIONS).where('status', 'in', [BOT_ACTION_STATUS_QUEUED, BOT_ACTION_STATUS_RUNNING]).get();
         if (snap.empty) {
             return;
         }
 
         const batch = db.batch();
+        let cancelled = 0;
         for (const docSnap of snap.docs) {
+            const data = docSnap.data() || {};
+            if (![BOT_ACTION_TYPE_TRAFFIC_MSG, BOT_ACTION_TYPE_TRAFFIC_FUND, BOT_ACTION_TYPE_TRAFFIC_TX].includes(data.type)) {
+                continue;
+            }
             batch.set(
                 docSnap.ref,
                 {
                     status: BOT_ACTION_STATUS_CANCELLED,
                     cancelReason: 'runtime restarted',
+                    result: {
+                        type: data.type || null,
+                        requested: Number.isFinite(data.count) ? data.count : 0,
+                        sent: 0,
+                        cancelled: true,
+                        cancelReason: 'runtime restarted',
+                        targetUid: data.targetUid || null,
+                        targetUsername: data.targetUsername || null,
+                        sourceUid: data.sourceUid || null,
+                        sourceUsername: data.sourceUsername || null,
+                        amountSats: Number.isFinite(data.amountSats) ? data.amountSats : null,
+                        delayMs: Number.isFinite(data.delayMs) ? data.delayMs : 0,
+                        durationMs: Number.isFinite(data.durationMs) ? data.durationMs : null,
+                        errors: 0,
+                        errorMessages: [],
+                    },
                     finishedAt: FieldValue.serverTimestamp(),
                     updatedAt: FieldValue.serverTimestamp(),
                 },
                 { merge: true }
             );
+            cancelled++;
+        }
+        if (!cancelled) {
+            return;
         }
         await batch.commit();
-        console.warn(`cancelled ${snap.size} stale bot action${snap.size === 1 ? '' : 's'}`);
+        console.warn(`cancelled ${cancelled} stale bot traffic action${cancelled === 1 ? '' : 's'}`);
     }
 
     async acquireRuntimeLease() {
@@ -516,12 +558,12 @@ export class BotRuntime {
 
         try {
             let result;
-            if (action.type === BOT_ACTION_TYPE_BURST) {
-                result = await this.runBurstAction(action);
-            } else if (action.type === BOT_ACTION_TYPE_FUND_BOTS) {
-                result = await this.runFundBotsAction(action);
-            } else if (action.type === BOT_ACTION_TYPE_TRANSFER_BURST) {
-                result = await this.runTransferBurstAction(action);
+            if (action.type === BOT_ACTION_TYPE_TRAFFIC_MSG) {
+                result = await this.runTrafficMessageAction(action);
+            } else if (action.type === BOT_ACTION_TYPE_TRAFFIC_FUND) {
+                result = await this.runTrafficFundAction(action);
+            } else if (action.type === BOT_ACTION_TYPE_TRAFFIC_TX) {
+                result = await this.runTrafficTransferAction(action);
             } else {
                 throw new Error(`unsupported bot action: ${action.type || 'unknown'}`);
             }
@@ -590,7 +632,7 @@ export class BotRuntime {
         return data?.cancelRequested === true || data?.status === BOT_ACTION_STATUS_CANCELLED;
     }
 
-    activeBurstSessions() {
+    activeTrafficSessions() {
         return [...this.sessions.values()].filter((session) => (
             session?.started &&
             !session.closing &&
@@ -598,23 +640,44 @@ export class BotRuntime {
             session.chatJobs &&
             session.chatPK &&
             session.chatPrivKey &&
-            !burstExcludedUsernames.has(lowerText(session.username))
+            !trafficExcludedUsernames.has(lowerText(session.username))
         ));
     }
 
-    reviewSession() {
-        return [...this.sessions.values()].find((session) => (
-            session?.started &&
-            !session.closing &&
-            session.wallet &&
-            sameText(session.username, REVIEW_BOT_USERNAME)
+    fundingSourceSession(action) {
+        const uid = cleanText(action?.sourceUid);
+        const username = lowerText(action?.sourceUsername || REVIEW_BOT_USERNAME);
+        return [...this.sessions.values()].find((session) => {
+            if (!session?.started || session.closing || !session.wallet || !session.chatJobs) {
+                return false;
+            }
+            return (uid && session.uid === uid) || sameText(session.username, username);
+        }) || null;
+    }
+
+    trafficMessageSourceSession(action) {
+        const uid = cleanText(action?.sourceUid);
+        const username = lowerText(action?.sourceUsername);
+        if (!uid && !username) {
+            return null;
+        }
+        return this.activeTrafficSessions().find((session) => (
+            (uid && session.uid === uid) || (username && sameText(session.username, username))
         )) || null;
     }
 
-    async waitForBurstSessions() {
-        const deadline = Date.now() + BOT_BURST_SESSION_WAIT_MS;
+    hasTrafficMessageSource(action) {
+        return !!(cleanText(action?.sourceUid) || lowerText(action?.sourceUsername));
+    }
+
+    firstTrafficSession() {
+        return this.activeTrafficSessions().sort((a, b) => senderKey(a).localeCompare(senderKey(b)))[0] || null;
+    }
+
+    async waitForTrafficSessions() {
+        const deadline = Date.now() + BOT_TRAFFIC_SESSION_WAIT_MS;
         while (!this.stopped && Date.now() <= deadline) {
-            const sessions = this.activeBurstSessions();
+            const sessions = this.activeTrafficSessions();
             if (sessions.length) {
                 return sessions;
             }
@@ -623,74 +686,114 @@ export class BotRuntime {
         throw new Error('no active bot sessions');
     }
 
-    async runFundBotsAction(action) {
-        const amountSats = cleanTransferAmount(action.amountSats, DEFAULT_FUND_BOT_AMOUNT_SATS);
-        await this.waitForBurstSessions();
-        const review = this.reviewSession();
-        if (!review) {
-            throw new Error('review bot session is not active');
+    async waitForTrafficMessageSource(action) {
+        const deadline = Date.now() + BOT_TRAFFIC_SESSION_WAIT_MS;
+        const hasSource = this.hasTrafficMessageSource(action);
+        while (!this.stopped && Date.now() <= deadline) {
+            const session = hasSource ? this.trafficMessageSourceSession(action) : this.firstTrafficSession();
+            if (session) {
+                return session;
+            }
+            await sleep(250);
+        }
+        if (hasSource) {
+            const label = action?.sourceUsername ? `@${action.sourceUsername}` : action?.sourceUid;
+            throw new Error(`traffic source bot is not active: ${label}`);
+        }
+        throw new Error('no active bot sessions');
+    }
+
+    async waitForFundingSource(action) {
+        const deadline = Date.now() + BOT_TRAFFIC_SESSION_WAIT_MS;
+        while (!this.stopped && Date.now() <= deadline) {
+            const session = this.fundingSourceSession(action);
+            if (session) {
+                return session;
+            }
+            await sleep(250);
         }
 
+        const label = action?.sourceUsername ? `@${action.sourceUsername}` : action?.sourceUid || `@${REVIEW_BOT_USERNAME}`;
+        throw new Error(`funding bot session is not active: ${label}`);
+    }
+
+    async runTrafficFundAction(action) {
+        const amountSats = cleanTransferAmount(action.amountSats, DEFAULT_FUND_BOT_AMOUNT_SATS);
+        const source = await this.waitForFundingSource(action);
+        const sessions = (await this.waitForTrafficSessions()).filter((session) => session.uid !== source.uid && session.walletPK);
+
         const funded = [];
+        const errors = [];
         let cancelled = false;
-        for (const session of this.activeBurstSessions()) {
+        for (const session of sessions) {
             if (this.stopped || await this.isActionCancelRequested(action)) {
                 cancelled = true;
                 break;
             }
-            if (!session.walletPK) {
-                continue;
-            }
 
-            const txId = await queueMapJob(review.chatJobs, `fund:${session.uid}`, () => mirrorBotTransfer(review.wallet, session.walletPK, amountSats, SPARK_NETWORK));
-            funded.push({ uid: session.uid, username: session.username || null, txId });
-            verboseLog(`bot fund-bots ${funded.length}: @${session.username} ${amountSats} sats`);
+            try {
+                const txId = await queueMapJob(source.chatJobs, `fund:${session.uid}`, () => mirrorBotTransfer(source.wallet, session.walletPK, amountSats, SPARK_NETWORK));
+                funded.push({ uid: session.uid, username: session.username || null, amountSats, txId });
+                verboseLog(`bot traffic fund ${funded.length}/${sessions.length}: @${source.username} -> @${session.username} ${amountSats} sats`);
+            } catch (error) {
+                errors.push({ uid: session.uid, username: session.username || null, error: statusMessage(error) });
+                console.warn(`bot traffic fund failed for @${session.username}`, error);
+            }
             if (Number(action.delayMs) > 0) {
                 await sleep(Number(action.delayMs));
             }
         }
 
-        const balance = await this.refreshBalance(review);
-        await this.touchBot(review.ref, {
+        const balance = await this.refreshBalance(source);
+        await this.touchBot(source.ref, {
             status: 'running',
             lastError: null,
             ...(balance != null ? { balance: String(balance) } : {}),
         });
 
         return {
-            type: BOT_ACTION_TYPE_FUND_BOTS,
+            type: BOT_ACTION_TYPE_TRAFFIC_FUND,
             amountSats,
-            requested: this.activeBurstSessions().length,
+            requested: sessions.length,
             sent: funded.length,
             cancelled,
+            sourceUid: source.uid,
+            sourceUsername: source.username || null,
+            delayMs: Number(action.delayMs) || 0,
+            durationMs: null,
             bots: funded.map((entry) => entry.username).filter(Boolean),
+            transfers: funded,
+            txIds: funded.map((entry) => entry.txId).filter(Boolean),
+            errors: errors.length,
+            errorMessages: errors.slice(0, 20),
         };
     }
 
-    async runTransferBurstAction(action) {
-        const count = cleanBurstCount(action.count);
-        const delayMs = cleanBurstDelayMs(action.delayMs);
-        const amountSats = cleanTransferAmount(action.amountSats, DEFAULT_TRANSFER_BURST_AMOUNT_SATS);
+    async runTrafficTransferAction(action) {
+        const count = cleanTrafficCount(action.count);
+        const delayMs = cleanTrafficDelayMs(action.delayMs);
+        const amountSats = BOT_TRAFFIC_TRANSFER_AMOUNT_SATS;
         const target = await getProfile(action.targetUid);
         const targetWalletPK = resolveWalletPK(target, SPARK_NETWORK);
         if (!target?.uid || !targetWalletPK) {
-            throw new Error('transfer burst target missing wallet identity');
+            throw new Error('traffic transfer target missing wallet identity');
         }
         if (target.bot) {
-            throw new Error('transfer burst target cannot be a bot');
+            throw new Error('traffic transfer target cannot be a bot');
         }
 
-        await this.waitForBurstSessions();
+        await this.waitForTrafficSessions();
 
-        const usedBots = new Map();
+        const senders = new Map();
         const inFlight = new Set();
         const errors = [];
+        const transfers = [];
         let sent = 0;
         let scheduled = 0;
         let cancelled = false;
 
         const waitForTransferSlot = async () => {
-            while (inFlight.size >= TRANSFER_BURST_CONCURRENCY) {
+            while (inFlight.size >= BOT_TRAFFIC_TRANSFER_CONCURRENCY) {
                 await Promise.race(inFlight);
             }
         };
@@ -703,35 +806,37 @@ export class BotRuntime {
 
             await waitForTransferSlot();
 
-            const sessions = this.activeBurstSessions().filter((session) => session.wallet);
+            const sessions = this.activeTrafficSessions().filter((session) => session.wallet);
             if (!sessions.length) {
                 throw new Error('no active funded bot sessions');
             }
 
             const session = pickRandom(sessions);
             scheduled++;
-            usedBots.set(session.uid, session.username);
-            const transfer = queueMapJob(session.chatJobs, '__wallet_transfer_burst__', async () => {
+            const transfer = queueMapJob(session.chatJobs, '__wallet_transfer_traffic__', async () => {
                 if (session.closing || this.stopped) {
                     throw new Error('bot session closed');
                 }
-                await mirrorBotTransfer(session.wallet, targetWalletPK, amountSats, SPARK_NETWORK);
+                const txId = await mirrorBotTransfer(session.wallet, targetWalletPK, amountSats, SPARK_NETWORK);
                 const balance = await this.refreshBalance(session);
                 await this.touchBot(session.ref, {
                     status: 'running',
                     lastError: null,
                     ...(balance != null ? { balance: String(balance) } : {}),
                 });
+                return txId;
             })
-                .then(() => {
+                .then((txId) => {
                     sent++;
+                    incrementSender(senders, session);
+                    transfers.push({ uid: session.uid, username: session.username || null, amountSats, txId: txId || null });
                     if (sent === 1 || sent === count || sent % 10 === 0) {
-                        verboseLog(`bot transfer-burst ${sent}/${count}: ${amountSats} sats to @${target.username || target.uid}`);
+                        verboseLog(`bot traffic tx ${sent}/${count}: ${amountSats} sats to @${target.username || target.uid}`);
                     }
                 })
                 .catch((error) => {
-                    errors.push(statusMessage(error));
-                    console.warn(`bot transfer-burst failed for @${session.username}`, error);
+                    errors.push({ uid: session.uid, username: session.username || null, error: statusMessage(error) });
+                    console.warn(`bot traffic tx failed for @${session.username}`, error);
                 })
                 .finally(() => {
                     inFlight.delete(transfer);
@@ -746,40 +851,48 @@ export class BotRuntime {
         if (inFlight.size) {
             await Promise.all(inFlight);
         }
-        if (!sent && errors.length) {
-            throw new Error(errors[0]);
-        }
 
         return {
-            type: BOT_ACTION_TYPE_TRANSFER_BURST,
+            type: BOT_ACTION_TYPE_TRAFFIC_TX,
             requested: count,
             sent,
             scheduled,
             cancelled,
             errors: errors.length,
+            errorMessages: errors.slice(0, 20),
             amountSats,
             delayMs,
+            durationMs: Number.isFinite(action.durationMs) ? action.durationMs : count * delayMs,
             targetUid: target.uid,
             targetUsername: target.username || null,
-            bots: [...usedBots.values()].filter(Boolean),
+            bots: [...new Set(transfers.map((entry) => entry.username).filter(Boolean))],
+            senderCounts: senderCounts(senders),
+            transfers,
+            txIds: transfers.map((entry) => entry.txId).filter(Boolean),
         };
     }
 
-    async runBurstAction(action) {
-        const count = cleanBurstCount(action.count);
-        const delayMs = cleanBurstDelayMs(action.delayMs);
+    async runTrafficMessageAction(action) {
+        const count = cleanTrafficCount(action.count);
+        const delayMs = cleanTrafficDelayMs(action.delayMs);
         const target = await getProfile(action.targetUid);
         if (!target?.uid || !target?.chatPK) {
-            throw new Error('burst target missing chat identity');
+            throw new Error('traffic target missing chat identity');
         }
         if (target.bot) {
-            throw new Error('burst target cannot be a bot');
+            throw new Error('traffic target cannot be a bot');
         }
 
-        await this.waitForBurstSessions();
+        const solo = action.solo === true;
+        const soloSession = solo ? await this.waitForTrafficMessageSource(action) : null;
+        if (!soloSession) {
+            await this.waitForTrafficSessions();
+        }
 
-        const usedBots = new Map();
+        const senders = new Map();
         const sentChats = new Map();
+        const messages = [];
+        const errors = [];
         let sent = 0;
         let requests = 0;
         let cancelled = false;
@@ -790,27 +903,40 @@ export class BotRuntime {
                 break;
             }
 
-            const sessions = this.activeBurstSessions();
+            const sessions = soloSession ? [soloSession] : this.activeTrafficSessions();
             if (!sessions.length) {
                 throw new Error('no active bot sessions');
             }
+            const session = soloSession || pickRandom(sessions);
 
-            const session = pickRandom(sessions);
-            const message = randomBurstPayload();
+            const message = randomTrafficPayload();
             const chatId = getChatId(session.chatPK, target.chatPK);
 
-            await queueMapJob(session.chatJobs, chatId, async () => {
-                if (session.closing || this.stopped) {
-                    throw new Error('bot session closed');
-                }
-                const result = await this.sendPayload(session, target.chatPK, message.payload);
-                sentChats.set(session.uid, result?.chatId || chatId);
-            });
+            try {
+                const result = await queueMapJob(session.chatJobs, chatId, async () => {
+                    if (session.closing || this.stopped) {
+                        throw new Error('bot session closed');
+                    }
+                    const result = await this.sendPayload(session, target.chatPK, message.payload);
+                    sentChats.set(session.uid, result?.chatId || chatId);
+                    return result;
+                });
 
-            usedBots.set(session.uid, session.username);
-            sent++;
-            if (message.request) {
-                requests++;
+                incrementSender(senders, session);
+                messages.push({
+                    uid: session.uid,
+                    username: session.username || null,
+                    chatId: result?.chatId || chatId,
+                    msgId: result?.msgId || null,
+                    request: message.request,
+                });
+                sent++;
+                if (message.request) {
+                    requests++;
+                }
+            } catch (error) {
+                errors.push({ uid: session.uid, username: session.username || null, error: statusMessage(error) });
+                console.warn(`bot traffic message failed for @${session.username}`, error);
             }
 
             if (index + 1 < count) {
@@ -818,27 +944,36 @@ export class BotRuntime {
             }
         }
 
-        const readReceipts = cancelled ? 0 : await this.sendBurstReadReceipts(action, target, sentChats);
+        const receiptResult = cancelled ? { sent: 0, errors: [] } : await this.sendTrafficReadReceipts(action, target, sentChats);
 
         return {
-            type: BOT_ACTION_TYPE_BURST,
+            type: BOT_ACTION_TYPE_TRAFFIC_MSG,
             requested: count,
             sent,
+            solo,
             cancelled,
             delayMs,
+            durationMs: Number.isFinite(action.durationMs) ? action.durationMs : count * delayMs,
             targetUid: target.uid,
             targetUsername: target.username || null,
-            bots: [...usedBots.values()].filter(Boolean),
+            sourceUid: soloSession?.uid || null,
+            sourceUsername: soloSession?.username || null,
+            bots: [...new Set(messages.map((entry) => entry.username).filter(Boolean))],
+            senderCounts: senderCounts(senders),
+            messages,
             requests,
-            readReceipts,
+            readReceipts: receiptResult.sent,
+            errors: errors.length + receiptResult.errors.length,
+            errorMessages: [...errors, ...receiptResult.errors].slice(0, 20),
         };
     }
 
-    async sendBurstReadReceipts(action, target, sentChats) {
+    async sendTrafficReadReceipts(action, target, sentChats) {
         let sent = 0;
+        const errors = [];
         for (const [uid, chatId] of sentChats.entries()) {
             if (this.stopped) {
-                return sent;
+                return { sent, errors };
             }
 
             const session = this.sessions.get(uid);
@@ -846,37 +981,42 @@ export class BotRuntime {
                 continue;
             }
 
-            const receipt = await this.findLatestPeerReceiptTarget(chatId, target.chatPK);
-            if (!receipt) {
-                continue;
-            }
-
-            const result = await queueMapJob(session.chatJobs, chatId, () => {
-                if (session.closing || this.stopped) {
-                    throw new Error('bot session closed');
+            try {
+                const receipt = await this.findLatestPeerReceiptTarget(chatId, target.chatPK);
+                if (!receipt) {
+                    continue;
                 }
-                return this.sendReadReceipt(
-                    session,
-                    target.chatPK,
-                    receipt.target,
-                    null,
-                    {
-                        chatId,
-                        msgId: `${action.id}_${receipt.msgId}`,
-                        msgTs: receipt.ts,
-                        peerChatPK: target.chatPK,
+
+                const result = await queueMapJob(session.chatJobs, chatId, () => {
+                    if (session.closing || this.stopped) {
+                        throw new Error('bot session closed');
                     }
-                );
-            });
-            if (!result?.skipped) {
-                sent++;
+                    return this.sendReadReceipt(
+                        session,
+                        target.chatPK,
+                        receipt.target,
+                        null,
+                        {
+                            chatId,
+                            msgId: `${action.id}_${receipt.msgId}`,
+                            msgTs: receipt.ts,
+                            peerChatPK: target.chatPK,
+                        }
+                    );
+                });
+                if (!result?.skipped) {
+                    sent++;
+                }
+            } catch (error) {
+                errors.push({ uid: session.uid, username: session.username || null, chatId, error: statusMessage(error) });
+                console.warn(`bot traffic read receipt failed for @${session.username}`, error);
             }
         }
-        return sent;
+        return { sent, errors };
     }
 
     async findLatestPeerReceiptTarget(chatId, peerChatPK) {
-        const snap = await db.collection('chats').doc(chatId).collection('messages').orderBy('ts', 'desc').limit(BURST_READ_RECEIPT_SCAN_LIMIT).get();
+        const snap = await db.collection('chats').doc(chatId).collection('messages').orderBy('ts', 'desc').limit(TRAFFIC_READ_RECEIPT_SCAN_LIMIT).get();
         for (const msgSnap of snap.docs) {
             const data = msgSnap.data();
             if (data?.head?.from !== peerChatPK) {

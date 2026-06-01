@@ -73,6 +73,9 @@ function checkTextRefs(files, failures) {
             continue;
         }
         const abs = resolve(rootDir, path);
+        if (!existsSync(abs)) {
+            continue;
+        }
         const buffer = readFileSync(abs);
         if (!isText(buffer)) {
             continue;
@@ -115,7 +118,11 @@ function checkRelativeImports(files, failures) {
         if (isIgnored(path) || !jsExts.has(extname(path))) {
             continue;
         }
-        const text = readFileSync(resolve(rootDir, path), 'utf8');
+        const abs = resolve(rootDir, path);
+        if (!existsSync(abs)) {
+            continue;
+        }
+        const text = readFileSync(abs, 'utf8');
         for (const match of text.matchAll(relativeImportPattern)) {
             const specifier = match[1] || match[2] || match[3] || '';
             if (!specifier.startsWith('.')) {

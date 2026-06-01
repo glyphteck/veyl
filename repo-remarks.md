@@ -7,7 +7,7 @@ This file is for observations that look worth addressing but are too broad, prod
 ## Open Remarks
 
 - Broad repo optimization is not a single atomic change. Keep future passes split by ownership boundary: shared chat/session logic, wallet/provider logic, web route guards, iOS UI surfaces, bot runtime/admin tooling, and docs/guidelines.
-- `apps/bot/src/runtime.js` is doing too much at once: runtime lease/heartbeat, action queue handling, bot session lifecycle, wallet mirroring, chat mirroring, burst testing, read receipts, and error classification. A future pass should split this by role before adding more bot behavior.
+- `apps/bot/src/runtime.js` is doing too much at once: runtime lease/heartbeat, action queue handling, bot session lifecycle, wallet mirroring, chat mirroring, traffic testing, read receipts, and error classification. A future pass should split this by role before adding more bot behavior.
 - `apps/ios/app/(vault)/(app)/(home)/camera.js` combines camera device/lens control, QR scanning, capture gestures, preview timing, and transfer/share routing in one large surface. That should be compartmentalized, but doing it safely needs device testing and UX approval.
 - `apps/web/src/app/(authenticated)/(vault)/(app)/camera/page.js` mirrors the same risk on web: QR scanning, media recording, upload routing, wallet transfer routing, and browser capability handling all live in one route. Split by scanner, recorder, and routing intent when camera behavior is next touched.
 - `apps/web/src/components/wallet/walletdashboard.js` mixes range selection, balance aggregation, peer lookup, chart preparation, and transaction list rendering. A future wallet pass should move chart/range data prep into shared helpers before altering the dashboard UI.
