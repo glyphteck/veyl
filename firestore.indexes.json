@@ -29,6 +29,24 @@
             "indexes": []
         },
         {
+            "collectionGroup": "usage_quotas",
+            "fieldPath": "ttl",
+            "ttl": true,
+            "indexes": []
+        },
+        {
+            "collectionGroup": "media_upload_reservations",
+            "fieldPath": "ttl",
+            "ttl": true,
+            "indexes": []
+        },
+        {
+            "collectionGroup": "report_upload_items",
+            "fieldPath": "ttl",
+            "ttl": true,
+            "indexes": []
+        },
+        {
             "collectionGroup": "messages",
             "fieldPath": "ttl",
             "ttl": true,

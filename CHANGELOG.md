@@ -2,6 +2,15 @@
 
 Repo-level changes are listed newest first. Keep entries short and concrete. Broad pushes get grouped bullets, while narrow fixes can use one concise bugfix or cleanup bullet that still names the actual change.
 
+## 4.14.10 - 2026-06-01
+
+- Added Firebase App Check for the web client with a reCAPTCHA Enterprise key restricted to Veyl web domains.
+- Added account-creation IP limits, account upload quotas, and Storage upload reservations for chat media and report evidence.
+- Replaced global push-token cleanup scans with direct push owner docs for cheaper iOS push sync.
+- Tightened chat Firestore rules with encrypted payload byte caps and documented the direct-write rate-limit boundary.
+- Added Apache-2.0 licensing metadata for the repo.
+- Removed the `veyl-oss` side-copy workflow in favor of making the canonical repo public.
+
 ## 4.14.9 - 2026-06-01
 
 - Added the allowlisted `veyl-oss` client export shape and guarded sync tooling for `bun push oss`.

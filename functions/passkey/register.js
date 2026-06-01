@@ -4,6 +4,7 @@ import { randomBytes } from 'node:crypto';
 import { bufferToBase64url, encodeOptionsForClient, decodeCredentialFromClient, getRpIdForOrigin, createFido2Lib, storeChallenge, consumeChallenge, validateOrigin, resolveOrigin, isRpIdHashMismatch } from '../lib/passkey.js';
 import { HOUR_MS, MINUTE_MS, ipLimitKey, limitCallable } from '../lib/ratelimit.js';
 import { ensureUserDoc } from '../lib/userdoc.js';
+import { accountCreateIpLimitRules } from '../lib/abuseconfig.js';
 
 const db = admin.firestore();
 
@@ -42,6 +43,10 @@ async function limitRegisterVerify(context, origin) {
         { name: 'passkey-register-verify-minute', key, limit: 20, windowMs: MINUTE_MS },
         { name: 'passkey-register-verify-hour', key, limit: 120, windowMs: HOUR_MS },
     ]);
+}
+
+async function limitAccountCreate(context) {
+    await limitCallable(context, accountCreateIpLimitRules(ipLimitKey(context, 'account-create')));
 }
 
 /* 1. Generate passkey registration options */
@@ -130,6 +135,7 @@ export const passkeyRegisterVerify = onCall(async (context) => {
     const counter = result.authnrData.get('counter') ?? 0;
 
     // Store credential
+    await limitAccountCreate(context);
     let authUserCreated = false;
     try {
         await admin.auth().createUser({ uid });

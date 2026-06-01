@@ -3,6 +3,7 @@
     "version": "2.7.5",
     "appName": "veyl",
     "private": true,
+    "license": "Apache-2.0",
     "scripts": {
         "dev": "next dev --turbopack",
         "build": "next build --turbopack",

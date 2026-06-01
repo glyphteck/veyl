@@ -274,6 +274,7 @@ export default function MessageList({
     const { width: screenW } = useWindowDimensions();
     const { messages: messagesAsc, ready, hasOlder, loadingOlder, loadOlder, patchMessage, removeMessage } = useChatMessages(chatId);
     const submitReport = useMemo(() => httpsCallable(functions, 'submitReport'), []);
+    const reserveReportEvidenceUpload = useMemo(() => httpsCallable(functions, 'reserveReportEvidenceUpload'), []);
     const [payingMessages, setPayingMessages] = useState(new Set());
     const [savingForeverMessages, setSavingForeverMessages] = useState(new Map());
     const [reportedMessageKeys, setReportedMessageKeys] = useState(new Set());
@@ -568,6 +569,11 @@ export default function MessageList({
                 if (attachment && uid && peerChatPK) {
                     const bytes = await readMessageFile(peerChatPK, msg);
                     const nextPath = reportEvidencePath(uid, peerUid, makeFileId(12));
+                    await reserveReportEvidenceUpload({
+                        path: nextPath,
+                        size: bytes?.byteLength || 0,
+                        contentType: attachment.mimeType || 'application/octet-stream',
+                    });
                     await uploadStorageBytesNative(storage, nextPath, bytes, {
                         contentType: attachment.mimeType || 'application/octet-stream',
                         cacheControl: 'private, max-age=0, no-transform',
@@ -598,7 +604,7 @@ export default function MessageList({
                 Alert.alert('Report failed', error?.message || 'Could not submit this report.');
             }
         },
-        [peerChatPK, peerUid, readMessageFile, runReport, uid]
+        [peerChatPK, peerUid, readMessageFile, reserveReportEvidenceUpload, runReport, uid]
     );
 
     const handleDeleteMessage = useCallback(

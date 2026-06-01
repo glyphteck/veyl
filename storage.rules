@@ -37,21 +37,53 @@ service firebase.storage {
         );
     }
 
-    function isChatBlob() {
-      return request.resource == null
-        || (
-          request.resource.size < 20 * 1024 * 1024
-          && request.resource.contentType == 'application/octet-stream'
-        );
+    function chatMediaReservationPath(mediaId) {
+      return /databases/(default)/documents/media_upload_reservations/$(mediaId);
+    }
+
+    function isReservedChatBlob(mediaId) {
+      let reservation = firestore.get(chatMediaReservationPath(mediaId)).data;
+      return request.resource != null
+        && firestore.exists(chatMediaReservationPath(mediaId))
+        && reservation.uid == request.auth.uid
+        && reservation.path == 'media/' + mediaId + '/main'
+        && reservation.contentType == 'application/octet-stream'
+        && reservation.ttl is timestamp
+        && reservation.ttl > request.time
+        && reservation.size is int
+        && request.resource.size > 0
+        && request.resource.size <= reservation.size
+        && request.resource.size <= 20 * 1024 * 1024
+        && request.resource.contentType == reservation.contentType;
     }
 
     function isReportBlob() {
-      return request.resource == null
-        || request.resource.size < 20 * 1024 * 1024;
+      return request.resource != null
+        && request.resource.size > 0
+        && request.resource.size <= 20 * 1024 * 1024;
     }
 
     function isReportEvidenceId(value) {
       return value is string && value.matches('^[A-Za-z0-9_-]{8,80}$');
+    }
+
+    function reportEvidenceReservationPath(reporterUid, targetUid, evidenceId) {
+      return /databases/(default)/documents/report_upload_reservations/$(reporterUid)/targets/$(targetUid)/report_upload_items/$(evidenceId);
+    }
+
+    function isReservedReportBlob(reporterUid, targetUid, evidenceId) {
+      let reservation = firestore.get(reportEvidenceReservationPath(reporterUid, targetUid, evidenceId)).data;
+      return firestore.exists(reportEvidenceReservationPath(reporterUid, targetUid, evidenceId))
+        && reservation.uid == request.auth.uid
+        && reservation.targetUid == targetUid
+        && reservation.path == 'reports/' + reporterUid + '/' + targetUid + '/' + evidenceId
+        && reservation.contentType is string
+        && reservation.ttl is timestamp
+        && reservation.ttl > request.time
+        && reservation.size is int
+        && isReportBlob()
+        && request.resource.size <= reservation.size
+        && request.resource.contentType == reservation.contentType;
     }
 
     match /{uid}/avatar.webp {
@@ -73,7 +105,7 @@ service firebase.storage {
       allow create: if signedIn()
         && mediaId.matches('^[0-9a-fA-F]{32}$')
         && slot == 'main'
-        && isChatBlob();
+        && isReservedChatBlob(mediaId);
       allow update, delete: if false;
     }
 
@@ -82,7 +114,7 @@ service firebase.storage {
       allow create: if signedIn()
         && request.auth.uid == reporterUid
         && isReportEvidenceId(evidenceId)
-        && isReportBlob();
+        && isReservedReportBlob(reporterUid, targetUid, evidenceId);
       allow update, delete: if false;
     }
   }

@@ -24,5 +24,6 @@
     "devDependencies": {
         "firebase-functions-test": "^3.5.0"
     },
-    "private": true
+    "private": true,
+    "license": "Apache-2.0"
 }

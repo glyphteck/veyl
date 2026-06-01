@@ -9,11 +9,22 @@ import { useVault } from '@/providers/vaultprovider';
 import { useUser } from '@/providers/userprovider';
 import { mark } from '@/lib/diagnostics';
 
+async function reserveChatMediaUpload(payload) {
+    await httpsCallable(functions, 'reserveChatMediaUpload')(payload);
+    return true;
+}
+
 const chat = createChat({
     db,
     storage,
     uploadAttachment(senderPubkey, senderPrivkey, receiverChatPK, attachment) {
-        return uploadAttachmentMsgNative(storage, senderPubkey, senderPrivkey, receiverChatPK, attachment);
+        return uploadAttachmentMsgNative(storage, senderPubkey, senderPrivkey, receiverChatPK, {
+            ...attachment,
+            meta: {
+                ...(attachment?.meta || {}),
+                reserveChatMediaUpload,
+            },
+        });
     },
     readMessageFile(storageInstance, userChatPK, userPrivKey, peerChatPK, message) {
         return readMessageFileNative(storageInstance, userChatPK, userPrivKey, peerChatPK, message);

@@ -3,6 +3,7 @@ export const MS_PER_SECOND = 1000;
 export const MINUTE_MS = 60 * MS_PER_SECOND;
 export const HOUR_MS = 60 * MINUTE_MS;
 export const DAY_MS = 24 * HOUR_MS;
+export const KIB_BYTES = 1024;
 export const MIB_BYTES = 1024 * 1024;
 export const SATS_PER_BITCOIN = 100_000_000n;
 
@@ -78,6 +79,9 @@ export const CHAT_READ_RECEIPT_WRITE_DELAY_MS = 2000;
 export const CHAT_REACTION_WRITE_DELAY_MS = 600;
 export const CHAT_SEND_QUEUE_RATE_LIMIT_COUNT = 12;
 export const CHAT_SEND_QUEUE_RATE_LIMIT_WINDOW_MS = 10 * MS_PER_SECOND;
+export const CHAT_MESSAGE_BODY_MAX_BYTES = 64 * KIB_BYTES;
+export const CHAT_LAST_MESSAGE_BODY_MAX_BYTES = 64 * KIB_BYTES;
+export const CHAT_SETTINGS_BODY_MAX_BYTES = 32 * KIB_BYTES;
 
 // Bot chat timing knobs. These keep deterministic replies from landing at the same instant as bot read state.
 export const BOT_REPLY_AFTER_READ_DELAY_MS = 650;

@@ -73,13 +73,36 @@ function hasSavedMediaStay(message) {
     return !!savedMediaStayRef(message);
 }
 
-export function createChat({ db, storage, getStorage, uploadAttachment: uploadAttachmentImpl, uploadImage: uploadImageImpl, readMessageFile: readMessageFileImpl, setMediaSaved: setMediaSavedImpl, finishDeletingChat: finishDeletingChatImpl }) {
+export function createChat({
+    db,
+    storage,
+    getStorage,
+    uploadAttachment: uploadAttachmentImpl,
+    uploadImage: uploadImageImpl,
+    readMessageFile: readMessageFileImpl,
+    reserveChatMediaUpload: reserveChatMediaUploadImpl,
+    setMediaSaved: setMediaSavedImpl,
+    finishDeletingChat: finishDeletingChatImpl,
+}) {
     if (!db) {
         throw new Error('createChat requires db');
     }
 
     function resolveStorage() {
         return typeof getStorage === 'function' ? getStorage() : storage;
+    }
+
+    function withMediaReservation(attachment = {}) {
+        if (typeof reserveChatMediaUploadImpl !== 'function') {
+            return attachment;
+        }
+        return {
+            ...attachment,
+            meta: {
+                ...(attachment?.meta || {}),
+                reserveChatMediaUpload: reserveChatMediaUploadImpl,
+            },
+        };
     }
 
     return {
@@ -134,7 +157,7 @@ export function createChat({ db, storage, getStorage, uploadAttachment: uploadAt
                 return uploadImageImpl(senderPubkey, senderPrivkey, receiverChatPK, attachment?.cid, attachment?.data, attachment?.meta);
             }
 
-            return uploadAttachmentShared(db, resolveStorage(), senderPubkey, senderPrivkey, receiverChatPK, attachment);
+            return uploadAttachmentShared(db, resolveStorage(), senderPubkey, senderPrivkey, receiverChatPK, withMediaReservation(attachment));
         },
         uploadImage(senderPubkey, senderPrivkey, receiverChatPK, cid, data, meta) {
             if (typeof uploadImageImpl === 'function') {
@@ -148,7 +171,10 @@ export function createChat({ db, storage, getStorage, uploadAttachment: uploadAt
                     meta,
                 });
             }
-            return uploadImageShared(db, resolveStorage(), senderPubkey, senderPrivkey, receiverChatPK, cid, data, meta);
+            return uploadImageShared(db, resolveStorage(), senderPubkey, senderPrivkey, receiverChatPK, cid, data, {
+                ...(meta || {}),
+                ...(typeof reserveChatMediaUploadImpl === 'function' ? { reserveChatMediaUpload: reserveChatMediaUploadImpl } : {}),
+            });
         },
         updateMessage(chatId, msgId, senderPrivkey, receiverChatPK, newMessage, options) {
             return updateMessageShared(db, chatId, msgId, senderPrivkey, receiverChatPK, newMessage, options);

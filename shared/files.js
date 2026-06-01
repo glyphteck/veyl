@@ -46,6 +46,40 @@ async function put(storage, path, data, metadata) {
     return uploadBytes(ref(storage, path), payload, metadata);
 }
 
+function uploadByteSize(data) {
+    if (Number.isFinite(data?.byteLength)) {
+        return data.byteLength;
+    }
+    if (Number.isFinite(data?.size)) {
+        return data.size;
+    }
+    return toBytes(data, 'upload bytes').byteLength;
+}
+
+async function reserveChatFileUpload(upload, options = {}) {
+    const reserveChatMediaUpload = options?.reserveChatMediaUpload;
+    if (typeof reserveChatMediaUpload !== 'function') {
+        throw new Error('chat media reservation required');
+    }
+    await reserveChatMediaUpload({
+        path: upload.path,
+        size: uploadByteSize(upload.body),
+        contentType: upload.metadata?.contentType || 'application/octet-stream',
+    });
+}
+
+async function reserveReportEvidenceUpload(path, data, metadata = {}, options = {}) {
+    const reserveUpload = options?.reserveReportEvidenceUpload;
+    if (typeof reserveUpload !== 'function') {
+        throw new Error('report evidence reservation required');
+    }
+    await reserveUpload({
+        path,
+        size: uploadByteSize(data),
+        contentType: metadata?.contentType || 'application/octet-stream',
+    });
+}
+
 export async function getFileUrl(storage, path) {
     if (!storage) {
         throw new Error('storage required');
@@ -123,6 +157,7 @@ export async function makeChatFileUpload(pair, cid, data, { slot = CHAT_SLOT, co
 export async function putChatFile(storage, pair, cid, data, options) {
     const upload = await makeChatFileUpload(pair, cid, data, options);
     try {
+        await reserveChatFileUpload(upload, options);
         await put(storage, upload.path, upload.body, upload.metadata);
         return upload.file;
     } catch (error) {
@@ -157,8 +192,9 @@ export async function putReportEvidence(
     targetUid,
     evidenceId,
     data,
-    { contentType = 'application/octet-stream', cacheControl = 'private, max-age=0, no-transform', name = '', kind = '' } = {}
+    options = {}
 ) {
+    const { contentType = 'application/octet-stream', cacheControl = 'private, max-age=0, no-transform', name = '', kind = '', reserveReportEvidenceUpload: reserveUpload } = options;
     const path = reportEvidencePath(reporter, targetUid, evidenceId);
     const metadata = {
         contentType,
@@ -168,6 +204,7 @@ export async function putReportEvidence(
             ...(kind ? { kind } : {}),
         },
     };
+    await reserveReportEvidenceUpload(path, data, metadata, { reserveReportEvidenceUpload: reserveUpload });
     await put(storage, path, data, metadata);
     return path;
 }

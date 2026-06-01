@@ -76,8 +76,13 @@ export default function Report({ data, close }) {
                 if (attachment && uid && peerChatPK) {
                     const bytes = await readMessageFile(peerChatPK, msg);
                     const storage = getStorage();
+                    const reserveReportEvidenceUpload = async (payload) => {
+                        await httpsCallable(getFunctions(), 'reserveReportEvidenceUpload')(payload);
+                        return true;
+                    };
                     path = await putReportEvidence(storage, uid, peer.uid, makeFileId(12), bytes, {
                         contentType: attachment.mimeType || 'application/octet-stream',
+                        reserveReportEvidenceUpload,
                     });
                 }
 

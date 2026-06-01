@@ -1,4 +1,5 @@
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
+import { createHash } from 'node:crypto';
 import { db, FieldValue, OK } from '../../lib/admin.js';
 import { HOUR_MS, MINUTE_MS, limitCallable, uidLimitKey } from '../../lib/ratelimit.js';
 import { syncPushRouteForUid } from '../../lib/pushroute.js';
@@ -9,8 +10,9 @@ const APNS_TOKEN_RE = /^[0-9a-fA-F]{32,256}$/;
 const PUSH_VARIANTS = new Set(['dev', 'test', 'prod']);
 const PUSH_ENVIRONMENTS = new Set(['development', 'production']);
 const APNS_TOPICS = new Set(['com.glyphteck.veyl.dev', 'com.glyphteck.veyl.test', 'com.glyphteck.veyl']);
-const DELETE_BATCH_SIZE = 450;
 const MAX_PUSH_DEVICES_PER_USER = 4;
+const PUSH_DEVICE_OWNERS = 'push_device_owners';
+const PUSH_TOKEN_OWNERS = 'push_token_owners';
 const PUSH_VARIANT_META = {
     dev: { apnsTopic: 'com.glyphteck.veyl.dev', apnsEnvironment: 'development' },
     test: { apnsTopic: 'com.glyphteck.veyl.test', apnsEnvironment: 'production' },
@@ -95,61 +97,121 @@ function pushDoc(data) {
     };
 }
 
-function addRef(refs, ref) {
-    if (ref?.path) {
+function ownerKey(kind, value) {
+    return createHash('sha256').update(`${kind}\n${value}`).digest('base64url');
+}
+
+function pushRef(uid, did) {
+    return db.collection('users').doc(uid).collection('push').doc(did);
+}
+
+function didOwnerRef(did) {
+    return db.collection(PUSH_DEVICE_OWNERS).doc(ownerKey('did', did));
+}
+
+function tokenOwnerEntries(data) {
+    const entries = [];
+    const nativeToken = cleanString(data?.nativeToken);
+    const token = cleanString(data?.token);
+    if (APNS_TOKEN_RE.test(nativeToken)) {
+        entries.push({
+            kind: 'apns',
+            ref: db.collection(PUSH_TOKEN_OWNERS).doc(ownerKey('apns', nativeToken)),
+        });
+    }
+    if (EXPO_RE.test(token)) {
+        entries.push({
+            kind: 'expo',
+            ref: db.collection(PUSH_TOKEN_OWNERS).doc(ownerKey('expo', token)),
+        });
+    }
+    return entries;
+}
+
+function ownerData(uid, did, path, kind = null) {
+    return {
+        uid,
+        did,
+        path,
+        ...(kind ? { kind } : {}),
+        updatedAt: FieldValue.serverTimestamp(),
+    };
+}
+
+function refFromOwner(owner) {
+    const uid = cleanString(owner?.uid);
+    const did = cleanString(owner?.did);
+    if (!uid || !DID_RE.test(did)) {
+        return null;
+    }
+    return pushRef(uid, did);
+}
+
+function addStaleOwnerRef(refs, ownerSnap, keepPath = null, uid = null) {
+    if (!ownerSnap?.exists) {
+        return;
+    }
+    const owner = ownerSnap.data();
+    if (uid && owner?.uid !== uid) {
+        return;
+    }
+    const ref = refFromOwner(owner);
+    if (ref?.path && ref.path !== keepPath) {
         refs.set(ref.path, ref);
     }
 }
 
-async function queryPush(field, value, refs, keepPath = null) {
-    if (!value) {
-        return;
-    }
-
-    const snap = await db.collectionGroup('push').where(field, '==', value).get();
-    snap.docs.forEach((docSnap) => {
-        if (docSnap.ref.path !== keepPath) {
-            addRef(refs, docSnap.ref);
-        }
-    });
+async function readOwnerSnaps(tx, refs) {
+    return Promise.all(refs.map((ref) => tx.get(ref)));
 }
 
-async function queryUserPush(uid, field, value, refs, keepPath = null) {
-    if (!value) {
-        return;
-    }
-
-    const snap = await db.collection('users').doc(uid).collection('push').where(field, '==', value).get();
-    snap.docs.forEach((docSnap) => {
-        if (docSnap.ref.path !== keepPath) {
-            addRef(refs, docSnap.ref);
-        }
-    });
-}
-
-async function deleteRefs(refs) {
-    const list = [...refs.values()];
-    for (let index = 0; index < list.length; index += DELETE_BATCH_SIZE) {
-        const batch = db.batch();
-        list.slice(index, index + DELETE_BATCH_SIZE).forEach((ref) => batch.delete(ref));
-        await batch.commit();
-    }
-}
-
-async function setUserPush(uid, ref, data) {
+async function setUserPush(uid, ref, next, ownerRefs) {
     const pushRefs = db.collection('users').doc(uid).collection('push');
+
     await db.runTransaction(async (tx) => {
-        const currentSnap = await tx.get(ref);
+        const staleRefs = new Map();
+        const nextOwnerEntries = [{ kind: 'did', ref: ownerRefs.did }, ...ownerRefs.tokens];
+        const [currentSnap, ...nextOwnerSnaps] = await Promise.all([
+            tx.get(ref),
+            ...nextOwnerEntries.map((entry) => tx.get(entry.ref)),
+        ]);
+
+        nextOwnerSnaps.forEach((snap) => addStaleOwnerRef(staleRefs, snap, ref.path));
+
         if (!currentSnap.exists) {
             const existingSnap = await tx.get(pushRefs.orderBy('updatedAt', 'asc').limit(MAX_PUSH_DEVICES_PER_USER));
             if (existingSnap.size >= MAX_PUSH_DEVICES_PER_USER) {
                 const oldest = existingSnap.docs.find((docSnap) => docSnap.ref.path !== ref.path);
                 if (oldest) {
-                    tx.delete(oldest.ref);
+                    staleRefs.set(oldest.ref.path, oldest.ref);
                 }
             }
         }
-        tx.set(ref, data);
+
+        const nextOwnerPaths = new Set(nextOwnerEntries.map((entry) => entry.ref.path));
+        const oldTokenOwnerRefs = currentSnap.exists
+            ? tokenOwnerEntries(currentSnap.data())
+                  .map((entry) => entry.ref)
+                  .filter((oldRef) => !nextOwnerPaths.has(oldRef.path))
+            : [];
+        const [staleSnaps, oldTokenOwnerSnaps] = await Promise.all([
+            Promise.all([...staleRefs.values()].map((staleRef) => tx.get(staleRef))),
+            Promise.all(oldTokenOwnerRefs.map((oldRef) => tx.get(oldRef))),
+        ]);
+        staleSnaps.forEach((snap) => {
+            tx.delete(snap.ref);
+        });
+        oldTokenOwnerSnaps.forEach((snap) => {
+            const owner = snap.data();
+            if (snap.exists && owner?.uid === uid && owner?.did === next.did && owner?.path === ref.path) {
+                tx.delete(snap.ref);
+            }
+        });
+
+        tx.set(ref, next);
+        nextOwnerEntries.forEach((entry) => {
+            tx.set(entry.ref, ownerData(uid, next.did, ref.path, entry.kind));
+        });
     });
 }
 
@@ -160,17 +222,12 @@ export const setPush = onCall(async (context) => {
 
     const uid = auth.uid;
     const next = pushDoc(data);
-    const ref = db.collection('users').doc(uid).collection('push').doc(next.did);
-    const staleRefs = new Map();
+    const ref = pushRef(uid, next.did);
 
-    await Promise.all([
-        queryPush('did', next.did, staleRefs, ref.path),
-        queryPush('nativeToken', next.nativeToken, staleRefs, ref.path),
-        queryPush('token', next.token, staleRefs, ref.path),
-    ]);
-
-    await deleteRefs(staleRefs);
-    await setUserPush(uid, ref, next);
+    await setUserPush(uid, ref, next, {
+        did: didOwnerRef(next.did),
+        tokens: tokenOwnerEntries(next),
+    });
     await syncPushRouteForUid(uid);
     return OK;
 });
@@ -184,18 +241,32 @@ export const dropPush = onCall(async (context) => {
     const did = data?.did == null ? null : requireDid(data.did);
     const token = optionalExpoToken(data?.token);
     const nativeToken = optionalNativeToken(data?.nativeToken);
-    const refs = new Map();
+    const directRefs = new Map();
+    const ownerRefs = [];
 
     if (did) {
-        addRef(refs, db.collection('users').doc(uid).collection('push').doc(did));
+        const ref = pushRef(uid, did);
+        directRefs.set(ref.path, ref);
+        ownerRefs.push(didOwnerRef(did));
     }
 
-    await Promise.all([
-        queryUserPush(uid, 'nativeToken', nativeToken, refs),
-        queryUserPush(uid, 'token', token, refs),
-    ]);
+    tokenOwnerEntries({ nativeToken, token }).forEach((entry) => ownerRefs.push(entry.ref));
 
-    await deleteRefs(refs);
+    await db.runTransaction(async (tx) => {
+        const refs = new Map(directRefs);
+        const ownerSnaps = await readOwnerSnaps(tx, ownerRefs);
+        ownerSnaps.forEach((snap) => addStaleOwnerRef(refs, snap, null, uid));
+        const pushSnaps = await Promise.all([...refs.values()].map((ref) => tx.get(ref)));
+        pushSnaps.forEach((snap) => {
+            tx.delete(snap.ref);
+        });
+        ownerSnaps.forEach((snap) => {
+            if (snap.exists && snap.data()?.uid === uid) {
+                tx.delete(snap.ref);
+            }
+        });
+    });
+
     await syncPushRouteForUid(uid);
     return OK;
 });

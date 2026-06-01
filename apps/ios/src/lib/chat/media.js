@@ -107,6 +107,28 @@ async function uploadStorageBody(uploadUrl, body, contentType) {
     return response;
 }
 
+function uploadByteSize(data) {
+    if (Number.isFinite(data?.byteLength)) {
+        return data.byteLength;
+    }
+    if (Number.isFinite(data?.size)) {
+        return data.size;
+    }
+    return toBytes(data, 'upload bytes').byteLength;
+}
+
+async function reserveChatFileUploadNative(upload, meta = {}) {
+    const reserveChatMediaUpload = meta?.reserveChatMediaUpload;
+    if (typeof reserveChatMediaUpload !== 'function') {
+        throw new Error('chat media reservation required');
+    }
+    await reserveChatMediaUpload({
+        path: upload.path,
+        size: uploadByteSize(upload.body),
+        contentType: upload.metadata?.contentType || 'application/octet-stream',
+    });
+}
+
 function isImageAsset(asset) {
     if (asset?.type === 'image' || asset?.type === 'livePhoto') {
         return true;
@@ -385,6 +407,7 @@ export async function uploadAttachmentMsgNative(storage, senderPubkey, senderPri
 
     try {
         upload = await makeChatFileUploadNative(nextCid, data, meta);
+        await reserveChatFileUploadNative(upload, meta);
         await uploadStorageBytesNative(storage, upload.path, upload.body, upload.metadata);
         return makeAttachment(type, {
             ...upload.file,

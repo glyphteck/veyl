@@ -16,6 +16,10 @@ import { mark } from '@/lib/diagnostics';
 const chat = createChat({
     db,
     getStorage,
+    async reserveChatMediaUpload(payload) {
+        await httpsCallable(getFunctions(), 'reserveChatMediaUpload')(payload);
+        return true;
+    },
     async setMediaSaved(path, stayId, stayKey, saved) {
         await httpsCallable(getFunctions(), 'setMediaSaved')({ path, stayId, stayKey, saved });
         return true;

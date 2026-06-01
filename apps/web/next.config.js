@@ -21,10 +21,11 @@ const origins = [
 
 const CSP_DIRECTIVES = [
     "default-src 'self'",
-    `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'${process.env.NODE_ENV === 'development' || process.env.NEXT_PUBLIC_NETWORK === 'REGTEST' ? " 'unsafe-eval'" : ''}`,
-    `connect-src 'self' ${origins.join(' ')}`,
+    `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://www.google.com/recaptcha/ https://www.gstatic.com/recaptcha/${process.env.NODE_ENV === 'development' || process.env.NEXT_PUBLIC_NETWORK === 'REGTEST' ? " 'unsafe-eval'" : ''}`,
+    `connect-src 'self' https://www.google.com/recaptcha/ ${origins.join(' ')}`,
     "img-src 'self' data: blob: https://firebasestorage.googleapis.com",
     "media-src 'self' data: blob:",
+    "frame-src https://www.google.com/recaptcha/ https://recaptcha.google.com/recaptcha/",
     "style-src 'self' 'unsafe-inline'",
     "font-src 'self'",
     "object-src 'none'",

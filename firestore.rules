@@ -121,6 +121,22 @@ service cloud.firestore {
       return request.time + duration.value(21, 'd') + duration.value(10, 'm');
     }
 
+    function messageBodyMaxBytes() {
+      return 64 * 1024;
+    }
+
+    function lastMsgBodyMaxBytes() {
+      return 64 * 1024;
+    }
+
+    function chatSettingsBodyMaxBytes() {
+      return 32 * 1024;
+    }
+
+    function bytesSizeAllowed(value, maxBytes) {
+      return value is bytes && value.size() <= maxBytes;
+    }
+
     function initialTtlValueAllowed(value) {
       return value is timestamp
         && value >= request.time
@@ -143,7 +159,7 @@ service cloud.firestore {
           newLast is map
           && newLast.keys().hasOnly(['head', 'body', 'ttl'])
           && messageHeadValid(mapGet(newLast, 'head'))
-          && mapGet(newLast, 'body') is bytes
+          && bytesSizeAllowed(mapGet(newLast, 'body'), lastMsgBodyMaxBytes())
           && 'ttl' in newLast
           && ttlValueAllowed(mapGet(newLast, 'ttl'))
         );
@@ -239,7 +255,7 @@ service cloud.firestore {
           settings is map
           && settings.keys().hasOnly(['head', 'body'])
           && messageHeadValid(mapGet(settings, 'head'))
-          && mapGet(settings, 'body') is bytes
+          && bytesSizeAllowed(mapGet(settings, 'body'), chatSettingsBodyMaxBytes())
         );
     }
 
@@ -267,7 +283,7 @@ service cloud.firestore {
     function messageFieldsValid(data) {
       return data.keys().hasOnly(['head', 'body', 'ts', 'ttl'])
         && messageHeadValid(data.head)
-        && data.body is bytes
+        && bytesSizeAllowed(data.body, messageBodyMaxBytes())
         && data.ts is timestamp
         && 'ttl' in data
         && ttlValueAllowed(data.ttl)

@@ -3,7 +3,6 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { clearLine, createInterface, cursorTo, emitKeypressEvents, moveCursor } from 'node:readline';
-import { syncOssRepo } from './oss-sync.mjs';
 
 const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const packagePath = resolve(rootDir, 'package.json');
@@ -31,18 +30,16 @@ function paint(text, color) {
 
 function usage() {
     process.stdout.write(`Usage:
-  bun push [oss] [patch|minor|major] [commit message]
+  bun push [patch|minor|major] [commit message]
   bun merge <pr> [patch|minor|major] [commit message]
 
 Options:
   -v, --version <patch|minor|major>
   -m, --message <message>
   -p, --pr <number>
-  --oss
 
 Examples:
   bun push
-  bun push oss
   bun push --version patch --message "document worktree task workflow"
   bun merge --pr 123
 `);
@@ -65,10 +62,6 @@ function parseArgs(args) {
         }
         if (arg === '-y' || arg === '--yes') {
             flags.yes = true;
-            continue;
-        }
-        if (arg === '--oss') {
-            flags.oss = true;
             continue;
         }
         if (arg === '-v' || arg === '--version') {
@@ -337,15 +330,9 @@ async function resolveMessage(parsed) {
 }
 
 async function resolvePush(parsed) {
-    let oss = parsed.flags.oss === true;
-    const ossIndex = parsed.positionals.indexOf('oss');
-    if (ossIndex !== -1) {
-        parsed.positionals.splice(ossIndex, 1);
-        oss = true;
-    }
     const version = await resolveVersion(parsed);
     const message = await resolveMessage(parsed);
-    return { version, message, oss };
+    return { version, message };
 }
 
 async function resolveMerge(parsed) {
@@ -379,16 +366,8 @@ async function commitId() {
 async function runWorkflow(action, config) {
     const commands = workflowCommands(action, config);
 
-    if (action === 'push' && config.oss) {
-        await syncOssRepo({ preflight: true });
-    }
-
     for (const item of commands) {
         await runStep(...item);
-    }
-
-    if (action === 'push' && config.oss) {
-        await syncOssRepo({ message: config.message, push: true });
     }
 
     const hash = await commitId();

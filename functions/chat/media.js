@@ -1,11 +1,15 @@
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { createHash } from 'node:crypto';
-import admin, { db, FieldValue, OK } from '../lib/admin.js';
+import admin, { db, FieldValue, OK, Timestamp } from '../lib/admin.js';
 import { HOUR_MS, MINUTE_MS, limitCallable, uidLimitKey } from '../lib/ratelimit.js';
+import { CHAT_MEDIA_CONTENT_TYPE, CHAT_MEDIA_MAX_FILE_BYTES, CHAT_MEDIA_UPLOAD_RESERVATION_TTL_MS, chatMediaReserveLimitRules } from '../lib/abuseconfig.js';
+import { assertQuotaRoom, cleanQuotaAmount, writeQuotaReservation } from '../lib/usagequota.js';
+import { makeAccountUploadQuota } from '../lib/uploadquota.js';
 
 const MEDIA_PATH_RE = /^media\/[0-9a-fA-F]{32}\/main$/;
 const MEDIA_STAY_RE = /^[A-Za-z0-9_-]{8,80}$/;
 const MEDIA_STAY_KEY_RE = /^[A-Za-z0-9_-]{32,128}$/;
+const MEDIA_UPLOAD_RESERVATIONS = 'media_upload_reservations';
 
 function cleanMediaPath(value) {
     const path = typeof value === 'string' ? value.trim() : '';
@@ -41,6 +45,29 @@ function mediaDocRef(mediaId) {
 
 function mediaStayRef(mediaId, stayId) {
     return mediaDocRef(mediaId).collection('stays').doc(stayId);
+}
+
+function mediaUploadReservationRef(mediaId) {
+    return db.collection(MEDIA_UPLOAD_RESERVATIONS).doc(mediaId);
+}
+
+function cleanMediaContentType(value) {
+    const contentType = typeof value === 'string' ? value.trim().toLowerCase() : CHAT_MEDIA_CONTENT_TYPE;
+    if (contentType !== CHAT_MEDIA_CONTENT_TYPE) {
+        throw new HttpsError('invalid-argument', 'invalid media content type');
+    }
+    return contentType;
+}
+
+function cleanMediaUploadSize(value) {
+    const size = cleanQuotaAmount(value);
+    if (size > CHAT_MEDIA_MAX_FILE_BYTES) {
+        throw new HttpsError('resource-exhausted', 'file too large', {
+            limit: CHAT_MEDIA_MAX_FILE_BYTES,
+            requested: size,
+        });
+    }
+    return size;
 }
 
 function cleanStayCount(value) {
@@ -155,4 +182,49 @@ export const setMediaSaved = onCall(async ({ auth, data }) => {
         await saveMediaStay(path, stayId, stayKey);
     }
     return OK;
+});
+
+export const reserveChatMediaUpload = onCall(async (context) => {
+    const { auth, data } = context;
+    if (!auth?.uid) {
+        throw new HttpsError('unauthenticated', 'auth');
+    }
+
+    await limitCallable(context, chatMediaReserveLimitRules(uidLimitKey(auth.uid, 'reserve-chat-media')));
+
+    const path = cleanMediaPath(data?.path);
+    const mediaId = mediaIdFromPath(path);
+    const size = cleanMediaUploadSize(data?.size);
+    const contentType = cleanMediaContentType(data?.contentType);
+    const nowMs = Date.now();
+    const { quota, dailyLimit, newAccount } = await makeAccountUploadQuota(auth.uid, nowMs);
+    const reservationRef = mediaUploadReservationRef(mediaId);
+    const expiresAtMs = nowMs + CHAT_MEDIA_UPLOAD_RESERVATION_TTL_MS;
+
+    await db.runTransaction(async (tx) => {
+        const [reservationSnap, quotaSnap] = await Promise.all([tx.get(reservationRef), tx.get(quota.ref)]);
+        if (reservationSnap.exists) {
+            throw new HttpsError('already-exists', 'media reservation exists');
+        }
+        assertQuotaRoom(quota, quotaSnap, size, nowMs);
+        tx.create(reservationRef, {
+            uid: auth.uid,
+            path,
+            size,
+            contentType,
+            createdAt: Timestamp.fromMillis(nowMs),
+            ttl: Timestamp.fromMillis(expiresAtMs),
+        });
+        writeQuotaReservation(tx, quota, quotaSnap, size, nowMs);
+    });
+
+    return {
+        path,
+        mediaId,
+        size,
+        contentType,
+        expiresAt: expiresAtMs,
+        dailyLimit,
+        newAccount,
+    };
 });
