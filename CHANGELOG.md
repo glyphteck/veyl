@@ -2,6 +2,10 @@
 
 Repo-level changes are listed newest first. Keep entries short and concrete. Broad pushes get grouped bullets, while narrow fixes can use one concise bugfix or cleanup bullet that still names the actual change.
 
+## 4.14.11 - 2026-06-01
+
+- Added public security reporting guidance and documented the Firebase client-config posture for open-source scanning.
+
 ## 4.14.10 - 2026-06-01
 
 - Added Firebase App Check for the web client with a reCAPTCHA Enterprise key restricted to Veyl web domains.

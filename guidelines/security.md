@@ -71,6 +71,8 @@ Upload abuse control is enforced with server-minted reservations. Chat media and
 
 The web client initializes Firebase App Check with reCAPTCHA Enterprise before creating Firebase service clients. The reCAPTCHA Enterprise key is restricted to `veyl.glyphteck.com`, which also covers the test and dev subdomains; the Firebase web app's App Check config owns the risk threshold and token TTL. Do not enable App Check enforcement for shared Firebase products or callable functions until every supported client path, including iOS, can provide valid App Check tokens.
 
+`shared/firebaseconfig.js` is public client configuration. The Firebase API key and web App Check site key identify the project/app and are allowed in source; they are not an authorization boundary. Keep the shared Firebase API key restricted to Firebase-related APIs only, and do not add application restrictions to that shared key while web and React Native iOS both use it. Use separate restricted keys for any non-Firebase Google APIs.
+
 Direct Firestore message writes cannot maintain a true rate counter without another write/read or a callable send path. The zero-extra-write server guard is payload-size enforcement in Firestore rules for encrypted message bodies, latest-message previews, and encrypted chat settings. If message volume itself becomes the abuse bottleneck, route sends through a server-owned counter path instead of trying to hide a counter in client state.
 
 Public profile moderation includes reserved and banned username filtering plus avatar bans. Keep username filtering aligned between onboarding, profile lookup, and admin docs; keep avatar-ban enforcement aligned across Storage rules, web admin moderation, admin commands, and iOS avatar upload UI.

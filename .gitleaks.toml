@@ -1,0 +1,10 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Firebase client config is public by design; access is enforced by Firebase Security Rules and App Check."
+paths = ['''shared/firebaseconfig\.js''']
+regexes = [
+    '''AIza[0-9A-Za-z_-]{35}''',
+    '''6L[0-9A-Za-z_-]{30,}''',
+]
