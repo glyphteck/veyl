@@ -335,11 +335,12 @@ export function createPeerProvider({ useChat, useUser, useTxData, useVault, peer
         }, [chatPK, chats, peerByChatPK, peerByUid, walletPeers]);
 
         const recentPeerUids = useMemo(() => recentPeers.all.map((peer) => peer.uid).filter(Boolean).slice(0, RECENT_PEER_REFRESH_LIMIT), [recentPeers]);
-        const recentPeerUidsKey = useMemo(() => recentPeerUids.join('|'), [recentPeerUids]);
+        const recentPeerRefreshUidsKey = useMemo(() => sortedUniqueValues(recentPeerUids).join('|'), [recentPeerUids]);
         const refreshRunningRef = useRef(false);
         useEffect(() => {
             if (!profilesReady) return;
-            if (!recentPeerUids.length) return;
+            if (!recentPeerRefreshUidsKey) return;
+            const refreshUids = recentPeerRefreshUidsKey.split('|');
 
             let cancelled = false;
             const run = async () => {
@@ -347,7 +348,7 @@ export function createPeerProvider({ useChat, useUser, useTxData, useVault, peer
                 refreshRunningRef.current = true;
                 try {
                     if (cancelled) return;
-                    await updatePeers(recentPeerUids, { throttleMs: RECENT_PEER_REFRESH_THROTTLE_MS });
+                    await updatePeers(refreshUids, { throttleMs: RECENT_PEER_REFRESH_THROTTLE_MS });
                 } finally {
                     refreshRunningRef.current = false;
                 }
@@ -365,7 +366,7 @@ export function createPeerProvider({ useChat, useUser, useTxData, useVault, peer
                 clearTimeout(timeoutId);
                 clearInterval(intervalId);
             };
-        }, [profilesReady, recentPeerUidsKey, updatePeers]);
+        }, [profilesReady, recentPeerRefreshUidsKey, updatePeers]);
 
         useEffect(() => {
             if (!blockedPeersReady) {

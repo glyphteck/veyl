@@ -9,7 +9,7 @@ import { getDotMetrics } from './dot';
 import Icon from '@/components/icon';
 import { useTap } from '@/lib/tap';
 import { useTheme } from '../providers/themeprovider';
-import { prefetchAvatarImage, readAvatarImageCache, subscribeAvatarImageCache } from '../lib/user/avatarimages';
+import { prefetchAvatarImage, readAvatarImageCache } from '../lib/user/avatarimages';
 
 const AVATAR_ANIMATION_MS = 160;
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
@@ -40,21 +40,12 @@ function isRemoteAvatarSource(sourceKey) {
 }
 
 function useCachedAvatarSource(sourceKey) {
-    const [cachedSource, setCachedSource] = useState(() => readAvatarImageCache(sourceKey));
+    const cachedSource = useMemo(() => readAvatarImageCache(sourceKey), [sourceKey]);
 
     useEffect(() => {
-        const current = readAvatarImageCache(sourceKey);
-        setCachedSource(current);
-        if (!isRemoteAvatarSource(sourceKey) || current) return;
-
-        const unsubscribe = subscribeAvatarImageCache((url, uri) => {
-            if (url === sourceKey) {
-                setCachedSource(uri);
-            }
-        });
+        if (!isRemoteAvatarSource(sourceKey) || cachedSource) return;
         void prefetchAvatarImage(sourceKey);
-        return unsubscribe;
-    }, [sourceKey]);
+    }, [cachedSource, sourceKey]);
 
     return cachedSource;
 }

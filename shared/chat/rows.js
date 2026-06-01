@@ -1,5 +1,5 @@
 import { collection, query, where, orderBy, onSnapshot, doc, getDocsFromServer, getDocFromServer, limit, startAfter } from 'firebase/firestore';
-import { CHAT_LIST_PAGE_SIZE } from '../config.js';
+import { CHAT_LIST_PAGE_SIZE, CHAT_LIST_SNAPSHOT_COALESCE_MS } from '../config.js';
 import { sameArray, uniqueValues } from '../utils/array.js';
 import { openMsg } from '../crypto/chat.js';
 import { canShowMsg, canStoreMsg, isControlMsg } from './messages.js';
@@ -66,6 +66,53 @@ export function listenToChats(db, userChatPK, userPrivKey, onUpdate, onError, op
     const pageSize = positiveInt(options?.limitCount ?? options?.pageSize ?? options?.count, CHAT_LIST_PAGE_SIZE);
     const cache = new Map();
     let run = 0;
+    let snapshotVersion = 0;
+    let timer = null;
+    let pending = null;
+    let processing = false;
+    let closed = false;
+    let processedFirst = false;
+
+    const processPending = () => {
+        timer = null;
+        if (closed || processing || !pending) {
+            return;
+        }
+
+        const current = pending;
+        pending = null;
+        processing = true;
+        const runId = ++run;
+        void handleChats(db, current.docs, userChatPK, userPrivKey, cache)
+            .then(({ chats, peers, deletingChatIds }) => {
+                if (!closed && runId === run && current.version === snapshotVersion) {
+                    processedFirst = true;
+                    onUpdate(chats, peers, {
+                        deletingChatIds,
+                        cursor: current.cursor,
+                        hasMore: current.hasMore,
+                    });
+                }
+            })
+            .catch((error) => {
+                if (!closed && runId === run && current.version === snapshotVersion) {
+                    onError?.(error);
+                }
+            })
+            .finally(() => {
+                processing = false;
+                if (pending && !closed) {
+                    timer = setTimeout(processPending, CHAT_LIST_SNAPSHOT_COALESCE_MS);
+                }
+            });
+    };
+
+    const schedule = (delayMs) => {
+        if (timer || processing || closed) {
+            return;
+        }
+        timer = setTimeout(processPending, delayMs);
+    };
 
     const unsub = onSnapshot(
         chatListQuery(db, userChatPK, pageSize),
@@ -73,26 +120,25 @@ export function listenToChats(db, userChatPK, userPrivKey, onUpdate, onError, op
             if (snap.metadata?.hasPendingWrites) {
                 return;
             }
-            const runId = ++run;
-            void handleChats(db, snap.docs, userChatPK, userPrivKey, cache)
-                .then(({ chats, peers, deletingChatIds }) => {
-                    if (runId === run) {
-                        onUpdate(chats, peers, {
-                            deletingChatIds,
-                            cursor: snap.docs[snap.docs.length - 1] ?? null,
-                            hasMore: snap.docs.length >= pageSize,
-                        });
-                    }
-                })
-                .catch((error) => {
-                    if (runId === run) {
-                        onError?.(error);
-                    }
-                });
+            pending = {
+                version: ++snapshotVersion,
+                docs: snap.docs,
+                cursor: snap.docs[snap.docs.length - 1] ?? null,
+                hasMore: snap.docs.length >= pageSize,
+            };
+            schedule(processedFirst ? CHAT_LIST_SNAPSHOT_COALESCE_MS : 0);
         },
         onError
     );
-    return () => unsub?.();
+    return () => {
+        closed = true;
+        if (timer) {
+            clearTimeout(timer);
+            timer = null;
+        }
+        pending = null;
+        unsub?.();
+    };
 }
 
 export async function loadMoreChats(db, userChatPK, userPrivKey, cursor, pageSize) {

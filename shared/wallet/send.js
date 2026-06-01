@@ -15,7 +15,7 @@ export function useSparkSend({ wallet, network, updateWalletData }) {
                     receiverSparkAddress,
                     amountSats: parseInt(amountSats, 10),
                 });
-                await updateWalletData();
+                await updateWalletData({ reason: 'send' });
                 return tx?.id;
             } catch (error) {
                 const message = error instanceof Error ? error.message : String(error);

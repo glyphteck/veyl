@@ -93,6 +93,7 @@ export function useChatList({
     const lastServerChatIdsKey = useRef('');
     const chatCacheWriteTimerRef = useRef(null);
     const pendingChatCacheWriteRef = useRef(null);
+    const listenUpdateSeqRef = useRef(0);
 
     useEffect(() => {
         chatsRef.current = chats;
@@ -359,6 +360,7 @@ export function useChatList({
             chatPK,
             chatPrivateKey,
             (nextChats, _nextPeers, meta = {}) => {
+                const updateStartedAt = Date.now();
                 const rawNextChats = Array.isArray(nextChats) ? nextChats : [];
                 const deletingChatIds = Array.isArray(meta?.deletingChatIds) ? meta.deletingChatIds.filter(Boolean) : [];
                 const nextChatsWithRead = clearChatPreviewsByHiddenKeys(trimExpiredChatPreviews(applyReadCache(rawNextChats, chatPK, readCacheRef.current), { skipChatId: selectedChatIdRef.current }), hiddenChatPreviewKeysRef.current);
@@ -366,6 +368,8 @@ export function useChatList({
                 serverChatsReadyRef.current = true;
                 const nextChatIds = rawNextChats.map((chatItem) => chatItem.id);
                 const nextChatIdsSet = new Set(nextChatIds);
+                const previousRenderedChats = chatsRef.current;
+                const previousServerIds = serverChatIdsRef.current;
 
                 if (deletingChatIds.length) {
                     clearDeletedChatState(deletingChatIds);
@@ -381,6 +385,19 @@ export function useChatList({
                 const hiddenIds = uniqueSet([...deletingChatIds, ...pendingDeleteIdsRef.current]);
                 const preservedChats = lastServerChatsRef.current.filter((chatItem) => chatItem?.id && !nextChatIdsSet.has(chatItem.id) && !hiddenIds.has(chatItem.id));
                 const shownChats = commitServerChats(sortedUniqueChatRows(nextChatsWithRead, preservedChats));
+                listenUpdateSeqRef.current += 1;
+                markDiag(diag, 'chat.provider.listen.update', {
+                    seq: listenUpdateSeqRef.current,
+                    elapsedMs: Date.now() - updateStartedAt,
+                    first: firstSnapshot,
+                    rawCount: rawNextChats.length,
+                    shownCount: shownChats.length,
+                    previousShownCount: previousRenderedChats.length,
+                    deletingCount: deletingChatIds.length,
+                    hasMore: !!meta?.hasMore,
+                    orderChanged: nextChatIds.length !== previousServerIds.length || nextChatIds.some((id, index) => previousServerIds[index] !== id),
+                    renderedChanged: !sameChats(previousRenderedChats, shownChats),
+                });
                 setSelectedChat((currentId) => {
                     if (currentId && pendingDeleteIdsRef.current.has(currentId) && !keepSelectedDeletedChatIdsRef.current.has(currentId)) {
                         return null;

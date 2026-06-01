@@ -36,7 +36,7 @@ const DELETE_DRAG = 24;
 const DELETE_HINT_W = 60;
 const DELETE_TRIGGER = 80;
 const DELETE_ICON_DELAY = 20;
-const CHAT_ROW_APPEAR_MS = 320;
+const CHAT_ROW_APPEAR_MS = 640;
 const CHAT_ROW_PHASE_MS = CHAT_ROW_APPEAR_MS / 2;
 const CHAT_ROW_APPEAR_FROM = 0.98;
 const DELETE_SPRING = {
@@ -628,6 +628,15 @@ export default function ChatList() {
         [chatPK, displayItems.length, handleDeleteChat, openChat, peerByChatPK]
     );
 
+    const getItemLayout = useCallback(
+        (_data, index) => ({
+            length: CHAT_ROW_HEIGHT,
+            offset: headerHeight + CHAT_ROW_HEIGHT * index,
+            index,
+        }),
+        [headerHeight]
+    );
+
     if (chatBanned) {
         return (
             <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28 }}>
@@ -651,6 +660,12 @@ export default function ChatList() {
                 keyboardShouldPersistTaps="handled"
                 contentContainerStyle={{ flexGrow: 1, paddingTop: headerHeight, paddingBottom: mainMenuHeight }}
                 renderItem={renderItem}
+                getItemLayout={getItemLayout}
+                initialNumToRender={16}
+                maxToRenderPerBatch={12}
+                removeClippedSubviews
+                updateCellsBatchingPeriod={24}
+                windowSize={8}
                 directionalLockEnabled
                 alwaysBounceHorizontal={false}
                 onEndReached={handleLoadMoreChats}

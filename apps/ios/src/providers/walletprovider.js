@@ -7,7 +7,7 @@ import { useUser } from '@/providers/userprovider';
 import { mark } from '@/lib/diagnostics';
 
 const CLAIM_BATCH_SIZE = 3;
-const CLAIM_BATCH_DELAY_MS = 50;
+const CLAIM_BATCH_DELAY_MS = 120;
 const CLAIMABLE_STATUS_CODES = new Set([2, 3, 4, 9, 10]);
 const CLAIMABLE_STATUS_NAMES = new Set([
     'TRANSFER_STATUS_SENDER_KEY_TWEAKED',
@@ -58,6 +58,10 @@ function canClaimTransfer(transfer, types) {
     return isClaimableStatus(transfer?.status);
 }
 
+function shouldLogClaimBatch(batchIndex, batchCount) {
+    return batchIndex === 0 || batchIndex === batchCount - 1 || (batchIndex + 1) % 5 === 0;
+}
+
 async function claimTransfersInBatches(wallet, types, emit, activeRef) {
     const queryPendingTransfers = wallet?.transferService?.queryPendingTransfers;
     const claimTransfer = wallet?.claimTransfer;
@@ -68,13 +72,14 @@ async function claimTransfersInBatches(wallet, types, emit, activeRef) {
     const page = await queryPendingTransfers.call(wallet.transferService);
     const transfers = (Array.isArray(page?.transfers) ? page.transfers : []).filter((transfer) => canClaimTransfer(transfer, types));
     if (!transfers.length || !activeRef.current) {
-        mark('wallet.claim.done', { count: 0 });
         return [];
     }
 
     mark('wallet.claim.start', { count: transfers.length, batchSize: CLAIM_BATCH_SIZE });
     const claimed = [];
+    const batchCount = Math.ceil(transfers.length / CLAIM_BATCH_SIZE);
     for (let index = 0; index < transfers.length && activeRef.current; index += CLAIM_BATCH_SIZE) {
+        const batchIndex = Math.floor(index / CLAIM_BATCH_SIZE);
         const batch = transfers.slice(index, index + CLAIM_BATCH_SIZE);
         const results = await Promise.allSettled(
             batch.map((transfer) =>
@@ -89,7 +94,9 @@ async function claimTransfersInBatches(wallet, types, emit, activeRef) {
                 claimed.push(result.value);
             }
         }
-        mark('wallet.claim.batch', { claimed: claimed.length, total: transfers.length });
+        if (shouldLogClaimBatch(batchIndex, batchCount)) {
+            mark('wallet.claim.batch', { claimed: claimed.length, total: transfers.length, batch: batchIndex + 1, batches: batchCount });
+        }
         if (index + CLAIM_BATCH_SIZE < transfers.length && activeRef.current) {
             await delay(CLAIM_BATCH_DELAY_MS);
         }
@@ -189,6 +196,20 @@ function WalletRuntime({ children }) {
         });
 
         return () => sub?.remove?.();
+    }, [wallet, pauseInternalClaims, resumeInternalClaims]);
+
+    useEffect(() => {
+        if (!wallet) {
+            return;
+        }
+
+        if (activeRef.current) {
+            resumeInternalClaims();
+            void wallet.claimTransfers?.();
+            return;
+        }
+
+        pauseInternalClaims();
     }, [wallet, pauseInternalClaims, resumeInternalClaims]);
 
     return children;

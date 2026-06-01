@@ -58,6 +58,7 @@ export const CHAT_DELETE_WRITE_BATCH_SIZE = 400;
 export const CHAT_LIST_LIVE_COUNT = 15;
 export const CHAT_LIST_PAGE_SIZE = 20;
 export const CHAT_LIST_CACHE_WRITE_DELAY_MS = 1500;
+export const CHAT_LIST_SNAPSHOT_COALESCE_MS = 80;
 
 // Chat client warmup knobs. These trade faster first render against extra reads, memory, and media work.
 export const CHAT_TOP_WARM_COUNT = 1;
@@ -119,6 +120,8 @@ export const REQUEST_MONEY_MAX_SATS = SATS_PER_BITCOIN * 100_000n;
 export const WALLET_UPDATE_RATE_LIMIT_MS = 5 * MS_PER_SECOND;
 export const WALLET_TRANSFER_POLL_MS = 10 * MS_PER_SECOND;
 export const WALLET_ACTIVE_CLAIM_POLL_MS = 20 * MS_PER_SECOND;
+export const WALLET_BALANCE_EVENT_COALESCE_MS = 250;
+export const WALLET_INCOMING_UPDATE_COALESCE_MS = 1500;
 export const WALLET_MIN_BOOT_TX_COVERAGE_MS = DAY_MS;
 export const WALLET_AUTO_CLAIM_MAX_FEE_SATS = 5000;
 export const WALLET_CLAIM_PAGE_SIZE = 100;

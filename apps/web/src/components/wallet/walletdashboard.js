@@ -59,7 +59,27 @@ export function WalletDashboard() {
     const bitcoin = useBitcoin();
     const { balance } = useWallet();
     const { settings, uid } = useUser();
-    const { getSeries, getHourlySeries, getTxsInRange, first, oldestVerifiedTxMs, transactions, txHistoryComplete, isTxRangeCovered, ensureTxRange, getDefaultTimeRange } = useTxData();
+    const {
+        getSeries,
+        getHourlySeries,
+        getTxsInRange,
+        getHistorySeries,
+        getHistoryHourlySeries,
+        getHistoryTxsInRange,
+        first,
+        historyFirst,
+        oldestKnownTxMs,
+        oldestVerifiedTxMs,
+        transactions,
+        historyTransferCount,
+        txHistoryComplete,
+        txServerHistoryComplete,
+        isTxRangeCovered,
+        isHistoryTxRangeCovered,
+        ensureTxRange,
+        ensureHistoryTxRange,
+        getDefaultTimeRange,
+    } = useTxData();
     const { peerByWalletPK } = usePeer();
     const { openDialog } = useDialog();
     const { cloaked } = useCloak();
@@ -72,12 +92,14 @@ export function WalletDashboard() {
     };
 
     const availableTimeRanges = useMemo(() => {
-        if (!transactions?.length || !first) return ['today'];
+        const chartFirst = historyFirst ?? first;
+        const knownTransferCount = historyTransferCount ?? transactions?.length ?? 0;
+        if (!knownTransferCount || !chartFirst) return ['today'];
 
         const nowMs = Date.now();
-        const verifiedFirstTxMs = Number.isFinite(oldestVerifiedTxMs) ? oldestVerifiedTxMs : null;
-        const firstTxMs = verifiedFirstTxMs ?? txDateMs(first);
-        const knownComplete = txHistoryComplete || verifiedFirstTxMs != null;
+        const knownComplete = txServerHistoryComplete === true || txHistoryComplete === true;
+        const verifiedFirstTxMs = knownComplete && Number.isFinite(oldestKnownTxMs) ? oldestKnownTxMs : knownComplete && Number.isFinite(oldestVerifiedTxMs) ? oldestVerifiedTxMs : null;
+        const firstTxMs = verifiedFirstTxMs ?? txDateMs(chartFirst);
         if (firstTxMs == null) return ['today'];
 
         const today = new Date(nowMs);
@@ -98,20 +120,24 @@ export function WalletDashboard() {
         if (daysSinceFirst >= 365) ranges.push(365);
         if (knownComplete && txAgeMs > DAY_MS) ranges.push('all-time');
         return ranges;
-    }, [first, oldestVerifiedTxMs, transactions, txHistoryComplete]);
+    }, [first, historyFirst, historyTransferCount, oldestKnownTxMs, oldestVerifiedTxMs, transactions, txHistoryComplete, txServerHistoryComplete]);
 
     const activeTimeRange = pickTimeRange(timeRange ?? defaultTimeRange, availableTimeRanges);
 
     const { chartData, filteredTxs, percentChange } = useMemo(() => {
-        if (!getSeries || !getHourlySeries || !getTxsInRange) return { chartData: [], filteredTxs: [], percentChange: 0 };
+        const readSeries = getHistorySeries ?? getSeries;
+        const readHourlySeries = getHistoryHourlySeries ?? getHourlySeries;
+        const readTxsInRange = getHistoryTxsInRange ?? getTxsInRange;
+        const chartFirst = historyFirst ?? first;
+        if (!readSeries || !readHourlySeries || !readTxsInRange) return { chartData: [], filteredTxs: [], percentChange: 0 };
 
         const chartData = (() => {
-            if (activeTimeRange === 'today') return getHourlySeries(24, 'today');
-            if (activeTimeRange === '24h') return getHourlySeries(24, '24h');
+            if (activeTimeRange === 'today') return readHourlySeries(24, 'today');
+            if (activeTimeRange === '24h') return readHourlySeries(24, '24h');
             if (activeTimeRange === 'all-time') {
-                return getSeries(chartTxDays(first));
+                return chartFirst ? readSeries(chartTxDays(chartFirst)) : [];
             }
-            return getSeries(Number(activeTimeRange));
+            return readSeries(Number(activeTimeRange));
         })();
 
         // get % change
@@ -123,15 +149,16 @@ export function WalletDashboard() {
                 percentChange = ((endBalance - startBalance) / Math.abs(startBalance)) * 100;
             }
         }
-        const filteredTxs = getTxsInRange(activeTimeRange);
+        const filteredTxs = readTxsInRange(activeTimeRange);
         return { chartData, filteredTxs, percentChange };
-    }, [activeTimeRange, first, getHourlySeries, getSeries, getTxsInRange]);
+    }, [activeTimeRange, first, getHistoryHourlySeries, getHistorySeries, getHistoryTxsInRange, getHourlySeries, getSeries, getTxsInRange, historyFirst]);
 
     const { netTotal, txCount, volume, avgDailyVolume, topPeers } = useMemo(() => {
         let netTotal = 0;
         let txCount = 0;
         let volume = 0;
         const peerStats = new Map();
+        const chartFirst = historyFirst ?? first;
         for (const tx of filteredTxs) {
             const totalValue = tx.totalValue || 0;
             netTotal += tx.incoming ? totalValue : -totalValue;
@@ -149,8 +176,8 @@ export function WalletDashboard() {
         if (activeTimeRange === 'today' || activeTimeRange === '24h') {
             avgDailyVolume = Math.round(volume / 24);
         } else if (activeTimeRange === 'all-time') {
-            if (first) {
-                avgDailyVolume = Math.round(volume / elapsedTxDays(first));
+            if (chartFirst) {
+                avgDailyVolume = Math.round(volume / elapsedTxDays(chartFirst));
             }
         } else if (activeTimeRange > 0) {
             avgDailyVolume = Math.round(volume / activeTimeRange);
@@ -164,7 +191,7 @@ export function WalletDashboard() {
             periodStats,
         }));
         return { netTotal, txCount, volume, avgDailyVolume, topPeers };
-    }, [activeTimeRange, filteredTxs, first, peerByWalletPK]);
+    }, [activeTimeRange, filteredTxs, first, historyFirst, peerByWalletPK]);
 
     useEffect(() => {
         if (timeRange !== null && availableTimeRanges.length > 0 && !availableTimeRanges.includes(timeRange)) {
@@ -173,10 +200,12 @@ export function WalletDashboard() {
     }, [availableTimeRanges, timeRange]);
 
     useEffect(() => {
-        if (!isTxRangeCovered?.(activeTimeRange)) {
-            void ensureTxRange?.(activeTimeRange);
+        const isCovered = isHistoryTxRangeCovered ?? isTxRangeCovered;
+        const ensureRange = ensureHistoryTxRange ?? ensureTxRange;
+        if (!isCovered?.(activeTimeRange)) {
+            void ensureRange?.(activeTimeRange);
         }
-    }, [activeTimeRange, ensureTxRange, isTxRangeCovered]);
+    }, [activeTimeRange, ensureHistoryTxRange, ensureTxRange, isHistoryTxRangeCovered, isTxRangeCovered]);
 
     const timeRangeOptions = TIME_RANGE_OPTIONS.filter((option) => availableTimeRanges.includes(option.value));
 

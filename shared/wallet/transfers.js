@@ -5,12 +5,13 @@ import { readCachedTransferState, writeCachedTransferState } from '../cache/loca
 import { toHex } from '../crypto/core.js';
 import { sleep } from '../utils/async.js';
 import { markDiag, markDone, markError } from '../utils/diagnostics.js';
-import { lowerText, sameText } from '../utils/text.js';
-import { isPendingTransfer, txCreatedMs, txUpdatedMs } from './tx.js';
+import { lowerText } from '../utils/text.js';
+import { isPendingTransfer, transferBelongsToWallet, txCreatedMs, txUpdatedMs } from './tx.js';
 
 export const RECENT_TRANSFER_LIMIT = WALLET_RECENT_TRANSFER_LIMIT;
 export const TRANSFER_PAGE_LIMIT = WALLET_TRANSFER_PAGE_LIMIT;
-const INITIAL_TRANSFER_LIMIT = RECENT_TRANSFER_LIMIT;
+const INITIAL_TRANSFER_LIMIT = 20;
+const TRANSFER_REVEAL_BATCH_SIZE = 24;
 const TRANSFER_FETCH_THROTTLE_MS = WALLET_TRANSFER_FETCH_THROTTLE_MS;
 const TRANSFER_CACHE_WRITE_DELAY_MS = WALLET_TRANSFER_CACHE_WRITE_DELAY_MS;
 const TRANSFER_STATUS_BY_CODE = new Map([
@@ -130,13 +131,6 @@ function completedTransferCount(transfers = []) {
     return transfers.reduce((count, tx) => (isPendingTransfer(tx) ? count : count + 1), 0);
 }
 
-function transferBelongsToWallet(tx, walletPK) {
-    if (!walletPK) {
-        return false;
-    }
-    return sameText(tx?.senderIdentityPublicKey, walletPK) || sameText(tx?.receiverIdentityPublicKey, walletPK);
-}
-
 function filterTransfersForWallet(transfers = [], walletPK) {
     if (!walletPK || !Array.isArray(transfers)) {
         return [];
@@ -195,6 +189,34 @@ function mergeTransferPage(currentTransfers = [], pageTransfers = [], position =
     return sortRecentTransfers(order.map((id) => byId.get(id)).filter(Boolean));
 }
 
+function mergeTransferPageForWallet(currentTransfers = [], pageTransfers = [], walletPK, position = 'append') {
+    const current = filterTransfersForWallet(currentTransfers, walletPK);
+    const page = filterTransfersForWallet(pageTransfers, walletPK);
+    return mergeTransferPage(current, page, position);
+}
+
+function mergeRecentSnapshotForWallet(currentTransfers = [], latestTransfers = [], walletPK) {
+    const latest = mergeTransferPageForWallet([], latestTransfers, walletPK, 'append');
+    if (!latest.length) {
+        return filterTransfersForWallet(currentTransfers, walletPK);
+    }
+
+    const latestIds = new Set(latest.map((tx) => String(tx.id)));
+    const oldestLatestMs = getOldestTransferMs(latest);
+    const olderCurrent = filterTransfersForWallet(currentTransfers, walletPK).filter((tx) => {
+        if (latestIds.has(String(tx?.id))) {
+            return false;
+        }
+        if (isPendingTransfer(tx)) {
+            return false;
+        }
+        const createdMs = txCreatedMs(tx);
+        return oldestLatestMs == null || (createdMs > 0 && createdMs < oldestLatestMs);
+    });
+
+    return mergeTransferPage(latest, olderCurrent, 'append');
+}
+
 async function getPendingIncomingTransfers(wallet, diag) {
     const queryPendingTransfers = wallet?.transferService?.queryPendingTransfers;
     if (typeof queryPendingTransfers !== 'function') {
@@ -232,27 +254,52 @@ function hasMorePage(pageTransfers, limit) {
     return pageTransfers.length >= limit;
 }
 
+function coverageLimitFor(transfers = [], sinceMs = null, allHistory = false, historyComplete = false) {
+    if (!transfers.length) {
+        return 0;
+    }
+    if (allHistory) {
+        return historyComplete ? transfers.length : 0;
+    }
+    if (!Number.isFinite(sinceMs)) {
+        return 0;
+    }
+    for (let i = 0; i < transfers.length; i++) {
+        const createdMs = txCreatedMs(transfers[i]);
+        if (createdMs > 0 && createdMs <= sinceMs) {
+            return i + 1;
+        }
+    }
+    return 0;
+}
+
 export function useWalletTransfers({ wallet, walletPK, localCache, diag }) {
     const [transfers, setTransfers] = useState([]);
     const [txReady, setTxReady] = useState(false);
     const [isTxLoading, setIsTxLoading] = useState(false);
     const [historyComplete, setHistoryComplete] = useState(false);
     const [oldestVerifiedTxMs, setOldestVerifiedTxMs] = useState(null);
+    const [transferCacheVersion, setTransferCacheVersion] = useState(0);
     const transfersRef = useRef([]);
+    const historyTransfersRef = useRef([]);
     const txReadyRef = useRef(false);
     const historyCompleteRef = useRef(false);
+    const serverHistoryCompleteRef = useRef(false);
     const oldestVerifiedTxMsRef = useRef(null);
     const historyVerifiedRef = useRef(false);
     const walletPKRef = useRef(lowerText(walletPK));
     const nextOffsetRef = useRef(0);
+    const visibleTransferLimitRef = useRef(INITIAL_TRANSFER_LIMIT);
     const recentFetchPromiseRef = useRef(null);
     const fetchPromiseRef = useRef(null);
     const transferFetchQueueRef = useRef(Promise.resolve());
     const lastFetchAtRef = useRef(0);
     const cacheWriteRef = useRef({ timer: null, cache: null, state: null });
 
+    const [historyTransferCount, setHistoryTransferCount] = useState(0);
     const transferCount = transfers.length;
     const oldestLoadedMs = useMemo(() => getOldestTransferMs(transfers), [transfers]);
+    const oldestKnownTxMs = useMemo(() => getOldestTransferMs(historyTransfersRef.current), [historyTransferCount, transferCacheVersion]);
     const hasPendingTxs = useMemo(() => transfers.slice(0, RECENT_TRANSFER_LIMIT).some(isPendingTransfer), [transfers]);
 
     useEffect(() => {
@@ -261,17 +308,30 @@ export function useWalletTransfers({ wallet, walletPK, localCache, diag }) {
 
     useEffect(() => {
         walletPKRef.current = lowerText(walletPK);
+        const nextHistoryTransfers = filterTransfersForWallet(historyTransfersRef.current, walletPKRef.current);
+        if (!sameTransfers(historyTransfersRef.current, nextHistoryTransfers)) {
+            historyTransfersRef.current = nextHistoryTransfers;
+            setHistoryTransferCount((current) => (current === nextHistoryTransfers.length ? current : nextHistoryTransfers.length));
+        }
         const nextTransfers = filterTransfersForWallet(transfersRef.current, walletPKRef.current);
         if (!sameTransfers(transfersRef.current, nextTransfers)) {
             transfersRef.current = nextTransfers;
             setTransfers((currentTransfers) => (sameTransfers(currentTransfers, nextTransfers) ? currentTransfers : nextTransfers));
         }
+        const nextComplete = serverHistoryCompleteRef.current && nextTransfers.length >= nextHistoryTransfers.length;
+        historyCompleteRef.current = nextComplete;
+        setHistoryComplete((current) => (current === nextComplete ? current : nextComplete));
     }, [walletPK]);
 
     const setHistoryCompleteValue = useCallback((next) => {
         historyCompleteRef.current = next === true;
         setHistoryComplete((current) => (current === historyCompleteRef.current ? current : historyCompleteRef.current));
     }, []);
+
+    const syncPublishedHistoryComplete = useCallback((visibleCount = transfersRef.current.length, historyCount = historyTransfersRef.current.length) => {
+        const next = serverHistoryCompleteRef.current && visibleCount >= historyCount;
+        setHistoryCompleteValue(next);
+    }, [setHistoryCompleteValue]);
 
     const setOldestVerifiedTxMsValue = useCallback((next) => {
         oldestVerifiedTxMsRef.current = Number.isFinite(next) ? next : null;
@@ -293,18 +353,33 @@ export function useWalletTransfers({ wallet, walletPK, localCache, diag }) {
         nextOffsetRef.current = Number.isFinite(nextOffset) ? Math.max(0, nextOffset) : 0;
     }, []);
 
-    const commitTransfers = useCallback((pageTransfers = [], position = 'append') => {
+    const commitTransferSnapshot = useCallback((nextTransfers = [], { publish = true, limit = visibleTransferLimitRef.current } = {}) => {
         const ownWalletPK = walletPKRef.current;
-        const currentTransfers = filterTransfersForWallet(transfersRef.current, ownWalletPK);
-        const ownedPageTransfers = filterTransfersForWallet(pageTransfers, ownWalletPK);
-        const nextTransfers = mergeTransferPage(currentTransfers, ownedPageTransfers, position);
-        if (sameTransfers(transfersRef.current, nextTransfers)) {
-            return transfersRef.current;
+        const ownedTransfers = filterTransfersForWallet(nextTransfers, ownWalletPK);
+        const historyChanged = !sameTransfers(historyTransfersRef.current, ownedTransfers);
+        if (historyChanged) {
+            historyTransfersRef.current = ownedTransfers;
+            setHistoryTransferCount((current) => (current === ownedTransfers.length ? current : ownedTransfers.length));
+            setTransferCacheVersion((current) => current + 1);
         }
-        transfersRef.current = nextTransfers;
-        setTransfers((currentTransfers) => (sameTransfers(currentTransfers, nextTransfers) ? currentTransfers : nextTransfers));
-        return nextTransfers;
-    }, []);
+
+        if (!publish) {
+            syncPublishedHistoryComplete();
+            return ownedTransfers;
+        }
+
+        const nextLimit = Number.isFinite(limit) ? Math.max(0, Math.min(ownedTransfers.length, limit)) : ownedTransfers.length;
+        visibleTransferLimitRef.current = Math.max(visibleTransferLimitRef.current, nextLimit, Math.min(INITIAL_TRANSFER_LIMIT, ownedTransfers.length));
+        const visibleTransfers = ownedTransfers.slice(0, visibleTransferLimitRef.current);
+        syncPublishedHistoryComplete(visibleTransfers.length, ownedTransfers.length);
+        setOldestVerifiedTxMsValue(serverHistoryCompleteRef.current && visibleTransfers.length >= ownedTransfers.length ? getOldestTransferMs(ownedTransfers) : null);
+        if (sameTransfers(transfersRef.current, visibleTransfers)) {
+            return ownedTransfers;
+        }
+        transfersRef.current = visibleTransfers;
+        setTransfers((currentTransfers) => (sameTransfers(currentTransfers, visibleTransfers) ? currentTransfers : visibleTransfers));
+        return ownedTransfers;
+    }, [setOldestVerifiedTxMsValue, syncPublishedHistoryComplete]);
 
     const waitForFetchSlot = useCallback(async () => {
         const elapsed = Date.now() - lastFetchAtRef.current;
@@ -340,14 +415,34 @@ export function useWalletTransfers({ wallet, walletPK, localCache, diag }) {
     );
 
     const hasCoverage = useCallback((sinceMs) => {
-        if (historyCompleteRef.current) return true;
+        if (serverHistoryCompleteRef.current && transfersRef.current.length >= historyTransfersRef.current.length) return true;
         if (!Number.isFinite(sinceMs)) return false;
         const oldest = getOldestTransferMs(transfersRef.current);
         return oldest != null && oldest <= sinceMs;
     }, []);
 
+    const publishHiddenCoverage = useCallback(
+        (sinceMs = null, allHistory = false) => {
+            const historyTransfers = historyTransfersRef.current;
+            if (!historyTransfers.length || transfersRef.current.length >= historyTransfers.length) {
+                syncPublishedHistoryComplete();
+                return false;
+            }
+
+            const coverageLimit = coverageLimitFor(historyTransfers, sinceMs, allHistory, serverHistoryCompleteRef.current);
+            if (!coverageLimit || coverageLimit <= transfersRef.current.length) {
+                syncPublishedHistoryComplete();
+                return false;
+            }
+
+            commitTransferSnapshot(historyTransfers, { publish: true, limit: coverageLimit });
+            return true;
+        },
+        [commitTransferSnapshot, syncPublishedHistoryComplete]
+    );
+
     const fetchUntil = useCallback(
-        async ({ sinceMs = null, allHistory = false, maxPages = Infinity, label = 'wallet.txs' } = {}) => {
+        async ({ sinceMs = null, allHistory = false, maxPages = Infinity, force = false, publish = true, stopAtIds = null, completeOnStop = false, label = 'wallet.txs' } = {}) => {
             if (!wallet || !walletPKRef.current) {
                 return { loaded: transfersRef.current.length, historyComplete: historyCompleteRef.current };
             }
@@ -359,7 +454,11 @@ export function useWalletTransfers({ wallet, walletPK, localCache, diag }) {
                 await fetchPromiseRef.current;
             }
 
-            if (historyCompleteRef.current || (!allHistory && Number.isFinite(sinceMs) && hasCoverage(sinceMs))) {
+            if (!force && publishHiddenCoverage(sinceMs, allHistory) && (allHistory || hasCoverage(sinceMs))) {
+                return { loaded: transfersRef.current.length, historyComplete: historyCompleteRef.current };
+            }
+
+            if (!force && ((serverHistoryCompleteRef.current && transfersRef.current.length >= historyTransfersRef.current.length) || (!allHistory && Number.isFinite(sinceMs) && hasCoverage(sinceMs)))) {
                 return { loaded: transfersRef.current.length, historyComplete: historyCompleteRef.current };
             }
 
@@ -370,13 +469,33 @@ export function useWalletTransfers({ wallet, walletPK, localCache, diag }) {
                 }
                 const startedAt = Date.now();
                 let pages = 0;
-                if (!historyVerifiedRef.current) {
-                    resetNextOffset(completedTransferCount(transfersRef.current));
+                if (!historyVerifiedRef.current && !(force && nextOffsetRef.current > 0)) {
+                    resetNextOffset(completedTransferCount(historyTransfersRef.current.length ? historyTransfersRef.current : transfersRef.current));
                 }
-                markDiag(diag, `${label}.start`, { sinceMs: Number.isFinite(sinceMs) ? sinceMs : null, allHistory: !!allHistory, maxPages: Number.isFinite(maxPages) ? maxPages : null });
+                const stopIdSet = stopAtIds instanceof Set ? stopAtIds : new Set((Array.isArray(stopAtIds) ? stopAtIds : []).map((id) => String(id)).filter(Boolean));
+                markDiag(diag, `${label}.start`, {
+                    sinceMs: Number.isFinite(sinceMs) ? sinceMs : null,
+                    allHistory: !!allHistory,
+                    force: !!force,
+                    publish: !!publish,
+                    maxPages: Number.isFinite(maxPages) ? maxPages : null,
+                    stopAtCount: stopIdSet.size,
+                    completeOnStop: !!completeOnStop,
+                });
                 try {
-                    while (!historyCompleteRef.current && pages < maxPages) {
-                        if (!allHistory && Number.isFinite(sinceMs) && hasCoverage(sinceMs)) {
+                    let stagedTransfers = filterTransfersForWallet(historyTransfersRef.current, walletPKRef.current);
+                    let oldestFetchedMs = null;
+                    let stoppedAtKnownTransfer = false;
+                    const stagedHasCoverage = () => {
+                        if (serverHistoryCompleteRef.current) return true;
+                        if (!Number.isFinite(sinceMs)) return false;
+                        if (force) return oldestFetchedMs != null && oldestFetchedMs <= sinceMs;
+                        const oldest = getOldestTransferMs(stagedTransfers);
+                        return oldest != null && oldest <= sinceMs;
+                    };
+
+                    while ((!serverHistoryCompleteRef.current || force) && pages < maxPages) {
+                        if (!allHistory && Number.isFinite(sinceMs) && stagedHasCoverage()) {
                             break;
                         }
 
@@ -386,20 +505,42 @@ export function useWalletTransfers({ wallet, walletPK, localCache, diag }) {
                         const nextOffset = getNextOffset(page, offset, pageTransfers);
                         pages += 1;
                         historyVerifiedRef.current = true;
+                        const pageHitStopId = stopIdSet.size > 0 && pageTransfers.some((tx) => stopIdSet.has(String(tx?.id)));
 
                         if (pageTransfers.length) {
-                            commitTransfers(pageTransfers, 'append');
+                            stagedTransfers = mergeTransferPageForWallet(stagedTransfers, pageTransfers, walletPKRef.current, 'append');
+                            const oldestPageMs = getOldestTransferMs(pageTransfers);
+                            if (oldestPageMs != null) {
+                                oldestFetchedMs = oldestFetchedMs == null ? oldestPageMs : Math.min(oldestFetchedMs, oldestPageMs);
+                            }
                         }
 
                         setNextOffset(nextOffset);
 
+                        if (pageHitStopId) {
+                            stoppedAtKnownTransfer = true;
+                            if (completeOnStop) {
+                                serverHistoryCompleteRef.current = true;
+                            }
+                            break;
+                        }
+
                         if (!hasMorePage(pageTransfers, TRANSFER_PAGE_LIMIT)) {
-                            setHistoryCompleteValue(true);
-                            setOldestVerifiedTxMsValue(getOldestTransferMs(transfersRef.current));
+                            serverHistoryCompleteRef.current = true;
                             break;
                         }
                     }
-                    markDone(diag, label, startedAt, { pages, loaded: transfersRef.current.length, historyComplete: historyCompleteRef.current });
+                    commitTransferSnapshot(stagedTransfers, { publish });
+                    markDone(diag, label, startedAt, {
+                        pages,
+                        loaded: transfersRef.current.length,
+                        historyCount: historyTransfersRef.current.length,
+                        historyComplete: historyCompleteRef.current,
+                        serverHistoryComplete: serverHistoryCompleteRef.current,
+                        force: !!force,
+                        publish: !!publish,
+                        stoppedAtKnownTransfer,
+                    });
                 } catch (error) {
                     markError(diag, label, startedAt, error, { pages });
                     console.debug?.('could not fetch transfer history', error?.message ?? error);
@@ -419,7 +560,7 @@ export function useWalletTransfers({ wallet, walletPK, localCache, diag }) {
 
             return fetchPromiseRef.current;
         },
-        [commitTransfers, diag, fetchTransfersPage, hasCoverage, resetNextOffset, setHistoryCompleteValue, setNextOffset, setOldestVerifiedTxMsValue, setTxReadyValue, wallet]
+        [commitTransferSnapshot, diag, fetchTransfersPage, hasCoverage, publishHiddenCoverage, resetNextOffset, setNextOffset, setTxReadyValue, wallet]
     );
 
     const getRecentTxs = useCallback(async () => {
@@ -438,22 +579,43 @@ export function useWalletTransfers({ wallet, walletPK, localCache, diag }) {
                 setIsTxLoading(true);
             }
             try {
+                const previousTransfers = filterTransfersForWallet(historyTransfersRef.current, walletPKRef.current);
+                const previousHistoryComplete = serverHistoryCompleteRef.current;
                 const [page, pendingTransfers] = await Promise.all([fetchTransfersPage(INITIAL_TRANSFER_LIMIT, 0), getPendingIncomingTransfers(wallet, diag)]);
                 const pageTransfers = Array.isArray(page?.transfers) ? page.transfers : [];
                 const latestTransfers = mergeTransferPage(pendingTransfers, pageTransfers, 'prepend');
-                commitTransfers(latestTransfers, 'prepend');
+                const latestIds = new Set(latestTransfers.map((tx) => String(tx?.id)).filter(Boolean));
+                const reconcileIds = previousTransfers
+                    .filter((tx) => tx?.id && !latestIds.has(String(tx.id)) && !isPendingTransfer(tx))
+                    .map((tx) => String(tx.id));
                 const nextOffset = getNextOffset(page, 0, pageTransfers);
-                if (!hasMorePage(pageTransfers, INITIAL_TRANSFER_LIMIT)) {
-                    setHistoryCompleteValue(true);
-                    setOldestVerifiedTxMsValue(getOldestTransferMs(latestTransfers));
+                const pageHasMore = hasMorePage(pageTransfers, INITIAL_TRANSFER_LIMIT);
+                const committedTransfers = pageHasMore ? mergeRecentSnapshotForWallet(previousTransfers, latestTransfers, walletPKRef.current) : mergeTransferPageForWallet([], latestTransfers, walletPKRef.current);
+                historyVerifiedRef.current = true;
+                resetNextOffset(nextOffset);
+                if (pageHasMore) {
+                    serverHistoryCompleteRef.current = false;
+                } else {
+                    serverHistoryCompleteRef.current = true;
                 }
-                setNextOffset(nextOffset);
+                commitTransferSnapshot(committedTransfers, { publish: true });
+                setOldestVerifiedTxMsValue(historyCompleteRef.current ? getOldestTransferMs(committedTransfers) : null);
                 const result = {
-                    transfers: latestTransfers,
+                    transfers: transfersRef.current,
                     offset: nextOffset,
-                    hasMore: !historyCompleteRef.current,
+                    hasMore: pageHasMore || !historyCompleteRef.current,
+                    reconcileIds,
+                    cachedHistoryComplete: previousHistoryComplete,
+                    historyCount: historyTransfersRef.current.length,
                 };
-                markDone(diag, 'wallet.recentTxs', startedAt, { count: latestTransfers.length, pendingCount: pendingTransfers.length, pageCount: pageTransfers.length, hasMore: result.hasMore });
+                markDone(diag, 'wallet.recentTxs', startedAt, {
+                    count: transfersRef.current.length,
+                    historyCount: historyTransfersRef.current.length,
+                    pendingCount: pendingTransfers.length,
+                    pageCount: pageTransfers.length,
+                    hasMore: result.hasMore,
+                    serverHistoryComplete: serverHistoryCompleteRef.current,
+                });
                 return result;
             } catch (error) {
                 markError(diag, 'wallet.recentTxs', startedAt, error);
@@ -471,11 +633,42 @@ export function useWalletTransfers({ wallet, walletPK, localCache, diag }) {
             recentFetchPromiseRef.current = null;
         });
         return recentFetchPromiseRef.current;
-    }, [commitTransfers, diag, fetchTransfersPage, resetNextOffset, setHistoryCompleteValue, setNextOffset, setOldestVerifiedTxMsValue, setTxReadyValue, wallet]);
+    }, [commitTransferSnapshot, diag, fetchTransfersPage, resetNextOffset, setOldestVerifiedTxMsValue, setTxReadyValue, wallet]);
 
-    const ensureTxCoverage = useCallback((sinceMs = null) => fetchUntil({ sinceMs, allHistory: !Number.isFinite(sinceMs), label: 'wallet.ensureTxCoverage' }), [fetchUntil]);
+    const ensureTxCoverage = useCallback(
+        (sinceMs = null, options = {}) =>
+            fetchUntil({
+                sinceMs,
+                allHistory: !Number.isFinite(sinceMs),
+                force: options.force === true,
+                publish: options.publish !== false,
+                stopAtIds: options.stopAtIds,
+                completeOnStop: options.completeOnStop === true,
+                maxPages: options.maxPages ?? Infinity,
+                label: options.label || 'wallet.ensureTxCoverage',
+            }),
+        [fetchUntil]
+    );
 
-    const loadMoreTxs = useCallback(() => fetchUntil({ maxPages: 1, label: 'wallet.moreTxs' }), [fetchUntil]);
+    const loadMoreTxs = useCallback(() => {
+        if (recentFetchPromiseRef.current) {
+            markDiag(diag, 'wallet.moreTxs.waitRecent', {});
+            return recentFetchPromiseRef.current.then(() => ({ loaded: transfersRef.current.length, historyComplete: historyCompleteRef.current }));
+        }
+
+        const nextLimit = visibleTransferLimitRef.current + TRANSFER_REVEAL_BATCH_SIZE;
+        visibleTransferLimitRef.current = nextLimit;
+        if (historyTransfersRef.current.length > transfersRef.current.length) {
+            commitTransferSnapshot(historyTransfersRef.current, { publish: true, limit: nextLimit });
+            markDiag(diag, 'wallet.moreTxs.revealCached', {
+                loaded: transfersRef.current.length,
+                historyCount: historyTransfersRef.current.length,
+                historyComplete: historyCompleteRef.current,
+            });
+            return Promise.resolve({ loaded: transfersRef.current.length, historyComplete: historyCompleteRef.current });
+        }
+        return fetchUntil({ maxPages: 1, publish: true, label: 'wallet.moreTxs' });
+    }, [commitTransferSnapshot, diag, fetchUntil]);
 
     const resetTransfers = useCallback(() => {
         setTransfers([]);
@@ -484,6 +677,11 @@ export function useWalletTransfers({ wallet, walletPK, localCache, diag }) {
         setHistoryCompleteValue(false);
         setOldestVerifiedTxMsValue(null);
         transfersRef.current = [];
+        historyTransfersRef.current = [];
+        serverHistoryCompleteRef.current = false;
+        visibleTransferLimitRef.current = INITIAL_TRANSFER_LIMIT;
+        setHistoryTransferCount(0);
+        setTransferCacheVersion((current) => current + 1);
         historyVerifiedRef.current = false;
         nextOffsetRef.current = 0;
         recentFetchPromiseRef.current = null;
@@ -513,6 +711,7 @@ export function useWalletTransfers({ wallet, walletPK, localCache, diag }) {
             walletPK: cached.walletPK || null,
             historyComplete: cached.historyComplete,
             oldestTxMs: cached.oldestTxMs ?? null,
+            rejectReason: cached.rejectReason || null,
         });
         if (!cachedTransfers.length) {
             return;
@@ -521,14 +720,17 @@ export function useWalletTransfers({ wallet, walletPK, localCache, diag }) {
         const completedCount = completedTransferCount(cachedTransfers);
         const cachedOldestTxMs = Number.isFinite(cached.oldestTxMs) ? cached.oldestTxMs : cached.historyComplete ? getOldestTransferMs(cachedTransfers) : null;
         const trustedComplete = cached.historyComplete && cachedOldestTxMs != null && completedCount === cachedTransfers.length;
-        transfersRef.current = cachedTransfers;
-        nextOffsetRef.current = completedCount;
+        nextOffsetRef.current = Number.isFinite(cached.nextOffset) ? cached.nextOffset : completedCount;
         historyVerifiedRef.current = trustedComplete;
-        setOldestVerifiedTxMsValue(cachedOldestTxMs);
-        setHistoryCompleteValue(trustedComplete);
-        setTransfers((currentTransfers) => (sameTransfers(currentTransfers, cachedTransfers) ? currentTransfers : cachedTransfers));
+        serverHistoryCompleteRef.current = trustedComplete;
+        visibleTransferLimitRef.current = Math.min(INITIAL_TRANSFER_LIMIT, cachedTransfers.length);
+        const publishedTransfers = commitTransferSnapshot(cachedTransfers, { publish: true, limit: visibleTransferLimitRef.current });
+        setOldestVerifiedTxMsValue(historyCompleteRef.current ? cachedOldestTxMs : null);
+        if (!publishedTransfers.length) {
+            syncPublishedHistoryComplete();
+        }
         setTxReadyValue(true);
-    }, [diag, wallet, walletPK, localCache, setHistoryCompleteValue, setOldestVerifiedTxMsValue, setTxReadyValue]);
+    }, [commitTransferSnapshot, diag, wallet, walletPK, localCache, setOldestVerifiedTxMsValue, setTxReadyValue, syncPublishedHistoryComplete]);
 
     useEffect(() => {
         if (!wallet || !localCache || !txReady) {
@@ -537,11 +739,11 @@ export function useWalletTransfers({ wallet, walletPK, localCache, diag }) {
 
         cacheWriteRef.current.cache = localCache;
         cacheWriteRef.current.state = {
-            transfers,
+            transfers: historyTransfersRef.current,
             walletPK: walletPKRef.current,
-            historyComplete,
+            historyComplete: serverHistoryCompleteRef.current,
             nextOffset: nextOffsetRef.current,
-            oldestTxMs: oldestVerifiedTxMsRef.current ?? (historyComplete ? getOldestTransferMs(transfers) : null),
+            oldestTxMs: serverHistoryCompleteRef.current ? getOldestTransferMs(historyTransfersRef.current) : null,
         };
         if (cacheWriteRef.current.timer) {
             clearTimeout(cacheWriteRef.current.timer);
@@ -553,18 +755,22 @@ export function useWalletTransfers({ wallet, walletPK, localCache, diag }) {
                 cacheWriteRef.current.timer = null;
             }
         };
-    }, [wallet, localCache, transfers, txReady, historyComplete, flushTransferCache]);
+    }, [wallet, localCache, transfers, txReady, historyTransferCount, transferCacheVersion, flushTransferCache]);
 
     useEffect(() => () => flushTransferCache(), [flushTransferCache]);
 
     return {
         transfers,
+        historyTransfers: historyTransfersRef.current,
         txReady,
         isTxLoading,
         transferCount,
+        historyTransferCount,
         oldestLoadedMs,
+        oldestKnownTxMs,
         oldestVerifiedTxMs,
         historyComplete,
+        serverHistoryComplete: serverHistoryCompleteRef.current,
         hasMoreTxs: !historyComplete,
         hasPendingTxs,
         getRecentTxs,

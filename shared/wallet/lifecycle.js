@@ -2,16 +2,19 @@ import { useCallback, useEffect, useRef } from 'react';
 
 import {
     WALLET_ACTIVE_CLAIM_POLL_MS,
-    WALLET_MIN_BOOT_TX_COVERAGE_MS,
+    WALLET_BALANCE_EVENT_COALESCE_MS,
+    WALLET_INCOMING_UPDATE_COALESCE_MS,
     WALLET_TRANSFER_POLL_MS,
     WALLET_UPDATE_RATE_LIMIT_MS,
 } from '../config.js';
+import { sleep } from '../utils/async.js';
 import { markDiag, markDone } from '../utils/diagnostics.js';
 
 const RATE_LIMIT = WALLET_UPDATE_RATE_LIMIT_MS;
 const POLL_TXS_RATE = WALLET_TRANSFER_POLL_MS;
 const ACTIVE_CLAIM_RATE = WALLET_ACTIVE_CLAIM_POLL_MS;
-const MIN_BOOT_TX_COVERAGE_MS = WALLET_MIN_BOOT_TX_COVERAGE_MS;
+const BALANCE_EVENT_COALESCE_MS = WALLET_BALANCE_EVENT_COALESCE_MS;
+const INCOMING_UPDATE_COALESCE_MS = WALLET_INCOMING_UPDATE_COALESCE_MS;
 const WALLET_EVENTS = Object.freeze({
     balance: 'balance:update',
     tokenBalance: 'token-balance:update',
@@ -27,48 +30,109 @@ function clearTimer(ref) {
     ref.current = null;
 }
 
+function walletUpdateRequest(request = {}) {
+    const normalized = request && typeof request === 'object' ? request : {};
+    return {
+        force: normalized.force === true,
+        balance: normalized.balance !== false,
+        transfers: normalized.transfers !== false,
+        reason: normalized.reason || 'manual',
+    };
+}
+
+function mergeWalletUpdateRequest(current, next) {
+    if (!current) {
+        return next;
+    }
+
+    return {
+        force: current.force || next.force,
+        balance: current.balance || next.balance,
+        transfers: current.transfers || next.transfers,
+        reason: current.reason === next.reason ? current.reason : 'merged',
+    };
+}
+
 export function useWalletData({ wallet, getBalance, getRecentTxs, diag }) {
     const lastFetchTime = useRef(0);
     const updatePromiseRef = useRef(null);
-    const queuedForceRef = useRef(false);
+    const queuedRequestRef = useRef(null);
 
     return useCallback(
-        async (force = false) => {
+        async (requestOptions = {}) => {
             if (!wallet) {
                 return;
             }
 
+            const request = walletUpdateRequest(requestOptions);
+            if (!request.balance && !request.transfers) {
+                return;
+            }
+
             if (updatePromiseRef.current) {
-                if (force) {
-                    queuedForceRef.current = true;
-                }
-                markDiag(diag, 'wallet.update.join', { force: !!force, queuedForce: queuedForceRef.current });
+                queuedRequestRef.current = mergeWalletUpdateRequest(queuedRequestRef.current, request);
+                markDiag(diag, 'wallet.update.join', {
+                    force: request.force,
+                    reason: request.reason,
+                    queuedForce: queuedRequestRef.current.force,
+                    queuedBalance: queuedRequestRef.current.balance,
+                    queuedTransfers: queuedRequestRef.current.transfers,
+                    queuedReason: queuedRequestRef.current.reason,
+                });
                 return updatePromiseRef.current;
             }
 
             const run = async () => {
-                let currentForce = !!force;
+                let currentRequest = request;
 
-                while (true) {
+                while (currentRequest) {
                     const now = Date.now();
-                    if (!currentForce && now - lastFetchTime.current < RATE_LIMIT) {
-                        markDiag(diag, 'wallet.update.skip', { force: currentForce, ageMs: now - lastFetchTime.current });
-                        return;
+                    const ageMs = now - lastFetchTime.current;
+                    if (!currentRequest.force && ageMs > 0 && ageMs < RATE_LIMIT) {
+                        const waitMs = RATE_LIMIT - ageMs;
+                        markDiag(diag, 'wallet.update.delay', {
+                            force: currentRequest.force,
+                            reason: currentRequest.reason,
+                            waitMs,
+                            balance: currentRequest.balance,
+                            transfers: currentRequest.transfers,
+                        });
+                        await sleep(waitMs);
                     }
 
                     const startedAt = Date.now();
-                    markDiag(diag, 'wallet.update.start', { force: currentForce });
-                    lastFetchTime.current = now;
-                    await Promise.all([getBalance(), getRecentTxs()]);
-                    markDone(diag, 'wallet.update', startedAt, { force: currentForce });
-
-                    if (!queuedForceRef.current) {
-                        return;
+                    markDiag(diag, 'wallet.update.start', {
+                        force: currentRequest.force,
+                        reason: currentRequest.reason,
+                        balance: currentRequest.balance,
+                        transfers: currentRequest.transfers,
+                    });
+                    lastFetchTime.current = startedAt;
+                    const tasks = [];
+                    if (currentRequest.balance) {
+                        tasks.push(getBalance());
                     }
+                    if (currentRequest.transfers) {
+                        tasks.push(getRecentTxs());
+                    }
+                    await Promise.all(tasks);
+                    markDone(diag, 'wallet.update', startedAt, {
+                        force: currentRequest.force,
+                        reason: currentRequest.reason,
+                        balance: currentRequest.balance,
+                        transfers: currentRequest.transfers,
+                    });
 
-                    queuedForceRef.current = false;
-                    currentForce = true;
-                    markDiag(diag, 'wallet.update.drain', { force: currentForce });
+                    currentRequest = queuedRequestRef.current;
+                    queuedRequestRef.current = null;
+                    if (currentRequest) {
+                        markDiag(diag, 'wallet.update.drain', {
+                            force: currentRequest.force,
+                            reason: currentRequest.reason,
+                            balance: currentRequest.balance,
+                            transfers: currentRequest.transfers,
+                        });
+                    }
                 }
             };
 
@@ -81,11 +145,37 @@ export function useWalletData({ wallet, getBalance, getRecentTxs, diag }) {
     );
 }
 
-export function useWalletEvents({ wallet, updateWalletData, setBalance, setTokenBalances, setSatsBalanceResult }) {
+export function useWalletEvents({ wallet, updateWalletData, setBalance, setTokenBalances, setSatsBalanceResult, diag }) {
+    const balanceEventRef = useRef({ timer: null, value: null });
+    const incomingEventRef = useRef({ timer: null, balance: null });
+
     useEffect(() => {
         if (!wallet || typeof wallet.on !== 'function' || typeof wallet.off !== 'function') {
             return;
         }
+
+        const flushBalanceEvent = () => {
+            const pending = balanceEventRef.current;
+            pending.timer = null;
+            const value = pending.value;
+            pending.value = null;
+            if (value) {
+                markDiag(diag, 'wallet.events.balance.flush', {});
+                setSatsBalanceResult(value);
+            }
+        };
+
+        const flushIncomingEvent = () => {
+            const pending = incomingEventRef.current;
+            pending.timer = null;
+            const balance = pending.balance;
+            pending.balance = null;
+            if (balance != null) {
+                setBalance(balance);
+            }
+            markDiag(diag, 'wallet.events.incoming.flush', { hasBalance: balance != null });
+            void updateWalletData({ transfers: true, balance: false, reason: 'incoming' });
+        };
 
         const handleTokenBalanceUpdate = (event) => {
             if (event?.tokenBalances instanceof Map) {
@@ -94,14 +184,23 @@ export function useWalletEvents({ wallet, updateWalletData, setBalance, setToken
         };
 
         const handleBalanceUpdate = (nextSatsBalance) => {
-            setSatsBalanceResult(nextSatsBalance);
+            if (!nextSatsBalance || typeof nextSatsBalance !== 'object') {
+                return;
+            }
+            const pending = balanceEventRef.current;
+            pending.value = nextSatsBalance;
+            if (!pending.timer) {
+                pending.timer = setTimeout(flushBalanceEvent, BALANCE_EVENT_COALESCE_MS);
+            }
         };
 
-        const handleIncomingFunds = async (_id, updatedBalance) => {
+        const handleIncomingFunds = (_id, updatedBalance) => {
             if (updatedBalance != null) {
-                setBalance(updatedBalance);
+                incomingEventRef.current.balance = updatedBalance;
             }
-            await updateWalletData(true);
+            if (!incomingEventRef.current.timer) {
+                incomingEventRef.current.timer = setTimeout(flushIncomingEvent, INCOMING_UPDATE_COALESCE_MS);
+            }
         };
 
         wallet.on(WALLET_EVENTS.balance, handleBalanceUpdate);
@@ -114,8 +213,16 @@ export function useWalletEvents({ wallet, updateWalletData, setBalance, setToken
             wallet.off(WALLET_EVENTS.tokenBalance, handleTokenBalanceUpdate);
             wallet.off(WALLET_EVENTS.depositConfirmed, handleIncomingFunds);
             wallet.off(WALLET_EVENTS.transferClaimed, handleIncomingFunds);
+            if (balanceEventRef.current.timer) {
+                clearTimeout(balanceEventRef.current.timer);
+                balanceEventRef.current.timer = null;
+            }
+            if (incomingEventRef.current.timer) {
+                clearTimeout(incomingEventRef.current.timer);
+                incomingEventRef.current.timer = null;
+            }
         };
-    }, [wallet, updateWalletData, setBalance, setTokenBalances, setSatsBalanceResult]);
+    }, [diag, wallet, updateWalletData, setBalance, setTokenBalances, setSatsBalanceResult]);
 }
 
 export function useWalletPolling({ wallet, appState, hasPendingTxs, updateWalletData, refreshWallet, refreshClaims }) {
@@ -135,7 +242,7 @@ export function useWalletPolling({ wallet, appState, hasPendingTxs, updateWallet
                 return;
             }
 
-            void updateWalletData();
+            void updateWalletData({ transfers: true, balance: false, reason: 'poll' });
         }, POLL_TXS_RATE);
     }, [wallet, hasPendingTxs, isActive, updateWalletData]);
 
@@ -216,13 +323,21 @@ export function useWalletBoot({ wallet, getFundingAddress, getBalance, getRecent
                 cancelled: !!cancelled,
                 firstTxCount: firstTxPage?.transfers?.length || 0,
                 firstTxHasMore: !!firstTxPage?.hasMore,
+                cachedHistoryComplete: firstTxPage?.cachedHistoryComplete === true,
+                reconcileCount: Array.isArray(firstTxPage?.reconcileIds) ? firstTxPage.reconcileIds.length : 0,
             });
             if (cancelled || !firstTxPage?.transfers?.length || !firstTxPage.hasMore) {
                 return;
             }
 
             if (!cancelled) {
-                void ensureTxCoverage(Date.now() - MIN_BOOT_TX_COVERAGE_MS);
+                void ensureTxCoverage(null, {
+                    force: true,
+                    publish: false,
+                    stopAtIds: firstTxPage.cachedHistoryComplete === true ? firstTxPage.reconcileIds : null,
+                    completeOnStop: firstTxPage.cachedHistoryComplete === true,
+                    label: 'wallet.reconcileTxs',
+                });
             }
         };
 

@@ -127,7 +127,7 @@ export function useDepositClaims({ wallet, getFundingAddress, updateWalletData, 
         const startedAt = Date.now();
         markDiag(diag, 'wallet.refresh.start', {});
         const claimed = await claimDeposits();
-        await updateWalletData(true);
+        await updateWalletData({ force: true, reason: 'deposit-refresh' });
         markDone(diag, 'wallet.refresh', startedAt, { claimed: !!claimed });
     }, [claimDeposits, diag, updateWalletData]);
 
@@ -137,7 +137,7 @@ export function useDepositClaims({ wallet, getFundingAddress, updateWalletData, 
             return false;
         }
 
-        await updateWalletData(true);
+        await updateWalletData({ force: true, reason: 'deposit-claim' });
         return true;
     }, [claimDeposits, updateWalletData]);
 

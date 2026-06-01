@@ -95,7 +95,7 @@ export function useLightning({ wallet, updateWalletData }) {
                 }
 
                 const payment = await wallet.payLightningInvoice(params);
-                await updateWalletData();
+                await updateWalletData({ reason: 'lightning-send' });
                 return {
                     success: true,
                     payment,

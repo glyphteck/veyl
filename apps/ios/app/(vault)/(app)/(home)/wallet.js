@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, FlatList, InteractionManager, Pressable, Text, View } from 'react-native';
+import { ActivityIndicator, Animated, FlatList, Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useIsFocused, useRouter } from 'expo-router';
 import { BanknoteArrowDown, BanknoteArrowUp, UserRoundPlus } from 'lucide-react-native';
@@ -38,9 +38,8 @@ const TX_LOADER_HEIGHT = 84;
 const TX_ROW_APPEAR_MS = 320;
 const TX_ROW_APPEAR_FROM = 0.98;
 const MAX_TX_ANIMATED_INSERTS = 8;
-const TX_INITIAL_RENDER_LIMIT = 36;
-const TX_RENDER_BATCH_SIZE = 28;
-const TX_RENDER_AHEAD_REMAINING = 10;
+const TX_INITIAL_RENDER_COUNT = 64;
+const TX_RENDER_BATCH_SIZE = 64;
 const TX_LOADER_ITEM = Object.freeze({ id: '__tx_loader__', kind: 'loader' });
 
 function clamp(value, min, max) {
@@ -400,11 +399,8 @@ export default function Wallet() {
 
     const txs = txData?.sortedTransactions ?? [];
     const { animationKey: txAnimationKey, displayTxs, insertingIds } = useAnimatedRecentTxs(txs);
-    const [paintedTxLimit, setPaintedTxLimit] = useState(0);
     const loadingMoreRef = useRef(false);
-    const txSourceCountRef = useRef(0);
-    const paintedTxLimitRef = useRef(0);
-    const paintAdvanceRef = useRef({ queued: false, task: null, frame: null });
+    const txLoadArmedRef = useRef(false);
 
     const balanceText = useMemo(() => {
         if (displayBalance == null) return '';
@@ -414,11 +410,19 @@ export default function Wallet() {
     useEffect(() => {
         if (!isFocused || chatBanned) return;
 
-        const task = InteractionManager.runAfterInteractions(() => {
-            router.prefetch('/peerselector');
-        });
+        let frame = null;
+        const timer = setTimeout(() => {
+            frame = requestAnimationFrame(() => {
+                router.prefetch('/peerselector');
+            });
+        }, 700);
 
-        return () => task.cancel?.();
+        return () => {
+            clearTimeout(timer);
+            if (frame != null) {
+                cancelAnimationFrame(frame);
+            }
+        };
     }, [chatBanned, isFocused, router]);
 
     useEffect(() => {
@@ -462,50 +466,9 @@ export default function Wallet() {
         }
     }, [isTxLoading]);
 
-    useEffect(() => {
-        txSourceCountRef.current = displayTxs.length;
-        setPaintedTxLimit((current) => {
-            if (!displayTxs.length) {
-                return 0;
-            }
-            if (current <= 0) {
-                return Math.min(displayTxs.length, TX_INITIAL_RENDER_LIMIT);
-            }
-            return Math.min(current, displayTxs.length);
-        });
-    }, [displayTxs.length]);
-
-    useEffect(() => {
-        paintedTxLimitRef.current = paintedTxLimit;
-    }, [paintedTxLimit]);
-
-    const advancePaintedTxWindow = useCallback(() => {
-        if (paintAdvanceRef.current.queued || paintedTxLimitRef.current >= txSourceCountRef.current) return;
-        paintAdvanceRef.current.queued = true;
-        paintAdvanceRef.current.task = InteractionManager.runAfterInteractions(() => {
-            paintAdvanceRef.current.frame = requestAnimationFrame(() => {
-                paintAdvanceRef.current.frame = null;
-                setPaintedTxLimit((current) => Math.min(txSourceCountRef.current, Math.max(current, TX_INITIAL_RENDER_LIMIT) + TX_RENDER_BATCH_SIZE));
-                requestAnimationFrame(() => {
-                    paintAdvanceRef.current.queued = false;
-                    paintAdvanceRef.current.task = null;
-                });
-            });
-        });
-    }, []);
-
-    useEffect(
-        () => () => {
-            paintAdvanceRef.current.task?.cancel?.();
-            if (paintAdvanceRef.current.frame != null) {
-                cancelAnimationFrame(paintAdvanceRef.current.frame);
-            }
-        },
-        []
-    );
-
     const handleLoadMoreTxs = useCallback(() => {
-        if (!hasMoreTxs || isTxLoading || loadingMoreRef.current) return;
+        if (!txLoadArmedRef.current || !hasMoreTxs || isTxLoading || loadingMoreRef.current) return;
+        txLoadArmedRef.current = false;
         loadingMoreRef.current = true;
         const request = loadMoreTxs?.();
         Promise.resolve(request).finally(() => {
@@ -514,48 +477,17 @@ export default function Wallet() {
     }, [hasMoreTxs, isTxLoading, loadMoreTxs]);
 
     const handleTxEndReached = useCallback(() => {
-        if (paintedTxLimitRef.current < txSourceCountRef.current) {
-            advancePaintedTxWindow();
-            return;
-        }
         handleLoadMoreTxs();
-    }, [advancePaintedTxWindow, handleLoadMoreTxs]);
+    }, [handleLoadMoreTxs]);
 
-    const txListHasLoader = displayTxs.length > 0 && (paintedTxLimit < displayTxs.length || hasMoreTxs || isTxLoading);
-    const visibleTxs = useMemo(() => displayTxs.slice(0, Math.min(paintedTxLimit, displayTxs.length)), [displayTxs, paintedTxLimit]);
-    const txListData = useMemo(() => (txListHasLoader ? [...visibleTxs, TX_LOADER_ITEM] : visibleTxs), [txListHasLoader, visibleTxs]);
+    const armTxLoadMore = useCallback(() => {
+        if (txReady) {
+            txLoadArmedRef.current = true;
+        }
+    }, [txReady]);
 
-    const txPagingRef = useRef({ paintedCount: 0, sourceCount: 0, hasMore: false, loadMore: null, advanceWindow: null });
-    useEffect(() => {
-        txPagingRef.current = {
-            paintedCount: paintedTxLimit,
-            sourceCount: displayTxs.length,
-            hasMore: hasMoreTxs,
-            loadMore: handleLoadMoreTxs,
-            advanceWindow: advancePaintedTxWindow,
-        };
-    }, [advancePaintedTxWindow, displayTxs.length, handleLoadMoreTxs, hasMoreTxs, paintedTxLimit]);
-
-    const txViewabilityConfig = useRef({ itemVisiblePercentThreshold: 10 }).current;
-    const handleViewableTxItemsChanged = useRef(({ viewableItems }) => {
-        let lastVisibleIndex = -1;
-        for (const item of viewableItems || []) {
-            if (Number.isInteger(item?.index) && item.index > lastVisibleIndex) {
-                lastVisibleIndex = item.index;
-            }
-        }
-        const { paintedCount, sourceCount, hasMore, loadMore, advanceWindow } = txPagingRef.current;
-        if (paintedCount <= 0 || lastVisibleIndex < 0 || paintedCount - lastVisibleIndex > TX_RENDER_AHEAD_REMAINING) {
-            return;
-        }
-        if (paintedCount < sourceCount) {
-            advanceWindow?.();
-            return;
-        }
-        if (hasMore) {
-            loadMore?.();
-        }
-    }).current;
+    const txListHasLoader = displayTxs.length > 0 && (hasMoreTxs || isTxLoading);
+    const txListData = useMemo(() => (txListHasLoader ? [...displayTxs, TX_LOADER_ITEM] : displayTxs), [displayTxs, txListHasLoader]);
 
     const renderTxItem = useCallback(
         ({ item, index }) => {
@@ -613,15 +545,14 @@ export default function Wallet() {
                     renderItem={renderTxItem}
                     extraData={txListExtraData}
                     getItemLayout={getTxItemLayout}
-                    initialNumToRender={14}
-                    maxToRenderPerBatch={10}
-                    removeClippedSubviews
-                    updateCellsBatchingPeriod={24}
-                    windowSize={8}
+                    initialNumToRender={TX_INITIAL_RENDER_COUNT}
+                    maxToRenderPerBatch={TX_RENDER_BATCH_SIZE}
+                    removeClippedSubviews={false}
+                    updateCellsBatchingPeriod={0}
+                    windowSize={25}
                     onEndReached={handleTxEndReached}
                     onEndReachedThreshold={0.6}
-                    onViewableItemsChanged={handleViewableTxItemsChanged}
-                    viewabilityConfig={txViewabilityConfig}
+                    onScrollBeginDrag={armTxLoadMore}
                     ListHeaderComponent={<View style={{ height: listTopSpace }} />}
                     ListEmptyComponent={() => (txReady ? <WalletEmpty /> : <WalletLoading />)}
                     contentContainerStyle={{ flexGrow: 1, paddingBottom: insets.bottom + LIST_BOTTOM_GAP + BALANCE_HEIGHT }}

@@ -139,7 +139,7 @@ export function useWithdrawal({ wallet, network, updateWalletData }) {
                     feeAmountSats: readyFeeAmountSats,
                     deductFeeFromWithdrawalAmount,
                 });
-                await updateWalletData();
+                await updateWalletData({ reason: 'withdraw' });
                 return {
                     success: true,
                     tx,

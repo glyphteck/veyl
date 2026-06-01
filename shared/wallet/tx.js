@@ -1,4 +1,5 @@
 import { timestampMs } from '../utils/time.js';
+import { sameText } from '../utils/text.js';
 
 export const TRANSFER_STATUS_COMPLETED = 'TRANSFER_STATUS_COMPLETED';
 const FINAL_TRANSFER_STATUSES = new Set([TRANSFER_STATUS_COMPLETED, 'TRANSFER_STATUS_EXPIRED', 'TRANSFER_STATUS_RETURNED', 'UNRECOGNIZED']);
@@ -23,4 +24,8 @@ export function isPendingTransfer(tx) {
 
 export function isVisibleTransfer(tx) {
     return !tx?.status || !HIDDEN_TRANSFER_STATUSES.has(tx.status);
+}
+
+export function transferBelongsToWallet(tx, walletPK) {
+    return !!walletPK && (sameText(tx?.senderIdentityPublicKey, walletPK) || sameText(tx?.receiverIdentityPublicKey, walletPK));
 }

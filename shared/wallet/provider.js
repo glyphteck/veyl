@@ -46,7 +46,15 @@ const EMPTY_EXTRAS = Object.freeze({});
 const EMPTY_WALLET_SETTINGS = Object.freeze({ ghostWallet: true });
 const EMPTY_WALLET_IDENTITY = Object.freeze({ walletPK: null });
 
-export function createWalletProvider({ useVault, network, appState, useWalletExtras = () => EMPTY_EXTRAS, useWalletSettings = () => EMPTY_WALLET_SETTINGS, useWalletIdentity = () => EMPTY_WALLET_IDENTITY, diag = null }) {
+export function createWalletProvider({
+    useVault,
+    network,
+    appState,
+    useWalletExtras = () => EMPTY_EXTRAS,
+    useWalletSettings = () => EMPTY_WALLET_SETTINGS,
+    useWalletIdentity = () => EMPTY_WALLET_IDENTITY,
+    diag = null,
+}) {
     if (typeof useVault !== 'function') {
         throw new Error('createWalletProvider requires useVault');
     }
@@ -77,6 +85,7 @@ export function createWalletProvider({ useVault, network, appState, useWalletExt
             setBalance: balanceState.setBalance,
             setTokenBalances: balanceState.setTokenBalances,
             setSatsBalanceResult: balanceState.setSatsBalanceResult,
+            diag,
         });
 
         const claimState = useDepositClaims({
@@ -150,14 +159,18 @@ export function createWalletProvider({ useVault, network, appState, useWalletExt
                 satsBalance: balanceState.satsBalance,
                 tokenBalances: balanceState.tokenBalances,
                 transfers: transferState.transfers,
+                historyTransfers: transferState.historyTransfers,
                 fundingAddress: fundingState.fundingAddress,
                 balanceReady: balanceState.balanceReady,
                 txReady: transferState.txReady,
                 isBalanceLoading: balanceState.isBalanceLoading,
                 isTxLoading: transferState.isTxLoading,
                 oldestTxMs: transferState.oldestLoadedMs,
+                oldestKnownTxMs: transferState.oldestKnownTxMs,
                 oldestVerifiedTxMs: transferState.oldestVerifiedTxMs,
                 txHistoryComplete: transferState.historyComplete,
+                txServerHistoryComplete: transferState.serverHistoryComplete,
+                historyTransferCount: transferState.historyTransferCount,
                 hasMoreTxs: transferState.hasMoreTxs,
                 isWalletDataReady: !!wallet,
                 isWalletDataLoaded: !!wallet && balanceState.balanceReady && transferState.txReady,
@@ -185,14 +198,18 @@ export function createWalletProvider({ useVault, network, appState, useWalletExt
                 balanceState.satsBalance,
                 balanceState.tokenBalances,
                 transferState.transfers,
+                transferState.historyTransfers,
                 fundingState.fundingAddress,
                 balanceState.balanceReady,
                 transferState.txReady,
                 balanceState.isBalanceLoading,
                 transferState.isTxLoading,
                 transferState.oldestLoadedMs,
+                transferState.oldestKnownTxMs,
                 transferState.oldestVerifiedTxMs,
                 transferState.historyComplete,
+                transferState.serverHistoryComplete,
+                transferState.historyTransferCount,
                 transferState.hasMoreTxs,
                 claimState.refreshWallet,
                 claimState.claimDeposits,

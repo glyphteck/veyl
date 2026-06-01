@@ -20,6 +20,9 @@ import { listNavigationStep, loopListIndex } from '@/lib/focus';
 const TX_ROW_APPEAR_MS = 320;
 const TX_ROW_APPEAR_EASE = 'cubic-bezier(0.2, 0, 0, 1)';
 const MAX_TX_ANIMATED_INSERTS = 8;
+const TX_INITIAL_RENDER_LIMIT = 80;
+const TX_RENDER_BATCH_SIZE = 60;
+const TX_SCROLL_LOAD_PX = 180;
 
 function getTxIds(txs) {
     return (txs || []).map((tx) => tx?.id).filter(Boolean);
@@ -130,7 +133,7 @@ function useRecentTxAnimation(recentTxs) {
     return { displayTxs, insertingIds };
 }
 
-const RecentTxRow = memo(function RecentTxRow({ bitcoinPrice, cloaked, index, isFirst, isLast, moneyFormat, onOpenTx, profile, rowRefs, tx, user }) {
+const RecentTxRow = memo(function RecentTxRow({ bitcoinPrice, cloaked, isFirst, isLast, moneyFormat, onOpenTx, profile, rowRefs, tx, user }) {
     const label = formatFullDateTime(tx.createdTime);
     const isInflow = tx.amount > 0;
     const formattedAmount = renderMoney(tx.totalValue, moneyFormat, bitcoinPrice, isInflow ? '+' : '-');
@@ -146,7 +149,11 @@ const RecentTxRow = memo(function RecentTxRow({ bitcoinPrice, cloaked, index, is
     return (
         <Button
             ref={(node) => {
-                rowRefs.current[index] = node;
+                if (node) {
+                    rowRefs.current.set(tx.id, node);
+                } else {
+                    rowRefs.current.delete(tx.id);
+                }
             }}
             type="button"
             tabIndex={isFirst ? 0 : -1}
@@ -169,7 +176,6 @@ const RecentTxRow = memo(function RecentTxRow({ bitcoinPrice, cloaked, index, is
 }, (prev, next) =>
     prev.bitcoinPrice === next.bitcoinPrice &&
     prev.cloaked === next.cloaked &&
-    prev.index === next.index &&
     prev.isFirst === next.isFirst &&
     prev.isLast === next.isLast &&
     prev.moneyFormat === next.moneyFormat &&
@@ -190,12 +196,17 @@ export function RecentTxList() {
     const { peerByWalletPK } = usePeer();
     const { cloaked } = useCloak();
     const scrollRef = useRef(null);
-    const rowRefs = useRef([]);
+    const rowRefs = useRef(new Map());
     const loadingMoreRef = useRef(false);
     const txs = sortedTransactions || [];
     const { displayTxs, insertingIds } = useRecentTxAnimation(txs);
+    const [visibleLimit, setVisibleLimit] = useState(0);
 
-    const itemCount = displayTxs.length;
+    const visibleTxs = useMemo(() => displayTxs.slice(0, Math.min(visibleLimit, displayTxs.length)), [displayTxs, visibleLimit]);
+    const visibleTxIds = useMemo(() => visibleTxs.map((tx) => tx.id), [visibleTxs]);
+    const hasHiddenRenderedTxs = visibleLimit < displayTxs.length;
+    const hasLoader = hasHiddenRenderedTxs || hasMoreTxs || isTxLoading;
+    const itemCount = visibleTxs.length;
     const openTx = useCallback((tx) => openDialog('txdetails', { tx }), [openDialog]);
 
     const focusTxAtIndex = useCallback(
@@ -203,7 +214,7 @@ export function RecentTxList() {
             if (index < 0 || index >= itemCount) {
                 return false;
             }
-            const row = rowRefs.current[index];
+            const row = rowRefs.current.get(visibleTxIds[index]);
             if (!row?.focus) {
                 return false;
             }
@@ -211,7 +222,7 @@ export function RecentTxList() {
             row.scrollIntoView?.({ block: 'nearest' });
             return true;
         },
-        [itemCount]
+        [itemCount, visibleTxIds]
     );
 
     const stepTx = useCallback(
@@ -220,14 +231,17 @@ export function RecentTxList() {
                 return false;
             }
             const active = typeof document === 'undefined' ? null : document.activeElement;
-            const focusedIndex = rowRefs.current.slice(0, itemCount).findIndex((row) => row && active && (row === active || row.contains(active)));
+            const focusedIndex = visibleTxIds.findIndex((id) => {
+                const row = rowRefs.current.get(id);
+                return row && active && (row === active || row.contains(active));
+            });
             const nextIndex = loopListIndex(itemCount, focusedIndex, step);
             if (nextIndex === focusedIndex) {
                 return true;
             }
             return focusTxAtIndex(nextIndex);
         },
-        [focusTxAtIndex, itemCount]
+        [focusTxAtIndex, itemCount, visibleTxIds]
     );
 
     const handleListKeyDown = useCallback(
@@ -248,19 +262,35 @@ export function RecentTxList() {
         }
     }, [isTxLoading]);
 
+    useEffect(() => {
+        setVisibleLimit((current) => {
+            if (!displayTxs.length) {
+                return 0;
+            }
+            if (current <= 0) {
+                return Math.min(displayTxs.length, TX_INITIAL_RENDER_LIMIT);
+            }
+            return Math.min(current, displayTxs.length);
+        });
+    }, [displayTxs.length]);
+
     const loadMore = useCallback(() => {
+        if (hasHiddenRenderedTxs) {
+            setVisibleLimit((current) => Math.min(displayTxs.length, Math.max(current, TX_INITIAL_RENDER_LIMIT) + TX_RENDER_BATCH_SIZE));
+            return;
+        }
         if (!hasMoreTxs || isTxLoading || loadingMoreRef.current) return;
         loadingMoreRef.current = true;
         const request = loadMoreTxs?.();
         Promise.resolve(request).finally(() => {
             loadingMoreRef.current = false;
         });
-    }, [hasMoreTxs, isTxLoading, loadMoreTxs]);
+    }, [displayTxs.length, hasHiddenRenderedTxs, hasMoreTxs, isTxLoading, loadMoreTxs]);
 
     const handleScroll = useCallback(
         (event) => {
             const node = event.currentTarget;
-            if (node.scrollHeight - node.scrollTop - node.clientHeight <= 160) {
+            if (node.scrollHeight - node.scrollTop - node.clientHeight <= TX_SCROLL_LOAD_PX) {
                 loadMore();
             }
         },
@@ -269,11 +299,11 @@ export function RecentTxList() {
 
     useEffect(() => {
         const node = scrollRef.current;
-        if (!node || !txReady || !hasMoreTxs || isTxLoading) return;
+        if (!node || !txReady || (!hasHiddenRenderedTxs && !hasMoreTxs) || isTxLoading) return;
         if (node.scrollHeight <= node.clientHeight + 4) {
             loadMore();
         }
-    }, [displayTxs.length, hasMoreTxs, isTxLoading, loadMore, txReady]);
+    }, [hasHiddenRenderedTxs, hasMoreTxs, isTxLoading, loadMore, txReady, visibleTxs.length]);
 
     if (!txReady || displayTxs.length === 0) {
         return (
@@ -288,14 +318,17 @@ export function RecentTxList() {
         <Card>
             <style>{`
                 .recent-tx-row-stable {
+                    contain: layout paint;
                     overflow: hidden;
                 }
                 .recent-tx-row-entering {
                     height: 60px;
+                    will-change: height;
                     animation: recent-tx-row-slot-in ${TX_ROW_APPEAR_MS}ms ${TX_ROW_APPEAR_EASE} both;
                 }
                 .recent-tx-row-content {
                     transform-origin: center top;
+                    will-change: opacity, transform;
                 }
                 .recent-tx-row-entering > .recent-tx-row-content {
                     animation: recent-tx-row-content-in ${TX_ROW_APPEAR_MS}ms ${TX_ROW_APPEAR_EASE} both;
@@ -310,8 +343,8 @@ export function RecentTxList() {
                 }
             `}</style>
             <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto" onKeyDown={handleListKeyDown} onScroll={handleScroll}>
-                <div className={`divide-y ${displayTxs.length < 12 ? 'border-b' : ''}`}>
-                    {displayTxs.map((tx, index) => {
+                <div className={`divide-y ${visibleTxs.length < 12 ? 'border-b' : ''}`}>
+                    {visibleTxs.map((tx, index) => {
                         const entering = insertingIds.has(tx.id);
                         return (
                             <div key={tx.id} className={`recent-tx-row-stable ${entering ? 'recent-tx-row-entering' : ''}`}>
@@ -319,9 +352,8 @@ export function RecentTxList() {
                                     <RecentTxRow
                                         bitcoinPrice={bitcoin.price}
                                         cloaked={cloaked}
-                                        index={index}
                                         isFirst={index === 0}
-                                        isLast={index === displayTxs.length - 1}
+                                        isLast={!hasLoader && index === visibleTxs.length - 1}
                                         moneyFormat={moneyFormat}
                                         onOpenTx={openTx}
                                         profile={peerByWalletPK.get(tx.peerPK)}
@@ -333,7 +365,11 @@ export function RecentTxList() {
                             </div>
                         );
                     })}
-                    {hasMoreTxs ? <div className="h-12" aria-hidden="true" /> : null}
+                    {hasLoader ? (
+                        <div className="flex h-12 items-center justify-center text-sm font-bold text-muted">
+                            {isTxLoading || hasHiddenRenderedTxs ? 'loading...' : ''}
+                        </div>
+                    ) : null}
                 </div>
             </div>
         </Card>

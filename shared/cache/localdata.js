@@ -5,5 +5,5 @@ export { getCachedMediaKey, readCachedMedia, writeCachedMedia, dropCachedMedia }
 export { readLastCameraFacing, readResumeRoute, readResumeTarget, writeLastCameraFacing, writeResumeRoute, writeResumeTarget } from './localdata/prefs.js';
 export { readCachedProfiles, writeCachedProfiles } from './localdata/profiles.js';
 export { LOCAL_DATA_CACHE_LABEL, LOCAL_DATA_CACHE_VERSION } from './localdata/schema.js';
-export { readCachedTransfers, readCachedTransferState, writeCachedTransfers, writeCachedTransferState } from './localdata/transfers.js';
+export { readCachedTransferState, writeCachedTransferState } from './localdata/transfers.js';
 export { openVaultCache } from './localdata/vault.js';

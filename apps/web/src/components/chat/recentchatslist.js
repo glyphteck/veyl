@@ -16,7 +16,7 @@ import { usePeer } from '@/components/providers/peerprovider';
 import { useCloak } from '@veyl/shared/providers/cloakprovider';
 import { listNavigationStep, loopListIndex } from '@/lib/focus';
 
-const CHAT_ROW_APPEAR_MS = 320;
+const CHAT_ROW_APPEAR_MS = 640;
 const CHAT_ROW_PHASE_MS = CHAT_ROW_APPEAR_MS / 2;
 const CHAT_ROW_APPEAR_EASE = 'cubic-bezier(0.2, 0, 0, 1)';
 
@@ -95,7 +95,6 @@ const RecentChatRow = memo(function RecentChatRow({
     chatPK,
     cloaked,
     handleChatClick,
-    index,
     interactive = true,
     isFirst,
     isLast,
@@ -119,10 +118,17 @@ const RecentChatRow = memo(function RecentChatRow({
             <div className={mode ? 'recent-chat-row-content' : ''}>
                 <Button
                     ref={(node) => {
-                        if (!interactive) {
+                        if (!interactive || !node) {
+                            const current = rowRefs.current.get(chat.id);
+                            if (!node || current === node) {
+                                rowRefs.current.delete(chat.id);
+                            }
+                            if (selectedChatButtonRef.current === node || selectedChatButtonRef.current === current) {
+                                selectedChatButtonRef.current = null;
+                            }
                             return;
                         }
-                        rowRefs.current[index] = node;
+                        rowRefs.current.set(chat.id, node);
                         if (selected) {
                             selectedChatButtonRef.current = node;
                         } else if (selectedChatButtonRef.current === node) {
@@ -163,7 +169,6 @@ const RecentChatRow = memo(function RecentChatRow({
     prev.bitcoinPrice === next.bitcoinPrice &&
     prev.chatPK === next.chatPK &&
     prev.cloaked === next.cloaked &&
-    prev.index === next.index &&
     prev.interactive === next.interactive &&
     prev.isFirst === next.isFirst &&
     prev.isLast === next.isLast &&
@@ -181,7 +186,7 @@ export function RecentChatsList() {
     const { peerByChatPK, updatePeer, isBlockedChatPK } = usePeer();
     const bitcoin = useBitcoin();
     const { cloaked } = useCloak();
-    const rowRefs = useRef([]);
+    const rowRefs = useRef(new Map());
     const stableRowsRef = useRef([]);
     const pendingRowsRef = useRef(null);
     const rowMoveRef = useRef(null);
@@ -227,7 +232,7 @@ export function RecentChatsList() {
             if (!chat?.id) {
                 return false;
             }
-            const row = rowRefs.current[index];
+            const row = rowRefs.current.get(chat.id);
             if (!row?.focus) {
                 return false;
             }
@@ -244,7 +249,10 @@ export function RecentChatsList() {
                 return false;
             }
             const active = typeof document === 'undefined' ? null : document.activeElement;
-            const focusedIndex = rowRefs.current.slice(0, visibleChats.length).findIndex((row) => row && active && (row === active || row.contains(active)));
+            const focusedIndex = visibleChats.findIndex((chat) => {
+                const row = rowRefs.current.get(chat?.id);
+                return row && active && (row === active || row.contains(active));
+            });
             const selectedIndex = visibleChats.findIndex((chat) => chat?.id === selectedChatId);
             const currentIndex = focusedIndex >= 0 ? focusedIndex : selectedIndex;
             const nextIndex = loopListIndex(visibleChats.length, currentIndex, step);
@@ -386,6 +394,7 @@ export function RecentChatsList() {
         <Card>
             <style>{`
                 .recent-chat-row-stable {
+                    contain: layout paint;
                     overflow: hidden;
                 }
                 .recent-chat-row-leaving,
@@ -394,11 +403,14 @@ export function RecentChatsList() {
                 }
                 .recent-chat-row-content {
                     transform-origin: center top;
+                    will-change: opacity, transform;
                 }
                 .recent-chat-row-leaving {
+                    will-change: height;
                     animation: recent-chat-row-slot-out ${CHAT_ROW_PHASE_MS}ms ${CHAT_ROW_APPEAR_EASE} both;
                 }
                 .recent-chat-row-entering {
+                    will-change: height;
                     animation: recent-chat-row-slot-in ${CHAT_ROW_PHASE_MS}ms ${CHAT_ROW_APPEAR_EASE} both;
                 }
                 .recent-chat-row-leaving > .recent-chat-row-content {
@@ -434,7 +446,6 @@ export function RecentChatsList() {
                             chatPK={chatPK}
                             cloaked={cloaked}
                             handleChatClick={handleChatClick}
-                            index={index}
                             interactive={!(rowMove?.phase === 'leaving' && movingIds.has(chat.id))}
                             isFirst={index === 0}
                             isLast={index === displayedChats.length - 1}

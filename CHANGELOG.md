@@ -2,6 +2,12 @@
 
 Repo-level changes are listed newest first. Keep entries short and concrete. Broad pushes get grouped bullets, while narrow fixes can use one concise bugfix or cleanup bullet that still names the actual change.
 
+## 4.14.8 - 2026-06-01
+
+- Reworked wallet transfer caching, history coverage, and transaction aggregation so wallet rows and balance charts stay scoped to the active wallet identity.
+- Tuned web and iOS chat and transaction list rendering with coalesced chat snapshots, fixed row layouts, and larger transaction render windows.
+- Added the active NIP-05 identity-base task plan for Veyl-owned public Nostr identifiers.
+
 ## 4.14.7 - 2026-06-01
 
 - Replaced bot burst load testing with runtime-owned traffic actions for mixed, message, solo-message, transfer, funding, and stop workflows.
