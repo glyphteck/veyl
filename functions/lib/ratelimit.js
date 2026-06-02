@@ -7,7 +7,7 @@ export const HOUR_MS = 60 * MINUTE_MS;
 export const DAY_MS = 24 * HOUR_MS;
 
 const COLLECTION = 'rate_limits';
-const TTL_GRACE_MS = 2 * DAY_MS;
+const TTL_GRACE_MS = HOUR_MS;
 const UNKNOWN_IP = 'unknown';
 
 function hash(value) {

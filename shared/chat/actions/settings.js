@@ -13,13 +13,14 @@ export function useChatSettings({ chat, uid, chatBanned, chatPK, chatPrivateKey,
             if (chatBanned) {
                 throw makeChatUnavailableError();
             }
-            const row = chatsRef.current.find((chatItem) => chatItem?.id === chatId) || lastServerChatsRef.current.find((chatItem) => chatItem?.id === chatId);
-            const peerChatPK = getChatPeerPK(row, chatPK);
+            const serverChat = lastServerChatsRef.current.find((chatItem) => chatItem?.id === chatId);
+            const chatItem = serverChat || chatsRef.current.find((item) => item?.id === chatId);
+            const peerChatPK = getChatPeerPK(chatItem, chatPK);
             if (!chatPK || !chatPrivateKey || !peerChatPK) {
                 throw makeChatUnavailableError();
             }
             const nextRetention = cleanChatRetention(retention);
-            return chat.setChatTtl(chatId, chatPK, chatPrivateKey, peerChatPK, nextRetention, { senderUid: uid }).then((savedRetention) => {
+            return chat.setChatTtl(chatId, chatPK, chatPrivateKey, peerChatPK, nextRetention, { senderUid: uid, ownEntry: serverChat?.entryId ? serverChat : null }).then((savedRetention) => {
                 const retentionValue = cleanChatRetention(savedRetention);
                 const patchChat = (chatItem) => {
                     const settings = normalizeChatSettings(chatItem?.settings);

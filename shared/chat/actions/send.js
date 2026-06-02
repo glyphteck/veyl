@@ -454,7 +454,6 @@ export function useChatSend({ chat, uid, chatBanned, chatPK, chatPrivateKey, loc
                 const job = {
                     lastMsgKey: local.chatId,
                     lastMsgRequired,
-                    syncLastMsg: (lastMsg) => chat.syncChatLastMsg?.(local.chatId, lastMsg),
                     resolve,
                     reject,
                     onSuccess: () => {

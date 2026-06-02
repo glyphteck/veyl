@@ -5,6 +5,7 @@ import { bufferToBase64url, encodeOptionsForClient, decodeCredentialFromClient, 
 import { HOUR_MS, MINUTE_MS, ipLimitKey, limitCallable } from '../lib/ratelimit.js';
 import { ensureUserDoc } from '../lib/userdoc.js';
 import { accountCreateIpLimitRules } from '../lib/abuseconfig.js';
+import { loggedCall } from '../lib/actionlog.js';
 
 const db = admin.firestore();
 
@@ -50,7 +51,7 @@ async function limitAccountCreate(context) {
 }
 
 /* 1. Generate passkey registration options */
-export const passkeyRegisterOptions = onCall(async (context) => {
+export const passkeyRegisterOptions = onCall(loggedCall('passkeyRegisterOptions', async (context) => {
     const origin = resolveOrigin(context);
     if (!validateOrigin(origin)) {
         throw new HttpsError('permission-denied', 'Invalid origin');
@@ -82,10 +83,10 @@ export const passkeyRegisterOptions = onCall(async (context) => {
         uid,
         opts: encodeOptionsForClient(options),
     };
-});
+}));
 
 /* 2. Verify passkey registration */
-export const passkeyRegisterVerify = onCall(async (context) => {
+export const passkeyRegisterVerify = onCall(loggedCall('passkeyRegisterVerify', async (context) => {
     const { data } = context;
     const { attestation } = data ?? {};
     if (!attestation) {
@@ -160,4 +161,4 @@ export const passkeyRegisterVerify = onCall(async (context) => {
     // Create auth token
     const token = await admin.auth().createCustomToken(uid);
     return { token };
-});
+}));

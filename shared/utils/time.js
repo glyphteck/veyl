@@ -81,7 +81,9 @@ export function formatTimeHHMM(ts, showAMPM = false) {
 
 export function formatFullDateTime(timestamp) {
     if (!timestamp) return '';
-    const date = new Date(timestamp);
+    const ms = timestampMs(timestamp, null, { parseString: true });
+    if (!Number.isFinite(ms)) return '';
+    const date = new Date(ms);
     return `${date.getMonth() + 1}/${date.getDate()} ${formatTimeHHMM(date, true)}`;
 }
 

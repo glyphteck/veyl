@@ -5,6 +5,7 @@ import { HOUR_MS, MINUTE_MS, limitCallable, uidLimitKey } from '../lib/ratelimit
 import { CHAT_MEDIA_CONTENT_TYPE, CHAT_MEDIA_UPLOAD_RESERVATION_TTL_MS, chatMediaReserveLimitRules } from '../lib/abuseconfig.js';
 import { assertQuotaRoom, cleanQuotaAmount, writeQuotaReservation } from '../lib/usagequota.js';
 import { makeAccountUploadQuota } from '../lib/uploadquota.js';
+import { loggedCall } from '../lib/actionlog.js';
 
 const MEDIA_PATH_RE = /^media\/[0-9a-fA-F]{32}\/main$/;
 const MEDIA_STAY_RE = /^[A-Za-z0-9_-]{8,80}$/;
@@ -161,7 +162,7 @@ async function requireSignedInMediaRequest(auth, data) {
     return path;
 }
 
-export const setMediaSaved = onCall(async ({ auth, data }) => {
+export const setMediaSaved = onCall(loggedCall('setMediaSaved', async ({ auth, data }) => {
     const path = await requireSignedInMediaRequest(auth, data);
     await limitCallable({ auth }, [
         { name: 'set-media-saved-uid-minute', key: uidLimitKey(auth.uid, 'set-media-saved'), limit: 90, windowMs: MINUTE_MS },
@@ -175,9 +176,9 @@ export const setMediaSaved = onCall(async ({ auth, data }) => {
         await saveMediaStay(path, stayId, stayKey);
     }
     return OK;
-});
+}));
 
-export const reserveChatMediaUpload = onCall(async (context) => {
+export const reserveChatMediaUpload = onCall(loggedCall('reserveChatMediaUpload', async (context) => {
     const { auth, data } = context;
     if (!auth?.uid) {
         throw new HttpsError('unauthenticated', 'auth');
@@ -220,4 +221,4 @@ export const reserveChatMediaUpload = onCall(async (context) => {
         dailyLimit,
         newAccount,
     };
-});
+}));

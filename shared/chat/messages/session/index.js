@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { readCachedMedia, writeCachedMedia } from '../../../cache/localdata.js';
 import { saveMedia } from '../../attachments.js';
-import { filterChatMessages, getChatPeerPK, getChatRowLastMsgKey } from '../../ids.js';
+import { filterChatMessages, getChatPeerPK, getChatLastMsgKey } from '../../ids.js';
 import { collectMessageKeys } from '../../messagekeys.js';
 import { canShowMsg, getDisplayMessages, getHiddenDisplayMessages, isControlMsg } from '../../messages.js';
 import { makeMessagePreviewMedia, MESSAGE_PREVIEW_MIME } from '../../previews.js';
@@ -53,7 +53,7 @@ function warmKeyStore(ref) {
     return ref.current;
 }
 
-export function useChatMessageSessions({ chat, chatPK, chatPrivateKey, chatBanned, isActive, localCache, rowsRef, pendingDeleteIdsRef, config, preloadMessageMedia, onRead, onExpire, diag = null }) {
+export function useChatMessageSessions({ chat, chatPK, chatPrivateKey, chatBanned, isActive, localCache, listRef, pendingDeleteIdsRef, config, preloadMessageMedia, onRead, onExpire, diag = null }) {
     const batchesRef = useRef(new Map());
     const generationRef = useRef(0);
     const warmTimerRef = useRef(null);
@@ -275,11 +275,11 @@ export function useChatMessageSessions({ chat, chatPK, chatPrivateKey, chatBanne
         (chatId, options = {}) => {
             const source = options.source || 'route';
             const pageSize = positiveNumber(options.pageSize, warming.pageSize);
-            const row = rowsRef.current?.find?.((chatItem) => chatItem?.id === chatId) || null;
-            const peerChatPK = options.peerChatPK || getChatPeerPK(row, chatPK);
-            const actors = options.actors || row?.actors || null;
-            const hasRowLastMsgKey = Object.prototype.hasOwnProperty.call(options, 'rowLastMsgKey');
-            const rowLastMsgKey = hasRowLastMsgKey ? (options.rowLastMsgKey ?? null) : undefined;
+            const chatItem = listRef.current?.find?.((item) => item?.id === chatId) || null;
+            const peerChatPK = options.peerChatPK || getChatPeerPK(chatItem, chatPK);
+            const actors = options.actors || chatItem?.actors || null;
+            const hasChatLastMsgKey = Object.prototype.hasOwnProperty.call(options, 'chatLastMsgKey');
+            const chatLastMsgKey = hasChatLastMsgKey ? (options.chatLastMsgKey ?? null) : undefined;
             const generation = generationRef.current;
 
             if (chatBanned || !isActive || !chatId || !chatPK || !chatPrivateKey || !peerChatPK || pendingDeleteIdsRef.current.has(chatId)) {
@@ -290,14 +290,14 @@ export function useChatMessageSessions({ chat, chatPK, chatPrivateKey, chatBanne
             let route = source === 'route';
             let warm = source === 'warm';
             let subscribers = new Set();
-            let nextRowLastMsgKey = rowLastMsgKey ?? null;
+            let nextChatLastMsgKey = chatLastMsgKey ?? null;
             if (existing && existing.generation === generation) {
                 const existingPageSize = Number(existing.pageSize) || 0;
                 if (pageSize <= existingPageSize) {
                     existing.route = existing.route || route;
                     existing.warm = existing.warm || warm;
-                    if (hasRowLastMsgKey) {
-                        existing.rowLastMsgKey = rowLastMsgKey ?? null;
+                    if (hasChatLastMsgKey) {
+                        existing.chatLastMsgKey = chatLastMsgKey ?? null;
                     }
                     if (!existing.route) {
                         const expiredMessages = trimExpiredEntry(existing);
@@ -317,7 +317,7 @@ export function useChatMessageSessions({ chat, chatPK, chatPrivateKey, chatBanne
                 route = existing.route || route;
                 warm = existing.warm || warm;
                 subscribers = new Set(existing.subscribers || []);
-                nextRowLastMsgKey = hasRowLastMsgKey ? rowLastMsgKey ?? null : existing.rowLastMsgKey ?? null;
+                nextChatLastMsgKey = hasChatLastMsgKey ? chatLastMsgKey ?? null : existing.chatLastMsgKey ?? null;
                 try {
                     existing.unsub?.();
                 } catch {}
@@ -343,7 +343,7 @@ export function useChatMessageSessions({ chat, chatPK, chatPrivateKey, chatBanne
                 unsub: null,
                 startedAt: Date.now(),
                 updatedAt: 0,
-                rowLastMsgKey: nextRowLastMsgKey,
+                chatLastMsgKey: nextChatLastMsgKey,
                 batchLastMsgKey: null,
                 batchKeys: new Set(),
                 expiredKeys: new Set(),
@@ -535,7 +535,7 @@ export function useChatMessageSessions({ chat, chatPK, chatPrivateKey, chatBanne
                 const snapshot = ensureMessageBatch(task.chatId, {
                     source: 'warm',
                     peerChatPK: task.peerChatPK,
-                    rowLastMsgKey: task.rowLastMsgKey,
+                    chatLastMsgKey: task.chatLastMsgKey,
                     pageSize: task.pageSize,
                 });
                 if (!snapshot || snapshot.ready || snapshot.exists === false) {
@@ -621,13 +621,13 @@ export function useChatMessageSessions({ chat, chatPK, chatPrivateKey, chatBanne
         [pumpWarmQueue]
     );
 
-    const warmRows = useCallback(
-        (rows, limit) => {
+    const warmList = useCallback(
+        (chats, limit) => {
             if (!warming.enabled || !isActive || !chatPK || !chatPrivateKey || chatBanned) {
                 return false;
             }
 
-            const candidates = warmCandidates(rows, chatPK, pendingDeleteIdsRef.current, limit);
+            const candidates = warmCandidates(chats, chatPK, pendingDeleteIdsRef.current, limit);
             const candidateKey = candidates.map((chatItem) => chatItem.id).join('|');
             const warmKey = `${limit}:${warming.pageSize}:${candidateKey}`;
             const lastWarmKeys = warmKeyStore(lastWarmKeyRef);
@@ -649,7 +649,7 @@ export function useChatMessageSessions({ chat, chatPK, chatPrivateKey, chatBanne
                     kind: 'latest',
                     chatId: chatItem.id,
                     peerChatPK,
-                    rowLastMsgKey: getChatRowLastMsgKey(chatItem),
+                    chatLastMsgKey: getChatLastMsgKey(chatItem),
                     pageSize: warming.pageSize,
                 };
                 const key = warmTaskKey(task);
@@ -675,7 +675,7 @@ export function useChatMessageSessions({ chat, chatPK, chatPrivateKey, chatBanne
     );
 
     const warm = useCallback(
-        (rows) => {
+        (chats) => {
             if (!warming.enabled) {
                 return;
             }
@@ -684,10 +684,10 @@ export function useChatMessageSessions({ chat, chatPK, chatPrivateKey, chatBanne
                 warmTimerRef.current = null;
             }
 
-            const list = Array.isArray(rows) ? rows : rowsRef.current || [];
+            const list = Array.isArray(chats) ? chats : listRef.current || [];
             const runWarm = (limit, phase) => {
-                if (warmRows(list, limit)) {
-                    markDiag(diag, 'chat.warm.start', { rowCount: list.length, phase, eagerCount: warming.eagerCount, count: warming.count, delayMs: warming.delayMs });
+                if (warmList(list, limit)) {
+                    markDiag(diag, 'chat.warm.start', { chatCount: list.length, phase, eagerCount: warming.eagerCount, count: warming.count, delayMs: warming.delayMs });
                     scheduleMedia();
                 }
             };
@@ -701,7 +701,7 @@ export function useChatMessageSessions({ chat, chatPK, chatPrivateKey, chatBanne
                 }, warming.delayMs);
             }
         },
-        [diag, rowsRef, scheduleMedia, warmRows, warming.count, warming.delayMs, warming.eagerCount, warming.enabled]
+        [diag, listRef, scheduleMedia, warmList, warming.count, warming.delayMs, warming.eagerCount, warming.enabled]
     );
 
     return {

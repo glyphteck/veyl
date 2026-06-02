@@ -127,7 +127,7 @@ export default function PeerChatRoute() {
             bot: !!peerProfile?.bot,
         };
     }, [peerChatPK, peerProfile]);
-    const hasChatRow = !!currentChat;
+    const hasChat = !!currentChat;
     const hasPeerProfile = !!peerProfile;
 
     useEffect(() => {
@@ -151,11 +151,11 @@ export default function PeerChatRoute() {
         mark('chat.route', {
             chatId: chatId || '',
             peerChatPK: peerChatPK || '',
-            hasChatRow,
+            hasChat,
             hasPeerProfile,
             title: chatTitle,
         });
-    }, [chatId, chatTitle, hasChatRow, hasPeerProfile, peerChatPK]);
+    }, [chatId, chatTitle, hasChat, hasPeerProfile, peerChatPK]);
 
     useEffect(() => {
         return () => {

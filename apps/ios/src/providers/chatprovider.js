@@ -29,12 +29,16 @@ const chat = createChat({
     readMessageFile(storageInstance, userChatPK, userPrivKey, peerChatPK, message) {
         return readMessageFileNative(storageInstance, userChatPK, userPrivKey, peerChatPK, message);
     },
+    async sendPush(recipientUid, ping) {
+        await httpsCallable(functions, 'push')({ recipientUid, ping });
+        return true;
+    },
     async setMediaSaved(path, stayId, stayKey, saved) {
         await httpsCallable(functions, 'setMediaSaved')({ path, stayId, stayKey, saved });
         return true;
     },
-    async finishDeletingChat(chatId) {
-        await httpsCallable(functions, 'deleteChat')({ chatId });
+    async deleteChatRemote(chatId, { entryId } = {}) {
+        await httpsCallable(functions, 'deleteChat')({ chatId, entryId });
         return true;
     },
 });

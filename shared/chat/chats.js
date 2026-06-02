@@ -68,6 +68,17 @@ export function getPeersFromChats(chats, chatPK) {
     return uniqueValues((chats || []).map((chat) => getChatPeerPK(chat, chatPK)));
 }
 
+export function isChatUnseenForUser(chatData, userChatPK) {
+    const last = chatData?.lastMsg;
+    if (!last?.ts || !canShowMsg(last)) return false;
+    const from = last?.from || last?.s;
+    if (from && from === userChatPK) return false;
+    const readMs = timestampMs(chatData?.readMs, null);
+    const lastMs = timestampMs(last.ts, null);
+    if (readMs != null && lastMs != null && readMs >= lastMs) return false;
+    return !!from;
+}
+
 function sortChats(chats) {
     return [...chats].sort((a, b) => {
         const delta = (b?.ts || 0) - (a?.ts || 0);
@@ -186,14 +197,16 @@ export function applyChatPreviewOverrides(chats, overridesByChat, chatPK, readCa
         }
 
         changed = true;
+        const lastMs = timestampMs(lastMsg?.ts, null);
         return {
             ...chat,
+            ts: lastMs ?? chat.ts,
             lastMsg,
             unseen,
         };
     });
 
-    return changed ? next : chats;
+    return changed ? sortChats(next) : chats;
 }
 
 export function trimExpiredChatPreviews(chats, options = {}) {

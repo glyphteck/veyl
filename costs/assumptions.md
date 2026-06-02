@@ -30,7 +30,7 @@ One DAU-day is modeled as:
 | Username/profile searches | 1 search returning about 10 profiles |
 | Push registration refreshes | 0 normal daily cost; only when token/device state changes |
 
-That bundle is about 260 Firestore read-equivalent ops, 35 Firestore writes, 11 function invocations, and 1 Storage Class A operation per DAU-day.
+That bundle is about 205 Firestore read-equivalent ops, 24 Firestore writes, 11 function invocations, and 1 Storage Class A operation per DAU-day.
 
 ## Media and retention variables
 
@@ -84,8 +84,8 @@ Sustained app-wide throughput is separate from DAU scale. See [message-rate-cost
 | --- | ---: | --- |
 | `MESSAGES_PER_SECOND` | unset | Enables the message-rate CLI output. |
 | `INCLUDE_READ_RECEIPTS` | false | Adds one read receipt per visible send. |
-| `MESSAGE_SEND_READS` | 9 | Firestore reads per active-push visible send. |
-| `MESSAGE_SEND_WRITES` | 2 | Firestore writes per visible send. |
+| `MESSAGE_SEND_READS` | 6 | Firestore reads per solo established active-push visible send through the block-enforcing push callable. |
+| `MESSAGE_SEND_WRITES` | 4 | Firestore writes per solo visible send through the block-enforcing push callable. |
 | `MESSAGE_SEND_FUNCTIONS` | 1 | Function invocations per visible send. |
-| `READ_RECEIPT_READS` | 3 | Firestore reads per read receipt. |
+| `READ_RECEIPT_READS` | 0 | Firestore reads per read receipt. |
 | `READ_RECEIPT_WRITES` | 1 | Firestore writes per read receipt. |

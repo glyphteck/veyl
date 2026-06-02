@@ -1,9 +1,10 @@
-import { collection, doc, getDocFromServer, getDocsFromServer, limit, query, serverTimestamp, setDoc, Timestamp, where, writeBatch } from 'firebase/firestore';
+import { collection, deleteDoc, doc, getDocFromServer, getDocsFromServer, limit, query, serverTimestamp, setDoc, Timestamp, where, writeBatch } from 'firebase/firestore';
 import { sealMsg } from '../../crypto/chat.js';
 import { putAttachment, putFile, putImg, putMp3, putMp4, readMsgFile } from '../media.js';
 import { makeHiddenCheckpoint, makeReaction, makeReadReceipt, makeRetentionSystemMsg } from '../messages.js';
 import { getCachedPair } from '../pairs.js';
-import { makeOwnChatEntry, openOwnChatEntry, ownChatEntryId, sealChatWake, sealOwnChatEntry } from '../entries.js';
+import { makeOwnChatEntry, openOwnChatEntry, ownChatEntryId, sealOwnChatEntry } from '../entry.js';
+import { sealPing } from '../ping.js';
 import { CHAT_ACTION_OPS } from './actions.js';
 import { makeCid } from '../state.js';
 import { cleanChatRetention, newMessageTtlMs, withMessageRetention } from '../ttl.js';
@@ -26,10 +27,6 @@ function makeTtlTimestamp(value) {
 
 function getMessageTtl(retention) {
     return makeTtlTimestamp(newMessageTtlMs(retention));
-}
-
-export async function syncChatLastMsg(db, chatId, lastMsg) {
-    return !!(db && chatId && lastMsg);
 }
 
 async function profileByChatPK(db, chatPK) {
@@ -59,12 +56,62 @@ async function readOwnEntry(db, uid, chatPrivKey, entryId) {
     return openOwnChatEntry(chatPrivKey, entryId, snap.data()?.body).catch(() => null);
 }
 
+export async function setChatRead(db, uid, chatPrivKey, chatId, readMs) {
+    const nextReadMs = timestampMs(readMs, null, { positive: true });
+    if (!db || !uid || !chatPrivKey || !chatId || nextReadMs == null) {
+        return false;
+    }
+    const entryId = ownChatEntryId(chatPrivKey, chatId);
+    const entry = await readOwnEntry(db, uid, chatPrivKey, entryId);
+    const currentReadMs = timestampMs(entry?.readMs, 0) ?? 0;
+    if (!entry?.chatId || currentReadMs >= nextReadMs) {
+        return false;
+    }
+
+    await setDoc(
+        doc(db, 'users', uid, 'chats', entryId),
+        {
+            body: await sealOwnChatEntry(chatPrivKey, entryId, {
+                ...entry,
+                readMs: nextReadMs,
+            }),
+        },
+        { merge: true }
+    );
+    return true;
+}
+
+export async function setChatPreview(db, uid, chatPrivKey, chatId, lastMsg = null) {
+    if (!db || !uid || !chatPrivKey || !chatId) {
+        return false;
+    }
+    const entryId = ownChatEntryId(chatPrivKey, chatId);
+    const entry = await readOwnEntry(db, uid, chatPrivKey, entryId);
+    if (!entry?.chatId) {
+        return false;
+    }
+
+    const previewMs = timestampMs(lastMsg?.ts, null, { positive: true });
+    const data = {
+        body: await sealOwnChatEntry(chatPrivKey, entryId, {
+            ...entry,
+            lastMsg: lastMsg || null,
+        }),
+    };
+    if (previewMs != null) {
+        data.ts = Timestamp.fromMillis(previewMs);
+    }
+
+    await setDoc(doc(db, 'users', uid, 'chats', entryId), data, { merge: true });
+    return true;
+}
+
 async function ownEntryWrite(db, uid, chatPrivKey, pair, fields = {}) {
     if (!db || !uid || !chatPrivKey || !pair?.chatId) {
         return null;
     }
     const entryId = ownChatEntryId(chatPrivKey, pair.chatId);
-    const existing = await readOwnEntry(db, uid, chatPrivKey, entryId);
+    const existing = fields.entry || await readOwnEntry(db, uid, chatPrivKey, entryId);
     const peerActorPK = cleanText(fields.peerActorPK) || cleanText(existing?.actors?.[pair.peerChatPK]);
     const actors = {
         ...(existing?.actors || {}),
@@ -103,6 +150,41 @@ function ownerLastMsg(senderPubkey, message, msgRef, head, tsMs, ttl) {
     };
 }
 
+function callablePing(ping) {
+    const body = ping?.body;
+    if (typeof body?.toBase64 !== 'function') {
+        throw new Error('inbox ping body unavailable');
+    }
+    return {
+        v: ping.v,
+        epk: ping.epk,
+        body: body.toBase64(),
+    };
+}
+
+async function sendPing(options, recipientUid, ping) {
+    if (!recipientUid || !ping) {
+        return false;
+    }
+    if (typeof options?.sendPush !== 'function') {
+        throw new Error('inbox ping delivery unavailable');
+    }
+    await options.sendPush(recipientUid, callablePing(ping));
+    return true;
+}
+
+async function recipientForSend(db, receiverChatPK, options, needed) {
+    if (!needed) {
+        return null;
+    }
+    const uid = cleanText(options?.receiverUid);
+    const actorPK = cleanText(options?.peerActorPK);
+    if (uid) {
+        return { uid, actorPK };
+    }
+    return profileByChatPK(db, receiverChatPK);
+}
+
 export async function sendMsg(db, senderPubkey, senderPrivkey, receiverChatPK, message, options = {}) {
     if (!senderPrivkey || !senderPubkey) {
         throw new Error('vault locked');
@@ -123,7 +205,7 @@ export async function sendMsg(db, senderPubkey, senderPrivkey, receiverChatPK, m
         ttl,
     };
 
-    const recipientProfile = updateLastMsg || options?.wake === true ? await profileByChatPK(db, receiverChatPK) : null;
+    const recipientProfile = await recipientForSend(db, receiverChatPK, options, updateLastMsg || options?.ping === true);
     const lastMsg = updateLastMsg ? ownerLastMsg(senderPubkey, messagePayload, doc(collection(chatRef, 'messages')), head, tsMs, ttl) : null;
     const msgRef = lastMsg?.id ? doc(db, 'chats', chatId, 'messages', lastMsg.id) : doc(collection(chatRef, 'messages'));
     if (lastMsg) {
@@ -133,14 +215,15 @@ export async function sendMsg(db, senderPubkey, senderPrivkey, receiverChatPK, m
         ? await ownEntryWrite(db, cleanText(options?.senderUid), senderPrivkey, pair, {
               peerUid: recipientProfile?.uid || cleanText(options?.receiverUid),
               peerActorPK: recipientProfile?.actorPK,
+              entry: options?.ownEntry,
               lastMsg,
               ts: lastMsg?.ts,
           })
         : null;
-    const wake =
-        recipientProfile?.uid && (updateLastMsg || options?.wake === true)
-            ? await sealChatWake(senderPubkey, senderPrivkey, receiverChatPK, {
-                  kind: updateLastMsg ? 'message' : 'wake',
+    const ping =
+        recipientProfile?.uid && (updateLastMsg || options?.ping === true)
+            ? await sealPing(senderPubkey, senderPrivkey, receiverChatPK, {
+                  kind: updateLastMsg ? 'message' : 'ping',
                   senderUid: cleanText(options?.senderUid),
                   messageId: msgRef.id,
                   ts: tsMs,
@@ -148,18 +231,12 @@ export async function sendMsg(db, senderPubkey, senderPrivkey, receiverChatPK, m
             : null;
 
     const batch = writeBatch(db);
-    batch.set(chatRef, { v: 1, ts: serverTimestamp() }, { merge: true });
     batch.set(msgRef, msgData);
     if (ownerEntry) {
         batch.set(ownerEntry.ref, ownerEntry.data, { merge: true });
     }
-    if (wake) {
-        batch.set(doc(collection(db, 'users', recipientProfile.uid, 'chatInbox')), {
-            ...wake,
-            ts: serverTimestamp(),
-        });
-    }
     await batch.commit();
+    await sendPing(options, recipientProfile?.uid, ping);
     return { chatId, msgId: msgRef.id, cid: head.cid, lastMsg };
 }
 
@@ -243,7 +320,7 @@ export async function setChatRetention(db, chatId, senderPubkey, senderPrivkey, 
         cid: makeCid(),
         s: senderPubkey,
     };
-    await ownEntryWrite(db, cleanText(options?.senderUid), senderPrivkey, pair, { settings: { retention: nextRetention } }).then((entry) => (entry ? setDoc(entry.ref, entry.data, { merge: true }) : null));
+    await ownEntryWrite(db, cleanText(options?.senderUid), senderPrivkey, pair, { settings: { retention: nextRetention }, entry: options?.ownEntry }).then((entry) => (entry ? setDoc(entry.ref, entry.data, { merge: true }) : null));
     await sendMsg(db, senderPubkey, senderPrivkey, peerChatPK, systemMessage, {
         updateLastMsg: false,
         retention: nextRetention,
@@ -354,14 +431,11 @@ export async function deleteMsg(db, chatId, msgId, senderPubkey, senderPrivkey, 
     if (pair.chatId !== chatId) {
         return false;
     }
-    const target = cleanText(options?.target) || cleanText(msgId);
-    const { head, body } = await sealMsg(pair, { t: 'del', cid: makeCid(), target, s: senderPubkey }, { op: CHAT_ACTION_OPS.DELETE, target, auth: true });
-    await setDoc(doc(collection(db, 'chats', chatId, 'messages')), {
-        head,
-        body,
-        ts: serverTimestamp(),
-        ttl: null,
-    });
+    const target = cleanText(options?.docId) || cleanText(msgId);
+    if (!target || target.startsWith('local:')) {
+        return false;
+    }
+    await deleteDoc(doc(db, 'chats', chatId, 'messages', target));
     return true;
 }
 
@@ -382,14 +456,11 @@ export async function deleteMsgs(db, chatId, messages, senderPubkey, senderPrivk
         const batch = writeBatch(db);
         const chunk = items.slice(index, index + DELETE_WRITE_BATCH_SIZE);
         for (const item of chunk) {
-            const target = cleanText(item.cid) || cleanText(item.id);
-            const { head, body } = await sealMsg(pair, { t: 'del', cid: makeCid(), target, s: senderPubkey }, { op: CHAT_ACTION_OPS.DELETE, target, auth: true });
-            batch.set(doc(collection(db, 'chats', chatId, 'messages')), {
-                head,
-                body,
-                ts: serverTimestamp(),
-                ttl: null,
-            });
+            const target = cleanText(item.id);
+            if (!target || target.startsWith('local:')) {
+                continue;
+            }
+            batch.delete(doc(db, 'chats', chatId, 'messages', target));
         }
         await batch.commit();
     }

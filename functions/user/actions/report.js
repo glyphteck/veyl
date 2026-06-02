@@ -4,6 +4,7 @@ import { DAY_MS, HOUR_MS, limitCallable, uidLimitKey } from '../../lib/ratelimit
 import { REPORT_EVIDENCE_UPLOAD_RESERVATION_TTL_MS, reportEvidenceReserveLimitRules } from '../../lib/abuseconfig.js';
 import { assertQuotaRoom, cleanQuotaAmount, writeQuotaReservation } from '../../lib/usagequota.js';
 import { makeAccountUploadQuota } from '../../lib/uploadquota.js';
+import { loggedCall } from '../../lib/actionlog.js';
 
 const MAX_CONTENT = 4000;
 const MAX_PATH = 500;
@@ -122,7 +123,7 @@ function cleanNote(value) {
     return note;
 }
 
-export const reserveReportEvidenceUpload = onCall(async (context) => {
+export const reserveReportEvidenceUpload = onCall(loggedCall('reserveReportEvidenceUpload', async (context) => {
     const { auth, data } = context;
     if (!auth?.uid) throw new HttpsError('unauthenticated', 'auth');
 
@@ -163,9 +164,9 @@ export const reserveReportEvidenceUpload = onCall(async (context) => {
         dailyLimit,
         newAccount,
     };
-});
+}));
 
-export const submitReport = onCall(async ({ auth, data }) => {
+export const submitReport = onCall(loggedCall('submitReport', async ({ auth, data }) => {
     if (!auth?.uid) throw new HttpsError('unauthenticated', 'auth');
 
     const uid = auth.uid;
@@ -237,4 +238,4 @@ export const submitReport = onCall(async ({ auth, data }) => {
     await batch.commit();
 
     return OK;
-});
+}));

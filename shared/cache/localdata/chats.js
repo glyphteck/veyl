@@ -55,6 +55,7 @@ function serializeChat(chat) {
         actors: isObject(chat.actors) ? jsonClean(chat.actors) : undefined,
         settings: isObject(chat.settings) ? jsonClean(chat.settings) : undefined,
         lastMsg: serializeMsg(chat.lastMsg),
+        readMs: timestampMs(chat.readMs, null, { positive: true }) || null,
         ts: timestampMs(chat.ts, null, { positive: true }) || 0,
         unseen: !!chat.unseen,
     };
@@ -73,6 +74,7 @@ function reviveChat(chat) {
         actors: isObject(chat.actors) ? chat.actors : undefined,
         settings: isObject(chat.settings) ? chat.settings : undefined,
         lastMsg,
+        readMs: timestampMs(chat.readMs, null, { positive: true }),
         ts: timestampMs(chat.ts, null, { positive: true }) || 0,
         unseen: !!chat.unseen,
     };

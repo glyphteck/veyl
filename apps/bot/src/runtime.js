@@ -32,7 +32,8 @@ import {
 import { clearBotChatPairCache, decryptBotChatSettings, decryptBotMsg, hasBotMsg, readBotMsgAttachment, sendBotMsg, updateBotMsg, uploadBotAttachmentMsg } from '@veyl/shared/bot/chat';
 import { getBotBalance, mirrorBotTransfer } from '@veyl/shared/bot/wallet';
 import { getChatPeerPK } from '@veyl/shared/chat/ids';
-import { makeOwnChatEntry, openChatWake, openOwnChatEntry, ownChatEntryId, sealOwnChatEntry } from '@veyl/shared/chat/entries';
+import { makeOwnChatEntry, openOwnChatEntry, ownChatEntryId, sealOwnChatEntry } from '@veyl/shared/chat/entry';
+import { openPing } from '@veyl/shared/chat/ping';
 import { hasStoredFileRef, isActionMutationMsg, isControlMsg, isSystemMsg, makeHiddenCheckpoint, makeReadReceipt, makeReq, makeTxt, setReqTx } from '@veyl/shared/chat/messages';
 import { getMessageKey, makeCid } from '@veyl/shared/chat/state';
 import {
@@ -50,6 +51,7 @@ import { randomInt, randomUUID } from 'node:crypto';
 import { hostname } from 'node:os';
 import admin, { db, FieldValue, Timestamp, projectId } from './admin.js';
 import { createSecretClient, readBotSeed } from './secrets.js';
+import { cleanPing, sendPush as sendInboxPush } from '../../../functions/lib/inbox.js';
 
 const SPARK_NETWORK = resolveNetwork(process.env);
 const VERBOSE = process.env.VEYL_VERBOSE === '1';
@@ -112,6 +114,15 @@ function verboseLog(...args) {
     }
 }
 
+function safeLogId(value) {
+    const text = cleanText(value);
+    return text ? `${text.slice(0, 8)}:${text.length}` : null;
+}
+
+function firestoreLog(op, fields = {}) {
+    verboseLog('[bot:firestore]', op, fields);
+}
+
 function attachmentFields(msg) {
     return {
         ...(msg?.m ? { m: msg.m } : {}),
@@ -128,10 +139,18 @@ function cleanPayload(message) {
     const payload = { ...(message || {}) };
     delete payload.id;
     delete payload.ts;
+    delete payload.ttl;
     delete payload.from;
     delete payload.s;
     delete payload.cid;
     delete payload.retention;
+    delete payload.pending;
+    delete payload.failed;
+    delete payload.peerChatPK;
+    delete payload.actionId;
+    delete payload.actionOp;
+    delete payload.actionTarget;
+    delete payload.actor;
     return payload;
 }
 
@@ -280,7 +299,9 @@ async function isBlocked(uid, peerUid) {
     if (!uid || !peerUid) {
         return false;
     }
+    firestoreLog('read block', { uid: safeLogId(uid), peerUid: safeLogId(peerUid) });
     const snap = await db.collection('users').doc(uid).collection('blocked').doc(peerUid).get();
+    firestoreLog('read block done', { uid: safeLogId(uid), peerUid: safeLogId(peerUid), hit: snap.exists });
     return snap.exists;
 }
 
@@ -288,6 +309,7 @@ async function isChatBanned(uid) {
     if (!uid) {
         return false;
     }
+    firestoreLog('read moderation', { uid: safeLogId(uid) });
     const snap = await db.collection('moderation').doc(uid).get();
     return banState(snap.data()?.banned).chatBanned;
 }
@@ -296,11 +318,14 @@ async function getProfile(uid) {
     if (!uid) {
         return null;
     }
+    firestoreLog('read profile', { uid: safeLogId(uid) });
     const snap = await db.collection('profiles').doc(uid).get();
     if (!snap.exists) {
+        firestoreLog('read profile done', { uid: safeLogId(uid), hit: false });
         return null;
     }
     const data = snap.data();
+    firestoreLog('read profile done', { uid: safeLogId(uid), hit: true });
     return {
         uid: snap.id,
         ...data,
@@ -392,6 +417,7 @@ export class BotRuntime {
 
     subscribeBots() {
         const q = db.collection('bots').where('enabled', '==', true);
+        firestoreLog('listen bots enabled');
 
         this.unsubscribeBots = q.onSnapshot(
             (snap) => {
@@ -407,6 +433,7 @@ export class BotRuntime {
 
     subscribeActions() {
         const q = runtimeRef().collection(BOT_RUNTIME_ACTIONS).where('status', '==', BOT_ACTION_STATUS_QUEUED);
+        firestoreLog('listen runtime actions queued');
 
         this.unsubscribeActions = q.onSnapshot(
             (snap) => {
@@ -426,6 +453,7 @@ export class BotRuntime {
     }
 
     async cancelStaleTrafficActions() {
+        firestoreLog('read stale runtime actions');
         const snap = await runtimeRef().collection(BOT_RUNTIME_ACTIONS).where('status', 'in', [BOT_ACTION_STATUS_QUEUED, BOT_ACTION_STATUS_RUNNING]).get();
         if (snap.empty) {
             return;
@@ -469,12 +497,14 @@ export class BotRuntime {
         if (!cancelled) {
             return;
         }
+        firestoreLog('write stale runtime action cancels', { count: cancelled });
         await batch.commit();
         console.warn(`cancelled ${cancelled} stale bot traffic action${cancelled === 1 ? '' : 's'}`);
     }
 
     async acquireRuntimeLease() {
         const ref = runtimeRef();
+        firestoreLog('transaction runtime lease');
         await db.runTransaction(async (tx) => {
             const snap = await tx.get(ref);
             const data = snap.exists ? snap.data() : {};
@@ -506,6 +536,7 @@ export class BotRuntime {
             return;
         }
         this.heartbeatTimer = setInterval(() => {
+            firestoreLog('write runtime heartbeat');
             void db
                 .collection('runtimes')
                 .doc(BOT_RUNTIME_DOC_ID)
@@ -569,6 +600,7 @@ export class BotRuntime {
             }
 
             const status = result?.cancelled ? BOT_ACTION_STATUS_CANCELLED : BOT_ACTION_STATUS_DONE;
+            firestoreLog('write runtime action result', { actionId: safeLogId(action.id), status });
             await actionRef.set(
                 {
                     status,
@@ -579,6 +611,7 @@ export class BotRuntime {
                 { merge: true }
             );
         } catch (error) {
+            firestoreLog('write runtime action error', { actionId: safeLogId(action.id) });
             await actionRef.set(
                 {
                     status: BOT_ACTION_STATUS_ERROR,
@@ -594,6 +627,7 @@ export class BotRuntime {
 
     async claimAction(actionRef) {
         let action = null;
+        firestoreLog('transaction runtime action claim', { actionId: safeLogId(actionRef?.id) });
         await db.runTransaction(async (tx) => {
             const snap = await tx.get(actionRef);
             if (!snap.exists) {
@@ -917,7 +951,7 @@ export class BotRuntime {
                     if (session.closing || this.stopped) {
                         throw new Error('bot session closed');
                     }
-                    const result = await this.sendPayload(session, target.chatPK, message.payload);
+                    const result = await this.sendPayload(session, target.chatPK, message.payload, { receiverUid: target.uid });
                     sentChats.set(session.uid, result?.chatId || chatId);
                     return result;
                 });
@@ -1118,6 +1152,7 @@ export class BotRuntime {
 
         const balance = await this.refreshBalance(session);
         console.log(`bot @${session.username} ready | balance: ${balance} sats`);
+        firestoreLog('write bot session ready', { uid: safeLogId(session.uid), username: session.username });
         await Promise.all([
             this.touchBot(session.ref, {
                 status: 'running',
@@ -1130,6 +1165,7 @@ export class BotRuntime {
 
     subscribeChats(session) {
         const userRef = db.collection('users').doc(session.uid);
+        firestoreLog('listen owner chats', { uid: safeLogId(session.uid), username: session.username });
         const unsubscribeChats = userRef.collection('chats').onSnapshot(
             (snap) => {
                 for (const change of snap.docChanges()) {
@@ -1174,14 +1210,15 @@ export class BotRuntime {
                 });
             }
         );
-        const unsubscribeInbox = userRef.collection('chatInbox').onSnapshot(
+        firestoreLog('listen inbox pings', { uid: safeLogId(session.uid), username: session.username });
+        const unsubscribeInbox = userRef.collection('inbox').onSnapshot(
             (snap) => {
                 for (const change of snap.docChanges()) {
                     if (change.type === 'removed') {
                         continue;
                     }
-                    void this.processChatWake(session, change.doc).catch((error) => {
-                        console.error(`bot @${session.username} chat wake ${change.doc.id} failed`, error);
+                    void this.processChatPing(session, change.doc).catch((error) => {
+                        console.error(`bot @${session.username} chat ping ${change.doc.id} failed`, error);
                     });
                 }
             },
@@ -1195,23 +1232,24 @@ export class BotRuntime {
         };
     }
 
-    async processChatWake(session, wakeDoc) {
+    async processChatPing(session, pingDoc) {
         try {
-            const wake = await openChatWake(session.chatPK, session.chatPrivKey, wakeDoc.data());
-            if (!wake?.pair?.chatId || !wake?.payload?.senderChatPK || !wake?.payload?.actorPK) {
-                throw new Error('invalid chat wake');
+            const ping = await openPing(session.chatPK, session.chatPrivKey, pingDoc.data());
+            if (!ping?.pair?.chatId || !ping?.payload?.senderChatPK || !ping?.payload?.actorPK) {
+                throw new Error('invalid chat ping');
             }
-            const peerUid = await this.resolveWakePeerUid(wake.payload);
-            const entryId = ownChatEntryId(session.chatPrivKey, wake.pair.chatId);
+            const peerUid = await this.resolvePingUid(ping.payload);
+            const entryId = ownChatEntryId(session.chatPrivKey, ping.pair.chatId);
             const entryRef = db.collection('users').doc(session.uid).collection('chats').doc(entryId);
+            firestoreLog('read inbox chat entry', { uid: safeLogId(session.uid), entryId: safeLogId(entryId), chatId: safeLogId(ping.pair.chatId) });
             const existingSnap = await entryRef.get().catch(() => null);
             const existing = existingSnap?.exists ? await openOwnChatEntry(session.chatPrivKey, entryId, existingSnap.data()?.body).catch(() => null) : null;
             const actors = {
                 ...(existing?.actors || {}),
-                [wake.pair.chatPK]: wake.pair.actor.publicKey,
-                [wake.payload.senderChatPK]: wake.payload.actorPK,
+                [ping.pair.chatPK]: ping.pair.actor.publicKey,
+                [ping.payload.senderChatPK]: ping.payload.actorPK,
             };
-            const entry = makeOwnChatEntry(wake.pair, {
+            const entry = makeOwnChatEntry(ping.pair, {
                 peerUid: peerUid || existing?.peerUid,
                 actors,
                 settings: existing?.settings,
@@ -1220,28 +1258,32 @@ export class BotRuntime {
             await entryRef.set(
                 {
                     body: adminBytes(await sealOwnChatEntry(session.chatPrivKey, entryId, entry)),
-                    ts: new Date(timestampMs(wake.payload?.ts, Date.now())),
+                    ts: new Date(timestampMs(ping.payload?.ts, Date.now())),
                 },
                 { merge: true }
             );
+            firestoreLog('write inbox chat entry', { uid: safeLogId(session.uid), entryId: safeLogId(entryId), chatId: safeLogId(ping.pair.chatId) });
         } finally {
-            await wakeDoc.ref.delete().catch(() => {});
+            firestoreLog('delete inbox ping', { uid: safeLogId(session.uid), pingId: safeLogId(pingDoc?.id) });
+            await pingDoc.ref.delete().catch(() => {});
         }
     }
 
-    async resolveWakePeerUid(payload) {
+    async resolvePingUid(payload) {
         const senderChatPK = cleanText(payload?.senderChatPK);
         const claimedUid = cleanText(payload?.senderUid);
         if (!senderChatPK) {
             return null;
         }
         if (claimedUid) {
+            firestoreLog('read profile for ping claim', { uid: safeLogId(claimedUid) });
             const snap = await db.collection('profiles').doc(claimedUid).get().catch(() => null);
             if (!sameText(snap?.data?.()?.chatPK, senderChatPK)) {
-                throw new Error('wake sender uid mismatch');
+                throw new Error('ping sender uid mismatch');
             }
             return claimedUid;
         }
+        firestoreLog('read profile by ping chatPK', { chatPK: safeLogId(senderChatPK) });
         const profileSnap = await db.collection('profiles').where('chatPK', '==', senderChatPK).limit(1).get();
         return profileSnap.docs?.[0]?.id || null;
     }
@@ -1326,6 +1368,7 @@ export class BotRuntime {
         }
         let snap;
         try {
+            firestoreLog('read bot chat ack', { uid: safeLogId(session.uid), chatId: safeLogId(chatId) });
             snap = await this.readRef(session, chatId).get();
         } catch {
             return 0;
@@ -1342,6 +1385,7 @@ export class BotRuntime {
         if (timestampMs(session.chatRead?.get(chatId), 0) >= readMs) {
             return;
         }
+        firestoreLog('write bot chat ack', { uid: safeLogId(session.uid), chatId: safeLogId(chatId) });
         await this.readRef(session, chatId).set(
             {
                 readAt: Timestamp.fromMillis(readMs),
@@ -1466,6 +1510,7 @@ export class BotRuntime {
             return this.chatPeers.get(key);
         }
 
+        firestoreLog('read peer by chatPK', { chatPK: safeLogId(key) });
         const profileSnap = await db.collection('profiles').where('chatPK', '==', key).limit(2).get();
         const peer = profileSnap.docs.length === 1 ? { uid: profileSnap.docs[0].id, ...profileSnap.docs[0].data() } : null;
         setLimitedMap(this.chatPeers, key, peer, MAX_BOT_PEER_CACHE);
@@ -1492,13 +1537,16 @@ export class BotRuntime {
             return;
         }
 
+        firestoreLog('read chat messages', { uid: safeLogId(session.uid), chatId: safeLogId(chat.id), sinceMs });
         let msgsSnap = await chat.ref.collection('messages').where('ts', '>', Timestamp.fromMillis(sinceMs)).orderBy('ts', 'asc').get();
         if (msgsSnap.empty && chatRecencyMs > sinceMs) {
             // A brand-new chat can surface in the parent collection just before its
             // first message becomes readable via the subcollection query.
             await sleep(250);
+            firestoreLog('read chat messages retry', { uid: safeLogId(session.uid), chatId: safeLogId(chat.id), sinceMs });
             msgsSnap = await chat.ref.collection('messages').where('ts', '>', Timestamp.fromMillis(sinceMs)).orderBy('ts', 'asc').get();
         }
+        firestoreLog('read chat messages done', { uid: safeLogId(session.uid), chatId: safeLogId(chat.id), count: msgsSnap.docs.length });
         if (msgsSnap.empty) {
             return;
         }
@@ -1629,7 +1677,13 @@ export class BotRuntime {
                 type: msg.t,
                 data: body,
                 meta: attachmentFields(msg),
-            }, { msgId, retention: context.retention });
+            }, {
+                msgId,
+                retention: context.retention,
+                senderUid: session.uid,
+                receiverUid: context.peerUid,
+                sendPush: (recipientUid, ping) => this.sendPush(session, recipientUid, ping),
+            });
             return;
         }
 
@@ -1637,6 +1691,7 @@ export class BotRuntime {
             cid: botReplyCid(context, 'reply'),
             msgId: botReplyId(context, 'reply'),
             retention: context.retention,
+            receiverUid: context.peerUid,
         });
     }
 
@@ -1668,6 +1723,7 @@ export class BotRuntime {
                 cid: botReplyCid(context, 'funds'),
                 msgId: botReplyId(context, 'funds'),
                 retention: context.retention,
+                receiverUid: context.peerUid,
             });
             return;
         }
@@ -1685,6 +1741,7 @@ export class BotRuntime {
             cid: botReplyCid(context, 'req'),
             msgId: botReplyId(context, 'req'),
             retention: context.retention,
+            receiverUid: context.peerUid,
         });
 
         const nextBalance = await this.refreshBalance(session);
@@ -1695,11 +1752,25 @@ export class BotRuntime {
         });
     }
 
+    async sendPush(session, recipientUid, ping) {
+        return sendInboxPush({
+            senderUid: session.uid,
+            recipientUid,
+            ping: cleanPing(ping),
+        });
+    }
+
     async sendPayload(session, peerChatPK, payload, options = {}) {
         return sendBotMsg(db, FieldValue, session.chatPK, session.chatPrivKey, peerChatPK, {
             ...payload,
             cid: options.cid || makeCid(),
-        }, { ...(options.msgId ? { msgId: options.msgId } : {}), retention: options.retention, senderUid: session.uid });
+        }, {
+            ...(options.msgId ? { msgId: options.msgId } : {}),
+            retention: options.retention,
+            senderUid: session.uid,
+            receiverUid: options.receiverUid,
+            sendPush: (recipientUid, ping) => this.sendPush(session, recipientUid, ping),
+        });
     }
 
     async sendReadReceipt(session, peerChatPK, target, retention, context = {}) {

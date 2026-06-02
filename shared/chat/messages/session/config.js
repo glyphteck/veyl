@@ -49,7 +49,7 @@ export const DEFAULT_CHAT_WARMING = Object.freeze({
     media: DEFAULT_MEDIA_WARMING,
 });
 
-// Top chats are the first recent, non-deleting rows in provider order. Provider rows are sorted by chat.ts.
+// Top chats are the first recent, non-deleting chats in provider order. Provider chats are sorted by chat.ts.
 export const IOS_CHAT_WARMING = Object.freeze({
     enabled: true,
     eagerCount: EAGER_CHAT_WARM_COUNT,

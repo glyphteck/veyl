@@ -46,11 +46,14 @@ export function useChatSeen({ chat, uid, chatBanned, chatPK, chatPrivateKey, loc
             });
 
             readCacheRef.current.set(chatId, read.lastMsgMs);
+            void chat.setChatRead?.(uid, chatPrivateKey, chatId, read.lastMsgMs).catch((error) => {
+                console.warn('chat read state write failed', error);
+            });
             if (sendReceipt) {
                 scheduleReadReceipt(chatId, read.lastMsg, read.lastMsgMs);
             }
         },
-        [chatPK, chatPrivateKey, localCache, readCacheRef, scheduleReadReceipt, setChats]
+        [chat, uid, chatPK, chatPrivateKey, localCache, readCacheRef, scheduleReadReceipt, setChats]
     );
 
     const markChatReadReceipt = useCallback(

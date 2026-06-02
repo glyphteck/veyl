@@ -725,7 +725,7 @@ export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
         });
     }, []);
 
-    const finishDeletingMessage = useCallback(
+    const dropDeletedMessage = useCallback(
         (id, msg) => {
             const keys = messageKeys(msg);
             const timeout = setTimeout(() => {
@@ -754,7 +754,7 @@ export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
 
             try {
                 await deleteMessage(selectedChatId, msg);
-                finishDeletingMessage(msg.id, msg);
+                dropDeletedMessage(msg.id, msg);
             } catch (error) {
                 clearDeletingMessage(msg);
                 console.error('delete message failed', error);
@@ -763,7 +763,7 @@ export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
                 });
             }
         },
-        [clearDeletingMessage, deleteMessage, finishDeletingMessage, selectedChatId, startDeletingMessage]
+        [clearDeletingMessage, deleteMessage, dropDeletedMessage, selectedChatId, startDeletingMessage]
     );
 
     const openShareDialog = useCallback(

@@ -11,11 +11,9 @@ export function usePendingSendQueue() {
     const queueRef = useRef([]);
     const runningRef = useRef(false);
     const scheduledRef = useRef(false);
-    const syncingRef = useRef(false);
     const generationRef = useRef(0);
     const sentAtRef = useRef([]);
     const timerRef = useRef(null);
-    const pendingLastMsgRef = useRef(new Map());
 
     function nextRateDelay() {
         const now = Date.now();
@@ -27,48 +25,8 @@ export function usePendingSendQueue() {
         return Math.max(0, sentAtRef.current[0] + CHAT_SEND_QUEUE_RATE_LIMIT_WINDOW_MS - now);
     }
 
-    function rememberLastMsg(job, result) {
-        if (!job?.lastMsgKey || job.lastMsgRequired || !result?.lastMsg || typeof job.syncLastMsg !== 'function') {
-            return;
-        }
-        pendingLastMsgRef.current.set(job.lastMsgKey, {
-            lastMsg: result.lastMsg,
-            syncLastMsg: job.syncLastMsg,
-        });
-    }
-
-    function flushPendingLastMsgs() {
-        if (syncingRef.current || runningRef.current || scheduledRef.current || !pendingLastMsgRef.current.size) {
-            return;
-        }
-
-        const generation = generationRef.current;
-        const items = [...pendingLastMsgRef.current.values()];
-        pendingLastMsgRef.current = new Map();
-        syncingRef.current = true;
-        Promise.allSettled(items.map((item) => item.syncLastMsg(item.lastMsg)))
-            .then((results) => {
-                for (const result of results) {
-                    if (result.status === 'rejected') {
-                        console.warn('chat last message sync failed', result.reason);
-                    }
-                }
-            })
-            .finally(() => {
-                if (generation !== generationRef.current) {
-                    return;
-                }
-                syncingRef.current = false;
-                if (queueRef.current.length) {
-                    flush();
-                } else if (pendingLastMsgRef.current.size) {
-                    flushPendingLastMsgs();
-                }
-            });
-    }
-
     const flush = useCallback(() => {
-        if (runningRef.current || scheduledRef.current || syncingRef.current) {
+        if (runningRef.current || scheduledRef.current) {
             return;
         }
 
@@ -77,7 +35,7 @@ export function usePendingSendQueue() {
         timerRef.current = setTimeout(async () => {
             timerRef.current = null;
             scheduledRef.current = false;
-            if (runningRef.current || syncingRef.current) {
+            if (runningRef.current) {
                 return;
             }
 
@@ -89,8 +47,8 @@ export function usePendingSendQueue() {
             runningRef.current = true;
             sentAtRef.current = [...sentAtRef.current, Date.now()].slice(-CHAT_SEND_QUEUE_RATE_LIMIT_COUNT);
             try {
-                const result = await job.run({ updateLastMsg: job.lastMsgRequired });
-                rememberLastMsg(job, result);
+                const updateLastMsg = job.lastMsgRequired || !queueRef.current.some((item) => item.lastMsgKey && item.lastMsgKey === job.lastMsgKey);
+                const result = await job.run({ updateLastMsg });
                 job.onSuccess?.();
                 job.resolve?.(result);
             } catch (error) {
@@ -100,8 +58,6 @@ export function usePendingSendQueue() {
                 runningRef.current = false;
                 if (queueRef.current.length) {
                     flush();
-                } else {
-                    flushPendingLastMsgs();
                 }
             }
         }, delay);
@@ -142,9 +98,7 @@ export function usePendingSendQueue() {
         queueRef.current = [];
         runningRef.current = false;
         scheduledRef.current = false;
-        syncingRef.current = false;
         sentAtRef.current = [];
-        pendingLastMsgRef.current = new Map();
         if (timerRef.current) {
             clearTimeout(timerRef.current);
             timerRef.current = null;

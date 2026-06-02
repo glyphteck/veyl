@@ -45,7 +45,7 @@
 - Use `shared/utils/number.js` for cross-module numeric cleaners and config parsing. Keep obvious one-off UI clamps local when an import would make the code harder to follow.
 - Use `shared/utils/array.js` for repeated truthy unique lists, sets, sorted unique lists, and simple array equality. Keep simple local `new Set(...)` usage local when it only serves one component.
 - Use `shared/chat/equal.js` for chat Firestore `Bytes` and message-head equality used by listener caches.
-- Use `shared/chat/ids.js` for peer chat key extraction from owner chat rows. Do not inspect or recreate legacy `participants` arrays.
+- Use `shared/chat/ids.js` for peer chat key extraction from owner chat entries. Do not inspect or recreate legacy `participants` arrays.
 - Use `shared/chat/messagekeys.js` for message id/cid key sets instead of re-creating local key arrays in chat UI.
 - Use `storedFileKey` from `shared/chat/messages` for stored chat media cache keys instead of hand-building `peer:path:key` strings.
 - Chat previews belong in encrypted owner chat entries, not parent chat `lastMsg` documents.
@@ -95,7 +95,7 @@ Use [workflow.md](workflow.md) for the detailed task-file, branch, worktree, han
 
 - When touching auth, remember accounts are company-wide and passkeys are rooted at `glyphteck.com`.
 - When touching encrypted chat, treat payload shape changes as cross-platform and backend-sensitive.
-- When touching chat lifecycle, keep the shared module as the source of truth for retention, read visibility, owner saved records, hidden checkpoints, tombstone handling, and action-log rendering. Do not duplicate those calculations in web and iOS message lists.
+- When touching chat lifecycle, keep the shared module as the source of truth for retention, read visibility, owner saved records, hidden checkpoints, hard source-doc deletion, and action-log rendering. Do not duplicate those calculations in web and iOS message lists.
 - Chat/account deletion UI must use shared provider flows, not direct callable invocations, so encrypted saved-media stays can be collected before server-side message deletion and released afterward.
 - When touching wallet code, remember that boot, address derivation, transfer history, and peer analytics are spread across vault, wallet, and tx data providers.
 - When touching bots, start with deterministic scripted behavior and normal account primitives.

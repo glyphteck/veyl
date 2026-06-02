@@ -9,9 +9,9 @@ Source of truth: [model.mjs](model.mjs). Defaults: 30-day month, 3x MAU per DAU,
 | New signup event | ~$0.000033 before paid Auth MAU |
 | Paid Auth MAU add-on | ~$0.0055 for that active month after the free quota |
 | One normal active user-day | ~$0.00024 in immediate Firebase ops |
-| 100k DAU monthly run-rate | ~$2,659/month |
-| 100k DAU all-in user-day | ~$0.00089 per DAU-day |
-| 1M DAU monthly run-rate | ~$29,085/month |
+| 100k DAU monthly run-rate | ~$2,500/month |
+| 100k DAU all-in user-day | ~$0.00083 per DAU-day |
+| 1M DAU monthly run-rate | ~$27,501/month |
 
 The signup path is cheap. Scale cost comes from daily active use, Auth MAU, media storage, and saved-message retention.
 
@@ -21,12 +21,12 @@ This is the default planning case the app should be able to scan quickly.
 
 | Component | Monthly cost |
 | --- | ---: |
-| Base Firebase ops | ~$683 |
+| Base Firebase ops | ~$524 |
 | Save ops + media/message storage at 360 retained days | ~$601 |
 | Paid Auth MAU, assuming 300k MAU | ~$1,375 |
-| **Total** | **~$2,659/month** |
+| **Total** | **~$2,500/month** |
 
-At 100k DAU, the all-in run-rate is about `$2,659 / 100,000 / 30 = $0.00089` per DAU-day.
+At 100k DAU, the all-in run-rate is about `$2,500 / 100,000 / 30 = $0.00083` per DAU-day.
 
 ## 100k DAU cost buildup
 
@@ -34,15 +34,15 @@ Saved media and saved message docs grow with retained DAU-days. At sustained 100
 
 | Retained saved history | Monthly run-rate |
 | ---: | ---: |
-| 0 days | ~$2,293 |
-| 30 days | ~$2,324 |
-| 90 days | ~$2,385 |
-| 180 days | ~$2,476 |
-| 1 year | ~$2,659 |
-| 2 years | ~$3,024 |
-| 3 years | ~$3,389 |
-| 4 years | ~$3,754 |
-| 5 years | ~$4,119 |
+| 0 days | ~$2,135 |
+| 30 days | ~$2,165 |
+| 90 days | ~$2,226 |
+| 180 days | ~$2,318 |
+| 1 year | ~$2,500 |
+| 2 years | ~$2,865 |
+| 3 years | ~$3,230 |
+| 4 years | ~$3,596 |
+| 5 years | ~$3,961 |
 
 ## Signup cost
 

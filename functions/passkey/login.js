@@ -14,6 +14,7 @@ import {
 } from '../lib/passkey.js';
 import { HOUR_MS, MINUTE_MS, ipLimitKey, limitCallable, uidLimitKey } from '../lib/ratelimit.js';
 import { ensureUserDoc } from '../lib/userdoc.js';
+import { loggedCall } from '../lib/actionlog.js';
 
 const db = admin.firestore();
 const UNLINKED_PASSKEY = 'Passkey is not linked to an account';
@@ -85,7 +86,7 @@ async function getCredentialsForUid(uid, rpId) {
 }
 
 /* 3. Generate passkey login options */
-export const passkeyLoginOptions = onCall(async (context) => {
+export const passkeyLoginOptions = onCall(loggedCall('passkeyLoginOptions', async (context) => {
     const origin = resolveOrigin(context);
     if (!validateOrigin(origin)) {
         throw new HttpsError('permission-denied', 'Invalid origin');
@@ -115,10 +116,10 @@ export const passkeyLoginOptions = onCall(async (context) => {
     return {
         opts: encodeOptionsForClient(options),
     };
-});
+}));
 
 /* 4. Verify passkey login */
-export const passkeyLoginVerify = onCall(async (context) => {
+export const passkeyLoginVerify = onCall(loggedCall('passkeyLoginVerify', async (context) => {
     const { data } = context;
     const { assertion } = data ?? {};
     if (!assertion) {
@@ -217,4 +218,4 @@ export const passkeyLoginVerify = onCall(async (context) => {
     // Create auth token
     const token = await admin.auth().createCustomToken(uid);
     return { token };
-});
+}));

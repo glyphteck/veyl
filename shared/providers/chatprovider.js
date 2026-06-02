@@ -19,7 +19,7 @@ import { useChatSettings } from '../chat/actions/settings.js';
 import { useChatMessageSessions } from '../chat/messages/session/index.js';
 import { useChatList } from '../chat/usechatlist.js';
 import { resolveChatId as resolveChatIdShared } from '../chat/pairs.js';
-import { ownChatEntryId } from '../chat/entries.js';
+import { ownChatEntryId } from '../chat/entry.js';
 import { savedMediaStayRef } from '../chat/messages.js';
 import {
     collectSavedMediaStays as collectSavedMediaStaysShared,
@@ -27,10 +27,10 @@ import {
     MSG_BATCH_SIZE,
 } from '../chat/messages/query.js';
 import {
-    getChatRow as getChatRowShared,
+    getChat as getChatShared,
     listenToChats as listenToChatsShared,
     loadMoreChats as loadMoreChatsShared,
-} from '../chat/rows.js';
+} from '../chat/list.js';
 import {
     deleteMsg as deleteMessageShared,
     deleteMsgs as deleteMessagesShared,
@@ -41,13 +41,14 @@ import {
     sendHiddenCheckpoint as sendHiddenCheckpointShared,
     sendReaction as sendReactionShared,
     sendMsg as sendMessageShared,
-    syncChatLastMsg as syncChatLastMsgShared,
+    setChatPreview as setChatPreviewShared,
+    setChatRead as setChatReadShared,
     setChatRetention as setChatRetentionShared,
     uploadAttachmentMsg as uploadAttachmentShared,
     uploadImgMsg as uploadImageShared,
     updateMsg as updateMessageShared,
 } from '../chat/messages/write.js';
-import { sortMessages } from '../chat/state.js';
+import { getMessageKey, sortMessages } from '../chat/state.js';
 
 export const DEFAULT_READ_RECEIPT_WRITE_DELAY_MS = CHAT_READ_RECEIPT_WRITE_DELAY_MS;
 export const DEFAULT_MSG_BATCH_SIZE = MSG_BATCH_SIZE;
@@ -71,10 +72,6 @@ function resolveDeleteMessage(localByChat, chatId, messageOrId) {
     return (localByChat?.get?.(chatId) || []).find((message) => message?.id === id || message?.cid === id) ?? null;
 }
 
-function hasSavedMediaStay(message) {
-    return !!savedMediaStayRef(message);
-}
-
 export function createChat({
     db,
     storage,
@@ -83,8 +80,9 @@ export function createChat({
     uploadImage: uploadImageImpl,
     readMessageFile: readMessageFileImpl,
     reserveChatMediaUpload: reserveChatMediaUploadImpl,
+    sendPush: sendPushImpl,
     setMediaSaved: setMediaSavedImpl,
-    finishDeletingChat: finishDeletingChatImpl,
+    deleteChatRemote: deleteChatRemoteImpl,
 }) {
     if (!db) {
         throw new Error('createChat requires db');
@@ -109,16 +107,22 @@ export function createChat({
 
     return {
         sendMessage(senderPubkey, senderPrivkey, receiverChatPK, message, options) {
-            return sendMessageShared(db, senderPubkey, senderPrivkey, receiverChatPK, message, options);
+            return sendMessageShared(db, senderPubkey, senderPrivkey, receiverChatPK, message, {
+                ...options,
+                sendPush: sendPushImpl,
+            });
         },
         resolveChatId(senderPubkey, senderPrivkey, receiverChatPK) {
             return resolveChatIdShared(senderPubkey, senderPrivkey, receiverChatPK);
         },
-        syncChatLastMsg(chatId, lastMsg) {
-            return syncChatLastMsgShared(db, chatId, lastMsg);
-        },
         sendReadReceipt(senderPubkey, senderPrivkey, receiverChatPK, target, options) {
             return sendReadReceiptShared(db, senderPubkey, senderPrivkey, receiverChatPK, target, options);
+        },
+        setChatRead(uid, chatPrivKey, chatId, readMs) {
+            return setChatReadShared(db, uid, chatPrivKey, chatId, readMs);
+        },
+        setChatPreview(uid, chatPrivKey, chatId, lastMsg) {
+            return setChatPreviewShared(db, uid, chatPrivKey, chatId, lastMsg);
         },
         sendReaction(senderPubkey, senderPrivkey, receiverChatPK, target, emoji, options) {
             return sendReactionShared(db, senderPubkey, senderPrivkey, receiverChatPK, target, emoji, options);
@@ -162,12 +166,13 @@ export function createChat({
         collectAccountSavedMediaStays(uid, chatPrivKey) {
             return collectSavedMediaStaysForUser(db, uid, chatPrivKey);
         },
-        async finishDeletingChat(chatId, uid, chatPrivKey) {
-            if (uid && chatPrivKey && chatId) {
-                await deleteDoc(doc(db, 'users', uid, 'chats', ownChatEntryId(chatPrivKey, chatId))).catch(() => {});
+        async deleteChatRemote(chatId, uid, chatPrivKey) {
+            const entryId = uid && chatPrivKey && chatId ? ownChatEntryId(chatPrivKey, chatId) : '';
+            if (typeof deleteChatRemoteImpl === 'function') {
+                return deleteChatRemoteImpl(chatId, entryId ? { entryId } : {});
             }
-            if (typeof finishDeletingChatImpl === 'function') {
-                return finishDeletingChatImpl(chatId);
+            if (uid && entryId) {
+                await deleteDoc(doc(db, 'users', uid, 'chats', entryId)).catch(() => {});
             }
             return Promise.resolve(false);
         },
@@ -220,8 +225,8 @@ export function createChat({
         loadMoreChats(uid, userChatPK, userPrivKey, cursor, pageSize) {
             return loadMoreChatsShared(db, uid, userChatPK, userPrivKey, cursor, pageSize);
         },
-        getChatRow(uid, chatId, userChatPK, userPrivKey) {
-            return getChatRowShared(db, uid, chatId, userChatPK, userPrivKey);
+        getChat(uid, chatId, userChatPK, userPrivKey) {
+            return getChatShared(db, uid, chatId, userChatPK, userPrivKey);
         },
         listenToLatestMessages(chatId, userChatPK, userPrivKey, peerChatPK, pageSize, onUpdate, onError, options) {
             return listenToLatestMessagesShared(db, chatId, userChatPK, userPrivKey, peerChatPK, pageSize, onUpdate, onError, options);
@@ -255,7 +260,7 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
         const chatPageLockedRef = useRef(false);
         const chatHasMoreRef = useRef(false);
         const chatLoadingMoreRef = useRef(false);
-        const chatRowLoadsRef = useRef(new Set());
+        const chatLoadsRef = useRef(new Set());
         const readCacheRef = useRef(new Map());
         const pendingReadRef = useRef(new Map());
         const localByChatRef = useRef(new Map());
@@ -293,17 +298,10 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
         const {
             pendingDeleteIdsRef,
             keepSelectedDeletedChatIdsRef,
-            deletingChatIdsRef,
             resetDeleteState,
-            releaseChatWriteWait,
-            releaseReadyChatWriteWaits,
             waitForPeerDelete,
-            syncLiveDeleting,
-            mergeDeletingIds,
             clearDeletedChatState,
-            startDeleteChat,
             restoreDeletedChat,
-            finishDeleteChat,
             deleteChat,
             dropChat,
             wasChatDeletedLocally,
@@ -368,7 +366,7 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
             chatBanned,
             isActive,
             localCache,
-            rowsRef: lastServerChatsRef,
+            listRef: lastServerChatsRef,
             pendingDeleteIdsRef,
             config: chatWarming,
             preloadMessageMedia,
@@ -398,8 +396,8 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
                 if (!chatId) {
                     return null;
                 }
-                const row = chatsRef.current.find((chatItem) => chatItem?.id === chatId) || lastServerChatsRef.current.find((chatItem) => chatItem?.id === chatId);
-                return getChatPeerPK(row, chatPK) || getPeerChatPKFromChatId(chatId, chatPK);
+                const chatItem = chatsRef.current.find((item) => item?.id === chatId) || lastServerChatsRef.current.find((item) => item?.id === chatId);
+                return getChatPeerPK(chatItem, chatPK) || getPeerChatPKFromChatId(chatId, chatPK);
             },
             [chatPK, lastServerChatsRef]
         );
@@ -420,11 +418,11 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
             clearChatPreviewKeys,
             applyBatchReadReceipt,
             resetChatList,
-            ensureChatRow,
-            getChatRowLastMsgKey,
+            ensureChat,
+            getChatLastMsgKey,
             getChatRetention,
             sendOptionsForPeer,
-            hasChatDoc,
+            hasChat,
         } = useChatList({
             chat,
             uid,
@@ -440,10 +438,7 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
             localByChatRef,
             pendingDeleteIdsRef,
             keepSelectedDeletedChatIdsRef,
-            deletingChatIdsRef,
             chatPreviewOverridesRef,
-            syncLiveDeleting,
-            mergeDeletingIds,
             clearDeletedChatState,
             hiddenChatPreviewKeysRef,
             readCacheRef,
@@ -454,7 +449,7 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
             chatPageLockedRef,
             chatHasMoreRef,
             chatLoadingMoreRef,
-            chatRowLoadsRef,
+            chatLoadsRef,
             lastHydratedCacheKeyRef,
             chatsRef,
             warmChats,
@@ -503,14 +498,14 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
                 if (chatBanned) {
                     return;
                 }
-                void ensureChatRow(chatId);
+                void ensureChat(chatId);
                 ensureMessageBatch(chatId, {
                     source: 'route',
-                    rowLastMsgKey: getChatRowLastMsgKey(chatId),
+                    chatLastMsgKey: getChatLastMsgKey(chatId),
                 });
                 setSelectedChat(chatId);
             },
-            [chatBanned, ensureChatRow, ensureMessageBatch, getChatRowLastMsgKey, setSelectedChat]
+            [chatBanned, ensureChat, ensureMessageBatch, getChatLastMsgKey, setSelectedChat]
         );
 
         const resolvePeerChatId = useCallback(
@@ -639,14 +634,18 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
                 }
 
                 const message = resolveDeleteMessage(localByChatRef.current, chatId, messageOrId);
-                if (hasSavedMediaStay(message)) {
-                    await makeMessageTemporary(chatId, message);
-                }
-
                 const peerChatPK = getPeerChatPKForChatId(chatId);
-                return chat.deleteMessage(chatId, msgId, chatPK, chatPrivateKey, peerChatPK, { target: message?.cid || msgId, senderUid: uid });
+                const deleted = await chat.deleteMessage(chatId, msgId, chatPK, chatPrivateKey, peerChatPK, { docId: msgId, senderUid: uid });
+                const messageKey = getMessageKey(message);
+                const stay = savedMediaStayRef(message);
+                if (deleted && messageKey && uid && chatPrivateKey) {
+                    void Promise.resolve(chat.unsaveMessageKey?.(uid, chatPrivateKey, chatId, messageKey))
+                        .then(() => (stay ? chat.setMediaSaved?.(stay.path, stay.stayId, stay.stayKey, false) : null))
+                        .catch(() => {});
+                }
+                return deleted;
             },
-            [chat, chatBanned, chatPK, chatPrivateKey, getPeerChatPKForChatId, localByChatRef, makeMessageTemporary, uid]
+            [chat, chatBanned, chatPK, chatPrivateKey, getPeerChatPKForChatId, localByChatRef, uid]
         );
         const deleteMessages = useCallback(
             async (chatId, messages) => {
@@ -703,12 +702,10 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
                 selectPeerChat,
                 dropChat,
                 deleteChat,
-                startDeleteChat,
-                finishDeleteChat,
                 restoreDeletedChat,
                 markChatReadReceipt,
                 markChatRead,
-                hasChatDoc,
+                hasChat,
                 getMessages,
                 wasChatDeletedLocally,
                 ackDeletedChat,
@@ -748,7 +745,7 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
                 updateMessageView,
                 retainMessageView,
                 releaseMessageView,
-                getChatRowLastMsgKey,
+                getChatLastMsgKey,
                 syncChatPreviewDrop: clearChatPreviewKeys,
             }),
             [
@@ -766,12 +763,10 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
                 selectPeerChat,
                 dropChat,
                 deleteChat,
-                startDeleteChat,
-                finishDeleteChat,
                 restoreDeletedChat,
                 markChatReadReceipt,
                 markChatRead,
-                hasChatDoc,
+                hasChat,
                 getMessages,
                 wasChatDeletedLocally,
                 ackDeletedChat,
@@ -811,7 +806,7 @@ export function createChatProvider({ chat, useUser, useVault, readReceiptWriteDe
                 updateMessageView,
                 retainMessageView,
                 releaseMessageView,
-                getChatRowLastMsgKey,
+                getChatLastMsgKey,
                 clearChatPreviewKeys,
             ]
         );

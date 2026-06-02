@@ -133,7 +133,7 @@ export function isControlMsg(msg) {
 }
 
 export function isActionMutationMsg(msg) {
-    return msg?.actionOp === 'edit' || msg?.actionOp === 'delete' || msg?.actionOp === 'pay_confirm';
+    return msg?.actionOp === 'edit' || msg?.actionOp === 'pay_confirm';
 }
 
 export function isExpiredMsg(msg, now = Date.now()) {
@@ -507,29 +507,15 @@ export function applyMessageActions(messages) {
 
     const out = [];
     const indexByKey = new Map();
-    const deleted = new Set();
     let changed = false;
 
     for (const msg of messages) {
         const op = cleanText(msg?.actionOp) || 'create';
-        if (op === 'delete') {
-            const target = actionTarget(msg);
-            if (target) {
-                deleted.add(target);
-                const index = indexByKey.get(target);
-                if (index != null && out[index]) {
-                    out[index] = null;
-                }
-            }
-            changed = true;
-            continue;
-        }
-
         if (op === 'edit') {
             const target = actionTarget(msg);
             const index = target ? indexByKey.get(target) : null;
             const base = index != null ? out[index] : null;
-            if (base && base.s && msg?.s === base.s && !deleted.has(target)) {
+            if (base && base.s && msg?.s === base.s) {
                 const next = {
                     ...base,
                     ...actionPatch(msg),
@@ -554,7 +540,7 @@ export function applyMessageActions(messages) {
             const index = target ? indexByKey.get(target) : null;
             const base = index != null ? out[index] : null;
             const tx = cleanText(msg?.tx);
-            if (base?.t === 'req' && tx && base.s && msg?.s && msg.s !== base.s && !deleted.has(target)) {
+            if (base?.t === 'req' && tx && base.s && msg?.s && msg.s !== base.s) {
                 const next = {
                     ...base,
                     tx,
@@ -568,11 +554,6 @@ export function applyMessageActions(messages) {
             continue;
         }
 
-        const keys = messageKeys(msg);
-        if (keys.some((key) => deleted.has(key))) {
-            changed = true;
-            continue;
-        }
         const index = out.length;
         out.push(msg);
         indexMessage(indexByKey, msg, index);
@@ -584,7 +565,7 @@ export function applyMessageActions(messages) {
     return out.filter(Boolean);
 }
 
-function replaceSystemRow(previous, next) {
+function replaceSystemMsg(previous, next) {
     return {
         ...next,
         ...(previous?.id ? { id: previous.id } : {}),
@@ -596,7 +577,7 @@ export function collapseSystemMessages(messages) {
     const collapsed = [];
     for (const msg of messages || []) {
         if (isSystemMsg(msg) && isSystemMsg(collapsed[collapsed.length - 1])) {
-            collapsed[collapsed.length - 1] = replaceSystemRow(collapsed[collapsed.length - 1], msg);
+            collapsed[collapsed.length - 1] = replaceSystemMsg(collapsed[collapsed.length - 1], msg);
             continue;
         }
         collapsed.push(msg);

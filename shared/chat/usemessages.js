@@ -127,7 +127,7 @@ export function createUseChatMessages({ db, useChat, useUser, useVault, appState
             chats,
             getMessages,
             ackMessages,
-            hasChatDoc,
+            hasChat,
             markChatRead,
             markChatReadReceipt,
             wasChatDeletedLocally,
@@ -143,7 +143,7 @@ export function createUseChatMessages({ db, useChat, useUser, useVault, appState
             updateMessageView,
             retainMessageView,
             releaseMessageView,
-            getChatRowLastMsgKey,
+            getChatLastMsgKey,
             syncChatPreviewDrop,
             queueMessagePreload,
             adoptConfirmedMessages,
@@ -179,7 +179,7 @@ export function createUseChatMessages({ db, useChat, useUser, useVault, appState
         const applyBatchRef = useRef(0);
         const droppedMessageKeysRef = useRef(new Set());
         const resolvedMessageKeysRef = useRef(new Set());
-        const rowLastMsgKeyRef = useRef(null);
+        const chatLastMsgKeyRef = useRef(null);
         const localsRef = useRef([]);
         const olderPrefetchRef = useRef({ scopeKey: '', count: 0, queued: 0, exhausted: false });
         const scopeRef = useRef('');
@@ -199,13 +199,13 @@ export function createUseChatMessages({ db, useChat, useUser, useVault, appState
             autoDeleteRef.current = { checkpointMs: 0, pendingCheckpointMs: 0 };
             savedDeleteRef.current = new Set();
         }
-        const chatExists = !!(chatId && hasChatDoc(chatId));
-        const rowLastMsgKey = chatId && typeof getChatRowLastMsgKey === 'function' ? getChatRowLastMsgKey(chatId) : null;
+        const chatExists = !!(chatId && hasChat(chatId));
+        const chatLastMsgKey = chatId && typeof getChatLastMsgKey === 'function' ? getChatLastMsgKey(chatId) : null;
         const locals = useMemo(() => (chatId ? getMessages(chatId) : []), [chatId, getMessages]);
 
         useEffect(() => {
-            rowLastMsgKeyRef.current = rowLastMsgKey;
-        }, [rowLastMsgKey]);
+            chatLastMsgKeyRef.current = chatLastMsgKey;
+        }, [chatLastMsgKey]);
 
         useEffect(() => {
             localsRef.current = locals;
@@ -465,7 +465,7 @@ export function createUseChatMessages({ db, useChat, useUser, useVault, appState
             ensureMessageBatch?.(chatId, {
                 source: 'route',
                 peerChatPK,
-                rowLastMsgKey: rowLastMsgKeyRef.current,
+                chatLastMsgKey: chatLastMsgKeyRef.current,
                 pageSize,
             });
             applyBatch(getSharedMessageBatch?.(chatId));
@@ -504,10 +504,10 @@ export function createUseChatMessages({ db, useChat, useUser, useVault, appState
             ensureMessageBatch?.(chatId, {
                 source: 'route',
                 peerChatPK,
-                rowLastMsgKey,
+                chatLastMsgKey,
                 pageSize,
             });
-        }, [chatExists, chatId, chatPK, chatPrivateKey, ensureMessageBatch, isActive, pageSize, peerChatPK, rowLastMsgKey]);
+        }, [chatExists, chatId, chatPK, chatPrivateKey, ensureMessageBatch, isActive, pageSize, peerChatPK, chatLastMsgKey]);
 
         const loadOlder = useCallback(async () => {
             if (stateScope !== scopeKey || !chatId || !chatExists || !chatPK || !chatPrivateKey || !peerChatPK || !hasOlderRef.current || loadingOlderRef.current || !oldestRef.current) {
@@ -737,7 +737,7 @@ export function createUseChatMessages({ db, useChat, useUser, useVault, appState
         }, [activeExists, activeReady, rawMessages, runAutoDelete, runCompaction]);
 
         useEffect(() => {
-            if (!chatId || !activeReady || !activeExists || !rowLastMsgKey || typeof syncChatPreviewDrop !== 'function') {
+            if (!chatId || !activeReady || !activeExists || !chatLastMsgKey || typeof syncChatPreviewDrop !== 'function') {
                 return;
             }
 
@@ -747,7 +747,7 @@ export function createUseChatMessages({ db, useChat, useUser, useVault, appState
                     addMessageKeys(visibleKeys, message);
                 }
             }
-            if (visibleKeys.has(rowLastMsgKey)) {
+            if (visibleKeys.has(chatLastMsgKey)) {
                 return;
             }
 
@@ -757,21 +757,21 @@ export function createUseChatMessages({ db, useChat, useUser, useVault, appState
                 ...keySet(deletedMessageKeysRef.current),
                 ...keySet(droppedMessageKeysRef.current),
             ]);
-            if (!droppedKeys.has(rowLastMsgKey) && !batchCoversKey(activeServerBatch, rowLastMsgKey)) {
+            if (!droppedKeys.has(chatLastMsgKey) && !batchCoversKey(activeServerBatch, chatLastMsgKey)) {
                 return;
             }
 
-            droppedKeys.add(rowLastMsgKey);
+            droppedKeys.add(chatLastMsgKey);
             const replacement = latestPreviewMessage(messages);
             const replacementKey = getMessageKey(replacement) || '';
-            const syncKey = `${chatId}:${rowLastMsgKey}:${[...droppedKeys].sort().join('|')}:${replacementKey}`;
+            const syncKey = `${chatId}:${chatLastMsgKey}:${[...droppedKeys].sort().join('|')}:${replacementKey}`;
             if (lastPreviewDropSyncRef.current === syncKey) {
                 return;
             }
 
             lastPreviewDropSyncRef.current = syncKey;
             syncChatPreviewDrop(chatId, droppedKeys, replacement);
-        }, [activeExists, activeReady, activeServerBatch, chatId, messages, rowLastMsgKey, syncChatPreviewDrop]);
+        }, [activeExists, activeReady, activeServerBatch, chatId, messages, chatLastMsgKey, syncChatPreviewDrop]);
 
         useEffect(() => {
             leaveTtlRef.current = {

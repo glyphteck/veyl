@@ -2,12 +2,24 @@
 
 Repo-level changes are listed newest first. Keep entries short and concrete. Broad pushes get grouped bullets, while narrow fixes can use one concise bugfix or cleanup bullet that still names the actual change.
 
+## 4.14.13 - 2026-06-02
+
+- Removed legacy chat-key push routing, the no-op chat deletion callable, wallet webhook cleanup paths, and the old participant-array Firestore index from the opaque chat backend.
+- Replaced direct recipient inbox writes and the chat push trigger with a block-enforcing `push` callable that writes 21-day sealed inbox pings and sends username-based generic notifications.
+- Reduced chat-list ping hydration reads by grouping inbox pings per chat, limiting ping batches, and reading at most one pointed message per touched chat per batch.
+- Removed parent chat timestamp writes, direct message-rule moderation reads, established-send peer lookups, and broad owner-entry scans by treating opaque `chatId` access as participant authority and actor signatures as sender authority.
+- Made visible-send queue coalescing write the owner entry and recipient inbox ping on the latest queued message per chat, while keeping receipts, reactions, and hidden checkpoints as message-only action docs.
+- Restored hard message deletion and whole-chat deletion on the opaque chat model with direct message doc deletes and a rare `deleteChat` callable.
+- Added verbose Firebase client logging and safe callable start/done/error logs for traffic runs across web, iOS, bot, and server actions.
+- Cut push registration rate-limit churn with an idempotent device-token fast path, a single hourly push bucket, and shorter rate-limit TTL grace.
+- Updated cost docs and the executable message-rate model for opaque owner entries, inbox pings, media stays, saved records, and current push costs.
+
 ## 4.14.12 - 2026-06-02
 
-- Reworked chat storage around opaque pair-derived `chatId`s, owner-only encrypted chat entries, sealed `chatInbox` wake docs, and append-only encrypted action rows instead of participant arrays, plaintext sender fields, or shared preview state.
+- Reworked chat storage around opaque pair-derived `chatId`s, owner-only encrypted chat entries, sealed inbox ping docs, and append-only encrypted action docs instead of participant arrays, plaintext sender fields, or shared preview state.
 - Added per-chat cryptographic action envelopes for create, edit, delete, payment confirmation, reactions, receipts, hidden checkpoints, and settings, with actor signatures or shared action authenticators verified by clients.
-- Moved saved-message state into owner-owned encrypted saved records and updated delete/tombstone handling so global deletes win over local saved copies and saved media holds.
-- Updated Firestore rules, push functions, account/chat deletion paths, bot runtime, web, and iOS chat flows to use owner entries, inbox wakes, pair chat selection, and opaque row hydration.
+- Moved saved-message state into owner-owned encrypted saved records and updated delete handling so source-doc deletes win over local saved copies and saved media holds.
+- Updated Firestore rules, push functions, account/chat deletion paths, bot runtime, web, and iOS chat flows to use owner entries, inbox pings, pair chat selection, and opaque chat hydration.
 - Documented the dumb-server, smart-cryptographic-client model across chat, security, repo, navigation, code, and active todo guidance.
 - Cleaned up web payment peer/amount controls with a shared money amount input, selected-peer clear affordance, aligned trailing controls, and static peer profile headers.
 - Split iOS peer picking into a reusable picker surface and kept camera/media staging paths aligned with the opaque media and upload-reservation rules.

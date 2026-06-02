@@ -385,16 +385,8 @@ function parseTrafficCommand(args) {
 }
 
 async function deleteBotChats(chatPK) {
-    if (!chatPK) {
-        return 0;
-    }
-
-    const chats = await db.collection('chats').where('participants', 'array-contains', chatPK).get();
-    for (const docSnap of chats.docs) {
-        await db.recursiveDelete(docSnap.ref);
-    }
-
-    return chats.docs.length;
+    // Opaque canonical chat docs cannot be discovered from a bot chat key.
+    return 0;
 }
 
 async function deleteBot(target, options = {}) {

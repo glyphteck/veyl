@@ -2,7 +2,6 @@ import { FieldValue, db } from './admin.js';
 import { createHash, createSign } from 'node:crypto';
 import { defineSecret } from 'firebase-functions/params';
 import http2 from 'node:http2';
-import { syncPushRouteForUid } from './pushroute.js';
 
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 const APNS_PROD_HOST = 'api.push.apple.com';
@@ -50,12 +49,6 @@ async function markDead(uid, docs, lastError = 'DeviceNotRegistered') {
         );
     });
     await batch.commit();
-    await syncPushRouteForUid(uid).catch((error) => {
-        console.warn('push route sync failed after dead token cleanup', {
-            uid,
-            error: error?.message || String(error),
-        });
-    });
 }
 
 function base64url(input) {

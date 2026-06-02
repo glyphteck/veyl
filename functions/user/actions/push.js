@@ -1,8 +1,8 @@
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { createHash } from 'node:crypto';
 import { db, FieldValue, OK } from '../../lib/admin.js';
-import { HOUR_MS, MINUTE_MS, limitCallable, uidLimitKey } from '../../lib/ratelimit.js';
-import { syncPushRouteForUid } from '../../lib/pushroute.js';
+import { HOUR_MS, limitCallable, uidLimitKey } from '../../lib/ratelimit.js';
+import { loggedCall } from '../../lib/actionlog.js';
 
 const DID_RE = /^[a-zA-Z0-9_-]{12,128}$/;
 const EXPO_RE = /^(Expo|Exponent)PushToken\[[^\]]+\]$/;
@@ -13,6 +13,8 @@ const APNS_TOPICS = new Set(['com.glyphteck.veyl.dev', 'com.glyphteck.veyl.test'
 const MAX_PUSH_DEVICES_PER_USER = 4;
 const PUSH_DEVICE_OWNERS = 'push_device_owners';
 const PUSH_TOKEN_OWNERS = 'push_token_owners';
+const PUSH_OWNER_VERSION = 1;
+const PUSH_NOOP_FIELDS = ['did', 'token', 'nativeToken', 'platform', 'provider', 'appVariant', 'apnsTopic', 'apnsEnvironment', 'enabled', 'ownerVersion'];
 const PUSH_VARIANT_META = {
     dev: { apnsTopic: 'com.glyphteck.veyl.dev', apnsEnvironment: 'development' },
     test: { apnsTopic: 'com.glyphteck.veyl.test', apnsEnvironment: 'production' },
@@ -21,10 +23,12 @@ const PUSH_VARIANT_META = {
 
 async function limitPushAction(context, action) {
     const uid = context.auth?.uid;
-    await limitCallable(context, [
-        { name: `${action}-push-uid-minute`, key: uidLimitKey(uid, action), limit: 20, windowMs: MINUTE_MS },
-        { name: `${action}-push-uid-hour`, key: uidLimitKey(uid, action), limit: 80, windowMs: HOUR_MS },
-    ]);
+    await limitCallable(context, {
+        name: `${action}-push-uid-hour`,
+        key: uidLimitKey(uid, action),
+        limit: 120,
+        windowMs: HOUR_MS,
+    });
 }
 
 function cleanString(value) {
@@ -92,9 +96,17 @@ function pushDoc(data) {
         appVariant,
         apnsTopic,
         apnsEnvironment,
+        ownerVersion: PUSH_OWNER_VERSION,
         enabled: true,
         updatedAt: FieldValue.serverTimestamp(),
     };
+}
+
+function pushDocEquivalent(current, next) {
+    if (!current || current.ownerVersion !== PUSH_OWNER_VERSION) {
+        return false;
+    }
+    return PUSH_NOOP_FIELDS.every((field) => (current[field] ?? null) === (next[field] ?? null));
 }
 
 function ownerKey(kind, value) {
@@ -215,24 +227,28 @@ async function setUserPush(uid, ref, next, ownerRefs) {
     });
 }
 
-export const setPush = onCall(async (context) => {
+export const setPush = onCall(loggedCall('setPush', async (context) => {
     const { auth, data } = context;
     if (!auth?.uid) throw new HttpsError('unauthenticated', 'auth');
-    await limitPushAction(context, 'set');
 
     const uid = auth.uid;
     const next = pushDoc(data);
     const ref = pushRef(uid, next.did);
+    const current = await ref.get();
+    if (pushDocEquivalent(current.data(), next)) {
+        return OK;
+    }
+
+    await limitPushAction(context, 'set');
 
     await setUserPush(uid, ref, next, {
         did: didOwnerRef(next.did),
         tokens: tokenOwnerEntries(next),
     });
-    await syncPushRouteForUid(uid);
     return OK;
-});
+}));
 
-export const dropPush = onCall(async (context) => {
+export const dropPush = onCall(loggedCall('dropPush', async (context) => {
     const { auth, data } = context;
     if (!auth?.uid) throw new HttpsError('unauthenticated', 'auth');
     await limitPushAction(context, 'drop');
@@ -267,6 +283,5 @@ export const dropPush = onCall(async (context) => {
         });
     });
 
-    await syncPushRouteForUid(uid);
     return OK;
-});
+}));

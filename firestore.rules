@@ -29,13 +29,6 @@ service cloud.firestore {
       return activeBanData(data, key);
     }
 
-    function isChatBanned(uid) {
-      let data = uid is string && exists(/databases/$(database)/documents/moderation/$(uid))
-        ? get(/databases/$(database)/documents/moderation/$(uid)).data
-        : {};
-      return activeBanData(data, 'full') || activeBanData(data, 'chat');
-    }
-
     function profileAvatarValueAllowed(value) {
       return value == null || (value is int && value > 0);
     }
@@ -51,12 +44,14 @@ service cloud.firestore {
         );
     }
 
-    function chatAllowed() {
-      return request.auth != null && !isChatBanned(request.auth.uid);
-    }
-
     function ttlValueAllowed(value) {
       return value == null || value is timestamp;
+    }
+
+    function chatIdAllowed(chatId) {
+      return request.auth != null
+        && chatId is string
+        && chatId.size() == 64;
     }
 
     function maxInitialTtl() {
@@ -103,24 +98,9 @@ service cloud.firestore {
         );
     }
 
-    function opaqueChatFieldsValid(data) {
-      return data.keys().hasOnly(['v', 'ts'])
-        && data.v is int
-        && data.ts is timestamp;
-    }
-
     function ownerChatEntryValid(data) {
       return data.keys().hasOnly(['body', 'ts'])
         && bytesSizeAllowed(data.body, 128 * 1024)
-        && data.ts is timestamp;
-    }
-
-    function chatInboxWakeValid(data) {
-      return data.keys().hasOnly(['v', 'epk', 'body', 'ts'])
-        && data.v is int
-        && data.epk is string
-        && data.epk.size() == 64
-        && bytesSizeAllowed(data.body, 64 * 1024)
         && data.ts is timestamp;
     }
 
@@ -232,11 +212,9 @@ service cloud.firestore {
         allow delete: if request.auth != null && request.auth.uid == uid;
       }
 
-      match /chatInbox/{wakeId} {
-        allow create: if chatAllowed()
-                      && chatInboxWakeValid(request.resource.data);
+      match /inbox/{pingId} {
         allow get, list, delete: if request.auth != null && request.auth.uid == uid;
-        allow update: if false;
+        allow create, update: if false;
       }
 
       match /savedMessages/{savedId} {
@@ -327,22 +305,17 @@ service cloud.firestore {
     match /chats/{chatId} {
 
       /* parent chat document */
-      allow get: if chatAllowed();
-      allow list: if false;
-
-      allow create, update: if chatAllowed()
-                    && opaqueChatFieldsValid(request.resource.data)
-                    && request.resource.data.ts == request.time;
-      allow delete: if false;
+      allow read, write: if false;
 
       /* messages sub-collection */
       match /messages/{messageId} {
-        allow get, list: if chatAllowed();
+        allow get, list: if chatIdAllowed(chatId);
 
-        allow create: if chatAllowed()
+        allow create: if chatIdAllowed(chatId)
                       && messageCreateAllowed();
 
-        allow update, delete: if false;
+        allow update: if false;
+        allow delete: if chatIdAllowed(chatId);
       }
     }
 

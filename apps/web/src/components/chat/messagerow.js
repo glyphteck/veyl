@@ -391,7 +391,7 @@ function InteractiveMessageRow({
         [actionSavedForever, canReport, canSaveForever, isReported, isSaving, isSavingForever, msg, onDelete, onDownload, onEdit, onReply, onReport, onRetry, onSaveForever, onShare, peerChatPK, userSent]
     );
     const reactions = useMemo(() => (isReported ? [] : getOptimisticReactions(msg)), [getOptimisticReactions, isReported, msg]);
-    const messageTime = useMemo(() => formatFullDateTime(msg.ts?.toDate() || new Date()), [msg.ts]);
+    const messageTime = useMemo(() => formatFullDateTime(msg.ts || Date.now()), [msg.ts]);
     const setRowRef = useCallback(
         (node) => {
             rowNodeRef.current = node;

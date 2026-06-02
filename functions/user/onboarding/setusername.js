@@ -2,8 +2,8 @@ import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { db, OK } from '../../lib/admin.js';
 import { DAY_MS, HOUR_MS, limitCallable, uidLimitKey } from '../../lib/ratelimit.js';
 import { isUsername, normalizeUsername } from '../../lib/regex.js';
-import { syncPushRouteForUid } from '../../lib/pushroute.js';
 import { usernames } from '../../lib/usernames.js';
+import { loggedCall } from '../../lib/actionlog.js';
 
 function usernameError(reason) {
     return new HttpsError('invalid-argument', 'username unavailable', { reason });
@@ -22,7 +22,7 @@ function usernameStatus(username) {
     return 'ok';
 }
 
-export const setUsername = onCall(async (context) => {
+export const setUsername = onCall(loggedCall('setUsername', async (context) => {
     if (!context.auth?.uid) throw new HttpsError('unauthenticated', 'auth');
     await limitCallable(context, [
         { name: 'set-username-uid-hour', key: uidLimitKey(context.auth.uid, 'set-username'), limit: 20, windowMs: HOUR_MS },
@@ -38,6 +38,5 @@ export const setUsername = onCall(async (context) => {
         t.set(unameRef, { uid: context.auth.uid });
         t.set(db.collection('profiles').doc(context.auth.uid), { username }, { merge: true });
     });
-    await syncPushRouteForUid(context.auth.uid);
     return OK;
-});
+}));

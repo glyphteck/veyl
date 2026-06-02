@@ -56,6 +56,7 @@ export const CHAT_DELETE_WRITE_BATCH_SIZE = 400;
 // Chat list Firestore read cost knobs.
 export const CHAT_LIST_LIVE_COUNT = 15;
 export const CHAT_LIST_PAGE_SIZE = 20;
+export const CHAT_INBOX_PING_PAGE_SIZE = 25;
 export const CHAT_LIST_CACHE_WRITE_DELAY_MS = 1500;
 export const CHAT_LIST_SNAPSHOT_COALESCE_MS = 80;
 

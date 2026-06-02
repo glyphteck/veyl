@@ -24,7 +24,7 @@ export function getChatPeerPK(chatItem, chatPK) {
     return chatItem?.peerChatPK || null;
 }
 
-export function getChatRowLastMsgKey(chatItem) {
+export function getChatLastMsgKey(chatItem) {
     const lastMsg = chatItem?.lastMsg;
     if (!lastMsg || lastMsg.pending || lastMsg.failed || String(lastMsg?.id || '').startsWith('local:')) {
         return null;

@@ -24,25 +24,37 @@ import {
 import { collectMessageKeys } from './messagekeys.js';
 import { markChatsRead } from './read.js';
 import { CHAT_RETENTION_24H, normalizeChatSettings } from './ttl.js';
-import { getChatRowLastMsgKey as getRowLastMsgKey } from './ids.js';
-import { uniqueSet } from '../utils/array.js';
+import { getChatLastMsgKey as lastMsgKey } from './ids.js';
 import { markDiag, markDone, markError } from '../utils/diagnostics.js';
 import { timestampMs } from '../utils/time.js';
 
-export function sortedUniqueChatRows(...groups) {
+export function sortedChats(...groups) {
     const byId = new Map();
-    for (const rows of groups) {
-        for (const row of rows || []) {
-            if (row?.id && !byId.has(row.id)) {
-                byId.set(row.id, row);
+    for (const chats of groups) {
+        for (const chat of chats || []) {
+            if (chat?.id && !byId.has(chat.id)) {
+                byId.set(chat.id, chat);
             }
         }
     }
     return [...byId.values()].sort((a, b) => (b?.ts || 0) - (a?.ts || 0));
 }
 
-function chatRowIds(rows) {
-    return (rows || []).map((chatItem) => chatItem?.id).filter(Boolean);
+function chatIds(chats) {
+    return (chats || []).map((chatItem) => chatItem?.id).filter(Boolean);
+}
+
+function hydrateReadCache(chats, readCache) {
+    if (!(readCache instanceof Map)) {
+        return;
+    }
+    for (const chatItem of chats || []) {
+        const readMs = timestampMs(chatItem?.readMs, null);
+        if (!chatItem?.id || readMs == null || (readCache.get(chatItem.id) || 0) >= readMs) {
+            continue;
+        }
+        readCache.set(chatItem.id, readMs);
+    }
 }
 
 export function useChatList({
@@ -60,11 +72,7 @@ export function useChatList({
     localByChatRef,
     pendingDeleteIdsRef,
     keepSelectedDeletedChatIdsRef,
-    deletingChatIdsRef,
     chatPreviewOverridesRef,
-    syncLiveDeleting,
-    mergeDeletingIds,
-    clearDeletedChatState,
     hiddenChatPreviewKeysRef,
     readCacheRef,
     lastServerChatsRef,
@@ -74,7 +82,7 @@ export function useChatList({
     chatPageLockedRef,
     chatHasMoreRef,
     chatLoadingMoreRef,
-    chatRowLoadsRef,
+    chatLoadsRef,
     lastHydratedCacheKeyRef,
     chatsRef,
     warmChats,
@@ -87,7 +95,7 @@ export function useChatList({
     const [serverChatIds, setServerChatIds] = useState([]);
     const [hasMoreChats, setHasMoreChats] = useState(false);
     const [loadingMoreChats, setLoadingMoreChats] = useState(false);
-    const [chatRowLoadVersion, setChatRowLoadVersion] = useState(0);
+    const [chatLoadVersion, setChatLoadVersion] = useState(0);
     const peersCache = useRef([]);
     const lastPeersKey = useRef('');
     const lastServerChatIdsKey = useRef('');
@@ -127,19 +135,19 @@ export function useChatList({
         }
         const pending = pendingChatCacheWriteRef.current;
         pendingChatCacheWriteRef.current = null;
-        if (pending?.cache && Array.isArray(pending.rows)) {
-            writeCachedChats(pending.cache, pending.rows);
+        if (pending?.cache && Array.isArray(pending.chats)) {
+            writeCachedChats(pending.cache, pending.chats);
         }
     }, []);
 
     const queueChatCacheWrite = useCallback(
-        (rows) => {
-            if (!localCache || !Array.isArray(rows)) {
+        (nextChats) => {
+            if (!localCache || !Array.isArray(nextChats)) {
                 return;
             }
             pendingChatCacheWriteRef.current = {
                 cache: localCache,
-                rows: filterPendingDeleteChats(rows, pendingDeleteIdsRef.current),
+                chats: filterPendingDeleteChats(nextChats, pendingDeleteIdsRef.current),
             };
             if (chatCacheWriteTimerRef.current) {
                 clearTimeout(chatCacheWriteTimerRef.current);
@@ -175,10 +183,25 @@ export function useChatList({
         [hiddenChatPreviewKeysRef]
     );
 
+    const persistChatPreview = useCallback(
+        (chatId, lastMsg) => {
+            if (!uid || !chatPrivateKey || typeof chat?.setChatPreview !== 'function') {
+                return;
+            }
+            void chat.setChatPreview(uid, chatPrivateKey, chatId, lastMsg || null).catch((error) => {
+                console.warn('chat preview write failed', error);
+            });
+        },
+        [chat, uid, chatPrivateKey]
+    );
+
     const clearChatPreviewKeys = useCallback(
         (chatId, keys, replacement = null) => {
             const remembered = rememberHiddenChatPreviewKeys(chatId, keys);
             const replaced = mergeChatPreviewDrop(chatPreviewOverridesRef.current, chatId, keys, replacement);
+            if (remembered || replaced) {
+                persistChatPreview(chatId, chatPreviewOverridesRef.current.get(chatId)?.lastMsg || null);
+            }
             const nextServerChats = applyChatPreviewOverrides(clearChatPreviewsByHiddenKeys(lastServerChatsRef.current, hiddenChatPreviewKeysRef.current), chatPreviewOverridesRef.current, chatPK, readCacheRef.current);
             if (!remembered && !replaced && nextServerChats === lastServerChatsRef.current) {
                 return;
@@ -187,12 +210,12 @@ export function useChatList({
             queueChatCacheWrite(nextServerChats);
             updateRenderedChats(nextServerChats);
         },
-        [chatPK, chatPreviewOverridesRef, hiddenChatPreviewKeysRef, lastServerChatsRef, queueChatCacheWrite, readCacheRef, rememberHiddenChatPreviewKeys, updateRenderedChats]
+        [chatPK, chatPreviewOverridesRef, hiddenChatPreviewKeysRef, lastServerChatsRef, persistChatPreview, queueChatCacheWrite, readCacheRef, rememberHiddenChatPreviewKeys, updateRenderedChats]
     );
 
     const updateServerChatIds = useCallback(
-        (rows) => {
-            const nextChatIds = chatRowIds(rows);
+        (nextChats) => {
+            const nextChatIds = chatIds(nextChats);
             const nextChatIdsKey = nextChatIds.join('|');
             serverChatIdsRef.current = nextChatIds;
             if (nextChatIdsKey !== lastServerChatIdsKey.current) {
@@ -204,9 +227,9 @@ export function useChatList({
         [lastServerChatIdsKey, serverChatIdsRef]
     );
 
-    const updatePeersFromRows = useCallback(
-        (rows) => {
-            const nextPeers = getPeersFromChats(rows, chatPK);
+    const updatePeers = useCallback(
+        (nextChats) => {
+            const nextPeers = getPeersFromChats(nextChats, chatPK);
             const peersKey = nextPeers.sort().join('|');
             if (peersKey !== lastPeersKey.current) {
                 peersCache.current = nextPeers;
@@ -219,11 +242,13 @@ export function useChatList({
     );
 
     const commitServerChats = useCallback(
-        (rows, options = {}) => {
-            const nextServerChats = applyChatPreviewOverrides(sortedUniqueChatRows(rows), chatPreviewOverridesRef.current, chatPK, readCacheRef.current);
+        (nextChats, options = {}) => {
+            const sorted = sortedChats(nextChats);
+            hydrateReadCache(sorted, readCacheRef.current);
+            const nextServerChats = applyChatPreviewOverrides(sorted, chatPreviewOverridesRef.current, chatPK, readCacheRef.current);
             lastServerChatsRef.current = nextServerChats;
             const shownChats = updateRenderedChats(nextServerChats);
-            updatePeersFromRows(nextServerChats);
+            updatePeers(nextServerChats);
             updateServerChatIds(nextServerChats);
             if (options?.writeCache !== false) {
                 queueChatCacheWrite(nextServerChats);
@@ -233,7 +258,7 @@ export function useChatList({
             }
             return shownChats;
         },
-        [chatPK, chatPreviewOverridesRef, lastServerChatsRef, queueChatCacheWrite, readCacheRef, updatePeersFromRows, updateRenderedChats, updateServerChatIds, warmChats]
+        [chatPK, chatPreviewOverridesRef, lastServerChatsRef, queueChatCacheWrite, readCacheRef, updatePeers, updateRenderedChats, updateServerChatIds, warmChats]
     );
 
     const resetChatList = useCallback(
@@ -245,7 +270,7 @@ export function useChatList({
             setServerChatIds((prev) => (prev.length ? [] : prev));
             setHasMoreChats((prev) => (prev ? false : prev));
             setLoadingMoreChats((prev) => (prev ? false : prev));
-            setChatRowLoadVersion((prev) => (prev ? 0 : prev));
+            setChatLoadVersion((prev) => (prev ? 0 : prev));
             flushChatCacheWrite();
             peersCache.current = [];
             lastPeersKey.current = '';
@@ -259,7 +284,7 @@ export function useChatList({
             chatPageLockedRef.current = false;
             chatHasMoreRef.current = false;
             chatLoadingMoreRef.current = false;
-            chatRowLoadsRef.current = new Set();
+            chatLoadsRef.current = new Set();
         },
         [
             chatHasMoreRef,
@@ -267,7 +292,7 @@ export function useChatList({
             chatPageCursorRef,
             chatPageLockedRef,
             chatPreviewOverridesRef,
-            chatRowLoadsRef,
+            chatLoadsRef,
             flushChatCacheWrite,
             lastHydratedCacheKeyRef,
             lastPeersKey,
@@ -304,6 +329,9 @@ export function useChatList({
             }
 
             readCacheRef.current.set(chatId, readMs);
+            void chat.setChatRead?.(uid, chatPrivateKey, chatId, readMs).catch((error) => {
+                console.warn('chat read state write failed', error);
+            });
             lastServerChatsRef.current = markChatsRead(lastServerChatsRef.current, chatId, ownTarget);
             setChats((prev) => {
                 const next = markChatsRead(prev, chatId, ownTarget);
@@ -314,7 +342,7 @@ export function useChatList({
                 return next;
             });
         },
-        [chatPK, lastServerChatsRef, queueChatCacheWrite, readCacheRef]
+        [chat, uid, chatPK, chatPrivateKey, lastServerChatsRef, queueChatCacheWrite, readCacheRef]
     );
 
     useEffect(() => {
@@ -335,7 +363,7 @@ export function useChatList({
             lastHydratedCacheKeyRef.current = hydrateKey;
             const cachedPayload = localCache?.read?.();
             const hasSavedChatSnapshot = Number(cachedPayload?.chatsSavedAt) > 0;
-            const cachedChats = sortedUniqueChatRows(
+            const cachedChats = sortedChats(
                 clearChatPreviewsByHiddenKeys(
                     trimExpiredChatPreviews(readCachedChats(localCache).filter((chatItem) => !!chatItem?.peerChatPK)),
                     hiddenChatPreviewKeysRef.current
@@ -368,7 +396,7 @@ export function useChatList({
             (nextChats, _nextPeers, meta = {}) => {
                 const updateStartedAt = Date.now();
                 const rawNextChats = Array.isArray(nextChats) ? nextChats : [];
-                const deletingChatIds = Array.isArray(meta?.deletingChatIds) ? meta.deletingChatIds.filter(Boolean) : [];
+                hydrateReadCache(rawNextChats, readCacheRef.current);
                 const nextChatsWithRead = clearChatPreviewsByHiddenKeys(trimExpiredChatPreviews(applyReadCache(rawNextChats, chatPK, readCacheRef.current), { skipChatId: selectedChatIdRef.current }), hiddenChatPreviewKeysRef.current);
                 const firstSnapshot = !serverChatsReadyRef.current;
                 serverChatsReadyRef.current = true;
@@ -377,20 +405,15 @@ export function useChatList({
                 const previousRenderedChats = chatsRef.current;
                 const previousServerIds = serverChatIdsRef.current;
 
-                if (deletingChatIds.length) {
-                    clearDeletedChatState(deletingChatIds);
-                }
-                syncLiveDeleting(nextChatIds, deletingChatIds);
-
                 if (!chatPageLockedRef.current) {
                     chatPageCursorRef.current = meta?.cursor ?? null;
                     chatHasMoreRef.current = !!meta?.hasMore;
                     setHasMoreChats((prev) => (prev === chatHasMoreRef.current ? prev : chatHasMoreRef.current));
                 }
 
-                const hiddenIds = uniqueSet([...deletingChatIds, ...pendingDeleteIdsRef.current]);
+                const hiddenIds = pendingDeleteIdsRef.current;
                 const preservedChats = lastServerChatsRef.current.filter((chatItem) => chatItem?.id && !nextChatIdsSet.has(chatItem.id) && !hiddenIds.has(chatItem.id));
-                const shownChats = commitServerChats(sortedUniqueChatRows(nextChatsWithRead, preservedChats));
+                const shownChats = commitServerChats(sortedChats(nextChatsWithRead, preservedChats));
                 listenUpdateSeqRef.current += 1;
                 markDiag(diag, 'chat.provider.listen.update', {
                     seq: listenUpdateSeqRef.current,
@@ -399,7 +422,7 @@ export function useChatList({
                     rawCount: rawNextChats.length,
                     shownCount: shownChats.length,
                     previousShownCount: previousRenderedChats.length,
-                    deletingCount: deletingChatIds.length,
+                    deletingCount: pendingDeleteIdsRef.current.size,
                     hasMore: !!meta?.hasMore,
                     orderChanged: nextChatIds.length !== previousServerIds.length || nextChatIds.some((id, index) => previousServerIds[index] !== id),
                     renderedChanged: !sameChats(previousRenderedChats, shownChats),
@@ -416,7 +439,7 @@ export function useChatList({
                     markDone(diag, 'chat.provider.listen.first', listenStartedAt, {
                         rawCount: rawNextChats.length,
                         shownCount: shownChats.length,
-                        deletingCount: deletingChatIds.length,
+                        deletingCount: pendingDeleteIdsRef.current.size,
                         hasMore: !!meta?.hasMore,
                     });
                 }
@@ -442,8 +465,6 @@ export function useChatList({
         chatPageLockedRef,
         chatPrivateKey,
         commitServerChats,
-        clearDeletedChatState,
-        deletingChatIdsRef,
         diag,
         hiddenChatPreviewKeysRef,
         isActive,
@@ -458,7 +479,6 @@ export function useChatList({
         selectedChatIdRef,
         serverChatsReadyRef,
         setSelectedChat,
-        syncLiveDeleting,
         uid,
     ]);
 
@@ -472,19 +492,12 @@ export function useChatList({
 
         try {
             const page = await chat.loadMoreChats(uid, chatPK, chatPrivateKey, chatPageCursorRef.current, CHAT_LIST_PAGE_SIZE);
-            const pageDeletingIds = Array.isArray(page?.deletingChatIds) ? page.deletingChatIds.filter(Boolean) : [];
-            const deletingIds = mergeDeletingIds(pageDeletingIds);
-
-            if (pageDeletingIds.length) {
-                clearDeletedChatState(pageDeletingIds);
-            }
-
-            const hiddenIds = uniqueSet([...pendingDeleteIdsRef.current, ...deletingIds]);
+            const hiddenIds = pendingDeleteIdsRef.current;
             const pageChats = clearChatPreviewsByHiddenKeys(
                 trimExpiredChatPreviews(applyReadCache(Array.isArray(page?.chats) ? page.chats : [], chatPK, readCacheRef.current), { skipChatId: selectedChatIdRef.current }),
                 hiddenChatPreviewKeysRef.current
             ).filter((chatItem) => chatItem?.id && !hiddenIds.has(chatItem.id));
-            const nextServerChats = sortedUniqueChatRows(pageChats, lastServerChatsRef.current).filter((chatItem) => chatItem?.id && !hiddenIds.has(chatItem.id));
+            const nextServerChats = sortedChats(pageChats, lastServerChatsRef.current).filter((chatItem) => chatItem?.id && !hiddenIds.has(chatItem.id));
             commitServerChats(nextServerChats);
 
             chatPageLockedRef.current = true;
@@ -510,13 +523,9 @@ export function useChatList({
         chatPageLockedRef,
         chatPrivateKey,
         uid,
-        clearDeletedChatState,
         commitServerChats,
-        deletingChatIdsRef,
         hiddenChatPreviewKeysRef,
         lastServerChatsRef,
-        localCache,
-        mergeDeletingIds,
         pendingDeleteIdsRef,
         readCacheRef,
         selectedChatIdRef,
@@ -552,16 +561,16 @@ export function useChatList({
         return () => clearTimeout(timeout);
     }, [chatPK, chatPreviewOverridesRef, chats, hiddenChatPreviewKeysRef, lastServerChatsRef, queueChatCacheWrite, readCacheRef, selectedChatId, updateRenderedChats]);
 
-    const getChatRowLastMsgKey = useCallback(
+    const getChatLastMsgKey = useCallback(
         (chatId) => {
             if (!chatId) {
                 return null;
             }
             const serverChat = lastServerChatsRef.current.find((chatItem) => chatItem?.id === chatId);
             if (serverChat) {
-                return getRowLastMsgKey(serverChat);
+                return lastMsgKey(serverChat);
             }
-            return getRowLastMsgKey(chatsRef.current.find((chatItem) => chatItem?.id === chatId));
+            return lastMsgKey(chatsRef.current.find((chatItem) => chatItem?.id === chatId));
         },
         [chatsRef, lastServerChatsRef]
     );
@@ -581,17 +590,12 @@ export function useChatList({
         [chatsRef, lastServerChatsRef]
     );
 
-    const getPeerChatRetention = useCallback(
+    const getPeerChat = useCallback(
         (peerChatPK) => {
             if (!peerChatPK) {
-                return CHAT_RETENTION_24H;
+                return null;
             }
-            const serverChat = lastServerChatsRef.current.find((chatItem) => chatItem?.peerChatPK === peerChatPK);
-            if (serverChat) {
-                return normalizeChatSettings(serverChat.settings).retention;
-            }
-            const visibleChat = chatsRef.current.find((chatItem) => chatItem?.peerChatPK === peerChatPK);
-            return normalizeChatSettings(visibleChat?.settings).retention;
+            return lastServerChatsRef.current.find((chatItem) => chatItem?.peerChatPK === peerChatPK) || chatsRef.current.find((chatItem) => chatItem?.peerChatPK === peerChatPK) || null;
         },
         [chatsRef, lastServerChatsRef]
     );
@@ -606,39 +610,51 @@ export function useChatList({
         [lastServerChatsRef]
     );
 
-    const sendOptionsForPeer = useCallback((peerChatPK) => ({ retention: getPeerChatRetention(peerChatPK), chatExists: hasServerChatForPeer(peerChatPK) }), [getPeerChatRetention, hasServerChatForPeer]);
+    const sendOptionsForPeer = useCallback(
+        (peerChatPK) => {
+            const peerChat = getPeerChat(peerChatPK);
+            return {
+                retention: normalizeChatSettings(peerChat?.settings).retention,
+                chatExists: hasServerChatForPeer(peerChatPK),
+                receiverUid: peerChat?.peerUid || '',
+                peerActorPK: peerChat?.actors?.[peerChatPK] || '',
+                ownEntry: peerChat?.entryId ? peerChat : null,
+            };
+        },
+        [getPeerChat, hasServerChatForPeer]
+    );
 
-    const ensureChatRow = useCallback(
+    const ensureChat = useCallback(
         async (chatId) => {
-            if (!chatId || chatBanned || !uid || !chatPK || !chatPrivateKey || pendingDeleteIdsRef.current.has(chatId) || chatRowLoadsRef.current.has(chatId)) {
+            if (!chatId || chatBanned || !uid || !chatPK || !chatPrivateKey || pendingDeleteIdsRef.current.has(chatId) || chatLoadsRef.current.has(chatId)) {
                 return false;
             }
             if (serverChatIdsRef.current.includes(chatId) || lastServerChatsRef.current.some((chatItem) => chatItem?.id === chatId)) {
                 return true;
             }
 
-            chatRowLoadsRef.current.add(chatId);
-            setChatRowLoadVersion((prev) => prev + 1);
+            chatLoadsRef.current.add(chatId);
+            setChatLoadVersion((prev) => prev + 1);
             try {
-                const row = await chat.getChatRow?.(uid, chatId, chatPK, chatPrivateKey);
-                if (!row?.id || pendingDeleteIdsRef.current.has(row.id) || deletingChatIdsRef.current.has(row.id)) {
+                const loadedChat = await chat.getChat?.(uid, chatId, chatPK, chatPrivateKey);
+                if (!loadedChat?.id || pendingDeleteIdsRef.current.has(loadedChat.id)) {
                     return false;
                 }
-                commitServerChats(sortedUniqueChatRows([row], lastServerChatsRef.current));
+                commitServerChats(sortedChats([loadedChat], lastServerChatsRef.current));
                 return true;
             } catch (error) {
-                console.warn('Chat row load error', error);
+                console.warn('Chat load error', error);
                 return false;
             } finally {
-                chatRowLoadsRef.current.delete(chatId);
-                setChatRowLoadVersion((prev) => prev + 1);
+                chatLoadsRef.current.delete(chatId);
+                setChatLoadVersion((prev) => prev + 1);
             }
         },
-        [chat, chatBanned, chatPK, chatPrivateKey, uid, chatRowLoadsRef, commitServerChats, deletingChatIdsRef, lastServerChatsRef, pendingDeleteIdsRef, serverChatIdsRef]
+        [chat, chatBanned, chatPK, chatPrivateKey, uid, chatLoadsRef, commitServerChats, lastServerChatsRef, pendingDeleteIdsRef, serverChatIdsRef]
     );
 
     const serverChatIdsSet = useMemo(() => new Set(serverChatIds), [serverChatIds]);
-    const hasChatDoc = useCallback((chatId) => !!chatId && (serverChatIdsSet.has(chatId) || chatRowLoadsRef.current.has(chatId)) && !pendingDeleteIdsRef.current.has(chatId), [chatRowLoadVersion, chatRowLoadsRef, pendingDeleteIdsRef, serverChatIdsSet]);
+    const hasChat = useCallback((chatId) => !!chatId && (serverChatIdsSet.has(chatId) || chatLoadsRef.current.has(chatId)) && !pendingDeleteIdsRef.current.has(chatId), [chatLoadVersion, chatLoadsRef, pendingDeleteIdsRef, serverChatIdsSet]);
 
     return {
         chats,
@@ -656,10 +672,10 @@ export function useChatList({
         clearChatPreviewKeys,
         applyBatchReadReceipt,
         resetChatList,
-        ensureChatRow,
-        getChatRowLastMsgKey,
+        ensureChat,
+        getChatLastMsgKey,
         getChatRetention,
         sendOptionsForPeer,
-        hasChatDoc,
+        hasChat,
     };
 }

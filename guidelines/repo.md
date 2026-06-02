@@ -84,7 +84,7 @@ The core product loop is:
 
 The unlocked vault also opens a local encrypted data cache for non-authoritative app state:
 
-- chat rows
+- chat entries
 - decrypted chat media bytes
 - peer profiles
 - wallet transaction history
@@ -107,7 +107,7 @@ Main Firestore collections:
 - `profiles/{uid}`: public profile data, wallet/chat public keys, presence
 - `seeds/{uid}`: encrypted master seed
 - `usernames/{username}`: username reservation
-- `chats/{chatId}` and `chats/{chatId}/messages/{messageId}`: opaque pair chat action log. Chat docs carry only opaque version/timestamp shape; message docs carry encrypted signed or authenticated actions with dumb TTL metadata. Owner chat rows live under `users/{uid}/chats/{entryId}`, sealed wakes under `users/{uid}/chatInbox/{wakeId}`, and owner saved-message records under `users/{uid}/savedMessages/{savedId}`.
+- `chats/{chatId}/messages/{messageId}`: opaque pair chat action log. Parent chat docs are not app state; message docs carry encrypted signed actions with dumb TTL metadata. Owner chat entries live under `users/{uid}/chats/{entryId}`, sealed inbox pings under `users/{uid}/inbox/{pingId}`, and owner saved-message records under `users/{uid}/savedMessages/{savedId}`.
 - `bitcoin/current`: public cached BTC price, block height, and compact fee-rate tiers watched by the app-level Bitcoin provider
 - `passkeys/{credentialId}`: stored passkey credentials
 

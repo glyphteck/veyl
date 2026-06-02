@@ -10,10 +10,10 @@ export function getBatchLastMsgKey(messages) {
 
 export function isBatchFresh(entry) {
     return (
-        !entry?.rowLastMsgKey ||
-        entry.batchKeys?.has?.(entry.rowLastMsgKey) ||
-        entry.expiredKeys?.has?.(entry.rowLastMsgKey) ||
-        entry.deletedKeys?.has?.(entry.rowLastMsgKey) ||
+        !entry?.chatLastMsgKey ||
+        entry.batchKeys?.has?.(entry.chatLastMsgKey) ||
+        entry.expiredKeys?.has?.(entry.chatLastMsgKey) ||
+        entry.deletedKeys?.has?.(entry.chatLastMsgKey) ||
         (entry.ready && !entry.hasOlder && !entry.hasMore)
     );
 }
@@ -33,7 +33,7 @@ export function makeMessageSessionSnapshot(entry) {
         loading: !!entry.loading,
         exists: !!entry.exists,
         fromCache: false,
-        rowLastMsgKey: entry.rowLastMsgKey ?? null,
+        chatLastMsgKey: entry.chatLastMsgKey ?? null,
         batchLastMsgKey: entry.batchLastMsgKey ?? null,
         expiredKeys: new Set(entry.expiredKeys || []),
         deletedKeys: new Set(entry.deletedKeys || []),

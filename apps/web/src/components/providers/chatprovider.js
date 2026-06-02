@@ -20,12 +20,16 @@ const chat = createChat({
         await httpsCallable(getFunctions(), 'reserveChatMediaUpload')(payload);
         return true;
     },
+    async sendPush(recipientUid, ping) {
+        await httpsCallable(getFunctions(), 'push')({ recipientUid, ping });
+        return true;
+    },
     async setMediaSaved(path, stayId, stayKey, saved) {
         await httpsCallable(getFunctions(), 'setMediaSaved')({ path, stayId, stayKey, saved });
         return true;
     },
-    async finishDeletingChat(chatId) {
-        await httpsCallable(getFunctions(), 'deleteChat')({ chatId });
+    async deleteChatRemote(chatId, { entryId } = {}) {
+        await httpsCallable(getFunctions(), 'deleteChat')({ chatId, entryId });
         return true;
     },
 });

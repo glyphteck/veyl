@@ -12,7 +12,6 @@ export const CHAT_ACTION_VERSION = 1;
 export const CHAT_ACTION_OPS = Object.freeze({
     CREATE: 'create',
     EDIT: 'edit',
-    DELETE: 'delete',
     PAY_CONFIRM: 'pay_confirm',
     REACTION: 'rxn',
     READ_RECEIPT: 'rr',
@@ -162,10 +161,7 @@ export async function sealChatAction(pair, payload, options = {}) {
     });
 
     if (options?.auth === true) {
-        return {
-            ...action,
-            auth: chatActionAuth(pair.root, action),
-        };
+        throw new Error('chat action authenticator unsupported');
     }
     return {
         ...action,
@@ -188,16 +184,16 @@ export function openChatAction(action, options = {}) {
     if (expectedActor && expectedActor !== normalized.actor) {
         throw new Error('chat action actor mismatch');
     }
-    if (!expectedActor && actors && normalized.op !== CHAT_ACTION_OPS.DELETE) {
+    if (!expectedActor && actors) {
         throw new Error('unknown chat action actor');
+    }
+    if (normalized.auth) {
+        throw new Error('unsupported chat action authenticator');
     }
     if (normalized.sig && !verifyChatBytes(normalized.actor, normalized.sig, chatActionProofBytes(normalized))) {
         throw new Error('invalid chat action signature');
     }
-    if (normalized.auth && (!options.root || chatActionAuth(options.root, normalized) !== normalized.auth)) {
-        throw new Error('invalid chat action authenticator');
-    }
-    if (!normalized.sig && !normalized.auth && !options.allowUnsigned) {
+    if (!normalized.sig && !options.allowUnsigned) {
         throw new Error('missing chat action proof');
     }
 

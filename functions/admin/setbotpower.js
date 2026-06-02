@@ -2,8 +2,9 @@ import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { OK } from '../lib/admin.js';
 import { isAdminUid, setBotPowerState } from '../lib/bots.js';
 import { HOUR_MS, limitCallable, uidLimitKey } from '../lib/ratelimit.js';
+import { loggedCall } from '../lib/actionlog.js';
 
-export const setBotPower = onCall(async ({ auth, data }) => {
+export const setBotPower = onCall(loggedCall('setBotPower', async ({ auth, data }) => {
     if (!auth?.uid) {
         throw new HttpsError('unauthenticated', 'auth');
     }
@@ -30,4 +31,4 @@ export const setBotPower = onCall(async ({ auth, data }) => {
         }
         throw error;
     }
-});
+}));

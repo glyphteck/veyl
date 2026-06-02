@@ -1,20 +1,5 @@
 {
-    "indexes": [
-        {
-            "collectionGroup": "chats",
-            "queryScope": "COLLECTION",
-            "fields": [
-                {
-                    "fieldPath": "participants",
-                    "arrayConfig": "CONTAINS"
-                },
-                {
-                    "fieldPath": "ts",
-                    "order": "DESCENDING"
-                }
-            ]
-        }
-    ],
+    "indexes": [],
     "fieldOverrides": [
         {
             "collectionGroup": "passkey_challenges",
@@ -48,6 +33,12 @@
         },
         {
             "collectionGroup": "messages",
+            "fieldPath": "ttl",
+            "ttl": true,
+            "indexes": []
+        },
+        {
+            "collectionGroup": "inbox",
             "fieldPath": "ttl",
             "ttl": true,
             "indexes": []

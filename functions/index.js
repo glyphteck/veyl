@@ -11,13 +11,13 @@ export { setWalletPK, setChatPK } from './user/onboarding/setpks.js';
 
 // user action functions
 export { deleteAccount } from './user/actions/deleteaccount.js';
-export { deleteChat } from './user/actions/deletechat.js';
 export { setPush, dropPush } from './user/actions/push.js';
 export { reserveReportEvidenceUpload, submitReport } from './user/actions/report.js';
 
 // chat functions
 export { reserveChatMediaUpload, setMediaSaved } from './chat/media.js';
-export { onChatMessage } from './chat/messagepush.js';
+export { push } from './chat/push.js';
+export { deleteChat } from './chat/deletechat.js';
 
 // bot functions
 export { setBotPower } from './admin/setbotpower.js';

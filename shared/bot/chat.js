@@ -6,11 +6,24 @@ import { canStoreMsg } from '../chat/messages.js';
 import { cleanChatRetention, newMessageTtlMs, withMessageRetention } from '../chat/ttl.js';
 import { CHAT_ACTION_OPS } from '../chat/messages/actions.js';
 import { makeCid } from '../chat/state.js';
-import { makeOwnChatEntry, openOwnChatEntry, ownChatEntryId, sealChatWake, sealOwnChatEntry } from '../chat/entries.js';
+import { makeOwnChatEntry, openOwnChatEntry, ownChatEntryId, sealOwnChatEntry } from '../chat/entry.js';
+import { sealPing } from '../chat/ping.js';
 import { cleanText } from '../utils/text.js';
 
 const pairCache = new Map();
 const MAX_PAIR_CACHE = CHAT_PAIR_CACHE_LIMIT;
+const VERBOSE = typeof process !== 'undefined' && process.env?.VEYL_VERBOSE === '1';
+
+function safeLogId(value) {
+    const text = cleanText(value);
+    return text ? `${text.slice(0, 8)}:${text.length}` : null;
+}
+
+function botFirestoreLog(op, fields = {}) {
+    if (VERBOSE) {
+        console.log('[bot:firestore]', op, fields);
+    }
+}
 
 function getPairKey(chatPK, peerChatPK) {
     if (!chatPK || !peerChatPK) {
@@ -82,9 +95,23 @@ function adminBytes(value) {
     return typeof value?.toUint8Array === 'function' ? Buffer.from(value.toUint8Array()) : value;
 }
 
+function callablePing(ping) {
+    const body = ping?.body;
+    if (typeof body?.toBase64 !== 'function') {
+        throw new Error('inbox ping body unavailable');
+    }
+    return {
+        v: ping.v,
+        epk: ping.epk,
+        body: body.toBase64(),
+    };
+}
+
 async function profileByChatPK(db, chatPK) {
+    botFirestoreLog('read profiles by chatPK', { chatPK: safeLogId(chatPK) });
     const snap = await db.collection('profiles').where('chatPK', '==', chatPK).limit(1).get();
     const doc = snap.docs?.[0];
+    botFirestoreLog('read profiles by chatPK done', { chatPK: safeLogId(chatPK), hit: Boolean(doc) });
     if (!doc) {
         return null;
     }
@@ -94,6 +121,17 @@ async function profileByChatPK(db, chatPK) {
     };
 }
 
+async function recipientForSend(db, chatPK, options, needed) {
+    if (!needed) {
+        return null;
+    }
+    const uid = cleanText(options?.receiverUid);
+    if (uid) {
+        return { uid };
+    }
+    return profileByChatPK(db, chatPK).catch(() => null);
+}
+
 async function writeBotOwnerEntry(db, senderUid, senderChatPrivKey, pair, fields = {}) {
     const uid = cleanText(senderUid);
     if (!uid) {
@@ -101,6 +139,7 @@ async function writeBotOwnerEntry(db, senderUid, senderChatPrivKey, pair, fields
     }
     const entryId = ownChatEntryId(senderChatPrivKey, pair.chatId);
     const ref = db.collection('users').doc(uid).collection('chats').doc(entryId);
+    botFirestoreLog('read owner chat entry', { uid: safeLogId(uid), entryId: safeLogId(entryId), chatId: safeLogId(pair.chatId) });
     const snap = await ref.get().catch(() => null);
     const existing = snap?.exists ? await openOwnChatEntry(senderChatPrivKey, entryId, snap.data()?.body).catch(() => null) : null;
     const entry = makeOwnChatEntry(pair, {
@@ -122,7 +161,9 @@ export async function hasBotMsg(db, chatId, msgId) {
     if (!db || !chatId || !msgId) {
         return false;
     }
+    botFirestoreLog('read chat message exists', { chatId: safeLogId(chatId), msgId: safeLogId(msgId) });
     const snap = await db.collection('chats').doc(chatId).collection('messages').doc(msgId).get();
+    botFirestoreLog('read chat message exists done', { chatId: safeLogId(chatId), msgId: safeLogId(msgId), hit: snap.exists });
     return snap.exists;
 }
 
@@ -166,7 +207,7 @@ export async function sendBotMsg(db, FieldValue, senderChatPK, senderChatPrivKey
         ts,
         ttl: makeTtlDate(retention),
     };
-    const recipientProfile = updateLastMsg ? await profileByChatPK(db, receiverChatPK).catch(() => null) : null;
+    const recipientProfile = await recipientForSend(db, receiverChatPK, options, updateLastMsg);
     const ownerEntry = updateLastMsg
         ? await writeBotOwnerEntry(db, options?.senderUid, senderChatPrivKey, pair, {
               peerUid: recipientProfile?.uid,
@@ -184,8 +225,8 @@ export async function sendBotMsg(db, FieldValue, senderChatPK, senderChatPrivKey
               },
           })
         : null;
-    const wake = recipientProfile?.uid && updateLastMsg
-        ? await sealChatWake(senderChatPK, senderChatPrivKey, receiverChatPK, {
+    const ping = recipientProfile?.uid && updateLastMsg
+        ? await sealPing(senderChatPK, senderChatPrivKey, receiverChatPK, {
               kind: 'message',
               senderUid: options?.senderUid,
               messageId: msgRef.id,
@@ -199,26 +240,28 @@ export async function sendBotMsg(db, FieldValue, senderChatPK, senderChatPrivKey
     } else {
         batch.set(msgRef, msgData);
     }
-    if (updateLastMsg) {
-        batch.set(chatRef, { v: 1, ts }, { merge: true });
-    }
     if (ownerEntry) {
         batch.set(ownerEntry.ref, ownerEntry.data, { merge: true });
     }
-    if (wake) {
-        batch.set(db.collection('users').doc(recipientProfile.uid).collection('chatInbox').doc(), {
-            ...wake,
-            body: adminBytes(wake.body),
-            ts,
-        });
-    }
     try {
+        botFirestoreLog('write chat message batch', {
+            chatId: safeLogId(chatId),
+            msgId: safeLogId(msgRef.id),
+            ownerEntry: Boolean(ownerEntry),
+            ping: Boolean(ping),
+        });
         await batch.commit();
+        botFirestoreLog('write chat message batch done', { chatId: safeLogId(chatId), msgId: safeLogId(msgRef.id) });
     } catch (error) {
         if (msgId && isAlreadyExists(error)) {
+            botFirestoreLog('write chat message skipped', { chatId: safeLogId(chatId), msgId: safeLogId(msgRef.id) });
             return { chatId, msgId, skipped: true };
         }
         throw error;
+    }
+    if (ping && typeof options?.sendPush === 'function') {
+        botFirestoreLog('send inbox ping', { recipientUid: safeLogId(recipientProfile.uid), chatId: safeLogId(chatId), msgId: safeLogId(msgRef.id) });
+        await options.sendPush(recipientProfile.uid, callablePing(ping));
     }
 
     return { chatId, msgId: msgRef.id };
@@ -240,12 +283,14 @@ export async function updateBotMsg(db, chatId, msgId, senderChatPK, senderChatPr
     const op = newMessage?.t === 'req' && cleanText(newMessage?.tx) ? CHAT_ACTION_OPS.PAY_CONFIRM : CHAT_ACTION_OPS.EDIT;
     const { head, body } = await sealMsg(pair, { ...(newMessage || {}), cid: makeCid(), s: senderChatPK }, { op, target });
     const rawBody = adminBytes(body);
+    botFirestoreLog('write chat action', { chatId: safeLogId(chatId), msgId: safeLogId(msgId), op, target: safeLogId(target) });
     await db.collection('chats').doc(chatId).collection('messages').doc().set({
         head,
         body: rawBody,
         ts: new Date(),
         ttl: null,
     });
+    botFirestoreLog('write chat action done', { chatId: safeLogId(chatId), msgId: safeLogId(msgId), op });
 }
 
 export async function readBotMsgAttachment(bucket, userChatPK, userChatPrivKey, peerChatPK, msg) {
