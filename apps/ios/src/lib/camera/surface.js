@@ -26,7 +26,23 @@ function getInitialZoom(device) {
     return clampZoom(min, min, max);
 }
 
-export function CameraSurface({ active, cameraRef, canUseUltraWide, device, facing, isUltraWide, onCameraError, onCameraStarted, onCancelLensSwitch, onFlip, onFocus, onUseRegularLens, onUseUltraWide, outputs }) {
+export function CameraSurface({
+    active,
+    cameraRef,
+    canUseUltraWide,
+    device,
+    facing,
+    isUltraWide,
+    onCameraError,
+    onCameraStarted,
+    onCancelLensSwitch,
+    onFlip,
+    onFocus,
+    onUseRegularLens,
+    onUseUltraWide,
+    orientationLocked,
+    outputs,
+}) {
     const minZoom = Number.isFinite(device?.minZoom) ? device.minZoom : NORMAL_ZOOM;
     const deviceMaxZoom = Number.isFinite(device?.maxZoom) ? device.maxZoom : NORMAL_ZOOM;
     const maxZoom = Math.max(minZoom, Math.min(deviceMaxZoom, MAX_CAMERA_ZOOM));
@@ -96,6 +112,7 @@ export function CameraSurface({ active, cameraRef, canUseUltraWide, device, faci
                     device={device}
                     isActive={active}
                     outputs={outputs}
+                    orientationSource={orientationLocked ? 'custom' : 'device'}
                     mirrorMode={facing === 'front' ? 'on' : 'off'}
                     onError={onCameraError}
                     onStarted={onCameraStarted}

@@ -1,18 +1,10 @@
 import { getMessageKey } from './state.js';
 
 export function getPeerChatPKFromChatId(chatId, myChatPK) {
-    const parts = String(chatId ?? '').split('_');
-    if (parts.length !== 2) return null;
-    const [a, b] = parts;
-    return a === myChatPK ? b : a;
+    return null;
 }
 
 export function getOwnChatPKFromChatId(chatId, peerChatPK) {
-    const parts = String(chatId ?? '').split('_');
-    if (parts.length !== 2) return null;
-    const [a, b] = parts;
-    if (a === peerChatPK) return b;
-    if (b === peerChatPK) return a;
     return null;
 }
 
@@ -29,7 +21,7 @@ export function filterChatMessages(messages, chatPK, peerChatPK) {
 }
 
 export function getChatPeerPK(chatItem, chatPK) {
-    return chatItem?.participants?.find?.((participant) => participant && participant !== chatPK) ?? getPeerChatPKFromChatId(chatItem?.id, chatPK);
+    return chatItem?.peerChatPK || null;
 }
 
 export function getChatRowLastMsgKey(chatItem) {

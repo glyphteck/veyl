@@ -5,7 +5,6 @@ import { dropCachedMedia, readCachedMedia, writeCachedMedia } from '../../cache/
 import { randomBytes, toHex } from '../../crypto/core.js';
 import { attachmentBytes, isFileGoneError, makeChatUnavailableError, makeFileGoneError, saveMedia } from '../attachments.js';
 import { CHAT_MEDIA_TTL_MS, getMediaFileId } from '../filepayload.js';
-import { getPeerChatPKFromChatId } from '../ids.js';
 import { hasStoredFileRef, isAttachmentMsgType, isExpiredAttachmentMsg, mediaStayRef } from '../messages.js';
 import { makeMessagePreviewMedia, MESSAGE_PREVIEW_MIME } from '../previews.js';
 import { cleanText } from '../../utils/text.js';
@@ -48,10 +47,12 @@ function ensureMediaStay(message) {
 }
 
 function makeSavedMessagePayload(message, stay) {
-    const { id, ts, ttl, from, pending, failed, localUri, localData, reactions, type, ...payload } = message || {};
+    const { ttl, pending, failed, localUri, localData, reactions, type, ...payload } = message || {};
     const savedTtl = timestampMs(ttl);
     return {
         ...payload,
+        ttl: null,
+        permanent: true,
         ...(Number.isFinite(savedTtl) ? { savedTtl } : {}),
         ...(stay?.id && stay?.key
             ? {
@@ -74,48 +75,24 @@ function makeUnsavedMessagePayload(message) {
     };
 }
 
-function temporaryTtlMs(value, message, now = Date.now()) {
-    const ms = Number(value);
-    if (!Number.isFinite(ms) || ms <= 0) {
-        return null;
-    }
-    const mediaExpiresAt = isAttachmentMsgType(message?.t) && Number.isFinite(message?.x) ? message.x : Infinity;
-    const maxTtlMs = Math.min(mediaExpiresAt, now + CHAT_MEDIA_TTL_MS);
-    return Math.max(now + 1000, Math.min(ms, maxTtlMs));
-}
-
-function unsavedMessageTtlMs(message, ttlMs) {
-    const now = Date.now();
-    const requestedTtlMs = temporaryTtlMs(ttlMs, message, now);
-    if (requestedTtlMs != null) {
-        return requestedTtlMs;
-    }
-    const savedTtlMs = temporaryTtlMs(message?.savedTtl, message, now);
-    if (savedTtlMs != null) {
-        return savedTtlMs;
-    }
-    const expiresAt = Number.isFinite(message?.x) ? message.x : now + CHAT_MEDIA_TTL_MS;
-    return Math.max(now + 1000, Math.min(expiresAt, now + CHAT_MEDIA_TTL_MS));
-}
-
 function hasSavedMessagePayload(message) {
     return message?.permanent === true || Number.isFinite(Number(message?.savedTtl)) || !!mediaStayRef(message);
 }
 
-export function useChatSave({ chat, chatBanned, chatPK, chatPrivateKey, localCache }) {
+export function useChatSave({ chat, uid, chatBanned, chatPK, chatPrivateKey, localCache }) {
     const makeMessagePermanent = useCallback(
         async (chatId, message, peerChatPKOption) => {
+            void peerChatPKOption;
             if (chatBanned) {
                 throw makeChatUnavailableError();
             }
             const list = Array.isArray(message) ? message : [message];
-            const peerChatPK = peerChatPKOption || getPeerChatPKFromChatId(chatId, chatPK);
 
             for (const item of list) {
                 if (!item?.id || item.pending || item.failed) {
                     continue;
                 }
-                if (!chatPK || !chatPrivateKey || !peerChatPK) {
+                if (!uid || !chatPrivateKey) {
                     throw makeChatUnavailableError();
                 }
                 const saveMediaRef = isAttachmentMsgType(item.t) && hasStoredFileRef(item);
@@ -123,9 +100,8 @@ export function useChatSave({ chat, chatBanned, chatPK, chatPrivateKey, localCac
                 if (saveMediaRef) {
                     await requireMediaSaved(chat, item.p, stay, true);
                 }
-                const nextMessage = makeSavedMessagePayload(item, stay);
                 try {
-                    await chat.updateMessage(chatId, item.id, chatPrivateKey, peerChatPK, nextMessage, { updateLastMsg: false });
+                    await chat.saveMessage(uid, chatPrivateKey, chatId, makeSavedMessagePayload(item, stay));
                 } catch (error) {
                     if (saveMediaRef) {
                         await requireMediaSaved(chat, item.p, stay, false).catch(() => {});
@@ -134,19 +110,19 @@ export function useChatSave({ chat, chatBanned, chatPK, chatPrivateKey, localCac
                 }
             }
 
-            return chat.makeMessagePermanent(chatId, list);
+            return list.length;
         },
-        [chat, chatBanned, chatPK, chatPrivateKey]
+        [chat, uid, chatBanned, chatPrivateKey]
     );
 
     const makeMessageTemporary = useCallback(
         async (chatId, message, peerChatPKOption, options = {}) => {
+            void peerChatPKOption;
+            void options;
             if (chatBanned) {
                 throw makeChatUnavailableError();
             }
             const list = Array.isArray(message) ? message : [message];
-            const peerChatPK = peerChatPKOption || getPeerChatPKFromChatId(chatId, chatPK);
-            const ttlMs = Number.isFinite(options?.ttlMs) ? options.ttlMs : null;
             let updated = 0;
 
             for (const item of list) {
@@ -154,13 +130,13 @@ export function useChatSave({ chat, chatBanned, chatPK, chatPrivateKey, localCac
                     continue;
                 }
                 const updateBody = hasSavedMessagePayload(item) || (isAttachmentMsgType(item.t) && hasStoredFileRef(item));
-                if (updateBody && (!chatPK || !chatPrivateKey || !peerChatPK)) {
+                if (updateBody && (!uid || !chatPrivateKey)) {
                     throw makeChatUnavailableError();
                 }
                 if (isAttachmentMsgType(item.t) && hasStoredFileRef(item)) {
                     const stay = mediaStayRef(item);
-                    await chat.updateMessage(chatId, item.id, chatPrivateKey, peerChatPK, makeUnsavedMessagePayload(item), { updateLastMsg: false });
-                    updated += await chat.makeMessageTemporary(chatId, [item], unsavedMessageTtlMs(item, ttlMs));
+                    await chat.unsaveMessage(uid, chatPrivateKey, chatId, makeUnsavedMessagePayload(item));
+                    updated += 1;
                     if (stay) {
                         await requireMediaSaved(chat, item.p, stay, false);
                     }
@@ -168,14 +144,14 @@ export function useChatSave({ chat, chatBanned, chatPK, chatPrivateKey, localCac
                 }
 
                 if (updateBody) {
-                    await chat.updateMessage(chatId, item.id, chatPrivateKey, peerChatPK, makeUnsavedMessagePayload(item), { updateLastMsg: false });
+                    await chat.unsaveMessage(uid, chatPrivateKey, chatId, makeUnsavedMessagePayload(item));
                 }
-                updated += await chat.makeMessageTemporary(chatId, [item], unsavedMessageTtlMs(item, ttlMs));
+                updated += 1;
             }
 
             return updated;
         },
-        [chat, chatBanned, chatPK, chatPrivateKey]
+        [chat, uid, chatBanned, chatPrivateKey]
     );
 
     const readMessageFile = useCallback(

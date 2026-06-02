@@ -3,7 +3,8 @@
 status: active
 branch: current
 worktree: current
-base: main@bd96f04fccee
+base: main@42a298010646
+repo version: 4.14.11
 
 ## Scope
 
@@ -104,9 +105,7 @@ Website repo:
 
 ## Collision Notes
 
-The current Veyl checkout is dirty with unrelated bot, wallet, tx, cache, chat-row, and traffic-load work. Keep this task scoped to the NIP-05 planning file unless implementation starts in an isolated branch/worktree or those changes are confirmed to be yours.
-
-The Website checkout is currently clean. Do not edit it during the planning pass unless implementation begins.
+The current Veyl checkout has unrelated dirty iOS chat, peer-picker, send-photo, and share-media files outside this task's scope. Keep NIP-05 implementation isolated from that work, and re-check the Website checkout before editing root-domain trust routes.
 
 ## Deferred
 

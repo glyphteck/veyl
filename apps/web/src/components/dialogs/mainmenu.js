@@ -61,7 +61,6 @@ import { Bitcoin } from '@/components/bitcoin';
 import { makeReq, makeTxt } from '@veyl/shared/chat/messages';
 import { Dot } from '@/components/dot';
 import { qr } from '@veyl/shared/qr';
-import { getChatId } from '@veyl/shared/crypto/chat';
 import { Shortcut } from '@/components/shortcut';
 
 const ROW_ICONS = {
@@ -306,7 +305,7 @@ export default function MainMenu({ close, data, open = true }) {
     const { copyFundingAddress, fundingAddress, getFundingAddress, sendMoneyWithSpark, balance, hasMoreTxs, isTxLoading, loadMoreTxs } = useWallet();
     const { lock, localCache } = useVault();
     const { hasTx, sortedTransactions } = useTxData();
-    const { hasChats, lastChat, chats, sendMessage, selectChat } = useChat();
+    const { hasChats, lastChat, chats, sendMessage, selectPeerChat } = useChat();
     const { peers, recentPeers, peerByWalletPK, peerByChatPK, addPeer } = usePeer();
     const { cloaked, cloak } = useCloak();
     const { searching, results, query, search, clearSearch } = useSearch('mainmenu');
@@ -418,9 +417,8 @@ export default function MainMenu({ close, data, open = true }) {
                 toast.error('this person cannot receive messages yet');
                 return;
             }
-            const chatId = getChatId(chatPK, peer.chatPK);
             close();
-            selectChat(chatId);
+            await selectPeerChat(peer.chatPK);
             router.push('/chat');
             void sendMessage(peer.chatPK, makeTxt(parsed.args.message)).catch((error) => {
                 console.error('mainmenu msg failed', error);

@@ -1,12 +1,11 @@
 'use client';
 
-import { CHAT_FILE_SIZE_LIMIT_ENABLED, MAX_CHAT_FILE_BYTES, MAX_CHAT_UPLOAD_FILES, makeChatFileTooLargeError } from './filepayload.js';
+import { MAX_CHAT_UPLOAD_FILES } from './filepayload.js';
 import { makeTxtFileName } from './messages.js';
 import { ATTACHMENT_CACHE_FALLBACK_DELAY_MS, ATTACHMENT_CACHE_IDLE_TIMEOUT_MS } from '../config.js';
 import { encoder } from '../crypto/core.js';
 import { writeCachedMedia } from '../cache/localdata.js';
 import { cleanText, lowerText } from '../utils/text.js';
-import { formatBytes } from '../utils/display.js';
 
 export function makeChatUnavailableError() {
     const error = new Error('chat unavailable');
@@ -29,30 +28,14 @@ export function getAttachmentByteSize(attachment) {
     return null;
 }
 
-export function makeAttachmentTooLargeError(size) {
-    return makeChatFileTooLargeError(size);
-}
-
 export function checkAttachmentSize(attachment) {
-    const size = getAttachmentByteSize(attachment);
-    if (CHAT_FILE_SIZE_LIMIT_ENABLED && Number.isFinite(size) && size > MAX_CHAT_FILE_BYTES) {
-        throw makeAttachmentTooLargeError(size);
-    }
-    return size;
+    return getAttachmentByteSize(attachment);
 }
 
 export function makeAttachmentUnavailableError(type = 'file') {
     const error = new Error(type === 'mp4' ? 'video unavailable' : 'file unavailable');
     error.code = type === 'mp4' ? 'video-unavailable' : 'file-unavailable';
     return error;
-}
-
-export function formatMaxChatFileSize(bytes = MAX_CHAT_FILE_BYTES, options = {}) {
-    return formatBytes(bytes, {
-        fallback: options.fallback ?? '0MB',
-        unitSeparator: options.unitSeparator ?? '',
-        maxUnit: 'MB',
-    });
 }
 
 export function formatMaxChatUploadFiles(maxFiles = MAX_CHAT_UPLOAD_FILES) {
@@ -66,11 +49,6 @@ export function chatUploadErrorMessage(error, options = {}) {
     if (code === 'too-many-files') {
         const label = formatMaxChatUploadFiles(error?.maxFiles || MAX_CHAT_UPLOAD_FILES);
         return typeof options.tooManyFiles === 'function' ? options.tooManyFiles(label, error) : `choose up to ${label}`;
-    }
-
-    if (code === 'file-too-large') {
-        const label = formatMaxChatFileSize(error?.maxBytes || MAX_CHAT_FILE_BYTES, options.size);
-        return typeof options.fileTooLarge === 'function' ? options.fileTooLarge(label, error) : `attachment too large (max ${label})`;
     }
 
     if (code === 'video-unavailable' && typeof options.videoUnavailable === 'function') {

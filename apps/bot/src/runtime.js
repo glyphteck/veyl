@@ -32,9 +32,9 @@ import {
 import { clearBotChatPairCache, decryptBotChatSettings, decryptBotMsg, hasBotMsg, readBotMsgAttachment, sendBotMsg, updateBotMsg, uploadBotAttachmentMsg } from '@veyl/shared/bot/chat';
 import { getBotBalance, mirrorBotTransfer } from '@veyl/shared/bot/wallet';
 import { getChatPeerPK } from '@veyl/shared/chat/ids';
-import { hasStoredFileRef, isControlMsg, isSystemMsg, makeHiddenCheckpoint, makeReadReceipt, makeReq, makeTxt, setReqTx } from '@veyl/shared/chat/messages';
+import { makeOwnChatEntry, openChatWake, openOwnChatEntry, ownChatEntryId, sealOwnChatEntry } from '@veyl/shared/chat/entries';
+import { hasStoredFileRef, isActionMutationMsg, isControlMsg, isSystemMsg, makeHiddenCheckpoint, makeReadReceipt, makeReq, makeTxt, setReqTx } from '@veyl/shared/chat/messages';
 import { getMessageKey, makeCid } from '@veyl/shared/chat/state';
-import { getChatId } from '@veyl/shared/crypto/chat';
 import {
     BOT_TRAFFIC_SESSION_WAIT_MS,
     BOT_REPLY_AFTER_READ_DELAY_MS,
@@ -84,6 +84,10 @@ function cleanDocPart(value) {
         .slice(0, 120);
 }
 
+function adminBytes(value) {
+    return typeof value?.toUint8Array === 'function' ? Buffer.from(value.toUint8Array()) : value;
+}
+
 function botReplyId(context, kind = 'reply') {
     const msgId = cleanDocPart(context?.msgId);
     const part = cleanDocPart(kind) || 'reply';
@@ -100,10 +104,6 @@ function botReplyCid(context, kind = 'reply') {
         .padEnd(6, '0')
         .slice(0, 6);
     return `${base}${suffix}`;
-}
-
-function receiptTarget(msgSnap, data) {
-    return getMessageKey({ ...(data?.head || {}), id: msgSnap?.id });
 }
 
 function verboseLog(...args) {
@@ -910,7 +910,7 @@ export class BotRuntime {
             const session = soloSession || pickRandom(sessions);
 
             const message = randomTrafficPayload();
-            const chatId = getChatId(session.chatPK, target.chatPK);
+            const chatId = `${session.uid}:${target.chatPK}`;
 
             try {
                 const result = await queueMapJob(session.chatJobs, chatId, async () => {
@@ -982,7 +982,7 @@ export class BotRuntime {
             }
 
             try {
-                const receipt = await this.findLatestPeerReceiptTarget(chatId, target.chatPK);
+                const receipt = await this.findLatestPeerReceiptTarget(session, chatId, target.chatPK);
                 if (!receipt) {
                     continue;
                 }
@@ -1015,17 +1015,21 @@ export class BotRuntime {
         return { sent, errors };
     }
 
-    async findLatestPeerReceiptTarget(chatId, peerChatPK) {
+    async findLatestPeerReceiptTarget(session, chatId, peerChatPK) {
+        const entryId = ownChatEntryId(session.chatPrivKey, chatId);
+        const entrySnap = await db.collection('users').doc(session.uid).collection('chats').doc(entryId).get().catch(() => null);
+        const entry = entrySnap?.exists ? await openOwnChatEntry(session.chatPrivKey, entryId, entrySnap.data()?.body).catch(() => null) : null;
         const snap = await db.collection('chats').doc(chatId).collection('messages').orderBy('ts', 'desc').limit(TRAFFIC_READ_RECEIPT_SCAN_LIMIT).get();
         for (const msgSnap of snap.docs) {
             const data = msgSnap.data();
-            if (data?.head?.from !== peerChatPK) {
+            const msg = await decryptBotMsg(data, session.chatPK, session.chatPrivKey, peerChatPK, { actors: entry?.actors }).catch(() => null);
+            if (!msg || msg.s !== peerChatPK || isControlMsg(msg) || isSystemMsg(msg) || (msg.actionOp && msg.actionOp !== 'create')) {
                 continue;
             }
             return {
                 msgId: msgSnap.id,
-                target: receiptTarget(msgSnap, data),
-                ts: data?.ts,
+                target: getMessageKey({ ...msg, id: msgSnap.id }),
+                ts: msg.ts ?? data?.ts,
             };
         }
         return null;
@@ -1125,36 +1129,121 @@ export class BotRuntime {
     }
 
     subscribeChats(session) {
-        return db
-            .collection('chats')
-            .where('participants', 'array-contains', session.chatPK)
-            .onSnapshot(
-                (snap) => {
-                    for (const change of snap.docChanges()) {
-                        if (change.type === 'removed') {
-                            session.chatRead?.delete(change.doc.id);
-                            continue;
-                        }
-
-                        const chat = {
-                            id: change.doc.id,
-                            ref: change.doc.ref,
-                            ...change.doc.data(),
-                        };
-
-                        void queueMapJob(session.chatJobs, chat.id, () => this.processChat(session, chat)).catch((error) => {
-                            console.error(`bot @${session.username} chat ${chat.id} failed`, error);
-                        });
+        const userRef = db.collection('users').doc(session.uid);
+        const unsubscribeChats = userRef.collection('chats').onSnapshot(
+            (snap) => {
+                for (const change of snap.docChanges()) {
+                    if (change.type === 'removed') {
+                        const data = change.doc.data();
+                        void openOwnChatEntry(session.chatPrivKey, change.doc.id, data?.body)
+                            .then((opened) => {
+                                if (opened?.chatId) {
+                                    session.chatRead?.delete(opened.chatId);
+                                }
+                            })
+                            .catch(() => {});
+                        continue;
                     }
-                },
-                (error) => {
-                    console.error(`bot @${session.username} chat subscription failed`, error);
-                    void this.touchBot(session.ref, {
-                        status: 'error',
-                        lastError: statusMessage(error),
+
+                    const data = change.doc.data();
+                    const entry = openOwnChatEntry(session.chatPrivKey, change.doc.id, data?.body).catch(() => null);
+
+                    void entry.then((opened) => {
+                        if (!opened?.chatId || !opened?.peerChatPK) {
+                            return;
+                        }
+                        const chat = {
+                            id: opened.chatId,
+                            ref: db.collection('chats').doc(opened.chatId),
+                            peerChatPK: opened.peerChatPK,
+                            settings: opened.settings,
+                            actors: opened.actors || {},
+                            ts: data?.ts,
+                        };
+                        return queueMapJob(session.chatJobs, chat.id, () => this.processChat(session, chat));
+                    }).catch((error) => {
+                        console.error(`bot @${session.username} chat entry ${change.doc.id} failed`, error);
                     });
                 }
+            },
+            (error) => {
+                console.error(`bot @${session.username} chat subscription failed`, error);
+                void this.touchBot(session.ref, {
+                    status: 'error',
+                    lastError: statusMessage(error),
+                });
+            }
+        );
+        const unsubscribeInbox = userRef.collection('chatInbox').onSnapshot(
+            (snap) => {
+                for (const change of snap.docChanges()) {
+                    if (change.type === 'removed') {
+                        continue;
+                    }
+                    void this.processChatWake(session, change.doc).catch((error) => {
+                        console.error(`bot @${session.username} chat wake ${change.doc.id} failed`, error);
+                    });
+                }
+            },
+            (error) => {
+                console.error(`bot @${session.username} chat inbox failed`, error);
+            }
+        );
+        return () => {
+            unsubscribeChats?.();
+            unsubscribeInbox?.();
+        };
+    }
+
+    async processChatWake(session, wakeDoc) {
+        try {
+            const wake = await openChatWake(session.chatPK, session.chatPrivKey, wakeDoc.data());
+            if (!wake?.pair?.chatId || !wake?.payload?.senderChatPK || !wake?.payload?.actorPK) {
+                throw new Error('invalid chat wake');
+            }
+            const peerUid = await this.resolveWakePeerUid(wake.payload);
+            const entryId = ownChatEntryId(session.chatPrivKey, wake.pair.chatId);
+            const entryRef = db.collection('users').doc(session.uid).collection('chats').doc(entryId);
+            const existingSnap = await entryRef.get().catch(() => null);
+            const existing = existingSnap?.exists ? await openOwnChatEntry(session.chatPrivKey, entryId, existingSnap.data()?.body).catch(() => null) : null;
+            const actors = {
+                ...(existing?.actors || {}),
+                [wake.pair.chatPK]: wake.pair.actor.publicKey,
+                [wake.payload.senderChatPK]: wake.payload.actorPK,
+            };
+            const entry = makeOwnChatEntry(wake.pair, {
+                peerUid: peerUid || existing?.peerUid,
+                actors,
+                settings: existing?.settings,
+                lastMsg: existing?.lastMsg,
+            });
+            await entryRef.set(
+                {
+                    body: adminBytes(await sealOwnChatEntry(session.chatPrivKey, entryId, entry)),
+                    ts: new Date(timestampMs(wake.payload?.ts, Date.now())),
+                },
+                { merge: true }
             );
+        } finally {
+            await wakeDoc.ref.delete().catch(() => {});
+        }
+    }
+
+    async resolveWakePeerUid(payload) {
+        const senderChatPK = cleanText(payload?.senderChatPK);
+        const claimedUid = cleanText(payload?.senderUid);
+        if (!senderChatPK) {
+            return null;
+        }
+        if (claimedUid) {
+            const snap = await db.collection('profiles').doc(claimedUid).get().catch(() => null);
+            if (!sameText(snap?.data?.()?.chatPK, senderChatPK)) {
+                throw new Error('wake sender uid mismatch');
+            }
+            return claimedUid;
+        }
+        const profileSnap = await db.collection('profiles').where('chatPK', '==', senderChatPK).limit(1).get();
+        return profileSnap.docs?.[0]?.id || null;
     }
 
     attachWalletListeners(session) {
@@ -1414,18 +1503,12 @@ export class BotRuntime {
             return;
         }
 
-        const latestMs = timestampMs(msgsSnap.docs[msgsSnap.docs.length - 1]?.data()?.ts, 0);
-        const hasPeerDocs = msgsSnap.docs.some((msgSnap) => msgSnap.data()?.head?.from === peerChatPK);
-        if (!hasPeerDocs) {
-            await this.ackChat(session, chat.id, latestMs);
-            return;
-        }
-
         const settings = await decryptBotChatSettings(chat?.settings, session.chatPK, session.chatPrivKey, peerChatPK);
         if (!settings) {
             return;
         }
         const retention = settings.retention;
+        const latestMs = timestampMs(msgsSnap.docs[msgsSnap.docs.length - 1]?.data()?.ts, 0);
         let readMs = sinceMs;
         const replies = [];
         let receipt = null;
@@ -1436,19 +1519,14 @@ export class BotRuntime {
             }
 
             const msgData = msgSnap.data();
-            const senderChatPK = typeof msgData?.head?.from === 'string' ? msgData.head.from : '';
             const msgMs = timestampMs(msgData?.ts, 0);
-
-            if (senderChatPK !== peerChatPK) {
-                readMs = Math.max(readMs, msgMs);
-                continue;
-            }
 
             const context = {
                 chatId: chat.id,
                 msgId: msgSnap.id,
                 msgTs: msgData?.ts,
                 peerChatPK,
+                actors: chat.actors || {},
                 retention,
             };
             const msg = await this.readChatMessage(
@@ -1456,11 +1534,15 @@ export class BotRuntime {
                 context,
                 msgData
             );
+            if (msg?.s !== peerChatPK) {
+                readMs = Math.max(readMs, msgMs);
+                continue;
+            }
             if (msg) {
                 replies.push({ context, msg });
                 receipt = {
                     context,
-                    target: receiptTarget(msgSnap, msgData),
+                    target: getMessageKey({ ...msg, id: msgSnap.id }),
                 };
             }
 
@@ -1518,12 +1600,12 @@ export class BotRuntime {
     }
 
     async readChatMessage(session, context, msgData) {
-        const msg = await decryptBotMsg(msgData, session.chatPK, session.chatPrivKey, context.peerChatPK);
+        const msg = await decryptBotMsg(msgData, session.chatPK, session.chatPrivKey, context.peerChatPK, { actors: context.actors }).catch(() => null);
         if (!msg) {
             return null;
         }
 
-        if (isControlMsg(msg) || isSystemMsg(msg)) {
+        if (isControlMsg(msg) || isSystemMsg(msg) || isActionMutationMsg(msg)) {
             return null;
         }
 
@@ -1594,7 +1676,7 @@ export class BotRuntime {
         const patched = { ...setReqTx(msg, txId), cid: msg.cid };
 
         try {
-            await updateBotMsg(db, context.chatId, context.msgId, session.chatPrivKey, context.peerChatPK, patched);
+            await updateBotMsg(db, context.chatId, context.msgId, session.chatPK, session.chatPrivKey, context.peerChatPK, patched);
         } catch (error) {
             console.warn('bot request patch failed', context.chatId, statusMessage(error));
         }
@@ -1617,7 +1699,7 @@ export class BotRuntime {
         return sendBotMsg(db, FieldValue, session.chatPK, session.chatPrivKey, peerChatPK, {
             ...payload,
             cid: options.cid || makeCid(),
-        }, { ...(options.msgId ? { msgId: options.msgId } : {}), retention: options.retention });
+        }, { ...(options.msgId ? { msgId: options.msgId } : {}), retention: options.retention, senderUid: session.uid });
     }
 
     async sendReadReceipt(session, peerChatPK, target, retention, context = {}) {
@@ -1633,7 +1715,7 @@ export class BotRuntime {
                 cid: makeCid(),
                 s: session.chatPK,
             },
-            { updateLastMsg: false, retention, ...(msgId ? { msgId } : {}) }
+            { updateLastMsg: false, retention, senderUid: session.uid, ...(msgId ? { msgId } : {}) }
         );
     }
 
@@ -1650,7 +1732,7 @@ export class BotRuntime {
                 cid: makeCid(),
                 s: session.chatPK,
             },
-            { updateLastMsg: false, retention, ...(msgId ? { msgId } : {}) }
+            { updateLastMsg: false, retention, senderUid: session.uid, ...(msgId ? { msgId } : {}) }
         );
     }
 }

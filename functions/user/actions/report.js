@@ -1,7 +1,7 @@
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { db, FieldValue, Timestamp, OK } from '../../lib/admin.js';
 import { DAY_MS, HOUR_MS, limitCallable, uidLimitKey } from '../../lib/ratelimit.js';
-import { REPORT_EVIDENCE_MAX_FILE_BYTES, REPORT_EVIDENCE_UPLOAD_RESERVATION_TTL_MS, reportEvidenceReserveLimitRules } from '../../lib/abuseconfig.js';
+import { REPORT_EVIDENCE_UPLOAD_RESERVATION_TTL_MS, reportEvidenceReserveLimitRules } from '../../lib/abuseconfig.js';
 import { assertQuotaRoom, cleanQuotaAmount, writeQuotaReservation } from '../../lib/usagequota.js';
 import { makeAccountUploadQuota } from '../../lib/uploadquota.js';
 
@@ -90,14 +90,7 @@ function cleanUploadPath(value, reporterUid) {
 }
 
 function cleanEvidenceUploadSize(value) {
-    const size = cleanQuotaAmount(value);
-    if (size > REPORT_EVIDENCE_MAX_FILE_BYTES) {
-        throw new HttpsError('resource-exhausted', 'file too large', {
-            limit: REPORT_EVIDENCE_MAX_FILE_BYTES,
-            requested: size,
-        });
-    }
-    return size;
+    return cleanQuotaAmount(value);
 }
 
 function cleanEvidenceContentType(value) {

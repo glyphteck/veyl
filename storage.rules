@@ -53,14 +53,12 @@ service firebase.storage {
         && reservation.size is int
         && request.resource.size > 0
         && request.resource.size <= reservation.size
-        && request.resource.size <= 20 * 1024 * 1024
         && request.resource.contentType == reservation.contentType;
     }
 
     function isReportBlob() {
       return request.resource != null
-        && request.resource.size > 0
-        && request.resource.size <= 20 * 1024 * 1024;
+        && request.resource.size > 0;
     }
 
     function isReportEvidenceId(value) {

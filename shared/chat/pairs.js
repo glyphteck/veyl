@@ -36,3 +36,8 @@ export async function getCachedPair(chatPK, chatPrivKey, peerChatPK) {
     }
     return pair;
 }
+
+export async function resolveChatId(chatPK, chatPrivKey, peerChatPK) {
+    const pair = await getCachedPair(chatPK, chatPrivKey, peerChatPK);
+    return pair?.chatId || null;
+}

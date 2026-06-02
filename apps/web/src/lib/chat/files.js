@@ -1,13 +1,13 @@
 'use client';
 
-import { chatUploadErrorMessage, formatMaxChatFileSize, formatMaxChatUploadFiles } from '@veyl/shared/chat/attachments';
+import { chatUploadErrorMessage, formatMaxChatUploadFiles } from '@veyl/shared/chat/attachments';
 import { CHAT_IMAGE_COMPRESS, fitChatImageSize, getChatUploadFileList } from '@veyl/shared/chat/filepayload';
 import { filenameWithExtension } from '@veyl/shared/utils/filename';
 import { fileMime, isImageFile, isPngFile, isVideoFile } from '@veyl/shared/utils/filetype';
 import { toMp3 } from '../media/audio';
 import { toMp4 } from '../media/video';
 
-export { chatUploadErrorMessage, formatMaxChatFileSize, formatMaxChatUploadFiles };
+export { chatUploadErrorMessage, formatMaxChatUploadFiles };
 
 export function getUploadFiles(files) {
     return getChatUploadFileList(files);

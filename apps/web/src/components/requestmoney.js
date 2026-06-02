@@ -3,11 +3,11 @@ import { z } from 'zod';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Field } from '@/components/field';
-import { Input } from '@/components/input';
 import { Button } from '@/components/button';
+import { MoneyAmountInput } from '@/components/moneyamountinput';
 import { Loader, CircleCheck, QrCode } from 'lucide-react';
 import { formatUserDisplay } from '@veyl/shared/profile';
-import { MONEY_UNITS, moneyUnitLabel, toSats, toDisplay, renderMoney } from '@veyl/shared/money';
+import { MONEY_UNITS, toSats, toDisplay, renderMoney } from '@veyl/shared/money';
 import { useBitcoin } from '@/components/providers/bitcoinprovider';
 import { useUser } from '@/components/providers/userprovider';
 import { useDialog } from '@/components/providers/dialogprovider';
@@ -237,7 +237,7 @@ export default function RequestMoney({ peer, amount = '', inputUnit, onPeerChang
                     name="sender"
                     render={({ field }) => (
                         <PeerSelector
-                            className="h-12 pl-2 pr-3 text-base [&_.avatar]:size-9"
+                            className="h-12 pl-2 text-base [&_.avatar]:size-9"
                             selectedPeer={sender}
                             onPeerChange={(peer) => {
                                 setSender(peer);
@@ -258,34 +258,20 @@ export default function RequestMoney({ peer, amount = '', inputUnit, onPeerChang
                     control={form.control}
                     name="amount"
                     render={({ field, inputProps }) => (
-                        <div className="relative w-full">
-                            <Input
-                                {...field}
-                                {...inputProps}
-                                ref={(el) => {
-                                    field.ref(el);
-                                    amountInputRef.current = el;
-                                }}
-                                className={`h-12 min-w-0 pl-4 pr-20 text-2xl font-black ${cloaked ? 'cloaked' : ''}`}
-                                placeholder={watchedInputUnit === 'sats' ? '0000' : '0.00'}
-                                onChange={handleAmountChange}
-                                inputMode="numeric"
-                                pattern={watchedInputUnit === 'sats' ? '[0-9]*' : '[0-9.]*'}
-                                disabled={isSubmitting}
-                                autoFocus={peer && !hasAmount}
-                            />
-                            <Button
-                                type="button"
-                                aria-label={`change currency, current ${watchedInputUnit}`}
-                                title="change currency"
-                                className="grower-lg absolute top-1/2 right-3 h-9 min-w-12 -translate-y-1/2 justify-end px-2.5 text-2xl font-black text-muted"
-                                onMouseDown={(event) => event.preventDefault()}
-                                onClick={cycleUnit}
-                                disabled={isSubmitting}
-                            >
-                                {moneyUnitLabel(watchedInputUnit)}
-                            </Button>
-                        </div>
+                        <MoneyAmountInput
+                            {...field}
+                            {...inputProps}
+                            ref={(el) => {
+                                field.ref(el);
+                                amountInputRef.current = el;
+                            }}
+                            unit={watchedInputUnit}
+                            onCycleUnit={cycleUnit}
+                            onChange={handleAmountChange}
+                            disabled={isSubmitting}
+                            cloaked={cloaked}
+                            autoFocus={peer && !hasAmount}
+                        />
                     )}
                 />
             </form>

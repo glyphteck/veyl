@@ -2,8 +2,6 @@
 
 import { createFileKey, encodeFileKey, sealFile } from '../crypto/file.js';
 import {
-    CHAT_FILE_SIZE_LIMIT_ENABLED as CONFIG_CHAT_FILE_SIZE_LIMIT_ENABLED,
-    CHAT_MAX_FILE_BYTES,
     CHAT_MAX_UPLOAD_FILES,
     CHAT_IMAGE_COMPRESS as CONFIG_CHAT_IMAGE_COMPRESS,
     CHAT_IMAGE_MAX_EDGE,
@@ -18,8 +16,6 @@ export const CHAT_MEDIA_ROOT = 'media';
 export const CHAT_SLOT = 'main';
 export const CHAT_MEDIA_TTL_DAYS = CONFIG_CHAT_MEDIA_TTL_DAYS;
 export const CHAT_MEDIA_TTL_MS = CONFIG_CHAT_MEDIA_TTL_MS;
-export const MAX_CHAT_FILE_BYTES = CHAT_MAX_FILE_BYTES;
-export const CHAT_FILE_SIZE_LIMIT_ENABLED = CONFIG_CHAT_FILE_SIZE_LIMIT_ENABLED;
 export const MAX_CHAT_UPLOAD_FILES = CHAT_MAX_UPLOAD_FILES;
 export const MAX_CHAT_IMAGE_EDGE = CHAT_IMAGE_MAX_EDGE;
 export const CHAT_IMAGE_COMPRESS = CONFIG_CHAT_IMAGE_COMPRESS;
@@ -54,40 +50,17 @@ export function makeTooManyChatFilesError(count) {
     return error;
 }
 
-export function makeChatFileTooLargeError(size) {
-    const error = new Error('file too large');
-    error.code = 'file-too-large';
-    error.maxBytes = MAX_CHAT_FILE_BYTES;
-    if (Number.isFinite(size)) {
-        error.size = size;
-    }
-    return error;
-}
-
 export function assertChatUploadByteSize(bytes) {
     if (!Number.isFinite(bytes?.byteLength)) {
         throw new Error('upload bytes required');
     }
-    if (CHAT_FILE_SIZE_LIMIT_ENABLED && bytes.byteLength > MAX_CHAT_FILE_BYTES) {
-        throw makeChatFileTooLargeError(bytes.byteLength);
-    }
     return bytes.byteLength;
-}
-
-export function assertChatUploadFileSize(file) {
-    if (CHAT_FILE_SIZE_LIMIT_ENABLED && Number.isFinite(file?.size) && file.size > MAX_CHAT_FILE_BYTES) {
-        throw makeChatFileTooLargeError(file.size);
-    }
-    return Number.isFinite(file?.size) ? file.size : null;
 }
 
 export function getChatUploadFileList(files) {
     const list = Array.from(files || []).filter(Boolean);
     if (list.length > MAX_CHAT_UPLOAD_FILES) {
         throw makeTooManyChatFilesError(list.length);
-    }
-    for (const file of list) {
-        assertChatUploadFileSize(file);
     }
     return list;
 }

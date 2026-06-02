@@ -319,15 +319,10 @@ export function setLocalChats(chats, localByChat) {
         const ts = timestampMs(lastMsg.ts, 0);
         const currentIndex = indexById.get(chatId);
         const current = currentIndex != null ? next[currentIndex] : null;
-        const participants = current?.participants?.length
-            ? current.participants
-            : String(chatId ?? '')
-                  .split('_')
-                  .filter(Boolean);
         const chat = {
             id: chatId,
             ...(current || {}),
-            participants,
+            peerChatPK: current?.peerChatPK || lastMsg?.peerChatPK || null,
             lastMsg,
             ts,
             unseen: false,

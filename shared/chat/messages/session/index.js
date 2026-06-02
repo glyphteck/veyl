@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { readCachedMedia, writeCachedMedia } from '../../../cache/localdata.js';
 import { saveMedia } from '../../attachments.js';
-import { filterChatMessages, getChatPeerPK, getChatRowLastMsgKey, getPeerChatPKFromChatId } from '../../ids.js';
+import { filterChatMessages, getChatPeerPK, getChatRowLastMsgKey } from '../../ids.js';
 import { collectMessageKeys } from '../../messagekeys.js';
 import { canShowMsg, getDisplayMessages, getHiddenDisplayMessages, isControlMsg } from '../../messages.js';
 import { makeMessagePreviewMedia, MESSAGE_PREVIEW_MIME } from '../../previews.js';
@@ -275,7 +275,9 @@ export function useChatMessageSessions({ chat, chatPK, chatPrivateKey, chatBanne
         (chatId, options = {}) => {
             const source = options.source || 'route';
             const pageSize = positiveNumber(options.pageSize, warming.pageSize);
-            const peerChatPK = options.peerChatPK || getPeerChatPKFromChatId(chatId, chatPK);
+            const row = rowsRef.current?.find?.((chatItem) => chatItem?.id === chatId) || null;
+            const peerChatPK = options.peerChatPK || getChatPeerPK(row, chatPK);
+            const actors = options.actors || row?.actors || null;
             const hasRowLastMsgKey = Object.prototype.hasOwnProperty.call(options, 'rowLastMsgKey');
             const rowLastMsgKey = hasRowLastMsgKey ? (options.rowLastMsgKey ?? null) : undefined;
             const generation = generationRef.current;
@@ -421,7 +423,8 @@ export function useChatMessageSessions({ chat, chatPK, chatPrivateKey, chatBanne
                         console.warn('Latest messages listener error', chatId, error);
                     }
                     notify(entry);
-                }
+                },
+                { actors }
             );
 
             notify(entry);

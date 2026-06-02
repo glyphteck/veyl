@@ -11,7 +11,6 @@ import { canShareAttachmentMsg, canShowMsg, canToggleSaveForeverMsg, collapseSys
 import { useOptimisticMessageReactions } from '@veyl/shared/chat/usereactions';
 import { formatUserDisplay } from '@veyl/shared/profile';
 import { formatFullDateTime } from '@veyl/shared/utils/time';
-import { getPeerChatPKFromChatId } from '@veyl/shared/chat/ids';
 import { sameArray } from '@veyl/shared/utils/array';
 import { messageKeys } from '@veyl/shared/chat/messagekeys';
 import { getMessageKey, getMessageOrderMs } from '@veyl/shared/chat/state';
@@ -208,7 +207,7 @@ function useAnimatedMessageRows(messages, scopeKey, hiddenKeys = EMPTY_MESSAGE_K
 }
 
 export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
-    const { selectedChatId, updateMessage, deleteMessage, retryMessage, makeMessagePermanent, makeMessageTemporary, readMessageFile, sendReaction } = useChat();
+    const { chats, selectedChatId, updateMessage, deleteMessage, retryMessage, makeMessagePermanent, makeMessageTemporary, readMessageFile, sendReaction } = useChat();
     const { avatar, chatPK } = useUser();
     const { peerByChatPK } = usePeer();
     const { sendMoneyWithSpark } = useWallet();
@@ -433,7 +432,8 @@ export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
         return () => observer.disconnect();
     }, [handleLoadOlder, hasOlder, selectedChatId]);
 
-    const peerChatPK = useMemo(() => getPeerChatPKFromChatId(selectedChatId, chatPK), [chatPK, selectedChatId]);
+    const currentChat = useMemo(() => chats?.find((chat) => chat?.id === selectedChatId) ?? null, [chats, selectedChatId]);
+    const peerChatPK = currentChat?.peerChatPK || null;
     const peerProfile = useMemo(() => peerByChatPK.get(peerChatPK) ?? null, [peerByChatPK, peerChatPK]);
     const peerDisplayName = useMemo(
         () =>

@@ -8,13 +8,14 @@ import { z } from 'zod';
 import { Field } from '@/components/field';
 import { Input } from '@/components/input';
 import { Button } from '@/components/button';
+import { MoneyAmountInput } from '@/components/moneyamountinput';
 import { Loader, PiggyBank, CircleCheck, ScanQrCode } from 'lucide-react';
 import { useBitcoin } from '@/components/providers/bitcoinprovider';
 import { useDialog } from '@/components/providers/dialogprovider';
 import { useWallet } from '@/components/providers/walletprovider';
 import { useUser } from '@/components/providers/userprovider';
 import { useCloak } from '@veyl/shared/providers/cloakprovider';
-import { MONEY_UNITS, moneyUnitLabel, toSats, toDisplay, renderMoney } from '@veyl/shared/money';
+import { MONEY_UNITS, toSats, toDisplay, renderMoney } from '@veyl/shared/money';
 import { truncateAddress } from '@veyl/shared/utils/display';
 import { COOPERATIVE_EXIT_FLAT_FEE_SATS, COOPERATIVE_EXIT_TX_VBYTES, formatOnchainFeeAmount, getWithdrawalFeeRisk } from '@veyl/shared/wallet/fees';
 import { availableBalanceSats } from '@veyl/shared/wallet/balance';
@@ -265,33 +266,19 @@ export default function Withdraw({ data, close }) {
                         control={form.control}
                         name="amount"
                         render={({ field, inputProps }) => (
-                            <div className="relative w-full">
-                                <Input
-                                    {...field}
-                                    {...inputProps}
-                                    ref={(el) => {
-                                        field.ref(el);
-                                        amountInputRef.current = el;
-                                    }}
-                                    className={`h-12 min-w-0 pl-4 pr-20 text-2xl font-black ${cloaked ? 'cloaked' : ''}`}
-                                    placeholder={watchedInputUnit === 'sats' ? '0000' : '0.00'}
-                                    onChange={handleAmountChange}
-                                    inputMode="numeric"
-                                    pattern={watchedInputUnit === 'sats' ? '[0-9]*' : '[0-9.]*'}
-                                    disabled={isSubmitting}
-                                />
-                                <Button
-                                    type="button"
-                                    aria-label={`change currency, current ${watchedInputUnit}`}
-                                    title="change currency"
-                                    className="grower-lg absolute top-1/2 right-3 h-9 min-w-12 -translate-y-1/2 justify-end px-2.5 text-2xl font-black text-muted"
-                                    onMouseDown={(event) => event.preventDefault()}
-                                    onClick={cycleUnit}
-                                    disabled={isSubmitting}
-                                >
-                                    {moneyUnitLabel(watchedInputUnit)}
-                                </Button>
-                            </div>
+                            <MoneyAmountInput
+                                {...field}
+                                {...inputProps}
+                                ref={(el) => {
+                                    field.ref(el);
+                                    amountInputRef.current = el;
+                                }}
+                                unit={watchedInputUnit}
+                                onCycleUnit={cycleUnit}
+                                onChange={handleAmountChange}
+                                disabled={isSubmitting}
+                                cloaked={cloaked}
+                            />
                         )}
                     />
                     <Button tabIndex={-1} className="grower-lg h-12 w-14" type="button" onClick={setMax} disabled={isSubmitting} title="max">

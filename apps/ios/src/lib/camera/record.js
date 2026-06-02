@@ -146,6 +146,7 @@ export function useRecord({ animateShutter, deviceId, facing, hidePreview, mount
         recordingTokenRef.current = token;
         recordingRef.current = true;
         recordingOrientationRef.current = orientationRef.current;
+        videoOutput.outputOrientation = recordingOrientationRef.current;
         stopAfterStartRef.current = false;
         setRecording(true);
         lockGestureEnabled.value = true;
@@ -281,6 +282,7 @@ export function useRecord({ animateShutter, deviceId, facing, hidePreview, mount
         recording,
         recordingLocked,
         recordingLockedRef,
+        recordingOrientationRef,
         recordingRef,
         setHeld,
         shutterHeldRef,

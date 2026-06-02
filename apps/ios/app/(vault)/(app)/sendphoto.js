@@ -1,14 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { DeviceEventEmitter, FlatList, Pressable, Text, View } from 'react-native';
+import { DeviceEventEmitter } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MessageCircle, Search } from 'lucide-react-native';
 import { mergeProfiles } from '@veyl/shared/search/merge';
 import { textRouteParam } from '@veyl/shared/navigation/params';
-import { formatUserDisplay, peerKey } from '@veyl/shared/profile';
+import { formatUserDisplay } from '@veyl/shared/profile';
 import { truncateLabel } from '@veyl/shared/utils/display';
-import { getChatId } from '@veyl/shared/crypto/chat';
 import { cleanText } from '@veyl/shared/utils/text';
 import { waitForIdle } from '@veyl/shared/utils/async';
 
@@ -18,45 +15,17 @@ import { useUser } from '@/providers/userprovider';
 import { useChat } from '@/providers/chatprovider';
 import { useSearch } from '@/lib/search/usesearch';
 import { prepareAssetForChatUpload } from '@/lib/chat/media';
-import Avatar from '@/components/avatar';
 import EmptyState from '@/components/emptystate';
 import GlassButton from '@/components/glass/glassbutton';
-import SearchInput from '@/components/search';
-import { tap } from '@/lib/tap';
-
-function PeerCell({ item, onToggle, theme, selected, disabled }) {
-    const scale = useSharedValue(1);
-    const pressFeedback = tap({
-        value: scale,
-        disabled,
-        onPress: () => !disabled && onToggle?.(item),
-        hapticIn: 'selection',
-    });
-
-    const scaleStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
-    const avatar = item?.avatar ? { uri: item.avatar } : null;
-    const label = truncateLabel(formatUserDisplay(item), 8, '…');
-
-    return (
-        <Pressable {...pressFeedback} style={{ width: '33.333%', alignItems: 'center', paddingVertical: 10 }}>
-            <Animated.View style={[{ alignItems: 'center' }, scaleStyle]}>
-                <Avatar pointerEvents="none" source={avatar} size={72} active={!!item?.active} selected={selected} bot={!!item?.bot} />
-                <Text numberOfLines={1} style={{ marginTop: 6, fontSize: 12, fontWeight: '700', color: theme.foreground }}>
-                    {label}
-                </Text>
-            </Animated.View>
-        </Pressable>
-    );
-}
+import PeerPicker, { PEER_PICKER_BUTTON_FOOTER_HEIGHT } from '@/components/peerpicker';
 
 export default function SendPhotoScreen() {
     const { theme } = useTheme();
     const { peers, recentPeers } = usePeer() || {};
-    const { uid, chatPK, chatBanned } = useUser();
-    const { sendAttachmentMany, sendImageMany, selectChat } = useChat();
+    const { uid, chatBanned } = useUser();
+    const { sendAttachmentMany, sendImageMany, selectPeerChat } = useChat();
     const { searching, results, query, search: runSearch, clearSearch } = useSearch('profiles');
     const router = useRouter();
-    const insets = useSafeAreaInsets();
     const params = useLocalSearchParams();
 
     const photoUri = textRouteParam(params?.uri);
@@ -70,6 +39,7 @@ export default function SendPhotoScreen() {
     const busyRef = useRef(false);
 
     const [selected, setSelected] = useState([]);
+    const [lastSelectedPeer, setLastSelectedPeer] = useState(null);
     const [search, setSearch] = useState('');
     const [sending, setSending] = useState(false);
 
@@ -80,12 +50,15 @@ export default function SendPhotoScreen() {
         };
     }, [clearSearch]);
 
-    const togglePeer = useCallback((peer) => {
-        setSelected((prev) => {
-            const exists = prev.find((p) => p.uid === peer.uid);
-            return exists ? prev.filter((p) => p.uid !== peer.uid) : [...prev, peer];
-        });
-    }, []);
+    const togglePeer = useCallback(
+        (peer) => {
+            const exists = selected.some((p) => p.uid === peer.uid);
+            const next = exists ? selected.filter((p) => p.uid !== peer.uid) : [...selected, peer];
+            setSelected(next);
+            setLastSelectedPeer(exists ? next.at(-1) || null : peer);
+        },
+        [selected]
+    );
 
     const handleSearchChange = useCallback(
         (value) => {
@@ -143,7 +116,7 @@ export default function SendPhotoScreen() {
                     const result = resultByChatPK.get(peer.chatPK);
                     if (result?.ok) {
                         if (selected.length === 1) {
-                            selectChat(getChatId(chatPK, peer.chatPK));
+                            await selectPeerChat?.(peer.chatPK);
                         }
                     } else {
                         console.warn(`send ${mediaType} failed:`, result?.error);
@@ -156,63 +129,41 @@ export default function SendPhotoScreen() {
             .finally(() => {
                 busyRef.current = false;
             });
-    }, [chatBanned, chatPK, mediaName, mediaType, photoHeight, photoUri, photoWidth, router, selectChat, selected, sendAttachmentMany, sendImageMany, sending]);
+    }, [chatBanned, mediaName, mediaType, photoHeight, photoUri, photoWidth, router, selectPeerChat, selected, sendAttachmentMany, sendImageMany, sending]);
 
     const selectedUids = useMemo(() => new Set(selected.map((p) => p.uid)), [selected]);
-
-    const renderPeer = useCallback(
-        ({ item }) => <PeerCell item={item} onToggle={togglePeer} theme={theme} selected={selectedUids.has(item.uid)} disabled={!item?.chatPK} />,
-        [selectedUids, theme, togglePeer]
-    );
-
-    const keyExtractor = useCallback((item, index) => peerKey(item, `${index}`), []);
     const hasSelection = selected.length > 0;
     const sendLabel = selected.length > 1 ? `send to ${selected.length} people` : selected.length === 1 ? `send to ${truncateLabel(formatUserDisplay(selected[0]), 12, '…')}` : 'send';
 
     return (
-        <View style={{ flex: 1, paddingHorizontal: 12 }}>
-            <View style={{ position: 'absolute', top: 18, left: 0, right: 0, zIndex: 2, paddingHorizontal: 16 }}>
-                <SearchInput
-                    ref={searchInputRef}
-                    value={search}
-                    onChangeText={handleSearchChange}
-                    onClear={handleClearSearch}
-                    searching={searching}
-                    glassEffectStyle="clear"
-                    tintColor="transparent"
-                />
-            </View>
-            <View style={{ flex: 1, marginTop: 20, overflow: 'hidden' }}>
-                <FlatList
-                    data={filteredPeers}
-                    keyExtractor={keyExtractor}
-                    renderItem={renderPeer}
-                    numColumns={3}
-                    keyboardShouldPersistTaps="handled"
-                    contentContainerStyle={{ flexGrow: 1, paddingTop: 42, paddingBottom: insets.bottom + 80 }}
-                    style={{ flex: 1 }}
-                    showsVerticalScrollIndicator={false}
-                    bounces
-                    alwaysBounceVertical
-                    automaticallyAdjustContentInsets={false}
-                    automaticallyAdjustsScrollIndicatorInsets={false}
-                    contentInsetAdjustmentBehavior="never"
-                    ListEmptyComponent={
-                        searching ? (
-                            <EmptyState busy title="searching..." />
-                        ) : search && !query ? (
-                            <EmptyState icon={Search} title="type a username" />
-                        ) : search ? (
-                            <EmptyState icon={Search} title="no matches" />
-                        ) : (
-                            <EmptyState icon={MessageCircle} title="no recent friends" />
-                        )
-                    }
-                />
-            </View>
-            <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, paddingHorizontal: 24, paddingBottom: insets.bottom + 12 }}>
-                <GlassButton onPress={handleSend} label={sendLabel} accent disabled={!hasSelection || sending || chatBanned} pressableStyle={{ transform: [{ scale: hasSelection ? 1 : 0.001 }] }} />
-            </View>
-        </View>
+        <PeerPicker
+            searchInputRef={searchInputRef}
+            search={search}
+            onSearchChange={handleSearchChange}
+            onClearSearch={handleClearSearch}
+            searching={searching}
+            peers={filteredPeers}
+            theme={theme}
+            onPeerPress={togglePeer}
+            peerHapticIn="selection"
+            isPeerSelected={(peer) => selectedUids.has(peer.uid)}
+            isPeerDisabled={(peer) => !peer?.chatPK}
+            footerOpen={hasSelection}
+            footerInteractive={hasSelection && !sending}
+            footerScrollPeer={lastSelectedPeer || selected[0]}
+            footerHeight={PEER_PICKER_BUTTON_FOOTER_HEIGHT}
+            emptyState={
+                searching ? (
+                    <EmptyState busy title="searching..." />
+                ) : search && !query ? (
+                    <EmptyState icon={Search} title="type a username" />
+                ) : search ? (
+                    <EmptyState icon={Search} title="no matches" />
+                ) : (
+                    <EmptyState icon={MessageCircle} title="no recent friends" />
+                )
+            }
+            footer={<GlassButton onPress={handleSend} label={sendLabel} accent disabled={!hasSelection || sending || chatBanned} pressableStyle={{ width: '100%' }} />}
+        />
     );
 }

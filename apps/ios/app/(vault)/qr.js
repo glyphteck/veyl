@@ -2,7 +2,6 @@ import { useEffect, useRef } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
 import { qr, readQr } from '@veyl/shared/qr';
 import { isAddressOnNetwork } from '@veyl/shared/network';
-import { getChatId } from '@veyl/shared/crypto/chat';
 import { canSendOnScan } from '@veyl/shared/settings';
 
 import { useChat } from '@/providers/chatprovider';
@@ -12,7 +11,7 @@ import { useWallet } from '@/providers/walletprovider';
 
 export default function QRRoute() {
     const params = useLocalSearchParams();
-    const { selectChat } = useChat() || {};
+    const { selectPeerChat } = useChat() || {};
     const { addPeer } = usePeer() || {};
     const { chatBanned, chatPK, settings, walletPK: ownWalletPK } = useUser();
     const { network } = useWallet();
@@ -28,8 +27,7 @@ export default function QRRoute() {
             if (data?.kind === qr.user && data.username) {
                 const peer = await addPeer?.({ username: data.username });
                 if (!chatBanned && chatPK && peer?.chatPK) {
-                    const chatId = getChatId(chatPK, peer.chatPK);
-                    selectChat?.(chatId);
+                    await selectPeerChat?.(peer.chatPK);
                     router.replace({
                         pathname: '/chat/[peerchatpk]',
                         params: {
@@ -74,7 +72,7 @@ export default function QRRoute() {
             console.warn('qr route failed', error);
             router.replace('/wallet');
         });
-    }, [addPeer, chatBanned, chatPK, network, ownWalletPK, params, selectChat, settings?.sendOnScan]);
+    }, [addPeer, chatBanned, chatPK, network, ownWalletPK, params, selectPeerChat, settings?.sendOnScan]);
 
     return null;
 }

@@ -13,18 +13,8 @@ export const deleteAccount = onCall(async (context) => {
     });
     const bucket = admin.storage().bucket();
 
-    // delete user chats
     const profileSnap = await db.collection('profiles').doc(uid).get();
     const profileData = profileSnap.exists ? profileSnap.data() : null;
-    if (profileData?.chatPK) {
-        const chatPK = profileData.chatPK;
-        const chats = await db.collection('chats').where('participants', 'array-contains', chatPK).get();
-        for (const doc of chats.docs) {
-            // Chat media can be referenced by forwarded attachment messages in
-            // other chats, so account deletion leaves Storage blobs intact.
-            await db.recursiveDelete(doc.ref);
-        }
-    }
 
     await db.recursiveDelete(db.collection('users').doc(uid));
     const walletEvents = await db.collection('walletWebhookEvents').where('uid', '==', uid).get();

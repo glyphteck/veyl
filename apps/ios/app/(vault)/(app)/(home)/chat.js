@@ -19,11 +19,11 @@ import GlassHeader from '@/components/glass/glassheader';
 import Icon from '@/components/icon';
 import { getMainMenuHeight } from '@/components/mainmenu';
 import SearchInput from '@/components/search';
+import { KeyboardChatScrollView } from '@/components/keyboardscroll';
 import { useRouteLock } from '@/lib/navigation/routelock';
 import { useTap } from '@/lib/tap';
 import { formatUserDisplay } from '@veyl/shared/profile';
 import { formatFullDateTime } from '@veyl/shared/utils/time';
-import { getChatId } from '@veyl/shared/crypto/chat';
 import { getChatPeerPK } from '@veyl/shared/chat/ids';
 import { getMovedRowBatch, sameListIds } from '@veyl/shared/chat/listanimation';
 import { getMsgPreview } from '@veyl/shared/chat/messages';
@@ -392,7 +392,7 @@ export default function ChatList() {
         });
     }, [chatPK, chatQuery, chats, hasBlockedUsers, isBlockedChatPK, isPeerDataReady, peerByChatPK]);
 
-    const chatIds = useMemo(() => new Set((Array.isArray(chats) ? chats : []).map((chat) => chat?.id).filter(Boolean)), [chats]);
+    const chatPeerPKs = useMemo(() => new Set((Array.isArray(chats) ? chats : []).map((chat) => chat?.peerChatPK).filter(Boolean)), [chats]);
 
     const searchPeers = useMemo(() => {
         if (!query || !chatPK) return [];
@@ -402,14 +402,14 @@ export default function ChatList() {
             parsed: query,
             extraFilter: (peer) => {
                 if (!peer?.chatPK || peer.chatPK === chatPK) return false;
-                return !chatIds.has(getChatId(chatPK, peer.chatPK));
+                return !chatPeerPKs.has(peer.chatPK);
             },
         });
         return merged.map((peer) => {
             const key = peer.uid || peer.chatPK || peer.walletPK;
-            return { id: `peer:${key}`, peer, chatId: getChatId(chatPK, peer.chatPK), peerChatPK: peer.chatPK, type: 'peer' };
+            return { id: `peer:${key}`, peer, peerChatPK: peer.chatPK, type: 'peer' };
         });
-    }, [chatIds, chatPK, peers, query, results]);
+    }, [chatPeerPKs, chatPK, peers, query, results]);
 
     const chatItems = useMemo(() => filteredChats.map((chat) => ({ id: chat.id, chat, type: 'chat' })), [filteredChats]);
     const items = useMemo(() => [...chatItems, ...searchPeers], [chatItems, searchPeers]);
@@ -628,6 +628,11 @@ export default function ChatList() {
         [chatPK, displayItems.length, handleDeleteChat, openChat, peerByChatPK]
     );
 
+    const renderScrollComponent = useCallback(
+        (props) => <KeyboardChatScrollView {...props} bottomOffset={mainMenuHeight} keyboardLiftBehavior="never" />,
+        [mainMenuHeight]
+    );
+
     const getItemLayout = useCallback(
         (_data, index) => ({
             length: CHAT_ROW_HEIGHT,
@@ -670,6 +675,7 @@ export default function ChatList() {
                 alwaysBounceHorizontal={false}
                 onEndReached={handleLoadMoreChats}
                 onEndReachedThreshold={0.65}
+                renderScrollComponent={renderScrollComponent}
                 ListFooterComponent={() =>
                     !chatQuery && loadingMoreChats && items.length ? (
                         <View style={{ paddingVertical: 14, alignItems: 'center', justifyContent: 'center' }}>

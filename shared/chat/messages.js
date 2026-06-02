@@ -1,6 +1,7 @@
 'use client';
 
 export * from './messages/types.js';
+export * from './messages/actions.js';
 export * from './messages/text.js';
 export * from './messages/files.js';
 export * from './messages/control.js';

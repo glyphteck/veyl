@@ -10,7 +10,6 @@ import GlassButton from '@/components/glass/glassbutton';
 import { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { ArrowDownToLine, ArrowUpRight, MessageCircle, X } from 'lucide-react-native';
-import { getChatId } from '@veyl/shared/crypto/chat';
 import { useTheme } from '@/providers/themeprovider';
 import { useChat } from '@/providers/chatprovider';
 import { usePeer } from '@/providers/peerprovider';
@@ -45,7 +44,7 @@ function CameraContent({ cameraActive, pageOpen, warming }) {
     const { settings, username, chatPK, walletPK: ownWalletPK, chatBanned } = useUser();
     const { localCache } = useVault();
     const { network } = useWallet();
-    const { selectChat } = useChat();
+    const { selectPeerChat } = useChat();
     const insets = useSafeAreaInsets();
     const { hasPermission, requestPermission } = useCameraPermission();
     const pathname = usePathname();
@@ -201,6 +200,7 @@ function CameraContent({ cameraActive, pageOpen, warming }) {
         recording,
         recordingLocked,
         recordingLockedRef,
+        recordingOrientationRef,
         recordingRef,
         setHeld: setShutterHeldValue,
         shutterStartRef,
@@ -219,6 +219,11 @@ function CameraContent({ cameraActive, pageOpen, warming }) {
     useEffect(() => {
         resetUnavailableLens(recording);
     }, [recording, resetUnavailableLens]);
+
+    useEffect(() => {
+        if (!recording && !recordingRef.current) return;
+        videoOutput.outputOrientation = recordingOrientationRef.current || orientationRef.current;
+    }, [captureOrientation, recording, recordingOrientationRef, recordingRef, videoOutput]);
 
     const handleFocus = useCallback(
         async (x, y) => {
@@ -292,7 +297,7 @@ function CameraContent({ cameraActive, pageOpen, warming }) {
                 Alert.alert('Permission needed', 'Please allow photo access to save media.');
                 return;
             }
-            await MediaLibrary.saveToLibraryAsync(stagedMedia.uri);
+            await MediaLibrary.Asset.create(stagedMedia.uri);
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
         } catch (err) {
             console.warn('save failed', err);
@@ -464,11 +469,10 @@ function CameraContent({ cameraActive, pageOpen, warming }) {
         }
         if (!lockRoute()) return;
 
-        const chatId = getChatId(chatPK, previewPeer.chatPK);
         hidePreview();
-        selectChat?.(chatId);
+        void selectPeerChat?.(previewPeer.chatPK);
         router.navigate({ pathname: '/chat/[peerchatpk]', params: { peerchatpk: previewPeer.chatPK } });
-    }, [chatBanned, chatPK, hidePreview, lockRoute, previewPeer, selectChat]);
+    }, [chatBanned, chatPK, hidePreview, lockRoute, previewPeer, selectPeerChat]);
 
     const handlePreviewSend = useCallback(() => {
         if (!previewPeer?.walletPK) {
@@ -557,6 +561,7 @@ function CameraContent({ cameraActive, pageOpen, warming }) {
                 onFocus={handleFocus}
                 onUseRegularLens={useRegularLens}
                 onUseUltraWide={useUltraWide}
+                orientationLocked={recording || recordingRef.current}
                 outputs={cameraOutputs}
             />
             <GlassHeader style={{ height: insets.top }} pointerEvents="none" />

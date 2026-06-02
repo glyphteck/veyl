@@ -132,6 +132,10 @@ export function isControlMsg(msg) {
     return isReadReceiptMsg(msg) || isReactionMsg(msg) || isHiddenCheckpointMsg(msg);
 }
 
+export function isActionMutationMsg(msg) {
+    return msg?.actionOp === 'edit' || msg?.actionOp === 'delete' || msg?.actionOp === 'pay_confirm';
+}
+
 export function isExpiredMsg(msg, now = Date.now()) {
     return isTtlExpired(msg?.ttl, now);
 }
@@ -174,7 +178,7 @@ export function canStoreMsg(msg) {
     if (isExpiredMsg(msg)) {
         return false;
     }
-    return canShowMsg(msg) || isControlMsg(msg);
+    return canShowMsg(msg) || isControlMsg(msg) || isActionMutationMsg(msg);
 }
 
 export function getMsgReactions(msg) {
@@ -460,11 +464,124 @@ export function filterSeenMessages(messages, chatPK, peerChatPK, options = {}) {
 }
 
 export function getHiddenDisplayMessages(messages, chatPK, peerChatPK, options = {}) {
-    return getSeenHiddenMessages(applyMessageRetentionTimeline(messages, options.fallback), chatPK, peerChatPK, options);
+    return getSeenHiddenMessages(applyMessageRetentionTimeline(applyMessageActions(messages), options.fallback), chatPK, peerChatPK, options);
 }
 
 export function getDisplayMessages(messages, chatPK, peerChatPK, options = {}) {
-    return filterSeenMessages(applyMessageRetentionTimeline(messages, options.fallback), chatPK, peerChatPK, options);
+    return filterSeenMessages(applyMessageRetentionTimeline(applyMessageActions(messages), options.fallback), chatPK, peerChatPK, options);
+}
+
+function actionTarget(msg) {
+    return cleanText(msg?.actionTarget) || cleanText(msg?.target) || cleanText(msg?.id);
+}
+
+function actionPatch(msg) {
+    const {
+        id,
+        cid,
+        ts,
+        ttl,
+        from,
+        pending,
+        failed,
+        actionId,
+        actionOp,
+        actionTarget,
+        actor,
+        target,
+        ...payload
+    } = msg || {};
+    return payload;
+}
+
+function indexMessage(indexByKey, msg, index) {
+    for (const key of messageKeys(msg)) {
+        indexByKey.set(key, index);
+    }
+}
+
+export function applyMessageActions(messages) {
+    if (!Array.isArray(messages) || !messages.length) {
+        return messages || [];
+    }
+
+    const out = [];
+    const indexByKey = new Map();
+    const deleted = new Set();
+    let changed = false;
+
+    for (const msg of messages) {
+        const op = cleanText(msg?.actionOp) || 'create';
+        if (op === 'delete') {
+            const target = actionTarget(msg);
+            if (target) {
+                deleted.add(target);
+                const index = indexByKey.get(target);
+                if (index != null && out[index]) {
+                    out[index] = null;
+                }
+            }
+            changed = true;
+            continue;
+        }
+
+        if (op === 'edit') {
+            const target = actionTarget(msg);
+            const index = target ? indexByKey.get(target) : null;
+            const base = index != null ? out[index] : null;
+            if (base && base.s && msg?.s === base.s && !deleted.has(target)) {
+                const next = {
+                    ...base,
+                    ...actionPatch(msg),
+                    id: base.id,
+                    cid: base.cid,
+                    s: base.s,
+                    from: base.from,
+                    ts: base.ts,
+                    ttl: base.ttl,
+                    ...(base.reactions ? { reactions: base.reactions } : {}),
+                    editedAt: msg.ts ?? base.editedAt,
+                };
+                out[index] = next;
+                indexMessage(indexByKey, next, index);
+            }
+            changed = true;
+            continue;
+        }
+
+        if (op === 'pay_confirm') {
+            const target = actionTarget(msg);
+            const index = target ? indexByKey.get(target) : null;
+            const base = index != null ? out[index] : null;
+            const tx = cleanText(msg?.tx);
+            if (base?.t === 'req' && tx && base.s && msg?.s && msg.s !== base.s && !deleted.has(target)) {
+                const next = {
+                    ...base,
+                    tx,
+                    paidBy: msg.s,
+                    paidAt: msg.ts ?? base.paidAt,
+                };
+                out[index] = next;
+                indexMessage(indexByKey, next, index);
+            }
+            changed = true;
+            continue;
+        }
+
+        const keys = messageKeys(msg);
+        if (keys.some((key) => deleted.has(key))) {
+            changed = true;
+            continue;
+        }
+        const index = out.length;
+        out.push(msg);
+        indexMessage(indexByKey, msg, index);
+    }
+
+    if (!changed) {
+        return messages;
+    }
+    return out.filter(Boolean);
 }
 
 function replaceSystemRow(previous, next) {

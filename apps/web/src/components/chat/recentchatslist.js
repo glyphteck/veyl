@@ -114,7 +114,7 @@ const RecentChatRow = memo(function RecentChatRow({
     });
 
     return (
-        <div className={`recent-chat-row-stable ${mode ? `recent-chat-row-${mode}` : ''}`}>
+        <div className={`recent-chat-row-stable ${isLast ? 'recent-chat-row-last' : ''} ${mode ? `recent-chat-row-${mode}` : ''}`}>
             <div className={mode ? 'recent-chat-row-content' : ''}>
                 <Button
                     ref={(node) => {
@@ -396,6 +396,20 @@ export function RecentChatsList() {
                 .recent-chat-row-stable {
                     contain: layout paint;
                     overflow: hidden;
+                    position: relative;
+                }
+                .recent-chat-row-stable::after {
+                    content: '';
+                    position: absolute;
+                    inset-inline: 0;
+                    bottom: 0;
+                    height: 1px;
+                    background: var(--border);
+                    pointer-events: none;
+                }
+                .recent-chat-row-last::after,
+                .recent-chat-row-leaving::after {
+                    opacity: 0;
                 }
                 .recent-chat-row-leaving,
                 .recent-chat-row-entering {
@@ -437,7 +451,7 @@ export function RecentChatsList() {
                 }
             `}</style>
             <div className="overflow-y-auto" onKeyDown={handleListKeyDown} onScroll={handleScroll}>
-                <div className={`divide-y ${visibleChats.length < 12 ? 'border-b' : ''}`}>
+                <div className={visibleChats.length < 12 ? 'border-b' : ''}>
                     {displayedChats.map((chat, index) =>
                         <RecentChatRow
                             key={chat.id}

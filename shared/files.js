@@ -3,9 +3,9 @@
 import { deleteObject, getBytes, getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import { decodeFileKey, openFileForPath } from './crypto/file.js';
 import { randomBytes, toBytes, toHex } from './crypto/core.js';
-import { CHAT_SLOT, MAX_CHAT_FILE_BYTES, getMediaFileId, makeChatFileUploadPayload, mediaFilePath } from './chat/filepayload.js';
+import { CHAT_SLOT, getMediaFileId, makeChatFileUploadPayload, mediaFilePath } from './chat/filepayload.js';
 
-export { MAX_CHAT_FILE_BYTES, getMediaFileId, mediaFilePath };
+export { getMediaFileId, mediaFilePath };
 
 export function avatarPath(uid) {
     if (!uid) {

@@ -1,19 +1,13 @@
-import { collection, query, orderBy, onSnapshot, endAt, endBefore, getDocsFromServer, limit, limitToLast, startAfter, Timestamp, where, writeBatch } from 'firebase/firestore';
+import { collection, query, orderBy, onSnapshot, endAt, endBefore, getDocsFromServer, limit, limitToLast, startAfter, Timestamp } from 'firebase/firestore';
 import { hasMsgData, openMsg } from '../../crypto/chat.js';
-import { deleteAutoHiddenMessages } from './autodelete.js';
-import { compactMessages } from './compact.js';
-import { deleteMsgs } from './write.js';
 import {
     CHAT_DELETE_SCAN_BATCH_SIZE as CONFIG_CHAT_DELETE_SCAN_BATCH_SIZE,
     CHAT_MESSAGE_BATCH_SIZE,
     CHAT_MESSAGE_QUERY_MAX_DOCS,
-    CHAT_TTL_CLIENT_DELETE_GRACE_MS,
-    CHAT_TTL_DELETE_CHUNK_SIZE,
 } from '../../config.js';
-import { collectMessageKeys, messageKeys } from '../messagekeys.js';
+import { messageKeys } from '../messagekeys.js';
 import { canShowMsg, canStoreMsg, collapseSystemMessages, getDisplayMessages, isExpiredMsg, savedMediaStayRef } from '../messages.js';
 import { getCachedPair } from '../pairs.js';
-import { getChatPeerPK } from '../ids.js';
 import { sameBytes, sameHead } from '../equal.js';
 import { positiveInt } from '../../utils/number.js';
 import { cleanText } from '../../utils/text.js';
@@ -21,99 +15,27 @@ import { timestampKey, timestampMs } from '../../utils/time.js';
 
 export const MSG_BATCH_SIZE = CHAT_MESSAGE_BATCH_SIZE;
 export const MSG_QUERY_MAX_DOCS = CHAT_MESSAGE_QUERY_MAX_DOCS;
-const TTL_CLIENT_DELETE_GRACE_MS = CHAT_TTL_CLIENT_DELETE_GRACE_MS;
-const TTL_DELETE_CHUNK_SIZE = CHAT_TTL_DELETE_CHUNK_SIZE;
 const CHAT_DELETE_SCAN_BATCH_SIZE = CONFIG_CHAT_DELETE_SCAN_BATCH_SIZE;
-const pendingTtlDeleteKeys = new Set();
 
 function messageDataExpired(msgData, now = Date.now()) {
     return isExpiredMsg({ ttl: msgData?.ttl ?? null }, now);
 }
 
-function messageDataClientDeleteExpired(msgData, now = Date.now()) {
-    const ttlMs = timestampMs(msgData?.ttl, null);
-    return ttlMs != null && ttlMs <= now - TTL_CLIENT_DELETE_GRACE_MS;
-}
-
-function messageDocDeleteKey(docSnap) {
-    return docSnap?.ref?.path || docSnap?.id || null;
-}
-
-async function deleteExpiredMessageDocs(db, docSnaps) {
-    if (!db) {
-        return;
-    }
-
-    const targets = [];
-    for (const docSnap of docSnaps || []) {
-        const ref = docSnap?.ref;
-        const key = messageDocDeleteKey(docSnap);
-        if (!ref || !key || pendingTtlDeleteKeys.has(key) || docSnap.metadata?.hasPendingWrites) {
-            continue;
-        }
-        pendingTtlDeleteKeys.add(key);
-        targets.push({ key, ref });
-    }
-
-    try {
-        for (let index = 0; index < targets.length; index += TTL_DELETE_CHUNK_SIZE) {
-            const chunk = targets.slice(index, index + TTL_DELETE_CHUNK_SIZE);
-            const batch = writeBatch(db);
-            for (const item of chunk) {
-                batch.delete(item.ref);
-            }
-            await batch.commit();
-        }
-    } catch {
-        // Best-effort cleanup: rendering already hides expired docs.
-    } finally {
-        for (const item of targets) {
-            pendingTtlDeleteKeys.delete(item.key);
-        }
-    }
-}
-
-function scheduleExpiredMessageDeletes(db, docSnaps) {
-    if (docSnaps?.length) {
-        void deleteExpiredMessageDocs(db, docSnaps);
-    }
-}
-
 function scheduleAutoHiddenMessageDeletes(db, chatId, messages, chatPK, peerChatPK) {
-    if (!messages?.length) {
-        return;
-    }
-    void deleteAutoHiddenMessages({
-        chatId,
-        messages,
-        chatPK,
-        peerChatPK,
-        deleteMessages: (targets) => deleteMsgs(db, chatId, targets),
-    })
-        .then((deleted) => {
-            if (!deleted?.length) {
-                return;
-            }
-            return compactMessages({
-                chatId,
-                messages,
-                deletedKeys: collectMessageKeys(deleted),
-                deleteMessages: (targets) => deleteMsgs(db, chatId, targets),
-            });
-        })
-        .catch(() => {});
+    void db;
+    void chatId;
+    void messages;
+    void chatPK;
+    void peerChatPK;
+    return undefined;
 }
 
 function scheduleMessageCompaction(db, chatId, messages, deletedKeys) {
-    if (!messages?.length) {
-        return;
-    }
-    void compactMessages({
-        chatId,
-        messages,
-        deletedKeys,
-        deleteMessages: (targets) => deleteMsgs(db, chatId, targets),
-    }).catch(() => {});
+    void db;
+    void chatId;
+    void messages;
+    void deletedKeys;
+    return undefined;
 }
 
 function partitionExpiredMessageDocs(docs, expiredKeys, cache, now = Date.now()) {
@@ -129,9 +51,6 @@ function partitionExpiredMessageDocs(docs, expiredKeys, cache, now = Date.now())
 
         addMessageDocKeys(expiredKeys, docSnap);
         cache?.delete?.(docSnap.id);
-        if (messageDataClientDeleteExpired(msgData, now)) {
-            expiredDocs.push(docSnap);
-        }
     }
 
     return { activeDocs, expiredDocs };
@@ -197,7 +116,7 @@ function messageDocsEqual(prev, docs) {
 
 function cachedMessageBody(cacheEntry, msgData, docId) {
     const head = msgData?.head;
-    if (!cacheEntry || !head || cacheEntry.from !== head.from || cacheEntry.cid !== head.cid || !sameBytes(cacheEntry.body, msgData?.body)) {
+    if (!cacheEntry || !head || cacheEntry.cid !== head.cid || !sameBytes(cacheEntry.body, msgData?.body)) {
         return null;
     }
 
@@ -225,7 +144,6 @@ function cacheMessageBody(cache, docId, msgData, message) {
 
     const next = { ...message, id: docId };
     cache.set(docId, {
-        from: msgData?.head?.from,
         cid: msgData?.head?.cid,
         body: msgData?.body,
         tsKey: timestampKey(msgData?.ts ?? null),
@@ -235,7 +153,7 @@ function cacheMessageBody(cache, docId, msgData, message) {
     return next;
 }
 
-async function decryptDoc(docSnap, userChatPK, userPrivKey, peerChatPK, cache) {
+async function decryptDoc(docSnap, userChatPK, userPrivKey, peerChatPK, cache, actors) {
     const msgData = docSnap.data();
     if (messageDataExpired(msgData)) {
         cache?.delete?.(docSnap.id);
@@ -247,7 +165,7 @@ async function decryptDoc(docSnap, userChatPK, userPrivKey, peerChatPK, cache) {
         return cached;
     }
 
-    const dec = await decryptMsg(msgData, userChatPK, userPrivKey, peerChatPK);
+    const dec = await decryptMsg(msgData, userChatPK, userPrivKey, peerChatPK, { actors });
     if (!dec) {
         cache?.delete?.(docSnap.id);
         return null;
@@ -268,10 +186,10 @@ function pruneMessageCache(cache, docs) {
     }
 }
 
-async function decryptDocEntries(docs, userChatPK, userPrivKey, peerChatPK, cache) {
+async function decryptDocEntries(docs, userChatPK, userPrivKey, peerChatPK, cache, actors) {
     const entries = await Promise.all(
         docs.map(async (docSnap) => {
-            const message = await decryptDoc(docSnap, userChatPK, userPrivKey, peerChatPK, cache);
+            const message = await decryptDoc(docSnap, userChatPK, userPrivKey, peerChatPK, cache, actors);
             return message ? { doc: docSnap, message } : null;
         })
     );
@@ -339,7 +257,7 @@ function docIndexById(docs, id) {
     return (docs || []).findIndex((docSnap) => docSnap.id === id);
 }
 
-export async function decryptMsg(msgData, userChatPK, userPrivKey, peerChatPK) {
+export async function decryptMsg(msgData, userChatPK, userPrivKey, peerChatPK, options = {}) {
     if (!hasMsgData(msgData) || !userChatPK || !userPrivKey || !peerChatPK) {
         return null;
     }
@@ -349,7 +267,7 @@ export async function decryptMsg(msgData, userChatPK, userPrivKey, peerChatPK) {
 
     try {
         const pair = await getCachedPair(userChatPK, userPrivKey, peerChatPK);
-        const message = await openMsg(pair, msgData);
+        const message = await openMsg(pair, msgData, { actors: options?.actors });
         return normalizeDecryptedMsg(msgData, message);
     } catch {
         return null;
@@ -400,29 +318,14 @@ export async function collectSavedMediaStays(db, chatId, userChatPK, userPrivKey
 }
 
 export async function collectAccountSavedMediaStays(db, userChatPK, userPrivKey, options = {}) {
-    if (!db || !userChatPK || !userPrivKey) {
-        return [];
-    }
-
-    const chatsSnap = await getDocsFromServer(query(collection(db, 'chats'), where('participants', 'array-contains', userChatPK)));
-    const stays = new Map();
-
-    for (const chatSnap of chatsSnap.docs) {
-        const peerChatPK = getChatPeerPK({ id: chatSnap.id, participants: chatSnap.data()?.participants }, userChatPK);
-        if (!peerChatPK) {
-            continue;
-        }
-
-        const chatStays = await collectSavedMediaStays(db, chatSnap.id, userChatPK, userPrivKey, peerChatPK, options).catch(() => []);
-        for (const stay of chatStays) {
-            stays.set(`${stay.path}:${stay.stayId}:${stay.stayKey}`, stay);
-        }
-    }
-
-    return [...stays.values()];
+    void db;
+    void userChatPK;
+    void userPrivKey;
+    void options;
+    return [];
 }
 
-export function listenToLatestMsgs(db, chatId, userChatPK, userPrivKey, peerChatPK, pageSize, onUpdate, onError) {
+export function listenToLatestMsgs(db, chatId, userChatPK, userPrivKey, peerChatPK, pageSize, onUpdate, onError, options = {}) {
     const queryLimit = messageQueryLimit(pageSize);
     const maxQueryLimit = messageQueryMax(pageSize);
     const decryptedCache = new Map();
@@ -468,8 +371,7 @@ export function listenToLatestMsgs(db, chatId, userChatPK, userPrivKey, peerChat
                         removedDocs.push(change.doc);
                     }
                 }
-                const { activeDocs, expiredDocs } = partitionExpiredMessageDocs(snap.docs, expiredKeys, decryptedCache, now);
-                scheduleExpiredMessageDeletes(db, expiredDocs);
+                const { activeDocs } = partitionExpiredMessageDocs(snap.docs, expiredKeys, decryptedCache, now);
                 const docs = activeDocs.filter((docSnap) => {
                     if (!docSnap.metadata.hasPendingWrites) {
                         return true;
@@ -480,7 +382,7 @@ export function listenToLatestMsgs(db, chatId, userChatPK, userPrivKey, peerChat
                     // localByChat until acked.
                     return changeTypeById.get(docSnap.id) === 'modified';
                 });
-                const allEntries = await decryptDocEntries(docs, userChatPK, userPrivKey, peerChatPK, decryptedCache);
+                const allEntries = await decryptDocEntries(docs, userChatPK, userPrivKey, peerChatPK, decryptedCache, options?.actors);
                 if (runId !== run) {
                     return;
                 }
@@ -554,7 +456,7 @@ export function listenToLatestMsgs(db, chatId, userChatPK, userPrivKey, peerChat
     };
 }
 
-export async function loadOlderMsgs(db, chatId, userChatPK, userPrivKey, peerChatPK, cursor, pageSize) {
+export async function loadOlderMsgs(db, chatId, userChatPK, userPrivKey, peerChatPK, cursor, pageSize, options = {}) {
     if (!cursor) {
         return {
             messages: [],
@@ -576,9 +478,8 @@ export async function loadOlderMsgs(db, chatId, userChatPK, userPrivKey, peerCha
         let filledQuery = usingSnapshotCursor ? snap.docs.length >= queryLimit + 1 : snap.docs.length >= queryLimit;
         const expiredKeys = new Set();
         let partitionedDocs = partitionExpiredMessageDocs(rawDocs, expiredKeys);
-        scheduleExpiredMessageDeletes(db, partitionedDocs.expiredDocs);
         let olderDocs = partitionedDocs.activeDocs;
-        let allEntries = await decryptDocEntries(olderDocs, userChatPK, userPrivKey, peerChatPK);
+        let allEntries = await decryptDocEntries(olderDocs, userChatPK, userPrivKey, peerChatPK, undefined, options?.actors);
         scheduleAutoHiddenMessageDeletes(
             db,
             chatId,
@@ -604,9 +505,8 @@ export async function loadOlderMsgs(db, chatId, userChatPK, userPrivKey, peerCha
             rawDocs = [...nextSnap.docs, ...rawDocs];
             filledQuery = nextSnap.docs.length >= nextLimit;
             partitionedDocs = partitionExpiredMessageDocs(rawDocs, expiredKeys);
-            scheduleExpiredMessageDeletes(db, partitionedDocs.expiredDocs);
             olderDocs = partitionedDocs.activeDocs;
-            allEntries = await decryptDocEntries(olderDocs, userChatPK, userPrivKey, peerChatPK);
+            allEntries = await decryptDocEntries(olderDocs, userChatPK, userPrivKey, peerChatPK, undefined, options?.actors);
             scheduleAutoHiddenMessageDeletes(
                 db,
                 chatId,

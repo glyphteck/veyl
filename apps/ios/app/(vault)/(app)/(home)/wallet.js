@@ -19,7 +19,6 @@ import GlassIcon from '@/components/glass/glassicon';
 import { useRouteLock } from '@/lib/navigation/routelock';
 import { useTap } from '@/lib/tap';
 import { BTC_PRICE_FALLBACK } from '@veyl/shared/config';
-import { getChatId } from '@veyl/shared/crypto/chat';
 import { renderBalance, renderMoney } from '@veyl/shared/money';
 import { formatUserDisplay } from '@veyl/shared/profile';
 import { formatFullDateTime } from '@veyl/shared/utils/time';
@@ -209,7 +208,7 @@ const StableTxAvatar = memo(function StableTxAvatar({ active, bot, uri }) {
     return <Avatar pointerEvents="none" source={source} active={active} bot={bot} />;
 });
 
-const TxRow = memo(function TxRow({ animationKey, inserting = false, tx, profile, theme, moneyFormat, btcPrice, isLast, openRoute, selectChat, user }) {
+const TxRow = memo(function TxRow({ animationKey, inserting = false, tx, profile, theme, moneyFormat, btcPrice, isLast, openRoute, selectPeerChat, user }) {
     const { chatPK, chatBanned } = user || {};
     const isInflow = (tx?.amount ?? 0) > 0;
     const amountText = renderMoney(tx?.totalValue ?? 0, moneyFormat, btcPrice, isInflow ? '+' : '-');
@@ -230,10 +229,9 @@ const TxRow = memo(function TxRow({ animationKey, inserting = false, tx, profile
         }
         if (!chatPK || !profile?.chatPK) return;
 
-        const chatId = getChatId(chatPK, profile.chatPK);
-        selectChat?.(chatId);
+        void selectPeerChat?.(profile.chatPK);
         openRoute({ pathname: '/chat/[peerchatpk]', params: { peerchatpk: profile.chatPK } });
-    }, [chatPK, openRoute, profile?.chatPK, selectChat, tx?.funding, tx?.withdrawal]);
+    }, [chatPK, openRoute, profile?.chatPK, selectPeerChat, tx?.funding, tx?.withdrawal]);
 
     const pressFeedback = useTap({
         disabled: !canOpen,
@@ -300,7 +298,7 @@ const TxRow = memo(function TxRow({ animationKey, inserting = false, tx, profile
     prev.btcPrice === next.btcPrice &&
     prev.isLast === next.isLast &&
     prev.openRoute === next.openRoute &&
-    prev.selectChat === next.selectChat &&
+    prev.selectPeerChat === next.selectPeerChat &&
     prev.user?.chatPK === next.user?.chatPK &&
     prev.user?.chatBanned === next.user?.chatBanned &&
     prev.user?.avatar === next.user?.avatar &&
@@ -351,7 +349,7 @@ export default function Wallet() {
     const user = useUser();
     const { settings, chatBanned } = user || {};
     const { peerByWalletPK } = usePeer() || {};
-    const { selectChat } = useChat() || {};
+    const { selectPeerChat } = useChat() || {};
     const txData = useTxData();
     const { lockRoute } = useRouteLock();
 
@@ -505,12 +503,12 @@ export default function Wallet() {
                     btcPrice={btcPrice}
                     isLast={!txListHasLoader && index === txListData.length - 1}
                     openRoute={openRoute}
-                    selectChat={selectChat}
+                    selectPeerChat={selectPeerChat}
                     user={user}
                 />
             );
         },
-        [btcPrice, insertingIds, moneyFormat, openRoute, peerByWalletPK, selectChat, theme, txAnimationKey, txListData.length, txListHasLoader, user]
+        [btcPrice, insertingIds, moneyFormat, openRoute, peerByWalletPK, selectPeerChat, theme, txAnimationKey, txListData.length, txListHasLoader, user]
     );
 
     const getTxItemLayout = useCallback((data, index) => {

@@ -91,6 +91,14 @@ The unlocked vault also opens a local encrypted data cache for non-authoritative
 
 The cache exists to make unlock fast and reduce redundant expensive fetches. Message lists are not durable cache state; they must come from server-confirmed Firestore reads. Cached media bytes are used only after the server confirms the message document still exists. The cache is also not a source of spendable wallet truth; balances still come from live Spark calls and wallet events.
 
+## Architecture Principle
+
+Veyl should move toward dumb server, smart cryptographic client.
+
+The server should store and route opaque records, enforce cheap shape, quota, TTL, upload, and abuse limits, and avoid being the source of truth for private chat semantics. Clients should own semantic validity by holding user secrets, decrypting records, verifying signatures, checking action permissions, and deriving the renderable state.
+
+This principle does not mean the server is useless. It can still provide transport, sync, storage lifecycle, rate limits, uploads, push triggers, public profile lookup, moderation surfaces, and future privacy-preserving mediation. If Glyphteck later owns custom server infrastructure, that server may participate in cryptographic protocols with users, but it should not become the default plaintext authority for private chat content, authorship, read state, payment-request state, saved-message state, or wallet secrets.
+
 ## Data Model
 
 Main Firestore collections:
@@ -99,7 +107,7 @@ Main Firestore collections:
 - `profiles/{uid}`: public profile data, wallet/chat public keys, presence
 - `seeds/{uid}`: encrypted master seed
 - `usernames/{username}`: username reservation
-- `chats/{chatId}` and `chats/{chatId}/messages/{messageId}`: encrypted chat state. Chat docs carry participants, row recency, encrypted settings, and encrypted `lastMsg`; message docs carry encrypted display/control payloads with a dumb 21-day-or-saved TTL. Client-side encrypted read receipts, retention timelines, hidden checkpoints, and compaction decide what is visible or deleted before Firestore TTL eventually cleans up remaining unsaved docs.
+- `chats/{chatId}` and `chats/{chatId}/messages/{messageId}`: opaque pair chat action log. Chat docs carry only opaque version/timestamp shape; message docs carry encrypted signed or authenticated actions with dumb TTL metadata. Owner chat rows live under `users/{uid}/chats/{entryId}`, sealed wakes under `users/{uid}/chatInbox/{wakeId}`, and owner saved-message records under `users/{uid}/savedMessages/{savedId}`.
 - `bitcoin/current`: public cached BTC price, block height, and compact fee-rate tiers watched by the app-level Bitcoin provider
 - `passkeys/{credentialId}`: stored passkey credentials
 

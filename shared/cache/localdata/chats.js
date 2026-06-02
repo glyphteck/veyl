@@ -50,7 +50,9 @@ function serializeChat(chat) {
 
     return {
         id: chat.id,
-        participants: Array.isArray(chat.participants) ? chat.participants.filter(Boolean) : [],
+        peerChatPK: chat.peerChatPK || null,
+        peerUid: chat.peerUid || null,
+        actors: isObject(chat.actors) ? jsonClean(chat.actors) : undefined,
         settings: isObject(chat.settings) ? jsonClean(chat.settings) : undefined,
         lastMsg: serializeMsg(chat.lastMsg),
         ts: timestampMs(chat.ts, null, { positive: true }) || 0,
@@ -66,7 +68,9 @@ function reviveChat(chat) {
     const lastMsg = reviveMsg(chat.lastMsg);
     return {
         id: chat.id,
-        participants: Array.isArray(chat.participants) ? chat.participants.filter(Boolean) : [],
+        peerChatPK: chat.peerChatPK || null,
+        peerUid: chat.peerUid || null,
+        actors: isObject(chat.actors) ? chat.actors : undefined,
         settings: isObject(chat.settings) ? chat.settings : undefined,
         lastMsg,
         ts: timestampMs(chat.ts, null, { positive: true }) || 0,

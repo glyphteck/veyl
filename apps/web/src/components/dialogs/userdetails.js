@@ -14,11 +14,10 @@ import { CHAT_RETENTION_24H, CHAT_RETENTION_SEEN, cleanChatRetention } from '@ve
 import { usePeer } from '@/components/providers/peerprovider';
 import { formatUserDisplay } from '@veyl/shared/profile';
 import { chatUploadErrorMessage, getUploadFiles, queueMessages } from '@/lib/chat/files';
-import { HandCoins, Copy, CircleArrowRight, CircleCheck, Clock3, Eye, Flag, Paperclip, Trash2, UserX } from 'lucide-react';
+import { HandCoins, CircleArrowRight, CircleCheck, Clock3, Eye, Flag, Paperclip, Trash2, UserX } from 'lucide-react';
 import { toast } from 'sonner';
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { useForm } from 'react-hook-form';
-import { getChatId } from '@veyl/shared/crypto/chat';
 import { getChatPeerPK } from '@veyl/shared/chat/ids';
 
 const RETENTION_OPTIONS = [
@@ -34,7 +33,7 @@ const RETENTION_OPTIONS = [
 
 export default function UserDetails({ data, close }) {
     const { uid, chatPK, chatBanned, blockPeer, isBlocked } = useUser();
-    const { chats, sendMessage, sendAttachment, dropChat, deleteChat, setChatTtl, restoreDeletedChat } = useChat();
+    const { chats, sendMessage, sendAttachment, dropChat, deleteChat, setChatTtl, restoreDeletedChat, resolvePeerChatId } = useChat();
     const { openDialog } = useDialog();
     const { cloaked } = useCloak();
     const { peerByUid, updatePeer, dropPeer } = usePeer();
@@ -189,16 +188,6 @@ export default function UserDetails({ data, close }) {
         }
     };
 
-    const handleWalletIdClick = () => {
-        if (user?.walletPK) {
-            navigator.clipboard.writeText(user.walletPK);
-            toast('wallet id copied to clipboard', {
-                ...(cloaked ? {} : { description: user.walletPK }),
-                icon: <Copy />,
-            });
-        }
-    };
-
     const handleSendMessage = async (e) => {
         e.preventDefault();
         if (!msgContent.trim() || !user?.chatPK || !chatPK) return;
@@ -225,7 +214,7 @@ export default function UserDetails({ data, close }) {
             peer: user,
             onCancel: () => openDialog('userdetails', { user }),
             onConfirm: async () => {
-                const blockedChatId = user?.chatPK && chatPK ? getChatId(chatPK, user.chatPK) : chatId;
+                const blockedChatId = user?.chatPK ? await resolvePeerChatId?.(user.chatPK) : chatId;
                 dropChat?.(blockedChatId);
                 try {
                     await blockPeer?.(user);
@@ -292,17 +281,17 @@ export default function UserDetails({ data, close }) {
         <div className="flex flex-col gap-3 w-lg">
             <Card className="py-2">
                 <div className="flex flex-row items-center justify-between gap-2 px-4 pt-2 pb-2">
-                    <Button type="button" className="h-auto min-w-0 flex-1 justify-start rounded-none p-0 text-left shrinker" onClick={handleWalletIdClick} title="copy wallet id" aria-label="copy wallet id">
-                        <Avatar active={user?.active} bot={!!user?.bot} className="size-12 grower pointer-events-auto">
+                    <div className="flex min-w-0 flex-1 items-center gap-2.5">
+                        <Avatar active={user?.active} bot={!!user?.bot} className="size-12 shrink-0">
                             <AvatarImage src={user?.avatar} />
                             <AvatarFallback />
                         </Avatar>
-                        <div className="flex-1">
+                        <div className="min-w-0 flex-1">
                             <div className="text-xl">
-                                <span className="transition-colors pointer-events-auto">{user && formatUserDisplay(user, true)}</span>
+                                <span className="truncate">{user && formatUserDisplay(user, true)}</span>
                             </div>
                         </div>
-                    </Button>
+                    </div>
                     {!isOwnProfile && (
                         <div className="flex items-center gap-3 shrink-0">
                             <Button className="grower-lg pointer-events-auto" onClick={handleBlock} disabled={blocked}>

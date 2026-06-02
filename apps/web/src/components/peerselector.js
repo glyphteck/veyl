@@ -2,7 +2,7 @@ import { useMemo, useState, useRef, useEffect, useLayoutEffect, useCallback } fr
 import { createPortal } from 'react-dom';
 import { Button } from '@/components/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/avatar';
-import { ChevronsUpDown, Loader, Search, UsersRound } from 'lucide-react';
+import { ChevronsUpDown, Loader, Search, UsersRound, X } from 'lucide-react';
 import { mergeProfiles } from '@veyl/shared/search/merge';
 import { formatUserDisplay } from '@veyl/shared/profile';
 import { useSearch } from '@/lib/search/usesearch';
@@ -49,15 +49,18 @@ export default function PeerSelector({ selectedPeer, onPeerChange, disabled = fa
         }, 0);
     }, []);
 
-    const closePopover = useCallback((opts = {}) => {
-        const { focus = false } = opts;
-        setPopoverOpen(false);
-        setSearchValue('');
-        clearSearch();
-        if (focus) {
-            focusTrigger();
-        }
-    }, [clearSearch, focusTrigger]);
+    const closePopover = useCallback(
+        (opts = {}) => {
+            const { focus = false } = opts;
+            setPopoverOpen(false);
+            setSearchValue('');
+            clearSearch();
+            if (focus) {
+                focusTrigger();
+            }
+        },
+        [clearSearch, focusTrigger]
+    );
 
     useEffect(() => {
         setMounted(true);
@@ -145,6 +148,17 @@ export default function PeerSelector({ selectedPeer, onPeerChange, disabled = fa
             closePopover();
         }
     };
+
+    const handleClearPeer = useCallback(
+        (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (disabled) return;
+            onPeerChange?.(null);
+            closePopover({ focus: true });
+        },
+        [closePopover, disabled, onPeerChange]
+    );
 
     const handlePopoverOpenChange = (open) => {
         if (open) {
@@ -274,34 +288,57 @@ export default function PeerSelector({ selectedPeer, onPeerChange, disabled = fa
 
     return (
         <>
-            <Button
-                ref={triggerRef}
-                type="button"
-                aria-expanded={popoverOpen}
-                aria-haspopup="dialog"
-                onClick={() => handlePopoverOpenChange(!popoverOpen)}
-                onKeyDown={handleTriggerKeyDown}
-                className={cn('group button-outline w-full justify-between', className)}
-                disabled={disabled}
-            >
-                {selectedPeer ? (
-                    <span className="flex min-w-0 items-center gap-3.5">
-                        <Avatar active={selectedPeer?.active} bot={!!selectedPeer?.bot} className="size-9">
-                            <AvatarImage src={selectedPeer.avatar} alt={selectedPeer.username} />
-                            <AvatarFallback />
-                        </Avatar>
-                        <span className="truncate text-lg font-bold">{formatUserDisplay(selectedPeer, true)}</span>
-                    </span>
-                ) : (
-                    <span className="flex min-w-0 items-center gap-3.5 text-muted">
-                        <span className="flex size-9 shrink-0 items-center justify-center">
-                            <UsersRound className={cn('size-7 text-foreground transition-opacity ease-out', popoverOpen ? 'opacity-100' : 'opacity-45 group-hover:opacity-100 group-focus-visible:opacity-100')} />
+            <div className="relative w-full">
+                <Button
+                    ref={triggerRef}
+                    type="button"
+                    aria-expanded={popoverOpen}
+                    aria-haspopup="dialog"
+                    onClick={() => handlePopoverOpenChange(!popoverOpen)}
+                    onKeyDown={handleTriggerKeyDown}
+                    className={cn('group button-outline relative w-full justify-start pr-16', className)}
+                    disabled={disabled}
+                >
+                    {selectedPeer ? (
+                        <span className="flex min-w-0 items-center gap-3.5">
+                            <Avatar active={selectedPeer?.active} bot={!!selectedPeer?.bot} className="size-9">
+                                <AvatarImage src={selectedPeer.avatar} alt={selectedPeer.username} />
+                                <AvatarFallback />
+                            </Avatar>
+                            <span className="truncate text-lg font-bold">{formatUserDisplay(selectedPeer, true)}</span>
                         </span>
-                        {label}
-                    </span>
-                )}
-                <ChevronsUpDown className="size-6 text-muted" />
-            </Button>
+                    ) : (
+                        <span className="flex min-w-0 items-center gap-3.5 text-muted">
+                            <span className="avatar flex size-9 shrink-0 items-center justify-center">
+                                <UsersRound
+                                    className={cn(
+                                        'size-7 translate-x-1 text-foreground transition-opacity ease-out',
+                                        popoverOpen ? 'opacity-100' : 'opacity-45 group-hover:opacity-100 group-focus-visible:opacity-100'
+                                    )}
+                                />
+                            </span>
+                            <span className="truncate text-lg font-bold">{label}</span>
+                        </span>
+                    )}
+                    {!selectedPeer && <ChevronsUpDown className="absolute top-1/2 right-4 size-6 -translate-y-1/2 text-muted" />}
+                </Button>
+                {selectedPeer ? (
+                    <button
+                        type="button"
+                        aria-label="clear selected peer"
+                        title="clear"
+                        className="grower absolute top-1/2 right-4 z-10 m-0 flex size-6 -translate-y-1/2 cursor-pointer appearance-none items-center justify-center border-0 bg-transparent p-0 text-muted disabled:pointer-events-none disabled:opacity-50"
+                        disabled={disabled}
+                        onMouseDown={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                        }}
+                        onClick={handleClearPeer}
+                    >
+                        <X className="size-6" />
+                    </button>
+                ) : null}
+            </div>{' '}
             {content}
         </>
     );

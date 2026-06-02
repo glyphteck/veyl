@@ -1,9 +1,7 @@
 'use client';
 
-import { MAX_CHAT_FILE_BYTES, putChatFile, readChatFile } from '../files.js';
+import { putChatFile, readChatFile } from '../files.js';
 import { makeAttachment, makeFile, makeImg, makeMp3, makeMp4 } from './messages.js';
-
-export const MAX_MSG_ATTACHMENT_BYTES = MAX_CHAT_FILE_BYTES;
 
 export function pickAttachmentMeta(meta = {}) {
     return {

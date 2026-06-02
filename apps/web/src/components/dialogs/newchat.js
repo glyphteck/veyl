@@ -13,7 +13,6 @@ import { useCloak } from '@veyl/shared/providers/cloakprovider';
 import { useWallet } from '@/components/providers/walletprovider';
 import { useSearch } from '@/lib/search/usesearch';
 import { makeTxt } from '@veyl/shared/chat/messages';
-import { getChatId } from '@veyl/shared/crypto/chat';
 import { mergeProfiles } from '@veyl/shared/search/merge';
 import { formatUserDisplay } from '@veyl/shared/profile';
 import { chatUploadErrorMessage, getUploadFiles, queueMessages } from '@/lib/chat/files';
@@ -22,7 +21,7 @@ import { toast } from 'sonner';
 export default function NewChat({ close }) {
     const router = useRouter();
     const { uid, chatPK, chatBanned } = useUser();
-    const { chats, sendMessage, sendAttachment, selectChat } = useChat();
+    const { chats, sendMessage, sendAttachment, selectPeerChat } = useChat();
     const { peers, recentPeers } = usePeer();
     const { openDialog } = useDialog();
     const { cloaked } = useCloak();
@@ -39,9 +38,7 @@ export default function NewChat({ close }) {
     const chatPeerPKs = useMemo(() => {
         const set = new Set();
         for (const chat of chats || []) {
-            for (const pk of chat.participants || []) {
-                if (pk !== chatPK) set.add(pk);
-            }
+            if (chat.peerChatPK && chat.peerChatPK !== chatPK) set.add(chat.peerChatPK);
         }
         return set;
     }, [chats, chatPK]);
@@ -107,7 +104,7 @@ export default function NewChat({ close }) {
         e.target.value = '';
         if (!files.length || !selectedPeer?.chatPK) return;
         close();
-        selectChat(getChatId(chatPK, selectedPeer.chatPK));
+        await selectPeerChat(selectedPeer.chatPK);
         router.push('/chat');
         try {
             const result = await queueMessages(files, (attachment) => sendAttachment(selectedPeer.chatPK, attachment));
@@ -126,9 +123,8 @@ export default function NewChat({ close }) {
         close();
         try {
             const message = makeTxt(messageToSend);
-            const newChatId = getChatId(chatPK, selectedPeer.chatPK);
+            await selectPeerChat(selectedPeer.chatPK);
             const sendPromise = sendMessage(selectedPeer.chatPK, message);
-            selectChat(newChatId);
             router.push('/chat');
             await sendPromise;
             const truncated = messageToSend.length > 28 ? messageToSend.substring(0, 28) + '...' : messageToSend;

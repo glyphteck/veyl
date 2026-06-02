@@ -36,11 +36,9 @@ export const CHAT_UNSAVED_TTL_DAYS = 21;
 export const CHAT_UNSAVED_TTL_MS = CHAT_UNSAVED_TTL_DAYS * DAY_MS;
 export const CHAT_SEEN_TTL_MS = DAY_MS;
 
-// Chat upload cost and abuse-control knobs. Lower values reduce Storage and bandwidth exposure.
+// Chat media lifecycle and client shaping knobs. Server upload byte exposure is enforced by time-window quotas.
 export const CHAT_MEDIA_TTL_DAYS = CHAT_UNSAVED_TTL_DAYS;
 export const CHAT_MEDIA_TTL_MS = CHAT_MEDIA_TTL_DAYS * DAY_MS;
-export const CHAT_MAX_FILE_BYTES = 20 * MIB_BYTES;
-export const CHAT_FILE_SIZE_LIMIT_ENABLED = true;
 export const CHAT_MAX_UPLOAD_FILES = 5;
 export const CHAT_IMAGE_MAX_EDGE = 1600;
 export const CHAT_IMAGE_COMPRESS = 0.82;

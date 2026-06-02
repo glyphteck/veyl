@@ -3,7 +3,8 @@
 status: active
 branch: main
 worktree: current
-base: main@76eeb51
+base: main@42a298010646
+repo version: 4.14.11
 
 ## Scope
 
@@ -18,7 +19,7 @@ Keep iOS current-chat keyboard handling responsive while avoiding `KeyboardGestu
 
 ## Collision Notes
 
-The primary checkout has unrelated dirty work. Keep this task limited to current-chat route entry and current-chat keyboard dismissal.
+The primary checkout has an existing dirty change in `apps/ios/app/(vault)/(app)/(home)/chat.js`, which is inside this task's write boundary. Treat that file as current chat-keyboard work unless the author confirms otherwise. The other dirty iOS peer-picker/share/send files are outside this task's write boundary; do not fold them into keyboard follow-up edits.
 
 ## Remaining
 

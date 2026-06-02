@@ -2,7 +2,6 @@ import { useCallback, useState } from 'react';
 import { CircleCheck } from 'lucide-react';
 import { useUser } from '@/components/providers/userprovider';
 import { useChat } from '@/components/providers/chatprovider';
-import { getChatId } from '@veyl/shared/crypto/chat';
 import { formatUserDisplay } from '@veyl/shared/profile';
 import { prepareFile } from '@/lib/chat/files';
 import { toast } from 'sonner';
@@ -18,8 +17,8 @@ function dataUriToBlob(dataUri) {
 }
 
 export default function SendPhoto({ data, close }) {
-    const { chatPK, chatBanned } = useUser();
-    const { sendAttachmentMany, sendImageMany, selectChat } = useChat();
+    const { chatBanned } = useUser();
+    const { sendAttachmentMany, sendImageMany, selectPeerChat } = useChat();
     const [sending, setSending] = useState(false);
 
     const media = data?.media || (data?.photo ? { kind: 'photo', uri: data.photo } : null);
@@ -60,8 +59,7 @@ export default function SendPhoto({ data, close }) {
             for (const peer of selected) {
                 const result = resultByChatPK.get(peer.chatPK);
                 if (result?.ok) {
-                    const chatId = getChatId(chatPK, peer.chatPK);
-                    if (selected.length === 1) selectChat(chatId);
+                    if (selected.length === 1) await selectPeerChat(peer.chatPK);
                     toast(`sent ${kind} to ${formatUserDisplay(peer, false)}`, { icon: <CircleCheck /> });
                 } else {
                     console.error(`send ${kind} failed:`, result?.error);
@@ -74,7 +72,7 @@ export default function SendPhoto({ data, close }) {
                 toast.error(`failed to send to ${formatUserDisplay(peer, false)}`);
             }
         }
-    }, [chatBanned, chatPK, close, data, kind, media, photo, selectChat, sendAttachmentMany, sendImageMany, sending]);
+    }, [chatBanned, close, data, kind, media, photo, selectPeerChat, sendAttachmentMany, sendImageMany, sending]);
 
     return <Share onShare={handleSend} busy={sending} disabled={chatBanned} />;
 }

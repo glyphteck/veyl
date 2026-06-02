@@ -1,6 +1,6 @@
 export function warmCandidates(rows, chatPK, pendingDeleteIds, limit) {
     return (Array.isArray(rows) ? rows : [])
-        .filter((chatItem) => chatItem?.id && !pendingDeleteIds.has(chatItem.id) && Array.isArray(chatItem.participants) && chatItem.participants.includes(chatPK))
+        .filter((chatItem) => chatItem?.id && !pendingDeleteIds.has(chatItem.id) && chatItem.peerChatPK)
         .slice(0, Math.max(0, limit));
 }
 

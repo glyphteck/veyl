@@ -4,7 +4,7 @@ import { useCallback } from 'react';
 import { writeCachedChats } from '../../cache/localdata.js';
 import { markChatsRead, readCandidate, scheduleReadReceiptWrite } from '../read.js';
 
-export function useChatSeen({ chat, chatBanned, chatPK, chatPrivateKey, localCache, pendingReadRef, readCacheRef, readReceiptWriteDelay, getChatRetention, setChats }) {
+export function useChatSeen({ chat, uid, chatBanned, chatPK, chatPrivateKey, localCache, pendingReadRef, readCacheRef, readReceiptWriteDelay, getChatRetention, setChats }) {
     const scheduleReadReceipt = useCallback(
         (chatId, message, lastMsgMs) => {
             scheduleReadReceiptWrite({
@@ -13,13 +13,13 @@ export function useChatSeen({ chat, chatBanned, chatPK, chatPrivateKey, localCac
                 message,
                 lastMsgMs,
                 delay: readReceiptWriteDelay,
-                write: (pending) => chat.sendReadReceipt(chatPK, chatPrivateKey, pending.peerChatPK, pending.target, { retention: getChatRetention(chatId) }),
+                write: (pending) => chat.sendReadReceipt(chatPK, chatPrivateKey, pending.peerChatPK, pending.target, { retention: getChatRetention(chatId), senderUid: uid }),
                 onError: () => {
                     readCacheRef.current.delete(chatId);
                 },
             });
         },
-        [chat, chatPK, chatPrivateKey, getChatRetention, pendingReadRef, readCacheRef, readReceiptWriteDelay]
+        [chat, uid, chatPK, chatPrivateKey, getChatRetention, pendingReadRef, readCacheRef, readReceiptWriteDelay]
     );
 
     const checkLastRead = useCallback(

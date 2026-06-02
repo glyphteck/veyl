@@ -145,8 +145,8 @@ export default function AppLayout() {
                 options={{
                     presentation: 'formSheet',
                     sheetGrabberVisible: true,
-                    sheetAllowedDetents: [0.85],
-                    contentStyle: { backgroundColor: 'transparent' },
+                    sheetAllowedDetents: [1],
+                    contentStyle: { backgroundColor: theme?.background },
                 }}
             />
             <Stack.Screen
@@ -154,8 +154,8 @@ export default function AppLayout() {
                 options={{
                     presentation: 'formSheet',
                     sheetGrabberVisible: true,
-                    sheetAllowedDetents: [0.85],
-                    contentStyle: { backgroundColor: 'transparent' },
+                    sheetAllowedDetents: [1],
+                    contentStyle: { backgroundColor: theme?.background },
                 }}
             />
         </Stack>

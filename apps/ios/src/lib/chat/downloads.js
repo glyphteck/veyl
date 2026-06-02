@@ -255,7 +255,7 @@ export async function saveMessageImage(msg, peerChatPK, readMessageFile) {
   if (!perm.granted) {
     throw new Error("Please allow photo access to save pictures.");
   }
-  await MediaLibrary.saveToLibraryAsync(uri);
+  await MediaLibrary.Asset.create(uri);
 }
 
 export async function saveMessageFile(msg, peerChatPK, readMessageFile) {

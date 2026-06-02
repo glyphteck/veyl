@@ -20,7 +20,6 @@ import { prepareAssetForChatUpload } from '@/lib/chat/media';
 import { mark } from '@/lib/diagnostics';
 import { useRouteLock } from '@/lib/navigation/routelock';
 import { formatUserDisplay } from '@veyl/shared/profile';
-import { getChatId } from '@veyl/shared/crypto/chat';
 import { getChatPeerPK } from '@veyl/shared/chat/ids';
 import { chatUploadErrorMessage } from '@veyl/shared/chat/attachments';
 import { getMessageKey } from '@veyl/shared/chat/state';
@@ -45,8 +44,6 @@ const composerOverlayLayout = LinearTransition.duration(COMPOSER_OVERLAY_MS).eas
 function uploadErrorMessage(error, fallback) {
     return chatUploadErrorMessage(error, {
         fallback,
-        size: { fallback: '', unitSeparator: ' ' },
-        fileTooLarge: (max) => (max ? `This file is too large. Chat uploads are limited to ${max}.` : 'This file is too large.'),
         videoUnavailable: () => 'This video could not be read. Try a shorter video or export it again.',
     });
 }
@@ -65,7 +62,7 @@ export default function PeerChatRoute() {
     const insets = useSafeAreaInsets();
     const params = useLocalSearchParams();
     const router = useRouter();
-    const { chats, selectChat, sendMessage, sendAttachment, sendImage, updateMessage } = useChat();
+    const { chats, selectChat, resolvePeerChatId, sendMessage, sendAttachment, sendImage, updateMessage } = useChat();
     const { chatPK, chatBanned } = useUser();
     const { sendMoneyWithSpark } = useWallet();
     const { peerByChatPK, updatePeer } = usePeer() || {};
@@ -88,7 +85,27 @@ export default function PeerChatRoute() {
 
     const ownChatPK = cleanChatPK(chatPK);
     const routeChatPK = cleanChatPK(firstRouteParam(params?.peerchatpk));
-    const chatId = useMemo(() => (ownChatPK && routeChatPK ? getChatId(ownChatPK, routeChatPK) : null), [ownChatPK, routeChatPK]);
+    const [chatId, setChatId] = useState(null);
+
+    useEffect(() => {
+        let active = true;
+        setChatId(null);
+        if (!ownChatPK || !routeChatPK) {
+            return () => {
+                active = false;
+            };
+        }
+        resolvePeerChatId?.(routeChatPK)
+            .then((nextChatId) => {
+                if (active) setChatId(nextChatId || null);
+            })
+            .catch(() => {
+                if (active) setChatId(null);
+            });
+        return () => {
+            active = false;
+        };
+    }, [ownChatPK, resolvePeerChatId, routeChatPK]);
     const currentChat = useMemo(() => (chatId && Array.isArray(chats) ? (chats.find((chat) => chat?.id === chatId) ?? null) : null), [chatId, chats]);
 
     const peerChatPK = useMemo(() => getChatPeerPK(currentChat, chatPK) ?? routeChatPK, [chatPK, currentChat, routeChatPK]);

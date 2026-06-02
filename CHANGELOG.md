@@ -2,6 +2,16 @@
 
 Repo-level changes are listed newest first. Keep entries short and concrete. Broad pushes get grouped bullets, while narrow fixes can use one concise bugfix or cleanup bullet that still names the actual change.
 
+## 4.14.12 - 2026-06-02
+
+- Reworked chat storage around opaque pair-derived `chatId`s, owner-only encrypted chat entries, sealed `chatInbox` wake docs, and append-only encrypted action rows instead of participant arrays, plaintext sender fields, or shared preview state.
+- Added per-chat cryptographic action envelopes for create, edit, delete, payment confirmation, reactions, receipts, hidden checkpoints, and settings, with actor signatures or shared action authenticators verified by clients.
+- Moved saved-message state into owner-owned encrypted saved records and updated delete/tombstone handling so global deletes win over local saved copies and saved media holds.
+- Updated Firestore rules, push functions, account/chat deletion paths, bot runtime, web, and iOS chat flows to use owner entries, inbox wakes, pair chat selection, and opaque row hydration.
+- Documented the dumb-server, smart-cryptographic-client model across chat, security, repo, navigation, code, and active todo guidance.
+- Cleaned up web payment peer/amount controls with a shared money amount input, selected-peer clear affordance, aligned trailing controls, and static peer profile headers.
+- Split iOS peer picking into a reusable picker surface and kept camera/media staging paths aligned with the opaque media and upload-reservation rules.
+
 ## 4.14.11 - 2026-06-01
 
 - Added public security reporting guidance and documented the Firebase client-config posture for open-source scanning.

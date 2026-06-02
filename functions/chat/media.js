@@ -2,7 +2,7 @@ import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { createHash } from 'node:crypto';
 import admin, { db, FieldValue, OK, Timestamp } from '../lib/admin.js';
 import { HOUR_MS, MINUTE_MS, limitCallable, uidLimitKey } from '../lib/ratelimit.js';
-import { CHAT_MEDIA_CONTENT_TYPE, CHAT_MEDIA_MAX_FILE_BYTES, CHAT_MEDIA_UPLOAD_RESERVATION_TTL_MS, chatMediaReserveLimitRules } from '../lib/abuseconfig.js';
+import { CHAT_MEDIA_CONTENT_TYPE, CHAT_MEDIA_UPLOAD_RESERVATION_TTL_MS, chatMediaReserveLimitRules } from '../lib/abuseconfig.js';
 import { assertQuotaRoom, cleanQuotaAmount, writeQuotaReservation } from '../lib/usagequota.js';
 import { makeAccountUploadQuota } from '../lib/uploadquota.js';
 
@@ -60,14 +60,7 @@ function cleanMediaContentType(value) {
 }
 
 function cleanMediaUploadSize(value) {
-    const size = cleanQuotaAmount(value);
-    if (size > CHAT_MEDIA_MAX_FILE_BYTES) {
-        throw new HttpsError('resource-exhausted', 'file too large', {
-            limit: CHAT_MEDIA_MAX_FILE_BYTES,
-            requested: size,
-        });
-    }
-    return size;
+    return cleanQuotaAmount(value);
 }
 
 function cleanStayCount(value) {

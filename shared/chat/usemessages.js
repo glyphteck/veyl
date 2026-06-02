@@ -1,16 +1,15 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { filterChatMessages, getPeerChatPKFromChatId } from './ids.js';
-import { keySet, addMessageKeys, collectMessageKeys, messageHasKey } from './messagekeys.js';
+import { filterChatMessages, getChatPeerPK } from './ids.js';
+import { keySet, addMessageKeys, messageHasKey, messageKeys } from './messagekeys.js';
 import { loadOlderMsgs, MSG_BATCH_SIZE } from './messages/query.js';
-import { runMessageAutoDelete } from './messages/autodelete.js';
-import { compactMessages } from './messages/compact.js';
 import { dropMessageMedia, dropMissingFromBatch, expireMessageView, getMessagesBatch, holdCurrentLiveMessages, isMissingFromBatch, makeMessageViewSeed, messageSeedFromBatch, messageSeedFromView, removeMessagesByKeys, trimExpiredMessages } from './messages/window.js';
 import { getMessageKey, getMessageOrderMs, mergeMessages } from './state.js';
 import { canShowMsg, deriveMessageReactions, getDisplayMessages, getLatestOwnReadReceiptTarget, getLatestReadReceiptTarget, getSeenHiddenMessages, holdVisibleMsg, isControlMsg } from './messages.js';
 import { resolveRenderableMessages } from './resolve.js';
 import { VISITED_CHAT_PREFETCH_OLDER_BATCHES } from './messages/session/config.js';
+import { timestampMs } from '../utils/time.js';
 
 function isDenied(error) {
     return error?.code === 'permission-denied';
@@ -24,6 +23,83 @@ function latestPreviewMessage(messages) {
         }
     }
     return null;
+}
+
+function savedRecordKeys(record) {
+    return [...new Set([record?.messageKey, ...messageKeys(record?.snapshot)].filter(Boolean))];
+}
+
+function savedRecordDeleted(record, deletedKeys) {
+    return savedRecordKeys(record).some((key) => deletedKeys?.has?.(key));
+}
+
+function savedMessageFromRecord(record) {
+    const snapshot = record?.snapshot;
+    if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) {
+        return null;
+    }
+    const messageKey = record?.messageKey;
+    const savedTtl = timestampMs(snapshot.savedTtl ?? snapshot.ttl);
+    return {
+        ...snapshot,
+        id: snapshot.id || messageKey,
+        cid: snapshot.cid || messageKey,
+        ttl: null,
+        permanent: true,
+        ...(Number.isFinite(savedTtl) ? { savedTtl } : {}),
+        ...(record?.stay?.stayId && record?.stay?.stayKey
+            ? {
+                  p: snapshot.p || record.stay.path,
+                  stay: record.stay.stayId,
+                  stayKey: record.stay.stayKey,
+              }
+            : {}),
+    };
+}
+
+function overlaySavedMessages(messages, savedRecords, deletedKeys) {
+    if (!Array.isArray(savedRecords) || !savedRecords.length) {
+        return messages || [];
+    }
+
+    const next = [...(messages || [])];
+    const indexByKey = new Map();
+    for (let index = 0; index < next.length; index += 1) {
+        for (const key of messageKeys(next[index])) {
+            indexByKey.set(key, index);
+        }
+    }
+
+    let changed = false;
+    for (const record of savedRecords) {
+        if (savedRecordDeleted(record, deletedKeys)) {
+            continue;
+        }
+        const saved = savedMessageFromRecord(record);
+        if (!saved) {
+            continue;
+        }
+        const keys = savedRecordKeys(record);
+        const existingIndex = keys.map((key) => indexByKey.get(key)).find((index) => index != null);
+        if (existingIndex != null && next[existingIndex]) {
+            next[existingIndex] = {
+                ...next[existingIndex],
+                ttl: null,
+                permanent: true,
+                ...(Number.isFinite(saved.savedTtl) ? { savedTtl: saved.savedTtl } : {}),
+                ...(saved.stay && saved.stayKey ? { stay: saved.stay, stayKey: saved.stayKey } : {}),
+            };
+        } else {
+            const index = next.length;
+            next.push(saved);
+            for (const key of messageKeys(saved)) {
+                indexByKey.set(key, index);
+            }
+        }
+        changed = true;
+    }
+
+    return changed ? mergeMessages(next) : messages || [];
 }
 
 function batchCoversKey(batch, key) {
@@ -48,13 +124,12 @@ export function createUseChatMessages({ db, useChat, useUser, useVault, appState
 
     return function useChatMessages(chatId) {
         const {
+            chats,
             getMessages,
             ackMessages,
             hasChatDoc,
             markChatRead,
             markChatReadReceipt,
-            deleteMessages,
-            markMessagesHidden,
             wasChatDeletedLocally,
             ackDeletedChat,
             isChatDataReady,
@@ -73,11 +148,14 @@ export function createUseChatMessages({ db, useChat, useUser, useVault, appState
             queueMessagePreload,
             adoptConfirmedMessages,
             readMessageFile,
+            listenSavedMessages,
+            unsaveMessageKey,
+            releaseSavedMediaStays,
         } = useChat();
-        const { chatPK } = useUser();
+        const { uid, chatPK } = useUser();
         const { chatPrivateKey, localCache } = useVault();
 
-        const peerChatPK = useMemo(() => getPeerChatPKFromChatId(chatId, chatPK), [chatId, chatPK]);
+        const peerChatPK = useMemo(() => getChatPeerPK((chats || []).find((chatItem) => chatItem?.id === chatId), chatPK), [chatId, chatPK, chats]);
         const scopeKey = `${chatId || ''}:${chatPK || ''}:${chatPrivateKey ? 'unlocked' : 'locked'}:${peerChatPK || ''}`;
         const initialSeed = messageSeedFromBatch(typeof getSharedMessageBatch === 'function' ? getSharedMessageBatch(chatId) : null, chatPK, peerChatPK) ?? messageSeedFromView(getMessageView?.(scopeKey));
 
@@ -90,6 +168,7 @@ export function createUseChatMessages({ db, useChat, useUser, useVault, appState
         const [isActive, setIsActive] = useState(() => !appState?.currentState || appState.currentState === 'active');
         const [serverBatch, setServerBatch] = useState(() => initialSeed?.serverBatch ?? null);
         const [stateScope, setStateScope] = useState(scopeKey);
+        const [savedRecords, setSavedRecords] = useState([]);
 
         const oldestRef = useRef(initialSeed?.oldest ?? null);
         const olderLoadedRef = useRef(!!initialSeed?.olderLoaded);
@@ -109,6 +188,7 @@ export function createUseChatMessages({ db, useChat, useUser, useVault, appState
         const deletedMessageKeysRef = useRef(new Set());
         const lastPreviewDropSyncRef = useRef('');
         const autoDeleteRef = useRef({ checkpointMs: 0, pendingCheckpointMs: 0 });
+        const savedDeleteRef = useRef(new Set());
 
         if (scopeRef.current !== scopeKey) {
             scopeRef.current = scopeKey;
@@ -117,6 +197,7 @@ export function createUseChatMessages({ db, useChat, useUser, useVault, appState
             deletedMessageKeysRef.current = new Set();
             lastPreviewDropSyncRef.current = '';
             autoDeleteRef.current = { checkpointMs: 0, pendingCheckpointMs: 0 };
+            savedDeleteRef.current = new Set();
         }
         const chatExists = !!(chatId && hasChatDoc(chatId));
         const rowLastMsgKey = chatId && typeof getChatRowLastMsgKey === 'function' ? getChatRowLastMsgKey(chatId) : null;
@@ -170,7 +251,16 @@ export function createUseChatMessages({ db, useChat, useUser, useVault, appState
             lastPreviewDropSyncRef.current = '';
             autoDeleteRef.current = { checkpointMs: 0, pendingCheckpointMs: 0 };
             olderPrefetchRef.current = { scopeKey, count: 0, queued: 0, exhausted: false };
+            savedDeleteRef.current = new Set();
         }, [chatId, chatPK, chatPrivateKey, getMessageView, getSharedMessageBatch, peerChatPK, scopeKey]);
+
+        useEffect(() => {
+            setSavedRecords([]);
+            if (!chatId || !uid || !chatPrivateKey || typeof listenSavedMessages !== 'function') {
+                return undefined;
+            }
+            return listenSavedMessages(chatId, setSavedRecords, () => setSavedRecords([]));
+        }, [chatId, uid, chatPrivateKey, listenSavedMessages]);
 
         useEffect(() => {
             hasOlderRef.current = hasOlder;
@@ -429,7 +519,8 @@ export function createUseChatMessages({ db, useChat, useUser, useVault, appState
             const runId = runRef.current;
             try {
                 const previousCursor = oldestRef.current;
-                const page = await loadOlderMsgs(db, chatId, chatPK, chatPrivateKey, peerChatPK, oldestRef.current, pageSize);
+                const currentChat = (chats || []).find((chatItem) => chatItem?.id === chatId);
+                const page = await loadOlderMsgs(db, chatId, chatPK, chatPrivateKey, peerChatPK, oldestRef.current, pageSize, { actors: currentChat?.actors });
                 if (runId !== runRef.current) {
                     return false;
                 }
@@ -477,7 +568,7 @@ export function createUseChatMessages({ db, useChat, useUser, useVault, appState
                     setLoadingOlder(false);
                 }
             }
-        }, [chatExists, chatId, chatPK, chatPrivateKey, db, localCache, pageSize, peerChatPK, readMessageFile, scopeKey, stateScope]);
+        }, [chatExists, chatId, chatPK, chatPrivateKey, chats, db, localCache, pageSize, peerChatPK, readMessageFile, scopeKey, stateScope]);
 
         useEffect(() => {
             if (stateScope !== scopeKey || !chatId || !ready || !exists || !hasOlder || !oldestRef.current || typeof queueMessagePreload !== 'function') {
@@ -585,7 +676,8 @@ export function createUseChatMessages({ db, useChat, useUser, useVault, appState
                 return !key || !liveKeys.has(key);
             });
         }, [liveKeys, locals]);
-        const rawMessages = useMemo(() => filterChatMessages(mergeMessages(cleanOlder, activeLive, renderLocals), chatPK, peerChatPK), [activeLive, chatPK, cleanOlder, renderLocals, peerChatPK]);
+        const deletedKeysForSaved = useMemo(() => keySet([...(activeServerBatch?.deletedKeys || []), ...deletedMessageKeysRef.current]), [activeServerBatch]);
+        const rawMessages = useMemo(() => filterChatMessages(overlaySavedMessages(mergeMessages(cleanOlder, activeLive, renderLocals), savedRecords, deletedKeysForSaved), chatPK, peerChatPK), [activeLive, chatPK, cleanOlder, deletedKeysForSaved, peerChatPK, renderLocals, savedRecords]);
         const retainedMessages = useMemo(
             () =>
                 getDisplayMessages(rawMessages, chatPK, peerChatPK, {
@@ -603,53 +695,37 @@ export function createUseChatMessages({ db, useChat, useUser, useVault, appState
             visibleMessageKeysRef.current = keys;
         }, [messages]);
 
+        useEffect(() => {
+            if (!chatId || !savedRecords.length || !deletedKeysForSaved.size || typeof unsaveMessageKey !== 'function') {
+                return;
+            }
+            for (const record of savedRecords) {
+                if (!savedRecordDeleted(record, deletedKeysForSaved)) {
+                    continue;
+                }
+                const key = `${chatId}:${record.messageKey}`;
+                if (savedDeleteRef.current.has(key)) {
+                    continue;
+                }
+                savedDeleteRef.current.add(key);
+                void Promise.resolve()
+                    .then(() => unsaveMessageKey(chatId, record.messageKey))
+                    .then(() => (record.stay ? releaseSavedMediaStays?.([record.stay]) : null))
+                    .catch(() => {});
+            }
+        }, [chatId, deletedKeysForSaved, releaseSavedMediaStays, savedRecords, unsaveMessageKey]);
+
         const runCompaction = useCallback(
             (sourceMessages) => {
-                if (!chatId || !Array.isArray(sourceMessages) || !sourceMessages.length || typeof deleteMessages !== 'function') {
-                    return;
-                }
-
-                void compactMessages({
-                    chatId,
-                    messages: sourceMessages,
-                    deletedKeys: deletedMessageKeysRef.current,
-                    deleteMessages: (targets) => deleteMessages(chatId, targets),
-                }).catch(() => {});
+                return undefined;
             },
-            [chatId, deleteMessages]
+            []
         );
         const runAutoDelete = useCallback(
             (sourceMessages, keepKeys = new Set()) => {
-                if (!chatId || !chatPK || !peerChatPK || !Array.isArray(sourceMessages) || !sourceMessages.length || typeof markMessagesHidden !== 'function' || typeof deleteMessages !== 'function') {
-                    runCompaction(sourceMessages);
-                    return;
-                }
-
-                void runMessageAutoDelete({
-                    chatId,
-                    messages: sourceMessages,
-                    chatPK,
-                    peerChatPK,
-                    keepKeys,
-                    deletedKeys: deletedMessageKeysRef.current,
-                    state: autoDeleteRef.current,
-                    writeHiddenCheckpoint: (target) => markMessagesHidden(chatId, target),
-                    deleteMessages: (targets) => deleteMessages(chatId, targets),
-                })
-                    .then(({ deleted }) => {
-                        if (!deleted?.length) {
-                            return;
-                        }
-
-                        const keys = collectMessageKeys(deleted);
-                        if (rowLastMsgKeyRef.current && keys.has(rowLastMsgKeyRef.current)) {
-                            syncChatPreviewDrop?.(chatId, keys, latestPreviewMessage(sourceMessages));
-                        }
-                        runCompaction(sourceMessages);
-                    })
-                    .catch(() => {});
+                return undefined;
             },
-            [chatId, chatPK, deleteMessages, markMessagesHidden, peerChatPK, runCompaction, syncChatPreviewDrop]
+            []
         );
 
         useEffect(() => {

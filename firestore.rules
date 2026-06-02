@@ -3,17 +3,10 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     /* ---------- helpers ---------- */
-    function userChatPK() {
-      return get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.chatPK;
-    }
     function isAdmin() {
       return request.auth != null
         && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
     }
-    function isParticipant(arr) {
-      return request.auth != null && userChatPK() in arr;
-    }
-
     function mapGet(m, k) {
       return m is map && k in m ? m[k] : null;
     }
@@ -62,57 +55,6 @@ service cloud.firestore {
       return request.auth != null && !isChatBanned(request.auth.uid);
     }
 
-    function participantsWritable(arr) {
-      return isParticipant(arr)
-        && validParticipants(arr);
-    }
-
-    function messageSenderIsParticipant(arr) {
-      return validParticipants(arr)
-        && request.resource.data.head.from in arr;
-    }
-
-    function existingChatAllowsParticipant(chatId) {
-      let parent = get(/databases/$(database)/documents/chats/$(chatId)).data;
-      return !isDeleting(parent)
-        && participantsWritable(parent.participants);
-    }
-
-    function afterChatAllowsMessageCreate(chatId) {
-      let parent = getAfter(/databases/$(database)/documents/chats/$(chatId)).data;
-      return !isDeleting(parent)
-        && chatIdMatchesParticipants(chatId, parent.participants)
-        && messageSenderIsParticipant(parent.participants);
-    }
-
-    function isChatPK(pk) {
-      return pk is string && pk.matches('^[0-9a-fA-F]{64}$');
-    }
-
-    function validParticipants(arr) {
-      return arr is list
-        && arr.size() == 2
-        && isChatPK(arr[0])
-        && isChatPK(arr[1])
-        && arr[0] < arr[1];
-    }
-
-    function chatIdMatchesParticipants(chatId, arr) {
-      return validParticipants(arr) && chatId == arr[0] + '_' + arr[1];
-    }
-
-    function participantsUnchanged() {
-      return request.resource.data.participants == resource.data.participants;
-    }
-
-    function isDeleting(data) {
-      return mapGet(data, 'deleting') == true;
-    }
-
-    function lastMsgUnchanged() {
-      return mapGet(request.resource.data, 'lastMsg') == mapGet(resource.data, 'lastMsg');
-    }
-
     function ttlValueAllowed(value) {
       return value == null || value is timestamp;
     }
@@ -125,14 +67,6 @@ service cloud.firestore {
       return 64 * 1024;
     }
 
-    function lastMsgBodyMaxBytes() {
-      return 64 * 1024;
-    }
-
-    function chatSettingsBodyMaxBytes() {
-      return 32 * 1024;
-    }
-
     function bytesSizeAllowed(value, maxBytes) {
       return value is bytes && value.size() <= maxBytes;
     }
@@ -143,141 +77,12 @@ service cloud.firestore {
         && value <= maxInitialTtl();
     }
 
-    function chatTsAllowed(value) {
-      return value is timestamp;
-    }
-
-    function freshChatTsAllowed(value) {
-      return value is timestamp
-        && value >= request.time - duration.value(10, 'm')
-        && value <= request.time + duration.value(10, 'm');
-    }
-
-    function lastMsgValueAllowed(newLast) {
-      return newLast == null
-        || (
-          newLast is map
-          && newLast.keys().hasOnly(['head', 'body', 'ttl'])
-          && messageHeadValid(mapGet(newLast, 'head'))
-          && bytesSizeAllowed(mapGet(newLast, 'body'), lastMsgBodyMaxBytes())
-          && 'ttl' in newLast
-          && ttlValueAllowed(mapGet(newLast, 'ttl'))
-        );
-    }
-
-    function lastMsgCreateAllowed() {
-      let newLast = mapGet(request.resource.data, 'lastMsg');
-      return lastMsgValueAllowed(newLast)
-        && (
-          newLast == null
-          || (
-            initialTtlValueAllowed(mapGet(newLast, 'ttl'))
-            && mapGet(mapGet(newLast, 'head'), 'from') == userChatPK()
-          )
-        );
-    }
-
-    function lastMsgFreshSendAllowed(newLast) {
-      return lastMsgValueAllowed(newLast)
-        && initialTtlValueAllowed(mapGet(newLast, 'ttl'))
-        && mapGet(mapGet(newLast, 'head'), 'from') == userChatPK();
-    }
-
-    function lastMsgBodyUpdateAllowed(newLast, oldLast) {
-      return lastMsgValueAllowed(newLast)
-        && oldLast is map
-        && mapGet(newLast, 'head') == mapGet(oldLast, 'head')
-        && mapGet(newLast, 'ttl') == mapGet(oldLast, 'ttl');
-    }
-
-    function lastMsgPermanentAllowed(newLast, oldLast) {
-      return lastMsgValueAllowed(newLast)
-        && oldLast is map
-        && mapGet(newLast, 'head') == mapGet(oldLast, 'head')
-        && mapGet(newLast, 'body') == mapGet(oldLast, 'body')
-        && mapGet(oldLast, 'ttl') is timestamp
-        && mapGet(newLast, 'ttl') == null;
-    }
-
-    function lastMsgTemporaryAllowed(newLast, oldLast) {
-      return lastMsgValueAllowed(newLast)
-        && oldLast is map
-        && mapGet(newLast, 'head') == mapGet(oldLast, 'head')
-        && mapGet(newLast, 'body') == mapGet(oldLast, 'body')
-        && mapGet(oldLast, 'ttl') == null
-        && initialTtlValueAllowed(mapGet(newLast, 'ttl'));
-    }
-
-    function lastMsgUpdateAllowed() {
-      let newLast = mapGet(request.resource.data, 'lastMsg');
-      let oldLast = mapGet(resource.data, 'lastMsg');
-      return newLast == null
-        || lastMsgFreshSendAllowed(newLast)
-        || lastMsgBodyUpdateAllowed(newLast, oldLast)
-        || lastMsgPermanentAllowed(newLast, oldLast)
-        || lastMsgTemporaryAllowed(newLast, oldLast);
-    }
-
-    function chatFieldsValid(data) {
-      return data.keys().hasOnly(['participants', 'lastMsg', 'settings', 'ts'])
-        && chatSettingsValid(mapGet(data, 'settings'))
-        && chatTsAllowed(mapGet(data, 'ts'));
-    }
-
-    function chatUpdateFieldsAllowed() {
-      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMsg', 'settings', 'ts']);
-    }
-
-    function chatUpdateDocumentAllowed() {
-      return request.resource.data.keys().hasOnly(['participants', 'lastMsg', 'settings', 'ts'])
-        && chatTsAllowed(mapGet(request.resource.data, 'ts'));
-    }
-
-    function chatTsUpdateAllowed() {
-      let changed = request.resource.data.diff(resource.data).affectedKeys();
-      let newLast = mapGet(request.resource.data, 'lastMsg');
-      let oldLast = mapGet(resource.data, 'lastMsg');
-      return !changed.hasAny(['ts'])
-        || (
-          freshChatTsAllowed(request.resource.data.ts)
-          && newLast is map
-          && (
-            oldLast == null
-            || mapGet(newLast, 'head') != mapGet(oldLast, 'head')
-          )
-          && initialTtlValueAllowed(mapGet(newLast, 'ttl'))
-        );
-    }
-
-    function chatSettingsValid(settings) {
-      return settings == null
-        || (
-          settings is map
-          && settings.keys().hasOnly(['head', 'body'])
-          && messageHeadValid(mapGet(settings, 'head'))
-          && bytesSizeAllowed(mapGet(settings, 'body'), chatSettingsBodyMaxBytes())
-        );
-    }
-
-    function chatSettingsFreshAllowed() {
-      let settings = mapGet(request.resource.data, 'settings');
-      return settings == null
-        || (
-          chatSettingsValid(settings)
-          && mapGet(mapGet(settings, 'head'), 'from') == userChatPK()
-        );
-    }
-
-    function chatSettingsUpdateAllowed() {
-      return mapGet(request.resource.data, 'settings') == mapGet(resource.data, 'settings')
-        || chatSettingsFreshAllowed();
-    }
-
     function messageHeadValid(head) {
       return head is map
-        && head.keys().hasOnly(['from', 'cid'])
-        && isChatPK(mapGet(head, 'from'))
-        && mapGet(head, 'cid') is string;
+        && head.keys().hasOnly(['cid'])
+        && mapGet(head, 'cid') is string
+        && mapGet(head, 'cid').size() >= 1
+        && mapGet(head, 'cid').size() <= 128;
     }
 
     function messageFieldsValid(data) {
@@ -286,35 +91,46 @@ service cloud.firestore {
         && bytesSizeAllowed(data.body, messageBodyMaxBytes())
         && data.ts is timestamp
         && 'ttl' in data
-        && ttlValueAllowed(data.ttl)
-        && mapGet(data.head, 'from') is string;
-    }
-
-    function messageIdentityUnchanged() {
-      return request.resource.data.head == resource.data.head
-        && request.resource.data.ts == resource.data.ts;
-    }
-
-    function messagePermanentAllowed() {
-      return mapGet(resource.data, 'ttl') is timestamp
-        && mapGet(request.resource.data, 'ttl') == null;
-    }
-
-    function messageTemporaryAllowed() {
-      return mapGet(resource.data, 'ttl') == null
-        && initialTtlValueAllowed(mapGet(request.resource.data, 'ttl'));
-    }
-
-    function messageUpdateAllowed() {
-      let changed = request.resource.data.diff(resource.data).affectedKeys();
-      return changed.hasOnly(['body'])
-        || (changed.hasOnly(['ttl']) && (messagePermanentAllowed() || messageTemporaryAllowed()));
+        && ttlValueAllowed(data.ttl);
     }
 
     function messageCreateAllowed() {
       return messageFieldsValid(request.resource.data)
         && request.resource.data.ts == request.time
-        && initialTtlValueAllowed(request.resource.data.ttl);
+        && (
+          request.resource.data.ttl == null
+          || initialTtlValueAllowed(request.resource.data.ttl)
+        );
+    }
+
+    function opaqueChatFieldsValid(data) {
+      return data.keys().hasOnly(['v', 'ts'])
+        && data.v is int
+        && data.ts is timestamp;
+    }
+
+    function ownerChatEntryValid(data) {
+      return data.keys().hasOnly(['body', 'ts'])
+        && bytesSizeAllowed(data.body, 128 * 1024)
+        && data.ts is timestamp;
+    }
+
+    function chatInboxWakeValid(data) {
+      return data.keys().hasOnly(['v', 'epk', 'body', 'ts'])
+        && data.v is int
+        && data.epk is string
+        && data.epk.size() == 64
+        && bytesSizeAllowed(data.body, 64 * 1024)
+        && data.ts is timestamp;
+    }
+
+    function savedMessageValid(data) {
+      return data.keys().hasOnly(['chatId', 'body', 'ts'])
+        && data.chatId is string
+        && data.chatId.size() >= 32
+        && data.chatId.size() <= 128
+        && bytesSizeAllowed(data.body, 128 * 1024)
+        && data.ts is timestamp;
     }
 
     function communityRulesAckValid(data) {
@@ -408,6 +224,29 @@ service cloud.firestore {
         allow delete: if request.auth != null && request.auth.uid == uid;
       }
 
+      match /chats/{entryId} {
+        allow get, list: if request.auth != null && request.auth.uid == uid;
+        allow create, update: if request.auth != null
+                              && request.auth.uid == uid
+                              && ownerChatEntryValid(request.resource.data);
+        allow delete: if request.auth != null && request.auth.uid == uid;
+      }
+
+      match /chatInbox/{wakeId} {
+        allow create: if chatAllowed()
+                      && chatInboxWakeValid(request.resource.data);
+        allow get, list, delete: if request.auth != null && request.auth.uid == uid;
+        allow update: if false;
+      }
+
+      match /savedMessages/{savedId} {
+        allow get, list: if request.auth != null && request.auth.uid == uid;
+        allow create, update: if request.auth != null
+                              && request.auth.uid == uid
+                              && savedMessageValid(request.resource.data);
+        allow delete: if request.auth != null && request.auth.uid == uid;
+      }
+
       match /push/{did} {
         allow read, write: if false;
       }
@@ -488,53 +327,22 @@ service cloud.firestore {
     match /chats/{chatId} {
 
       /* parent chat document */
-      allow get, list: if chatAllowed() && isParticipant(resource.data.participants);
+      allow get: if chatAllowed();
+      allow list: if false;
 
-      allow create: if chatAllowed()
-                    && participantsWritable(request.resource.data.participants)
-                    && chatIdMatchesParticipants(chatId, request.resource.data.participants)
-                    && chatFieldsValid(request.resource.data)
-                    && 'lastMsg' in request.resource.data
-                    && 'ts' in request.resource.data
-                    && lastMsgCreateAllowed()
-                    && freshChatTsAllowed(request.resource.data.ts)
-                    && chatSettingsFreshAllowed();
-
-      allow update: if chatAllowed()
-                    && participantsWritable(resource.data.participants)
-                    && chatIdMatchesParticipants(chatId, resource.data.participants)
-                    && !isDeleting(resource.data)
-                    && participantsUnchanged()
-                    && chatUpdateFieldsAllowed()
-                    && chatUpdateDocumentAllowed()
-                    && chatSettingsUpdateAllowed()
-                    && chatTsUpdateAllowed()
-                    && (
-                      // if lastMsg changes, it must still match the allowed encrypted message shape
-                      lastMsgUnchanged() || lastMsgUpdateAllowed()
-                    );
+      allow create, update: if chatAllowed()
+                    && opaqueChatFieldsValid(request.resource.data)
+                    && request.resource.data.ts == request.time;
+      allow delete: if false;
 
       /* messages sub-collection */
       match /messages/{messageId} {
-        allow get, list: if chatAllowed()
-                         && exists(/databases/$(database)/documents/chats/$(chatId))
-                         && existingChatAllowsParticipant(chatId);
+        allow get, list: if chatAllowed();
 
         allow create: if chatAllowed()
-                      && messageCreateAllowed()
-                      && request.resource.data.head.from == userChatPK()
-                      && existsAfter(/databases/$(database)/documents/chats/$(chatId))
-                      && afterChatAllowsMessageCreate(chatId);
+                      && messageCreateAllowed();
 
-        allow update: if chatAllowed()
-                      && exists(/databases/$(database)/documents/chats/$(chatId))
-                      && existingChatAllowsParticipant(chatId)
-                      && messageFieldsValid(request.resource.data)
-                      && messageIdentityUnchanged()
-                      && messageUpdateAllowed();
-        allow delete: if chatAllowed()
-                      && exists(/databases/$(database)/documents/chats/$(chatId))
-                      && existingChatAllowsParticipant(chatId);
+        allow update, delete: if false;
       }
     }
 

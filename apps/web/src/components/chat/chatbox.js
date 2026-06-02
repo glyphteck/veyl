@@ -13,7 +13,6 @@ import { useWallet } from '@/components/providers/walletprovider';
 import { formatUserDisplay } from '@veyl/shared/profile';
 import { renderMoney } from '@veyl/shared/money';
 import { chatUploadErrorMessage, queueMessages } from '@/lib/chat/files';
-import { getPeerChatPKFromChatId } from '@veyl/shared/chat/ids';
 import { canReplyToMsg, makeReq, makeTxt, setReply, setTxt } from '@veyl/shared/chat/messages';
 import { parseCommandAmountSats } from '@veyl/shared/commands';
 import { toast } from 'sonner';
@@ -46,14 +45,14 @@ export function Chatbox() {
     const { chatPK, chatBanned, settings } = useUser();
     const bitcoin = useBitcoin();
     const { sendMoneyWithSpark } = useWallet();
-    const { peerByChatPK, updatePeer } = usePeer();
+    const { peerByChatPK, primePeer, updatePeer } = usePeer();
     const { openDialog } = useDialog();
     const dragDepthRef = useRef(0);
     const [isDragOver, setIsDragOver] = useState(false);
     const [draft, setDraft] = useState(null);
     const [inputH, setInputH] = useState(96);
     const currentChat = chats?.find((chat) => chat.id === selectedChatId) ?? null;
-    const peerChatPK = getPeerChatPKFromChatId(selectedChatId, chatPK);
+    const peerChatPK = currentChat?.peerChatPK || null;
     const peerProfile = peerByChatPK.get(peerChatPK) ?? null;
     const peerDisplayName = formatUserDisplay({
         username: peerProfile?.username,
@@ -71,8 +70,12 @@ export function Chatbox() {
     useEffect(() => {
         if (peerProfile?.uid) {
             updatePeer(peerProfile.uid, { refreshAvatar: true });
+            return;
         }
-    }, [selectedChatId, peerProfile?.uid, updatePeer]);
+        if (currentChat?.peerUid && peerChatPK) {
+            void primePeer({ uid: currentChat.peerUid, chatPK: peerChatPK });
+        }
+    }, [currentChat?.peerUid, peerChatPK, peerProfile?.uid, primePeer, selectedChatId, updatePeer]);
 
     useEffect(() => {
         setDraft(null);
