@@ -1,6 +1,4 @@
-import { signOut } from 'firebase/auth';
-
-import { auth } from '@/lib/firebase';
+import { cloud } from '@/lib/cloud';
 import { dropPush } from '@/lib/push';
 import { userAvatarCache } from '@/lib/user/avatarcache';
 
@@ -20,9 +18,9 @@ async function saveRememberChoice(uid, remember, account = null) {
 }
 
 export async function logout({ remember = null, account = null, lock = null } = {}) {
-    const uid = auth.currentUser?.uid;
+    const uid = cloud.auth.user?.uid;
     await saveRememberChoice(uid, remember, account);
     lock?.();
     await dropPush({ uid }).catch(() => {});
-    await signOut(auth);
+    await cloud.auth.logout();
 }

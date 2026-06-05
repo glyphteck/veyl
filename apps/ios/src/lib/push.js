@@ -2,10 +2,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
-import { httpsCallable } from 'firebase/functions';
 import { randomBytes, toHex } from '@veyl/shared/crypto/core';
 import { normalizeVeylVariant } from '@veyl/shared/variant';
-import { auth, functions } from '@/lib/firebase';
+import { cloud } from '@/lib/cloud';
 
 const DID_KEY = 'push.did';
 const SYNC_KEY = 'push.sync';
@@ -168,7 +167,7 @@ export async function getPushState(devicePushToken) {
     return nativeToken ? { status: 'ready', token: null, nativeToken, meta: getPushMeta() } : { status: 'unavailable', token: null };
 }
 
-export async function setPush(token, uid = auth.currentUser?.uid, meta = getPushMeta(), nativeToken = null) {
+export async function setPush(token, uid = cloud.auth.user?.uid, meta = getPushMeta(), nativeToken = null) {
     const did = await getDid();
     const key = getSyncKey(uid, did, token, meta, nativeToken);
     if (!key) {
@@ -186,7 +185,7 @@ export async function setPush(token, uid = auth.currentUser?.uid, meta = getPush
 
     inflightSync.add(key);
     try {
-        await httpsCallable(functions, 'setPush')({
+        await cloud.user.push.add({
             did,
             token: token || null,
             nativeToken: nativeToken || null,
@@ -201,14 +200,14 @@ export async function setPush(token, uid = auth.currentUser?.uid, meta = getPush
     }
 }
 
-export async function dropPush({ uid = auth.currentUser?.uid } = {}) {
+export async function dropPush({ uid = cloud.auth.user?.uid } = {}) {
     const saved = await getSavedPushInfo();
     const did = saved?.uid === uid && saved?.did ? saved.did : await getDid();
     if (!uid || !did) {
         return false;
     }
 
-    await httpsCallable(functions, 'dropPush')({
+    await cloud.user.push.drop({
         did,
         token: saved?.uid === uid ? saved.token || null : null,
         nativeToken: saved?.uid === uid ? saved.nativeToken || null : await getCurrentNativeToken(),

@@ -1,5 +1,3 @@
-import { collection, deleteDoc, doc, getDocFromServer, getDocsFromServer, limit, orderBy, query, setDoc, Timestamp, where } from 'firebase/firestore';
-import { CHAT_INBOX_PING_PAGE_SIZE } from '../config.js';
 import { canShowMsg, canStoreMsg, isControlMsg } from './messages.js';
 import { makeOwnChatEntry, openOwnChatEntry, ownChatEntryId, sealOwnChatEntry } from './entry.js';
 import { openPing } from './ping.js';
@@ -7,10 +5,6 @@ import { decryptMsg } from './messages/query.js';
 import { isChatUnseenForUser } from './chats.js';
 import { timestampMs } from '../utils/time.js';
 import { cleanText } from '../utils/text.js';
-
-export function inboxQuery(db, uid) {
-    return query(collection(db, 'users', uid, 'inbox'), orderBy('ts', 'desc'), limit(CHAT_INBOX_PING_PAGE_SIZE));
-}
 
 function normalizeChatLastMsg(msgData, message) {
     if (!message || typeof message !== 'object') {
@@ -25,17 +19,17 @@ function normalizeChatLastMsg(msgData, message) {
     return canStoreMsg(normalized) ? normalized : null;
 }
 
-async function readExistingEntry(db, uid, userPrivKey, entryId) {
-    const snap = await getDocFromServer(doc(db, 'users', uid, 'chats', entryId)).catch(() => null);
-    if (!snap?.exists?.()) {
+async function readExistingEntry(cloud, uid, userPrivKey, entryId) {
+    const entry = await cloud.user.chats.read(uid, entryId).catch(() => null);
+    if (!entry) {
         return null;
     }
-    return openOwnChatEntry(userPrivKey, entryId, snap.data()?.body).catch(() => null);
+    return openOwnChatEntry(userPrivKey, entryId, entry.body).catch(() => null);
 }
 
-function pingTs(ping, lastMsg, fallbackMs) {
+function pingTsMs(ping, lastMsg, fallbackMs) {
     const ms = timestampMs(lastMsg?.ts, null) ?? timestampMs(ping?.payload?.ts, null) ?? fallbackMs;
-    return Number.isFinite(ms) ? Timestamp.fromMillis(ms) : Timestamp.fromMillis(Date.now());
+    return Number.isFinite(ms) ? ms : Date.now();
 }
 
 function pingSortMs(pingDoc, ping) {
@@ -43,7 +37,7 @@ function pingSortMs(pingDoc, ping) {
     if (Number.isFinite(payloadMs)) {
         return payloadMs;
     }
-    return timestampMs(pingDoc?.data?.()?.ts, 0) ?? 0;
+    return timestampMs(pingDoc?.ts, 0) ?? 0;
 }
 
 function pingActors(ping, existing) {
@@ -63,6 +57,7 @@ function chatFromPing(ping, entryId, existing, lastMsg, userChatPK, ms) {
     const readMs = timestampMs(existing?.readMs, null);
     return {
         id: ping.pair.chatId,
+        linkId: ping.pair.linkId,
         entryId,
         peerChatPK: ping.payload.senderChatPK,
         peerUid: existing?.peerUid || cleanText(ping.payload.senderUid) || null,
@@ -75,53 +70,51 @@ function chatFromPing(ping, entryId, existing, lastMsg, userChatPK, ms) {
     };
 }
 
-async function resolvePingUid(db, payload) {
+async function resolvePingUid(cloud, payload) {
     const senderChatPK = cleanText(payload?.senderChatPK);
     const claimedUid = cleanText(payload?.senderUid);
-    if (!db || !senderChatPK) {
+    if (!cloud || !senderChatPK) {
         return null;
     }
     if (claimedUid) {
-        const snap = await getDocFromServer(doc(db, 'profiles', claimedUid)).catch(() => null);
-        if (cleanText(snap?.data?.()?.chatPK) !== senderChatPK) {
+        const peer = await cloud.peer.read(claimedUid).catch(() => null);
+        if (cleanText(peer?.chatPK) !== senderChatPK) {
             throw new Error('ping sender uid mismatch');
         }
         return claimedUid;
     }
-    const snap = await getDocsFromServer(query(collection(db, 'profiles'), where('chatPK', '==', senderChatPK), limit(1))).catch(() => null);
-    return snap?.docs?.[0]?.id || null;
+    const peer = await cloud.search.peer.byChatPK(senderChatPK).catch(() => null);
+    return peer?.uid || null;
 }
 
-async function readPingMsg(db, userChatPK, userPrivKey, ping, actors) {
+async function readPingMsg(cloud, userChatPK, userPrivKey, ping, actors) {
     const chatId = ping?.pair?.chatId;
     const messageId = cleanText(ping?.payload?.messageId);
     const peerChatPK = cleanText(ping?.payload?.senderChatPK);
-    if (!db || !chatId || !messageId || !userChatPK || !userPrivKey || !peerChatPK) {
+    if (!cloud || !chatId || !messageId || !userChatPK || !userPrivKey || !peerChatPK) {
         return null;
     }
-    const snap = await getDocFromServer(doc(db, 'chats', chatId, 'messages', messageId)).catch(() => null);
-    if (!snap?.exists?.()) {
+    const data = await cloud.chat.messages.read(chatId, messageId).catch(() => null);
+    if (!data) {
         return null;
     }
-    const data = snap.data();
-    const message = await decryptMsg(data, userChatPK, userPrivKey, peerChatPK, { actors }).catch(() => null);
-    const lastMsg = normalizeChatLastMsg(data, message ? { ...message, id: snap.id } : null);
+    const message = await decryptMsg(data, userChatPK, userPrivKey, peerChatPK, { actors, chatId }).catch(() => null);
+    const lastMsg = normalizeChatLastMsg(data, message ? { ...message, id: data.id } : null);
     return lastMsg && canShowMsg(lastMsg) && !isControlMsg(lastMsg) ? lastMsg : null;
 }
 
-async function savePing(db, uid, userChatPK, userPrivKey, ping, options = {}) {
+async function savePing(cloud, uid, userChatPK, userPrivKey, ping, options = {}) {
     const chatId = ping?.pair?.chatId;
     if (!chatId || !cleanText(ping?.payload?.actorPK) || !cleanText(ping?.payload?.senderChatPK)) {
         return false;
     }
 
     const entryId = ownChatEntryId(userPrivKey, chatId);
-    const entryRef = doc(db, 'users', uid, 'chats', entryId);
-    const existing = options.existing || await readExistingEntry(db, uid, userPrivKey, entryId);
-    const peerUid = options.peerUid || await resolvePingUid(db, ping.payload);
+    const existing = options.existing || await readExistingEntry(cloud, uid, userPrivKey, entryId);
+    const peerUid = options.peerUid || await resolvePingUid(cloud, ping.payload);
     const actors = options.actors || pingActors(ping, existing);
     const hasLastMsg = Object.prototype.hasOwnProperty.call(options, 'lastMsg');
-    const lastMsg = hasLastMsg ? options.lastMsg : await readPingMsg(db, userChatPK, userPrivKey, ping, actors);
+    const lastMsg = hasLastMsg ? options.lastMsg : await readPingMsg(cloud, userChatPK, userPrivKey, ping, actors);
     const entry = makeOwnChatEntry(ping.pair, {
         peerUid: peerUid || existing?.peerUid,
         peerActorPK: ping.payload.actorPK || existing?.actors?.[ping.payload.senderChatPK],
@@ -131,29 +124,29 @@ async function savePing(db, uid, userChatPK, userPrivKey, ping, options = {}) {
         readMs: existing?.readMs,
     });
     const body = await sealOwnChatEntry(userPrivKey, entryId, entry);
-    await setDoc(entryRef, {
+    await cloud.user.chats.write(uid, entryId, {
         body,
-        ts: options.ts || pingTs(ping, lastMsg, Date.now()),
-    }, { merge: true });
+        tsMs: options.tsMs || pingTsMs(ping, lastMsg, Date.now()),
+    });
     return true;
 }
 
-export async function processInbox(db, uid, userChatPK, userPrivKey, options = {}) {
-    if (!db || !uid || !userChatPK || !userPrivKey) {
+export async function processInbox(cloud, uid, userChatPK, userPrivKey, options = {}) {
+    if (!cloud || !uid || !userChatPK || !userPrivKey) {
         return false;
     }
 
-    const inboxSnap = await getDocsFromServer(inboxQuery(db, uid)).catch(() => null);
-    if (!inboxSnap?.docs?.length) {
+    const inboxItems = await cloud.inbox.list(uid).catch(() => null);
+    if (!inboxItems?.length) {
         return false;
     }
 
     const chatsById = new Map((options.currentChats || []).map((chat) => [chat.id, chat]));
     const opened = [];
     const invalidDocs = [];
-    for (const pingDoc of inboxSnap.docs) {
+    for (const pingDoc of inboxItems) {
         try {
-            const ping = await openPing(userChatPK, userPrivKey, pingDoc.data());
+            const ping = await openPing(userChatPK, userPrivKey, pingDoc);
             const chatId = ping?.pair?.chatId;
             if (!chatId) {
                 invalidDocs.push(pingDoc);
@@ -165,7 +158,7 @@ export async function processInbox(db, uid, userChatPK, userPrivKey, options = {
         }
     }
 
-    await Promise.all(invalidDocs.map((pingDoc) => deleteDoc(pingDoc.ref).catch(() => {})));
+    await Promise.all(invalidDocs.map((pingDoc) => cloud.inbox.delete(uid, pingDoc.id).catch(() => {})));
 
     const latestByChat = new Map();
     for (const item of opened.sort((a, b) => a.ms - b.ms)) {
@@ -185,7 +178,7 @@ export async function processInbox(db, uid, userChatPK, userPrivKey, options = {
         const entryId = ownChatEntryId(userPrivKey, item.chatId);
         const actors = pingActors(item.ping, existing);
         const existingMs = timestampMs(existing?.lastMsg?.ts, 0) ?? 0;
-        const lastMsg = existingMs >= item.ms ? existing?.lastMsg || null : await readPingMsg(db, userChatPK, userPrivKey, item.ping, actors);
+        const lastMsg = existingMs >= item.ms ? existing?.lastMsg || null : await readPingMsg(cloud, userChatPK, userPrivKey, item.ping, actors);
         const chat = chatFromPing(item.ping, entryId, existing, lastMsg, userChatPK, item.ms);
         if (chat) {
             chatsById.set(chat.id, chat);
@@ -193,13 +186,13 @@ export async function processInbox(db, uid, userChatPK, userPrivKey, options = {
             await new Promise((resolve) => setTimeout(resolve, 0));
         }
 
-        const wrote = await savePing(db, uid, userChatPK, userPrivKey, item.ping, {
+        const wrote = await savePing(cloud, uid, userChatPK, userPrivKey, item.ping, {
             existing,
             actors,
             lastMsg,
         });
         if (wrote) {
-            await Promise.all(item.docs.map((pingDoc) => deleteDoc(pingDoc.ref).catch(() => {})));
+            await Promise.all(item.docs.map((pingDoc) => cloud.inbox.delete(uid, pingDoc.id).catch(() => {})));
         }
         return wrote;
     }));

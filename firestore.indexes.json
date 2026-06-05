@@ -1,5 +1,20 @@
 {
-    "indexes": [],
+    "indexes": [
+        {
+            "collectionGroup": "savedMessages",
+            "queryScope": "COLLECTION_GROUP",
+            "fields": [
+                {
+                    "fieldPath": "chatId",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "messageKey",
+                    "order": "ASCENDING"
+                }
+            ]
+        }
+    ],
     "fieldOverrides": [
         {
             "collectionGroup": "passkey_challenges",
@@ -15,12 +30,6 @@
         },
         {
             "collectionGroup": "usage_quotas",
-            "fieldPath": "ttl",
-            "ttl": true,
-            "indexes": []
-        },
-        {
-            "collectionGroup": "media_upload_reservations",
             "fieldPath": "ttl",
             "ttl": true,
             "indexes": []

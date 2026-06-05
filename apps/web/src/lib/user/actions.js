@@ -1,10 +1,7 @@
 'use client';
 
-import { signOut } from 'firebase/auth';
-import { doc, updateDoc } from 'firebase/firestore';
-import { auth, db, getStorage } from '@/lib/firebase/firebaseclient';
+import { cloud } from '@/lib/cloud';
 import { userAvatarCache } from '@/lib/user/avatarcache';
-import { dropAvatar, putAvatar } from '@veyl/shared/files';
 
 function readAvatarGeneration(value) {
     const version = Number(value);
@@ -15,7 +12,7 @@ function readAvatarGeneration(value) {
 }
 
 async function updateProfileAvatar(uid, avatar) {
-    await updateDoc(doc(db, 'profiles', uid), { avatar });
+    await cloud.user.profile.avatar.write(uid, avatar);
 }
 
 function processImageToSquare(imageDataUrl, size = 128) {
@@ -42,10 +39,9 @@ export async function uploadAvatar(imageData) {
 
     try {
         const blob = await processImageToSquare(imageData, 128);
-        const uid = auth.currentUser?.uid;
+        const uid = cloud.auth.user?.uid;
         if (!uid) throw new Error('User not authenticated');
-        const storage = getStorage();
-        const result = await putAvatar(storage, uid, blob, 'image/webp');
+        const result = await cloud.user.profile.avatar.upload(uid, blob, { contentType: 'image/webp' });
         await updateProfileAvatar(uid, readAvatarGeneration(result?.generation));
         return true;
     } catch (error) {
@@ -56,7 +52,7 @@ export async function uploadAvatar(imageData) {
 
 export async function skipAvatar() {
     try {
-        const uid = auth.currentUser?.uid;
+        const uid = cloud.auth.user?.uid;
         if (!uid) throw new Error('User not authenticated');
         await updateProfileAvatar(uid, null);
         return true;
@@ -67,11 +63,10 @@ export async function skipAvatar() {
 }
 
 export async function deleteAvatar() {
-    const uid = auth.currentUser?.uid;
+    const uid = cloud.auth.user?.uid;
     try {
         if (!uid) throw new Error('User not authenticated');
-        const storage = getStorage();
-        await dropAvatar(storage, uid);
+        await cloud.user.profile.avatar.delete(uid);
         await updateProfileAvatar(uid, null);
         return true;
     } catch (error) {
@@ -104,9 +99,9 @@ async function saveRememberChoice(uid, remember, account = null) {
 }
 
 export async function logout({ remember = null, account = null } = {}) {
-    const uid = auth.currentUser?.uid;
+    const uid = cloud.auth.user?.uid;
     await saveRememberChoice(uid, remember, account);
-    await signOut(auth);
+    await cloud.auth.logout();
     if (typeof window !== 'undefined') {
         window.location.replace('/');
     }

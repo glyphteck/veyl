@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Animated as RNAnimated, DeviceEventEmitter, Linking, StyleSheet, Text, View } from 'react-native';
 import * as MediaLibrary from 'expo-media-library';
-import { router, useIsFocused, usePathname } from 'expo-router';
+import { router, useIsFocused } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CommonResolutions, useCameraPermission, useOrientation, usePhotoOutput, useVideoOutput } from 'react-native-vision-camera';
 import GlassHeader from '@/components/glass/glassheader';
 import GlassIcon from '@/components/glass/glassicon';
 import GlassButton from '@/components/glass/glassbutton';
+import GlassContainer from '@/components/glass/glasscontainer';
 import { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { ArrowDownToLine, ArrowUpRight, MessageCircle, X } from 'lucide-react-native';
@@ -31,6 +32,9 @@ const PREVIEW_FADE = 250;
 const PREVIEW_HOLD = 2000;
 const PREVIEW_CHECK = 250;
 const ACTION_GAP = 48;
+const PREVIEW_ACTION_SIZE = 56;
+const PREVIEW_ACTION_EXIT = 130;
+const PREVIEW_ACTION_GLASS_SPACING = 32;
 const CAMERA_PHOTO_RESOLUTION = CommonResolutions.FHD_4_3;
 const CAMERA_VIDEO_RESOLUTION = CommonResolutions.HD_16_9;
 const INITIAL_ROUTE_STATE = {
@@ -47,7 +51,6 @@ function CameraContent({ cameraActive, pageOpen, warming }) {
     const { selectPeerChat } = useChat();
     const insets = useSafeAreaInsets();
     const { hasPermission, requestPermission } = useCameraPermission();
-    const pathname = usePathname();
     const captureOrientation = useOrientation('device');
     const photoOutput = usePhotoOutput({ targetResolution: CAMERA_PHOTO_RESOLUTION, qualityPrioritization: 'speed' });
     const videoOutput = useVideoOutput({ targetResolution: CAMERA_VIDEO_RESOLUTION, fileType: 'mp4', enablePersistentRecorder: true });
@@ -66,7 +69,7 @@ function CameraContent({ cameraActive, pageOpen, warming }) {
     const [routeState, setRouteState] = useState(INITIAL_ROUTE_STATE);
     const { taking, stagedMedia } = routeState;
     const active = cameraActive && !stagedMedia;
-    const scanOpen = pageOpen && pathname === '/camera';
+    const scanOpen = pageOpen && active;
     const previewOpacity = useSharedValue(0);
     const shutterScale = useRef(new RNAnimated.Value(1)).current;
 
@@ -507,7 +510,7 @@ function CameraContent({ cameraActive, pageOpen, warming }) {
         settings,
     });
 
-    const cameraOutputs = useMemo(() => [photoOutput, videoOutput, scan.output], [photoOutput, scan.output, videoOutput]);
+    const cameraOutputs = useMemo(() => (scanOpen ? [photoOutput, videoOutput, scan.output] : [photoOutput, videoOutput]), [photoOutput, scan.output, scanOpen, videoOutput]);
     useEffect(() => {
         mark('camera.state', {
             pageOpen,
@@ -524,14 +527,15 @@ function CameraContent({ cameraActive, pageOpen, warming }) {
             taking,
             recording,
             recordingLocked,
+            scanOpen,
             staged: stagedMedia?.kind || '',
             outputs: cameraOutputs.length,
         });
-    }, [active, backLensMode, backRegularDevice, backUltraWideDevice, cameraOutputs.length, cameraReady, device?.id, device?.position, facing, frontDevice, pageOpen, recording, recordingLocked, stagedMedia?.kind, taking, warming]);
+    }, [active, backLensMode, backRegularDevice, backUltraWideDevice, cameraOutputs.length, cameraReady, device?.id, device?.position, facing, frontDevice, pageOpen, recording, recordingLocked, scanOpen, stagedMedia?.kind, taking, warming]);
     const canPreviewChat = previewVisible && !!previewPeer?.chatPK && !!chatPK && !chatBanned;
     const canPreviewSend = previewVisible && !!previewPeer?.walletPK;
-    const chatPop = usePop({ show: canPreviewChat, width: 56, gapAfter: ACTION_GAP, enterBounce: 12, exitDuration: 130 });
-    const sendPop = usePop({ show: canPreviewSend, width: 56, gapBefore: ACTION_GAP, enterBounce: 12, exitDuration: 130 });
+    const chatPop = usePop({ show: canPreviewChat, width: PREVIEW_ACTION_SIZE, gapAfter: ACTION_GAP, enterBounce: 12, exitDuration: PREVIEW_ACTION_EXIT });
+    const sendPop = usePop({ show: canPreviewSend, width: PREVIEW_ACTION_SIZE, gapBefore: ACTION_GAP, enterBounce: 12, exitDuration: PREVIEW_ACTION_EXIT });
     const controlsBottom = insets.bottom + 102;
 
     if (!hasPermission) {
@@ -576,10 +580,10 @@ function CameraContent({ cameraActive, pageOpen, warming }) {
                 </View>
             ) : null}
             {!stagedMedia ? (
-                <View style={{ position: 'absolute', bottom: controlsBottom, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+                <GlassContainer spacing={PREVIEW_ACTION_GLASS_SPACING} style={{ position: 'absolute', bottom: controlsBottom, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', overflow: 'visible' }}>
                     <RNAnimated.View pointerEvents={chatPop.pointerEvents} style={[chatPop.style, { alignItems: 'center', justifyContent: 'center', overflow: 'visible' }]}>
                         <RNAnimated.View style={chatPop.childStyle}>
-                            <GlassIcon glassEffectStyle="clear" icon={MessageCircle} onPress={() => canPreviewChat && handlePreviewChat()} />
+                            <GlassIcon glassEffectStyle="clear" icon={MessageCircle} visible={canPreviewChat} isInteractive onPress={() => canPreviewChat && handlePreviewChat()} />
                         </RNAnimated.View>
                     </RNAnimated.View>
                     <CameraShutter
@@ -601,10 +605,10 @@ function CameraContent({ cameraActive, pageOpen, warming }) {
                     />
                     <RNAnimated.View pointerEvents={sendPop.pointerEvents} style={[sendPop.style, { alignItems: 'center', justifyContent: 'center', overflow: 'visible' }]}>
                         <RNAnimated.View style={sendPop.childStyle}>
-                            <GlassIcon glassEffectStyle="clear" icon={ArrowUpRight} iconSize={32} onPress={() => canPreviewSend && handlePreviewSend()} />
+                            <GlassIcon glassEffectStyle="clear" icon={ArrowUpRight} iconSize={32} visible={canPreviewSend} isInteractive onPress={() => canPreviewSend && handlePreviewSend()} />
                         </RNAnimated.View>
                     </RNAnimated.View>
-                </View>
+                </GlassContainer>
             ) : null}
         </View>
     );

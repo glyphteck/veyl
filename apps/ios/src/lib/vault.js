@@ -1,16 +1,14 @@
 import { SparkWallet } from '@buildonspark/spark-sdk';
-import { httpsCallable } from 'firebase/functions';
 
-import { functions } from '@/lib/firebase';
 import { resolveNetwork } from '@veyl/shared/network';
 import { bootWallet as bootWalletShared, bootChat as bootChatShared, lockWallet, lockChat } from '@veyl/shared/vault';
 import { mark } from '@/lib/diagnostics';
+import { cloud } from '@/lib/cloud';
 
 export async function bootWallet(walletMnemonic, user) {
     return bootWalletShared(walletMnemonic, user, {
         SparkWallet,
-        httpsCallable,
-        functions,
+        cloud,
         network: resolveNetwork(globalThis?.process?.env ?? {}),
         diag: mark,
     });
@@ -18,8 +16,7 @@ export async function bootWallet(walletMnemonic, user) {
 
 export async function bootChat(chatSeed, user) {
     return bootChatShared(chatSeed, user, {
-        httpsCallable,
-        functions,
+        cloud,
         diag: mark,
     });
 }

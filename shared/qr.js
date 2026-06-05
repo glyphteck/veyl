@@ -1,15 +1,16 @@
-import { domains } from './links.js';
+import { appLinkDomains, domains, origins } from './links.js';
 import { getAppOrigin, resolveNetwork } from './network.js';
 import { getRouteParam } from './navigation/params.js';
+import { isUsername, normalizeUsername } from './username.js';
 import { cleanText, lowerText } from './utils/text.js';
 
 function getQrOrigin() {
     const origin = globalThis?.location?.origin;
     const host = globalThis?.location?.hostname;
     if (host === domains.veylDev) {
-        return getAppOrigin('REGTEST');
+        return origins.veylDev;
     }
-    if (origin && host && (host === domains.veyl || host === domains.veylTest)) {
+    if (origin && host && appLinkDomains.includes(host)) {
         return origin;
     }
 
@@ -35,7 +36,11 @@ function maybe(value) {
 
 function userHandle(value) {
     const next = maybe(value);
-    return next?.startsWith('@') ? maybe(next.slice(1)) : next;
+    if (!next) return null;
+
+    const raw = next.startsWith('@') ? next.slice(1) : next;
+    const username = normalizeUsername(raw);
+    return isUsername(username) ? username : null;
 }
 
 function readUser(value) {
@@ -97,7 +102,10 @@ function parseUrlQuery(value) {
 }
 
 function readParams(params) {
-    const user = readUser({ username: getRouteParam(params, 'u') });
+    const user = readUser({
+        u: getRouteParam(params, 'u'),
+        username: getRouteParam(params, 'username'),
+    });
     if (user) return user;
 
     const request = readTx({
@@ -134,7 +142,7 @@ function makeLink(params) {
 
 function makeUserValue(value) {
     const user = makeUserQr(value);
-    return user ? makeLink(user) : null;
+    return user ? `@${user.u}` : null;
 }
 
 function makeBitcoinValue(value) {
@@ -151,7 +159,8 @@ function readApp(raw) {
     if (!value) return null;
 
     const params = parseUrlQuery(value);
-    return params ? readParams(params) : null;
+    if (params) return readParams(params);
+    return value.startsWith('@') ? readUser(value) : null;
 }
 
 function readBitcoin(value) {

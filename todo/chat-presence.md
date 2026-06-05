@@ -11,6 +11,8 @@ Reduce chat read-receipt writes, avoid unnecessary profile refreshes for activit
 ## Current Shape
 
 - Public app presence is currently a best-effort `profiles/{uid}.active` boolean written on unlock/lock/app lifecycle.
+- Current-user active writes live behind `cloud.user.active.write`.
+- Peer active reads can live under `cloud.peer.active`.
 - Exact read state is encrypted `t: 'rr'` control messages in `chats/{chatId}/messages`.
 - RRs are authoritative for what was read, but writing them too eagerly can add avoidable message-stream writes.
 - The public `active` profile field can go stale if a client crashes before writing `false`.
@@ -51,4 +53,5 @@ These signals can update a local in-memory or vaulted-cache activity hint keyed 
 - Should app-wide presence move from `profiles/{uid}.active` to `activeUntil` before chat-specific presence ships?
 - Should chat presence be a message-stream control payload, a separate encrypted subcollection, or both?
 - What UI states do we want: active in app, active in this chat, typing, recently seen, or last active?
+- Where should active state appear: peer profiles, search, chat headers, or all of them?
 - How should bots participate so Apple Review/demo behavior stays deterministic?

@@ -19,11 +19,16 @@ export function orderChatKeys(chatPK, peerChatPK) {
     return compareKeys(chatPK, peerChatPK) <= 0 ? [chatPK, peerChatPK] : [peerChatPK, chatPK];
 }
 
-function getOpaqueChatId(sharedSecret, chatPK, peerChatPK) {
-    return toHex(deriveKey(sharedSecret, 'opaque-chat-id-v1', orderChatKeys(chatPK, peerChatPK), 32));
+function getOpaqueLinkId(sharedSecret, chatPK, peerChatPK) {
+    return toHex(deriveKey(sharedSecret, 'opaque-chat-link-v1', orderChatKeys(chatPK, peerChatPK), 32));
 }
 
-export async function openPair(chatPK, chatPrivKey, peerChatPK) {
+function cleanInstanceChatId(value, fallback) {
+    const chatId = typeof value === 'string' ? value.trim().toLowerCase() : '';
+    return /^[0-9a-f]{64}$/.test(chatId) ? chatId : fallback;
+}
+
+export async function openPair(chatPK, chatPrivKey, peerChatPK, options = {}) {
     const privKeyBytes = toBytes32(chatPrivKey, 'private');
     const pubKeyBytes = toBytes32(peerChatPK, 'public');
     const sharedSecret = x25519.getSharedSecret(privKeyBytes, pubKeyBytes);
@@ -33,11 +38,12 @@ export async function openPair(chatPK, chatPrivKey, peerChatPK) {
 
     const secret = sharedSecret.subarray(0, 32);
     const orderedKeys = orderChatKeys(chatPK, peerChatPK);
-    const chatId = getOpaqueChatId(secret, chatPK, peerChatPK);
-    const root = deriveKey(secret, 'pair-root-v2', [chatId, ...orderedKeys]);
+    const linkId = getOpaqueLinkId(secret, chatPK, peerChatPK);
+    const chatId = cleanInstanceChatId(options?.chatId, linkId);
+    const root = deriveKey(secret, 'pair-root-v2', [linkId, ...orderedKeys]);
     const actor = getChatActorKey(privKeyBytes, chatId, chatPK, peerChatPK);
     cleanBytes(sharedSecret);
-    return { chatId, chatPK, peerChatPK, root, actor };
+    return { linkId, chatId, chatPK, peerChatPK, root, actor };
 }
 
 export function closePair(pair) {

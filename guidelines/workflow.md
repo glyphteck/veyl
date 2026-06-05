@@ -43,6 +43,12 @@ Todo files are coordination records. They are useful for intent, write boundarie
 
 Branches and worktrees are isolation tools. Use them only when parallel work, long-running implementation, or many-file overlap makes the current checkout risky. For small fixes, stay in the current checkout and keep the diff narrow.
 
+## Commit History
+
+Use append-only commit history by default. Once a commit exists, treat it as stable repo history: do not amend, rebase, squash, reset, or otherwise rewrite it unless the user explicitly asks for history cleanup.
+
+If a committed change needs a fix, make a new follow-up commit with a specific message. Do not fold the fix into the earlier commit for neatness.
+
 ## Changelog
 
 Use [../CHANGELOG.md](../CHANGELOG.md) for shipped repo history. Update it before `bun push` or `bun merge`, after reviewing the intended diff and before creating the commit.

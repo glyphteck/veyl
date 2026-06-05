@@ -8,11 +8,13 @@ import { CHAT_ACTION_OPS } from '../chat/messages/actions.js';
 import { makeCid } from '../chat/state.js';
 import { makeOwnChatEntry, openOwnChatEntry, ownChatEntryId, sealOwnChatEntry } from '../chat/entry.js';
 import { sealPing } from '../chat/ping.js';
+import { randomBytes, toHex } from '../crypto/core.js';
 import { cleanText } from '../utils/text.js';
 
 const pairCache = new Map();
 const MAX_PAIR_CACHE = CHAT_PAIR_CACHE_LIMIT;
 const VERBOSE = typeof process !== 'undefined' && process.env?.VEYL_VERBOSE === '1';
+const CHAT_ID_RE = /^[0-9a-f]{64}$/i;
 
 function safeLogId(value) {
     const text = cleanText(value);
@@ -25,17 +27,35 @@ function botFirestoreLog(op, fields = {}) {
     }
 }
 
-function getPairKey(chatPK, peerChatPK) {
+function cleanChatId(value) {
+    const chatId = cleanText(value).toLowerCase();
+    return CHAT_ID_RE.test(chatId) ? chatId : '';
+}
+
+function cleanLinkId(value) {
+    return cleanChatId(value);
+}
+
+function cleanVersion(value) {
+    return Number.isInteger(value) && value > 0 ? value : 0;
+}
+
+function makeChatId() {
+    return toHex(randomBytes(32));
+}
+
+function getPairKey(chatPK, peerChatPK, chatId = '') {
     if (!chatPK || !peerChatPK) {
         return null;
     }
-    return orderChatKeys(chatPK, peerChatPK).join('|');
+    return `${orderChatKeys(chatPK, peerChatPK).join('|')}|${cleanText(chatId)}`;
 }
 
-async function getCachedBotPair(chatPK, chatPrivKey, peerChatPK) {
-    const key = getPairKey(chatPK, peerChatPK);
+async function getCachedBotPair(chatPK, chatPrivKey, peerChatPK, options = {}) {
+    const chatId = cleanChatId(options?.chatId);
+    const key = getPairKey(chatPK, peerChatPK, chatId);
     if (!key) {
-        return openChatPair(chatPK, chatPrivKey, peerChatPK);
+        return openChatPair(chatPK, chatPrivKey, peerChatPK, { chatId });
     }
 
     const cached = pairCache.get(key);
@@ -43,7 +63,7 @@ async function getCachedBotPair(chatPK, chatPrivKey, peerChatPK) {
         return cached;
     }
 
-    const pair = await openChatPair(chatPK, chatPrivKey, peerChatPK);
+    const pair = await openChatPair(chatPK, chatPrivKey, peerChatPK, { chatId });
     pairCache.set(key, pair);
 
     if (pairCache.size > MAX_PAIR_CACHE) {
@@ -55,6 +75,56 @@ async function getCachedBotPair(chatPK, chatPrivKey, peerChatPK) {
     }
 
     return pair;
+}
+
+async function openBotChatLink(db, FieldValue, linkId) {
+    const ref = db.collection('links').doc(linkId);
+    return db.runTransaction(async (tx) => {
+        const snap = await tx.get(ref);
+        const current = snap.data()?.chat || {};
+        const activeId = cleanChatId(current.id);
+        const version = cleanVersion(current.version);
+
+        if (activeId) {
+            const chatSnap = await tx.get(db.collection('chats').doc(activeId));
+            if (!chatSnap.data()?.deleted) {
+                return { id: activeId, version, exists: true };
+            }
+        }
+
+        const next = {
+            id: makeChatId(),
+            version: version + 1,
+        };
+        tx.set(
+            ref,
+            {
+                chat: {
+                    id: next.id,
+                    version: next.version,
+                    ts: FieldValue.serverTimestamp(),
+                },
+                updatedAt: FieldValue.serverTimestamp(),
+            },
+            { merge: true }
+        );
+        return { ...next, exists: false };
+    });
+}
+
+async function resolveBotPair(db, FieldValue, chatPK, chatPrivKey, peerChatPK, options = {}) {
+    const chatId = cleanChatId(options?.chatId);
+    if (chatId) {
+        return getCachedBotPair(chatPK, chatPrivKey, peerChatPK, { chatId });
+    }
+
+    const basePair = await getCachedBotPair(chatPK, chatPrivKey, peerChatPK);
+    const linkId = cleanLinkId(options?.linkId) || basePair.linkId;
+    const linkChat = await openBotChatLink(db, FieldValue, linkId);
+    if (!linkChat?.id) {
+        throw new Error('chat link unavailable');
+    }
+    return getCachedBotPair(chatPK, chatPrivKey, peerChatPK, { chatId: linkChat.id });
 }
 
 export function clearBotChatPairCache() {
@@ -172,7 +242,7 @@ export async function decryptBotMsg(msgData, userChatPK, userChatPrivKey, peerCh
         return null;
     }
 
-    const pair = await getCachedBotPair(userChatPK, userChatPrivKey, peerChatPK);
+    const pair = await getCachedBotPair(userChatPK, userChatPrivKey, peerChatPK, { chatId: options?.chatId });
     const message = await openMsg(pair, msgData, { actors: options?.actors });
     return normalizeMessage(msgData, message);
 }
@@ -191,7 +261,7 @@ export async function sendBotMsg(db, FieldValue, senderChatPK, senderChatPrivKey
 
     const updateLastMsg = options?.updateLastMsg !== false;
     const msgId = cleanText(options?.msgId);
-    const pair = await getCachedBotPair(senderChatPK, senderChatPrivKey, receiverChatPK);
+    const pair = await resolveBotPair(db, FieldValue, senderChatPK, senderChatPrivKey, receiverChatPK, options);
     const chatId = pair.chatId;
     const retention = cleanChatRetention(options?.retention ?? options?.ttlMode);
     const tsMs = Date.now();
@@ -228,6 +298,7 @@ export async function sendBotMsg(db, FieldValue, senderChatPK, senderChatPrivKey
     const ping = recipientProfile?.uid && updateLastMsg
         ? await sealPing(senderChatPK, senderChatPrivKey, receiverChatPK, {
               kind: 'message',
+              chatId,
               senderUid: options?.senderUid,
               messageId: msgRef.id,
               ts: tsMs,
@@ -275,7 +346,7 @@ export async function updateBotMsg(db, chatId, msgId, senderChatPK, senderChatPr
         throw new Error('bot chat keys required');
     }
 
-    const pair = await getCachedBotPair(senderChatPK, senderChatPrivKey, receiverChatPK);
+    const pair = await getCachedBotPair(senderChatPK, senderChatPrivKey, receiverChatPK, { chatId });
     if (pair.chatId !== chatId) {
         throw new Error('chat mismatch');
     }
@@ -304,7 +375,7 @@ export async function readBotMsgAttachment(bucket, userChatPK, userChatPrivKey, 
     return readBotAttachment(bucket, msg);
 }
 
-export async function uploadBotAttachment(bucket, senderChatPK, senderChatPrivKey, receiverChatPK, attachment = {}) {
+export async function uploadBotAttachment(bucket, senderChatPK, senderChatPrivKey, receiverChatPK, attachment = {}, options = {}) {
     if (!bucket) {
         throw new Error('storage bucket required');
     }
@@ -317,7 +388,7 @@ export async function uploadBotAttachment(bucket, senderChatPK, senderChatPrivKe
         throw new Error('message cid required');
     }
 
-    const pair = await getCachedBotPair(senderChatPK, senderChatPrivKey, receiverChatPK);
+    const pair = await getCachedBotPair(senderChatPK, senderChatPrivKey, receiverChatPK, { chatId: options?.chatId || attachment?.chatId || attachment?.meta?.chatId });
     return putBotAttachment(bucket, pair, cid, attachment?.type, attachment?.data, attachment?.meta || {});
 }
 
@@ -327,6 +398,7 @@ export async function uploadBotAttachmentMsg(db, FieldValue, bucket, senderChatP
         throw new Error('message cid required');
     }
 
-    const msg = await uploadBotAttachment(bucket, senderChatPK, senderChatPrivKey, receiverChatPK, attachment);
-    return sendBotMsg(db, FieldValue, senderChatPK, senderChatPrivKey, receiverChatPK, { ...msg, cid }, options);
+    const pair = await resolveBotPair(db, FieldValue, senderChatPK, senderChatPrivKey, receiverChatPK, options);
+    const msg = await putBotAttachment(bucket, pair, cid, attachment?.type, attachment?.data, attachment?.meta || {});
+    return sendBotMsg(db, FieldValue, senderChatPK, senderChatPrivKey, receiverChatPK, { ...msg, cid }, { ...options, chatId: pair.chatId, linkId: pair.linkId });
 }

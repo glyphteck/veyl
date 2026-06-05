@@ -17,7 +17,7 @@ export function makeStorageCors() {
     return [
         {
             origin: [...storageCorsOrigins],
-            method: ['GET', 'HEAD'],
+            method: ['GET', 'HEAD', 'PUT'],
             responseHeader: ['Content-Type', 'Content-Length', 'Content-Disposition', 'Cache-Control', 'ETag'],
             maxAgeSeconds: 3600,
         },

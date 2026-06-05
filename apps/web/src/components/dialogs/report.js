@@ -1,17 +1,16 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { httpsCallable } from 'firebase/functions';
 import { Flag, Loader, File, Image } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card } from '@/components/card';
 import { Button } from '@/components/button';
 import { Input } from '@/components/input';
-import { getFunctions, getStorage } from '@/lib/firebase/firebaseclient';
+import { cloud } from '@/lib/cloud';
 import { useChat } from '@/components/providers/chatprovider';
 import { useUser } from '@/components/providers/userprovider';
 import { formatUserDisplay } from '@veyl/shared/profile';
-import { makeFileId, putReportEvidence } from '@veyl/shared/files';
+import { makeFileId } from '@veyl/shared/files';
 import { buildReportFields, getReportAttachmentMeta } from '@veyl/shared/report';
 
 function MsgPreview({ msg }) {
@@ -75,18 +74,12 @@ export default function Report({ data, close }) {
 
                 if (attachment && uid && peerChatPK) {
                     const bytes = await readMessageFile(peerChatPK, msg);
-                    const storage = getStorage();
-                    const reserveReportEvidenceUpload = async (payload) => {
-                        await httpsCallable(getFunctions(), 'reserveReportEvidenceUpload')(payload);
-                        return true;
-                    };
-                    path = await putReportEvidence(storage, uid, peer.uid, makeFileId(12), bytes, {
+                    path = await cloud.reports.evidence.upload(uid, peer.uid, makeFileId(12), bytes, {
                         contentType: attachment.mimeType || 'application/octet-stream',
-                        reserveReportEvidenceUpload,
                     });
                 }
 
-                await httpsCallable(getFunctions(), 'submitReport')({
+                await cloud.reports.submit({
                     uid: peer.uid,
                     ...report,
                     ...(path ? { path } : {}),

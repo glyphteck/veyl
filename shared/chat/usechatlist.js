@@ -10,6 +10,7 @@ import {
 import {
     applyChatPreviewOverrides,
     applyReadCache,
+    canonicalChatVersions,
     clearChatPreviewsByHiddenKeys,
     filterPendingDeleteChats,
     getLastChat,
@@ -22,6 +23,8 @@ import {
     trimExpiredChatPreviews,
 } from './chats.js';
 import { collectMessageKeys } from './messagekeys.js';
+import { filterActiveUserChats, getChat, listenToChats, loadMoreChats as loadMoreChatEntries } from './list.js';
+import { setChatPreview, setChatRead } from './messages/write.js';
 import { markChatsRead } from './read.js';
 import { CHAT_RETENTION_24H, normalizeChatSettings } from './ttl.js';
 import { getChatLastMsgKey as lastMsgKey } from './ids.js';
@@ -37,7 +40,7 @@ export function sortedChats(...groups) {
             }
         }
     }
-    return [...byId.values()].sort((a, b) => (b?.ts || 0) - (a?.ts || 0));
+    return canonicalChatVersions([...byId.values()]);
 }
 
 function chatIds(chats) {
@@ -58,7 +61,7 @@ function hydrateReadCache(chats, readCache) {
 }
 
 export function useChatList({
-    chat,
+    cloud,
     uid,
     chatPK,
     chatPrivateKey,
@@ -119,7 +122,7 @@ export function useChatList({
                 chatPK,
                 readCacheRef.current
             );
-            const shownChats = setLocalChats(filterPendingDeleteChats(filteredChats, pendingDeleteIdsRef.current), localByChatRef.current);
+            const shownChats = sortedChats(setLocalChats(filterPendingDeleteChats(filteredChats, pendingDeleteIdsRef.current), localByChatRef.current));
             setChats((prev) => (sameChats(prev, shownChats) ? prev : shownChats));
             const nextLastChat = getLastChat(shownChats, chatPK);
             setLastChat((prev) => (sameLastChat(prev, nextLastChat) ? prev : nextLastChat));
@@ -185,14 +188,14 @@ export function useChatList({
 
     const persistChatPreview = useCallback(
         (chatId, lastMsg) => {
-            if (!uid || !chatPrivateKey || typeof chat?.setChatPreview !== 'function') {
+            if (!uid || !chatPrivateKey) {
                 return;
             }
-            void chat.setChatPreview(uid, chatPrivateKey, chatId, lastMsg || null).catch((error) => {
+            void setChatPreview(cloud, uid, chatPrivateKey, chatId, lastMsg || null).catch((error) => {
                 console.warn('chat preview write failed', error);
             });
         },
-        [chat, uid, chatPrivateKey]
+        [cloud, uid, chatPrivateKey]
     );
 
     const clearChatPreviewKeys = useCallback(
@@ -329,7 +332,7 @@ export function useChatList({
             }
 
             readCacheRef.current.set(chatId, readMs);
-            void chat.setChatRead?.(uid, chatPrivateKey, chatId, readMs).catch((error) => {
+            void setChatRead(cloud, uid, chatPrivateKey, chatId, readMs).catch((error) => {
                 console.warn('chat read state write failed', error);
             });
             lastServerChatsRef.current = markChatsRead(lastServerChatsRef.current, chatId, ownTarget);
@@ -342,7 +345,7 @@ export function useChatList({
                 return next;
             });
         },
-        [chat, uid, chatPK, chatPrivateKey, lastServerChatsRef, queueChatCacheWrite, readCacheRef]
+        [cloud, uid, chatPK, chatPrivateKey, lastServerChatsRef, queueChatCacheWrite, readCacheRef]
     );
 
     useEffect(() => {
@@ -356,6 +359,7 @@ export function useChatList({
             return;
         }
 
+        let cancelled = false;
         const hydrateKey = localCache?.id ? `${localCache.id}:${chatPK}` : '';
         if (hydrateKey && lastHydratedCacheKeyRef.current !== hydrateKey) {
             const hydrateStartedAt = Date.now();
@@ -369,27 +373,47 @@ export function useChatList({
                     hiddenChatPreviewKeysRef.current
                 ).filter((chatItem) => !!chatItem?.ts)
             );
-            const shownCachedChats = hasSavedChatSnapshot ? commitServerChats(cachedChats, { writeCache: false, warm: false }) : [];
             if (hasSavedChatSnapshot) {
-                setIsChatDataReady(true);
+                void filterActiveUserChats(cloud, uid, cachedChats)
+                    .then((activeCachedChats) => {
+                        if (cancelled || serverChatsReadyRef.current) {
+                            return;
+                        }
+                        const shownCachedChats = commitServerChats(activeCachedChats, { writeCache: false, warm: false });
+                        setIsChatDataReady(true);
+                        markDone(diag, 'chat.provider.cache', hydrateStartedAt, {
+                            count: cachedChats.length,
+                            shownCount: shownCachedChats.length,
+                            hasSavedChatSnapshot,
+                            ready: true,
+                        });
+                    })
+                    .catch((error) => {
+                        if (!cancelled) {
+                            markError(diag, 'chat.provider.cache', hydrateStartedAt, error, { count: cachedChats.length });
+                        }
+                    });
+            } else {
+                markDone(diag, 'chat.provider.cache', hydrateStartedAt, {
+                    count: cachedChats.length,
+                    shownCount: 0,
+                    hasSavedChatSnapshot,
+                    ready: false,
+                });
             }
-
-            markDone(diag, 'chat.provider.cache', hydrateStartedAt, {
-                count: cachedChats.length,
-                shownCount: shownCachedChats.length,
-                hasSavedChatSnapshot,
-                ready: hasSavedChatSnapshot,
-            });
         }
 
         if (!isActive) {
             markDiag(diag, 'chat.provider.listen.skip', { reason: 'inactive' });
-            return;
+            return () => {
+                cancelled = true;
+            };
         }
 
         const listenStartedAt = Date.now();
         markDiag(diag, 'chat.provider.listen.start', { limit: CHAT_LIST_LIVE_COUNT });
-        const unsubscribe = chat.listenToChats(
+        const unsubscribe = listenToChats(
+            cloud,
             uid,
             chatPK,
             chatPrivateKey,
@@ -412,7 +436,10 @@ export function useChatList({
                 }
 
                 const hiddenIds = pendingDeleteIdsRef.current;
-                const preservedChats = lastServerChatsRef.current.filter((chatItem) => chatItem?.id && !nextChatIdsSet.has(chatItem.id) && !hiddenIds.has(chatItem.id));
+                const preservePagedChats = chatPageLockedRef.current && !!meta?.hasMore;
+                const preservedChats = preservePagedChats
+                    ? lastServerChatsRef.current.filter((chatItem) => chatItem?.id && !nextChatIdsSet.has(chatItem.id) && !hiddenIds.has(chatItem.id))
+                    : [];
                 const shownChats = commitServerChats(sortedChats(nextChatsWithRead, preservedChats));
                 listenUpdateSeqRef.current += 1;
                 markDiag(diag, 'chat.provider.listen.update', {
@@ -422,6 +449,7 @@ export function useChatList({
                     rawCount: rawNextChats.length,
                     shownCount: shownChats.length,
                     previousShownCount: previousRenderedChats.length,
+                    preservedCount: preservedChats.length,
                     deletingCount: pendingDeleteIdsRef.current.size,
                     hasMore: !!meta?.hasMore,
                     orderChanged: nextChatIds.length !== previousServerIds.length || nextChatIds.some((id, index) => previousServerIds[index] !== id),
@@ -453,11 +481,12 @@ export function useChatList({
             { limitCount: CHAT_LIST_LIVE_COUNT }
         );
         return () => {
+            cancelled = true;
             markDiag(diag, 'chat.provider.listen.stop', { elapsedMs: Date.now() - listenStartedAt });
             unsubscribe?.();
         };
     }, [
-        chat,
+        cloud,
         chatBanned,
         chatHasMoreRef,
         chatPK,
@@ -491,7 +520,7 @@ export function useChatList({
         setLoadingMoreChats(true);
 
         try {
-            const page = await chat.loadMoreChats(uid, chatPK, chatPrivateKey, chatPageCursorRef.current, CHAT_LIST_PAGE_SIZE);
+            const page = await loadMoreChatEntries(cloud, uid, chatPK, chatPrivateKey, chatPageCursorRef.current, CHAT_LIST_PAGE_SIZE);
             const hiddenIds = pendingDeleteIdsRef.current;
             const pageChats = clearChatPreviewsByHiddenKeys(
                 trimExpiredChatPreviews(applyReadCache(Array.isArray(page?.chats) ? page.chats : [], chatPK, readCacheRef.current), { skipChatId: selectedChatIdRef.current }),
@@ -514,7 +543,7 @@ export function useChatList({
             setLoadingMoreChats(false);
         }
     }, [
-        chat,
+        cloud,
         chatBanned,
         chatHasMoreRef,
         chatLoadingMoreRef,
@@ -614,6 +643,8 @@ export function useChatList({
         (peerChatPK) => {
             const peerChat = getPeerChat(peerChatPK);
             return {
+                chatId: peerChat?.id || '',
+                linkId: peerChat?.linkId || '',
                 retention: normalizeChatSettings(peerChat?.settings).retention,
                 chatExists: hasServerChatForPeer(peerChatPK),
                 receiverUid: peerChat?.peerUid || '',
@@ -636,7 +667,7 @@ export function useChatList({
             chatLoadsRef.current.add(chatId);
             setChatLoadVersion((prev) => prev + 1);
             try {
-                const loadedChat = await chat.getChat?.(uid, chatId, chatPK, chatPrivateKey);
+                const loadedChat = await getChat(cloud, uid, chatId, chatPK, chatPrivateKey);
                 if (!loadedChat?.id || pendingDeleteIdsRef.current.has(loadedChat.id)) {
                     return false;
                 }
@@ -650,7 +681,7 @@ export function useChatList({
                 setChatLoadVersion((prev) => prev + 1);
             }
         },
-        [chat, chatBanned, chatPK, chatPrivateKey, uid, chatLoadsRef, commitServerChats, lastServerChatsRef, pendingDeleteIdsRef, serverChatIdsRef]
+        [cloud, chatBanned, chatPK, chatPrivateKey, uid, chatLoadsRef, commitServerChats, lastServerChatsRef, pendingDeleteIdsRef, serverChatIdsRef]
     );
 
     const serverChatIdsSet = useMemo(() => new Set(serverChatIds), [serverChatIds]);

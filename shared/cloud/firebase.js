@@ -1,0 +1,1273 @@
+import { collection, deleteDoc, deleteField, doc, endBefore, getDoc, getDocFromServer, getDocs, getDocsFromServer, limit, limitToLast, onSnapshot, orderBy, query, serverTimestamp, setDoc, startAfter, Timestamp, updateDoc, where, writeBatch } from 'firebase/firestore';
+import { onAuthStateChanged, signInWithCustomToken, signOut } from 'firebase/auth';
+import { httpsCallable } from 'firebase/functions';
+import { deleteObject, getBytes, getDownloadURL, ref, uploadBytes } from 'firebase/storage';
+import { avatarUrlWithVersion } from '../avatar.js';
+import { COMMUNITY_RULES_DATE, COMMUNITY_RULES_VERSION, hasCurrentCommunityRules } from '../community.js';
+import { CHAT_INBOX_PING_PAGE_SIZE, CHAT_LIST_PAGE_SIZE, CHAT_MESSAGE_BATCH_SIZE, SEARCH_ROLE_LIMIT, SEARCH_USERNAME_LIMIT } from '../config.js';
+import { toBytes } from '../crypto/core.js';
+import { getRole } from '../search/roles.js';
+import { defaultSettings, normalizeSettings } from '../settings.js';
+import { positiveInt } from '../utils/number.js';
+import { walletPKField } from '../wallet/keys.js';
+
+function requireUid(uid) {
+    if (!uid) {
+        throw new Error('uid required');
+    }
+}
+
+function recordFromDoc(snap) {
+    return snap?.exists?.() ? { ...snap.data(), id: snap.id } : null;
+}
+
+function recordsFromSnapshot(snapshot) {
+    return snapshot.docs
+        .map(recordFromDoc)
+        .filter(Boolean);
+}
+
+function peerRecordFromDoc(snap) {
+    const record = recordFromDoc(snap);
+    return record ? { ...record, uid: snap.id } : null;
+}
+
+function peerRecordsFromSnapshot(snapshot) {
+    return snapshot.docs
+        .map(peerRecordFromDoc)
+        .filter(Boolean);
+}
+
+function avatarPath(uid) {
+    requireUid(uid);
+    return `${uid}/avatar.webp`;
+}
+
+function reportEvidencePath(reporter, targetUid, evidenceId) {
+    if (!reporter || !targetUid || !evidenceId) {
+        throw new Error('report evidence path parts required');
+    }
+    return `reports/${reporter}/${targetUid}/${evidenceId}`;
+}
+
+function isReactNative() {
+    return typeof navigator !== 'undefined' && navigator.product === 'ReactNative';
+}
+
+export function createFirebaseCloud({ db, auth, getAuth, functions, getFunctions, storage, getStorage, uploadStorageBytes, uploadSignedStorageBytes }) {
+    if (!db) {
+        throw new Error('createFirebaseCloud requires db');
+    }
+
+    let cursorSeq = 0;
+    const cursors = new Map();
+
+    function cursorForDoc(snap) {
+        if (!snap) return null;
+        const token = `fs:${++cursorSeq}`;
+        cursors.set(token, snap);
+        if (cursors.size > 200) {
+            cursors.delete(cursors.keys().next().value);
+        }
+        return token;
+    }
+
+    function cursorToken(cursor) {
+        if (!cursor) return null;
+        return typeof cursor === 'object' ? (cursor.token || cursor.pageToken || cursor.cursor || null) : cursor;
+    }
+
+    function cursorDoc(cursor) {
+        const token = cursorToken(cursor);
+        return token ? cursors.get(token) ?? null : null;
+    }
+
+    function cursorMillis(cursor) {
+        if (Number.isFinite(cursor?.ms)) return cursor.ms;
+        return Number.isFinite(cursor) ? cursor : null;
+    }
+
+    function resolveFunctions() {
+        return typeof getFunctions === 'function' ? getFunctions() : functions;
+    }
+
+    function resolveAuth() {
+        return typeof getAuth === 'function' ? getAuth() : auth;
+    }
+
+    function requireAuth() {
+        const targetAuth = resolveAuth();
+        if (!targetAuth) throw new Error('createFirebaseCloud requires auth');
+        return targetAuth;
+    }
+
+    function resolveStorage() {
+        return typeof getStorage === 'function' ? getStorage() : storage;
+    }
+
+    function requireStorage() {
+        const targetStorage = resolveStorage();
+        if (!targetStorage) throw new Error('createFirebaseCloud requires storage');
+        return targetStorage;
+    }
+
+    function uploadByteSize(data) {
+        if (Number.isFinite(data?.byteLength)) {
+            return data.byteLength;
+        }
+        if (Number.isFinite(data?.size)) {
+            return data.size;
+        }
+        return toBytes(data, 'upload bytes').byteLength;
+    }
+
+    async function uploadStorageFile(path, data, metadata = {}) {
+        const targetStorage = requireStorage();
+        if (typeof uploadStorageBytes === 'function') {
+            await uploadStorageBytes(targetStorage, path, data, metadata);
+            return true;
+        }
+        const payload = typeof Blob !== 'undefined' && data instanceof Blob ? data : toBytes(data, 'upload bytes');
+        await uploadBytes(ref(targetStorage, path), payload, metadata);
+        return true;
+    }
+
+    async function uploadSignedStorageFile(upload, signed = {}) {
+        const url = signed?.url || signed?.uploadUrl;
+        if (!url) {
+            throw new Error('signed upload url required');
+        }
+        const method = signed?.method || 'PUT';
+        const headers = signed?.headers || {
+            'Content-Type': upload?.metadata?.contentType || 'application/octet-stream',
+        };
+        if (typeof uploadSignedStorageBytes === 'function') {
+            await uploadSignedStorageBytes(url, upload?.body, { ...signed, method, headers, metadata: upload?.metadata || {}, path: upload?.path || '' });
+            return true;
+        }
+        const payload = typeof Blob !== 'undefined' && upload?.body instanceof Blob ? upload.body : toBytes(upload?.body, 'upload bytes');
+        const response = await fetch(url, {
+            method,
+            headers,
+            body: payload,
+        });
+        if (!response.ok) {
+            const error = new Error(`signed upload failed (${response.status || 0})`);
+            error.status = response.status || 0;
+            error.stage = 'upload';
+            error.responseText = await response.text().catch(() => '');
+            throw error;
+        }
+        return true;
+    }
+
+    async function readStorageFile(path) {
+        const targetStorage = requireStorage();
+        try {
+            return new Uint8Array(await getBytes(ref(targetStorage, path)));
+        } catch (error) {
+            if (!isReactNative()) {
+                error.path = path;
+                error.stage = 'getBytes';
+                throw error;
+            }
+        }
+
+        try {
+            const url = await getDownloadURL(ref(targetStorage, path));
+            const res = await fetch(url);
+            if (!res.ok) {
+                const error = new Error(`download failed (${res.status})`);
+                error.status = res.status;
+                throw error;
+            }
+            return new Uint8Array(await res.arrayBuffer());
+        } catch (error) {
+            error.path = path;
+            error.stage = error?.stage || 'fetch';
+            throw error;
+        }
+    }
+
+    async function callFunction(name, payload) {
+        const targetFunctions = resolveFunctions();
+        if (!targetFunctions) {
+            throw new Error('createFirebaseCloud requires functions');
+        }
+        const result = await httpsCallable(targetFunctions, name)(payload);
+        return result?.data ?? null;
+    }
+
+    async function finishAuth(name, payload) {
+        const data = await callFunction(name, payload);
+        if (data?.token) {
+            await signInWithCustomToken(requireAuth(), data.token);
+        }
+        return data;
+    }
+
+    function watchAuth(onUpdate, onError) {
+        return onAuthStateChanged(requireAuth(), onUpdate, onError);
+    }
+
+    async function logout() {
+        await signOut(requireAuth());
+        return true;
+    }
+
+    async function readOnboarding(uid) {
+        requireUid(uid);
+
+        const [profileDoc, seedDoc, userDoc] = await Promise.all([
+            getDoc(doc(db, 'profiles', uid)),
+            getDoc(doc(db, 'seeds', uid)),
+            getDoc(doc(db, 'users', uid)),
+        ]);
+        const profile = profileDoc.exists() ? profileDoc.data() : null;
+        const user = userDoc.exists() ? userDoc.data() : null;
+
+        return {
+            uid,
+            hasUsername: !!profile?.username,
+            hasAvatarEntry: !!profile && Object.prototype.hasOwnProperty.call(profile, 'avatar'),
+            hasVault: seedDoc.exists(),
+            communityRulesVersion: user?.communityRulesVersion || null,
+            communityRulesDate: user?.communityRulesDate || null,
+            communityRulesAcceptedAt: user?.communityRulesAcceptedAt || null,
+            hasCurrentCommunityRules: hasCurrentCommunityRules(user),
+        };
+    }
+
+    async function isAdmin(uid) {
+        if (!uid) return false;
+        const snap = await getDoc(doc(db, 'admins', uid));
+        return snap.exists();
+    }
+
+    function watchAdmin(uid, onUpdate, onError) {
+        requireUid(uid);
+        return onSnapshot(
+            doc(db, 'admins', uid),
+            (snap) => {
+                onUpdate?.(snap.exists());
+            },
+            onError
+        );
+    }
+
+    async function readVault(uid) {
+        requireUid(uid);
+        const snap = await getDoc(doc(db, 'seeds', uid));
+        return snap.data()?.es ?? null;
+    }
+
+    async function vaultExists(uid) {
+        requireUid(uid);
+        const snap = await getDoc(doc(db, 'seeds', uid));
+        return snap.exists();
+    }
+
+    async function writeVault(uid, vault) {
+        requireUid(uid);
+        if (!vault) {
+            throw new Error('vault required');
+        }
+        await setDoc(doc(db, 'seeds', uid), { es: vault });
+        return true;
+    }
+
+    function watchVault(uid, onUpdate, onError) {
+        requireUid(uid);
+        return onSnapshot(
+            doc(db, 'seeds', uid),
+            (snap) => {
+                onUpdate?.(snap.data()?.es ?? null, { exists: snap.exists() });
+            },
+            onError
+        );
+    }
+
+    async function acceptCommunity(uid, { version = COMMUNITY_RULES_VERSION, date = COMMUNITY_RULES_DATE } = {}) {
+        requireUid(uid);
+        const payload = {
+            communityRulesVersion: version,
+            communityRulesAcceptedAt: serverTimestamp(),
+        };
+        if (date) {
+            payload.communityRulesDate = date;
+        }
+        await setDoc(
+            doc(db, 'users', uid),
+            payload,
+            { merge: true }
+        );
+        return true;
+    }
+
+    async function writeProfileAvatar(uid, avatar) {
+        requireUid(uid);
+        await updateDoc(doc(db, 'profiles', uid), { avatar });
+        return true;
+    }
+
+    async function uploadProfileAvatar(uid, data, { contentType = 'image/webp' } = {}) {
+        const targetStorage = requireStorage();
+        const path = avatarPath(uid);
+        const payload = typeof Blob !== 'undefined' && data instanceof Blob ? data : toBytes(data, 'upload bytes');
+        const result = await uploadBytes(ref(targetStorage, path), payload, { contentType });
+        const url = await getDownloadURL(ref(targetStorage, path));
+        return {
+            url,
+            generation: result?.metadata?.generation ?? null,
+        };
+    }
+
+    async function deleteProfileAvatar(uid) {
+        const targetStorage = requireStorage();
+        await deleteObject(ref(targetStorage, avatarPath(uid)));
+        return true;
+    }
+
+    async function writeProfileWalletPK(walletPK, { network } = {}) {
+        if (!walletPK) throw new Error('wallet public key required');
+        await callFunction('setWalletPK', { walletPK, network });
+        return true;
+    }
+
+    async function writeProfileChatPK(chatPK) {
+        if (!chatPK) throw new Error('chat public key required');
+        await callFunction('setChatPK', { chatPK });
+        return true;
+    }
+
+    async function getUsername(username) {
+        if (!username) throw new Error('username required');
+        await callFunction('setUsername', { username });
+        await requireAuth().currentUser?.getIdToken?.(true);
+        return true;
+    }
+
+    async function deleteUser() {
+        await callFunction('deleteAccount');
+        return true;
+    }
+
+    function watchProfile(uid, onUpdate, onError) {
+        requireUid(uid);
+        return onSnapshot(
+            doc(db, 'profiles', uid),
+            (snap) => {
+                onUpdate?.(snap.exists() ? snap.data() : {}, { exists: snap.exists() });
+            },
+            onError
+        );
+    }
+
+    function watchPrivate(uid, onUpdate, onError) {
+        requireUid(uid);
+        return onSnapshot(
+            doc(db, 'users', uid),
+            { includeMetadataChanges: true },
+            (snap) => {
+                onUpdate?.(snap.exists() ? snap.data() : {}, {
+                    exists: snap.exists(),
+                    fromCache: snap.metadata.fromCache,
+                    pending: snap.metadata.hasPendingWrites,
+                });
+            },
+            onError
+        );
+    }
+
+    function watchUserBanned(uid, onUpdate, onError) {
+        requireUid(uid);
+        return onSnapshot(
+            doc(db, 'moderation', uid),
+            (snap) => {
+                const data = snap.exists() ? snap.data() : {};
+                onUpdate?.(data?.banned ?? null, { exists: snap.exists() });
+            },
+            onError
+        );
+    }
+
+    async function writeSettings(uid, settings, { currentSettings } = {}) {
+        requireUid(uid);
+
+        let base = currentSettings;
+
+        try {
+            const snap = await getDoc(doc(db, 'users', uid));
+            const saved = snap.exists() ? snap.data()?.settings : null;
+            const { autolock: rawAutolock, ...rawSettings } = saved || {};
+            base = {
+                ...defaultSettings,
+                ...rawSettings,
+                autolock: {
+                    ...defaultSettings.autolock,
+                    ...(rawAutolock || {}),
+                },
+            };
+        } catch (error) {
+            if (!base) {
+                throw error;
+            }
+        }
+
+        const nextSettings = normalizeSettings(settings, base);
+
+        await setDoc(
+            doc(db, 'users', uid),
+            {
+                settings: nextSettings,
+            },
+            { merge: true }
+        );
+
+        return nextSettings;
+    }
+
+    async function writeUserActive(uid, active) {
+        requireUid(uid);
+        const ref = doc(db, 'profiles', uid);
+
+        if (active) {
+            await setDoc(ref, { active: true }, { merge: true });
+            return true;
+        }
+
+        try {
+            await updateDoc(ref, { active: false });
+            return true;
+        } catch (error) {
+            if (error?.code === 'not-found') {
+                return false;
+            }
+            throw error;
+        }
+    }
+
+    async function addUserPush(payload = {}) {
+        await callFunction('setPush', payload);
+        return true;
+    }
+
+    async function dropUserPush(payload = {}) {
+        await callFunction('dropPush', payload);
+        return true;
+    }
+
+    async function addBlocked(uid, peerUid) {
+        requireUid(uid);
+        requireUid(peerUid);
+        await setDoc(doc(db, 'users', uid, 'blocked', peerUid), {});
+        return true;
+    }
+
+    async function removeBlocked(uid, peerUid) {
+        requireUid(uid);
+        requireUid(peerUid);
+        await deleteDoc(doc(db, 'users', uid, 'blocked', peerUid));
+        return true;
+    }
+
+    function watchBlocked(uid, onUpdate, onError) {
+        requireUid(uid);
+        return onSnapshot(
+            collection(db, 'users', uid, 'blocked'),
+            (snap) => {
+                const blocked = snap.docs
+                    .map((item) => item.id)
+                    .filter(Boolean)
+                    .sort();
+                onUpdate?.(blocked);
+            },
+            onError
+        );
+    }
+
+    function watchBitcoin(onUpdate, onError) {
+        return onSnapshot(
+            doc(db, 'bitcoin', 'current'),
+            (snap) => {
+                onUpdate?.(snap.exists() ? snap.data() : null, { exists: snap.exists() });
+            },
+            onError
+        );
+    }
+
+    async function readPeer(uid) {
+        requireUid(uid);
+        const snap = await getDoc(doc(db, 'profiles', uid));
+        return peerRecordFromDoc(snap);
+    }
+
+    async function readPeerActive(uid) {
+        requireUid(uid);
+        const snap = await getDoc(doc(db, 'profiles', uid));
+        return snap.exists() ? snap.data()?.active === true : false;
+    }
+
+    function watchPeerActive(uid, onUpdate, onError) {
+        requireUid(uid);
+        return onSnapshot(
+            doc(db, 'profiles', uid),
+            (snap) => {
+                onUpdate?.(snap.exists() ? snap.data()?.active === true : false, { exists: snap.exists() });
+            },
+            onError
+        );
+    }
+
+
+    async function readPeerAvatar(uid) {
+        return readStorageFile(avatarPath(uid));
+    }
+
+    async function peerAvatarUrl(uid, { version = null } = {}) {
+        const targetStorage = requireStorage();
+        const url = await getDownloadURL(ref(targetStorage, avatarPath(uid)));
+        return avatarUrlWithVersion(url, version);
+    }
+
+    function profileQueryField(field, { network } = {}) {
+        if (field === 'walletPK') {
+            return walletPKField(network);
+        }
+        if (field === 'chatPK' || field === 'username') {
+            return field;
+        }
+        throw new Error('bad peer search field');
+    }
+
+    async function searchPeerByField(field, value, options = {}) {
+        if (!value) return null;
+        const snapshot = await getDocs(query(collection(db, 'profiles'), where(profileQueryField(field, options), '==', value), limit(1)));
+        return peerRecordFromDoc(snapshot.docs[0]);
+    }
+
+    async function searchPeerByFields(field, values, options = {}) {
+        const keys = Array.isArray(values) ? values.filter(Boolean) : [];
+        if (!keys.length) return [];
+
+        const queryField = profileQueryField(field, options);
+        const jobs = [];
+        for (let i = 0; i < keys.length; i += 10) {
+            const chunk = keys.slice(i, i + 10);
+            jobs.push(getDocs(query(collection(db, 'profiles'), where(queryField, 'in', chunk), limit(chunk.length))));
+        }
+
+        const snapshots = await Promise.all(jobs);
+        return snapshots.flatMap(peerRecordsFromSnapshot);
+    }
+
+    async function searchPeerByUsernamePrefix(value) {
+        if (!value) return [];
+        const snapshot = await getDocs(
+            query(
+                collection(db, 'profiles'),
+                where('username', '>=', value),
+                where('username', '<=', value + '\uf8ff'),
+                orderBy('username'),
+                limit(SEARCH_USERNAME_LIMIT)
+            )
+        );
+        return peerRecordsFromSnapshot(snapshot);
+    }
+
+    async function searchPeerByRole(roleId) {
+        const role = getRole(roleId);
+        if (!role) return [];
+
+        let roleQuery = null;
+        if (role.id === 'bots') {
+            roleQuery = query(collection(db, 'profiles'), where('bot', '!=', false), limit(SEARCH_ROLE_LIMIT));
+        } else if (role.id === 'active') {
+            roleQuery = query(collection(db, 'profiles'), where('active', '==', true), limit(SEARCH_ROLE_LIMIT));
+        }
+
+        if (!roleQuery) return [];
+        const snapshot = await getDocs(roleQuery);
+        return peerRecordsFromSnapshot(snapshot);
+    }
+
+    async function uploadChatMedia(upload) {
+        const path = upload?.path;
+        if (!path) throw new Error('media path required');
+        const signed = await callFunction('reserveChatMediaUpload', {
+            chatId: upload?.chatId,
+            messageKey: upload?.messageKey,
+            path,
+            size: uploadByteSize(upload?.body),
+            contentType: upload?.metadata?.contentType || 'application/octet-stream',
+        });
+        await uploadSignedStorageFile(upload, signed?.upload);
+        return true;
+    }
+
+    async function uploadSharedMedia(upload) {
+        const path = upload?.path;
+        if (!path) throw new Error('shared media path required');
+        const signed = await callFunction('reserveSharedMediaUpload', {
+            sharedId: upload?.sharedId,
+            path,
+            size: uploadByteSize(upload?.body),
+            contentType: upload?.metadata?.contentType || 'application/octet-stream',
+        });
+        await uploadSignedStorageFile(upload, signed?.upload);
+        return true;
+    }
+
+    async function readChatMedia(path) {
+        if (!path) throw new Error('media path required');
+        return readStorageFile(path);
+    }
+
+    function cleanChatDeleteTargets(value, options = {}) {
+        const list = Array.isArray(value) ? value : [{ chatId: value, ...options }];
+        const targets = [];
+        const seen = new Set();
+
+        for (const item of list) {
+            const chatId = typeof item === 'string' ? item : (item?.chatId || item?.id || '');
+            if (!chatId || seen.has(chatId)) {
+                continue;
+            }
+            seen.add(chatId);
+            targets.push({
+                chatId,
+                ...(item?.entryId ? { entryId: item.entryId } : {}),
+                ...(item?.linkId ? { linkId: item.linkId } : {}),
+            });
+        }
+
+        return targets;
+    }
+
+    async function deleteChat(chatId, options = {}) {
+        const { entryId, linkId, cleanup = true } = options || {};
+        if (Array.isArray(chatId)) {
+            const chats = cleanChatDeleteTargets(chatId);
+            if (!chats.length) return true;
+            await callFunction('deleteChat', { chats, cleanup: cleanup !== false });
+            return true;
+        }
+        if (!chatId) throw new Error('chat id required');
+        await callFunction('deleteChat', { chatId, entryId, linkId, cleanup: cleanup !== false });
+        return true;
+    }
+
+    async function checkChats(chatIds = []) {
+        const ids = [...new Set((Array.isArray(chatIds) ? chatIds : [chatIds]).filter(Boolean))];
+        if (!ids.length) return [];
+        const result = await callFunction('checkChats', { chats: ids });
+        return Array.isArray(result?.chats) ? result.chats : [];
+    }
+
+    async function openChatLink(linkId) {
+        if (!linkId) throw new Error('link id required');
+        const result = await callFunction('openChatLink', { linkId });
+        const chat = result?.chat || {};
+        return {
+            id: chat.id || '',
+            version: Number.isInteger(chat.version) ? chat.version : 0,
+            exists: chat.exists === true,
+        };
+    }
+
+    async function submitReport(payload) {
+        await callFunction('submitReport', payload);
+        return true;
+    }
+
+    async function reserveReportEvidence(payload) {
+        await callFunction('reserveReportEvidenceUpload', payload);
+        return true;
+    }
+
+    async function uploadReportEvidence(reporter, targetUid, evidenceId, data, options = {}) {
+        const {
+            contentType = 'application/octet-stream',
+            cacheControl = 'private, max-age=0, no-transform',
+            name = '',
+            kind = '',
+        } = options || {};
+        const path = reportEvidencePath(reporter, targetUid, evidenceId);
+        const metadata = {
+            contentType,
+            cacheControl,
+            customMetadata: {
+                ...(name ? { name } : {}),
+                ...(kind ? { kind } : {}),
+            },
+        };
+        await reserveReportEvidence({
+            path,
+            size: uploadByteSize(data),
+            contentType,
+        });
+        await uploadStorageFile(path, data, metadata);
+        return path;
+    }
+
+    const authApi = {
+        get user() {
+            return resolveAuth()?.currentUser ?? null;
+        },
+        watch: watchAuth,
+        logout,
+        login: {
+            start: (payload) => callFunction('passkeyLoginOptions', payload),
+            finish: (payload) => finishAuth('passkeyLoginVerify', payload),
+        },
+        register: {
+            start: (payload) => callFunction('passkeyRegisterOptions', payload),
+            finish: (payload) => finishAuth('passkeyRegisterVerify', payload),
+        },
+    };
+
+    function userChatsQuery(uid, count, cursor) {
+        const clauses = [collection(db, 'users', uid, 'chats'), orderBy('ts', 'desc')];
+        const snap = cursorDoc(cursor);
+        if (snap) {
+            clauses.push(startAfter(snap));
+        }
+        clauses.push(limit(positiveInt(count, CHAT_LIST_PAGE_SIZE)));
+        return query(...clauses);
+    }
+
+    function userChatsPage(snap, count) {
+        return {
+            records: recordsFromSnapshot(snap),
+            cursor: cursorForDoc(snap.docs[snap.docs.length - 1] ?? null),
+            hasMore: snap.docs.length >= positiveInt(count, CHAT_LIST_PAGE_SIZE),
+        };
+    }
+
+    function messageRecordFromDoc(snap) {
+        if (!snap?.exists?.()) {
+            return null;
+        }
+        return {
+            ...snap.data(),
+            id: snap.id,
+            pageToken: cursorForDoc(snap),
+            pending: snap.metadata?.hasPendingWrites === true,
+        };
+    }
+
+    function messageRecordsFromSnapshot(snapshot) {
+        return snapshot.docs
+            .map(messageRecordFromDoc)
+            .filter(Boolean);
+    }
+
+    function messageChangesFromSnapshot(snapshot) {
+        return snapshot.docChanges().map((change) => ({
+            type: change.type,
+            record: messageRecordFromDoc(change.doc),
+        })).filter((change) => change.record);
+    }
+
+    function chatMessagesCollection(chatId) {
+        if (!chatId) throw new Error('chat id required');
+        return collection(db, 'chats', chatId, 'messages');
+    }
+
+    function chatMessageDoc(chatId, messageId) {
+        if (!chatId) throw new Error('chat id required');
+        if (!messageId) throw new Error('message id required');
+        return doc(db, 'chats', chatId, 'messages', messageId);
+    }
+
+    function newChatMessageId(chatId) {
+        return doc(chatMessagesCollection(chatId)).id;
+    }
+
+    function chatMessagesPage(snap, count) {
+        const records = messageRecordsFromSnapshot(snap);
+        return {
+            records,
+            nextBefore: records[0]?.pageToken ? { id: records[0].id, token: records[0].pageToken } : null,
+            hasMore: records.length >= positiveInt(count, CHAT_MESSAGE_BATCH_SIZE),
+        };
+    }
+
+    function chatMessagesQuery(chatId, count, cursor) {
+        const clauses = [chatMessagesCollection(chatId), orderBy('ts', 'asc')];
+        const snap = cursorDoc(cursor);
+        if (snap) {
+            clauses.push(endBefore(snap));
+        } else {
+            const ms = cursorMillis(cursor);
+            if (Number.isFinite(ms)) {
+                clauses.push(endBefore(Timestamp.fromMillis(ms)));
+            }
+        }
+        clauses.push(limitToLast(positiveInt(count, CHAT_MESSAGE_BATCH_SIZE)));
+        return query(...clauses);
+    }
+
+    function watchChatMessages(chatId, options = {}, onUpdate, onError) {
+        const count = positiveInt(options?.limitCount ?? options?.pageSize ?? options?.count, CHAT_MESSAGE_BATCH_SIZE);
+        return onSnapshot(
+            query(chatMessagesCollection(chatId), orderBy('ts', 'asc'), limitToLast(count)),
+            { includeMetadataChanges: true },
+            (snap) => {
+                const records = messageRecordsFromSnapshot(snap);
+                onUpdate?.(records, {
+                    changes: messageChangesFromSnapshot(snap),
+                    before: records[0]?.pageToken ? { id: records[0].id, token: records[0].pageToken } : null,
+                    fromCache: snap.metadata?.fromCache === true,
+                    pending: snap.metadata?.hasPendingWrites === true,
+                });
+            },
+            onError
+        );
+    }
+
+    async function listChatMessages(chatId, options = {}) {
+        const count = positiveInt(options?.limitCount ?? options?.pageSize ?? options?.count, CHAT_MESSAGE_BATCH_SIZE);
+        const snap = await getDocsFromServer(chatMessagesQuery(chatId, count, options?.before));
+        return chatMessagesPage(snap, count);
+    }
+
+    async function readChatMessage(chatId, messageId) {
+        const snap = await getDocFromServer(chatMessageDoc(chatId, messageId)).catch(() => null);
+        return messageRecordFromDoc(snap);
+    }
+
+    function cleanMessageWrite(message) {
+        if (!message?.head || !message?.body) {
+            throw new Error('message data required');
+        }
+        return {
+            head: message.head,
+            body: message.body,
+            ts: serverTimestamp(),
+            ttl: Number.isFinite(message?.ttlMs) ? Timestamp.fromMillis(message.ttlMs) : null,
+        };
+    }
+
+    function cleanOwnerEntryWrite(ownerEntry) {
+        if (!ownerEntry?.uid || !ownerEntry?.entryId || !ownerEntry?.record?.body) {
+            return null;
+        }
+        return {
+            ref: doc(db, 'users', ownerEntry.uid, 'chats', ownerEntry.entryId),
+            data: {
+                body: ownerEntry.record.body,
+                ts: Number.isFinite(ownerEntry.record.tsMs) ? Timestamp.fromMillis(ownerEntry.record.tsMs) : serverTimestamp(),
+            },
+        };
+    }
+
+    async function pushInbox(recipientUid, ping) {
+        requireUid(recipientUid);
+        if (!ping) throw new Error('inbox ping required');
+        await callFunction('push', { recipientUid, ping });
+        return true;
+    }
+
+    async function sendChatMessage(payload = {}) {
+        const chatId = payload.chatId;
+        const messageId = payload.messageId || newChatMessageId(chatId);
+        const batch = writeBatch(db);
+        batch.set(chatMessageDoc(chatId, messageId), cleanMessageWrite(payload.message));
+        const ownerEntry = cleanOwnerEntryWrite(payload.ownerEntry);
+        if (ownerEntry) {
+            batch.set(ownerEntry.ref, ownerEntry.data, { merge: true });
+        }
+        await batch.commit();
+        if (payload.inbox?.recipientUid && payload.inbox?.ping) {
+            await pushInbox(payload.inbox.recipientUid, payload.inbox.ping);
+        }
+        return { chatId, messageId };
+    }
+
+    async function updateChatMessage(chatId, _messageId, message) {
+        const messageId = newChatMessageId(chatId);
+        await setDoc(chatMessageDoc(chatId, messageId), cleanMessageWrite(message));
+        return { chatId, messageId };
+    }
+
+    async function deleteChatMessage(chatId, messageId, options = {}) {
+        await callFunction('deleteChatMessage', {
+            chatId,
+            messageId,
+            mediaKeys: Array.isArray(options?.mediaKeys) ? options.mediaKeys : [],
+        });
+        return true;
+    }
+
+    async function deleteManyChatMessages(chatId, messageIds = [], options = {}) {
+        if (!chatId) throw new Error('chat id required');
+        const ids = [...new Set((Array.isArray(messageIds) ? messageIds : [messageIds]).filter(Boolean))];
+        if (!ids.length) {
+            return 0;
+        }
+        const result = await callFunction('deleteChatMessages', {
+            chatId,
+            messageIds: ids,
+            mediaKeys: Array.isArray(options?.mediaKeys) ? options.mediaKeys : [],
+        });
+        return result?.deleted || ids.length;
+    }
+
+    async function setChatMessageTtl(chatId, messages = [], options = {}) {
+        if (!chatId) throw new Error('chat id required');
+        const result = await callFunction('setChatMessageTtl', {
+            chatId,
+            messages: Array.isArray(messages) ? messages : [],
+            permanent: options?.permanent === true,
+            ttlMs: Number.isFinite(options?.ttlMs) ? options.ttlMs : null,
+        });
+        return result || {};
+    }
+
+    function watchUserChats(uid, onUpdate, onError, options = {}) {
+        requireUid(uid);
+        const count = positiveInt(options?.limitCount ?? options?.pageSize ?? options?.count, CHAT_LIST_PAGE_SIZE);
+        return onSnapshot(
+            userChatsQuery(uid, count),
+            (snap) => {
+                if (snap.metadata?.hasPendingWrites) return;
+                const page = userChatsPage(snap, count);
+                onUpdate?.(page.records, {
+                    cursor: page.cursor,
+                    hasMore: page.hasMore,
+                });
+            },
+            onError
+        );
+    }
+
+    async function listUserChats(uid, options = {}) {
+        requireUid(uid);
+        const count = positiveInt(options?.limitCount ?? options?.pageSize ?? options?.count, CHAT_LIST_PAGE_SIZE);
+        const snap = await getDocsFromServer(userChatsQuery(uid, count, options?.cursor));
+        return userChatsPage(snap, count);
+    }
+
+    async function readUserChat(uid, entryId) {
+        requireUid(uid);
+        if (!entryId) throw new Error('chat entry id required');
+        const snap = await getDocFromServer(doc(db, 'users', uid, 'chats', entryId)).catch(() => null);
+        return recordFromDoc(snap);
+    }
+
+    async function writeUserChat(uid, entryId, { body, tsMs, touchTs = false } = {}) {
+        requireUid(uid);
+        if (!entryId) throw new Error('chat entry id required');
+        if (!body) throw new Error('chat entry body required');
+        const record = { body };
+        if (Number.isFinite(tsMs)) {
+            record.ts = Timestamp.fromMillis(tsMs);
+        } else if (touchTs) {
+            record.ts = serverTimestamp();
+        }
+        await setDoc(
+            doc(db, 'users', uid, 'chats', entryId),
+            record,
+            { merge: true }
+        );
+        return true;
+    }
+
+    async function deleteUserChat(uid, entryId) {
+        requireUid(uid);
+        if (!entryId) throw new Error('chat entry id required');
+        await deleteDoc(doc(db, 'users', uid, 'chats', entryId));
+        return true;
+    }
+
+    function watchInbox(uid, onUpdate, onError, options = {}) {
+        requireUid(uid);
+        const count = positiveInt(options?.limitCount ?? options?.pageSize ?? options?.count, CHAT_INBOX_PING_PAGE_SIZE);
+        return onSnapshot(
+            query(collection(db, 'users', uid, 'inbox'), orderBy('ts', 'desc'), limit(count)),
+            (snap) => {
+                onUpdate?.(recordsFromSnapshot(snap), {
+                    empty: snap.empty,
+                    pending: snap.metadata?.hasPendingWrites === true,
+                });
+            },
+            onError
+        );
+    }
+
+    async function listInbox(uid, options = {}) {
+        requireUid(uid);
+        const count = positiveInt(options?.limitCount ?? options?.pageSize ?? options?.count, CHAT_INBOX_PING_PAGE_SIZE);
+        const snap = await getDocsFromServer(query(collection(db, 'users', uid, 'inbox'), orderBy('ts', 'desc'), limit(count))).catch(() => null);
+        return recordsFromSnapshot(snap || { docs: [] });
+    }
+
+    async function deleteInboxItem(uid, pingId) {
+        requireUid(uid);
+        if (!pingId) throw new Error('inbox id required');
+        await deleteDoc(doc(db, 'users', uid, 'inbox', pingId));
+        return true;
+    }
+
+    function watchAdminBotRuntime(onUpdate, onError) {
+        return onSnapshot(
+            doc(db, 'runtimes', 'bot'),
+            (snap) => {
+                onUpdate?.(snap.exists() && snap.data()?.running === true, { exists: snap.exists() });
+            },
+            onError
+        );
+    }
+
+    function watchAdminReportOffenders(onUpdate, onError) {
+        return onSnapshot(
+            collection(db, 'reported'),
+            (snap) => {
+                onUpdate?.(snap.docs.map((item) => ({ ...item.data(), uid: item.id })));
+            },
+            onError
+        );
+    }
+
+    function watchAdminUserReports(uid, onUpdate, onError) {
+        requireUid(uid);
+        return onSnapshot(
+            collection(db, 'reported', uid, 'reports'),
+            (snap) => {
+                onUpdate?.(recordsFromSnapshot(snap));
+            },
+            onError
+        );
+    }
+
+    function watchAdminBots(onUpdate, onError) {
+        return onSnapshot(
+            collection(db, 'bots'),
+            (snap) => {
+                onUpdate?.(recordsFromSnapshot(snap));
+            },
+            onError
+        );
+    }
+
+    function watchAdminBot(botId, onUpdate, onError) {
+        requireUid(botId);
+        return onSnapshot(
+            doc(db, 'bots', botId),
+            (snap) => {
+                onUpdate?.(recordFromDoc(snap), { exists: snap.exists() });
+            },
+            onError
+        );
+    }
+
+    function watchAdminBotEvents(botId, onUpdate, onError, options = {}) {
+        requireUid(botId);
+        const count = positiveInt(options?.limitCount ?? options?.pageSize ?? options?.count, 50);
+        return onSnapshot(
+            query(collection(db, 'bots', botId, 'events'), orderBy('createdAt', 'desc'), limit(count)),
+            (snap) => {
+                onUpdate?.(recordsFromSnapshot(snap));
+            },
+            onError
+        );
+    }
+
+    function watchAdminModeration(uid, onUpdate, onError) {
+        requireUid(uid);
+        return onSnapshot(
+            doc(db, 'moderation', uid),
+            (snap) => {
+                onUpdate?.(snap.exists() ? (snap.data()?.banned ?? null) : null, { exists: snap.exists() });
+            },
+            onError
+        );
+    }
+
+    async function banAdminUser(uid, feature = 'chat') {
+        requireUid(uid);
+        await setDoc(
+            doc(db, 'moderation', uid),
+            { banned: { [feature]: { until: null } } },
+            { merge: true }
+        );
+        if (feature === 'avatar') {
+            await deleteProfileAvatar(uid).catch((error) => {
+                if (error?.code !== 'storage/object-not-found') {
+                    throw error;
+                }
+            });
+        }
+        return true;
+    }
+
+    async function unbanAdminUser(uid, feature = 'chat') {
+        requireUid(uid);
+        await setDoc(
+            doc(db, 'moderation', uid),
+            { banned: { [feature]: deleteField() } },
+            { merge: true }
+        );
+        return true;
+    }
+
+    async function powerAdminBot(uid, enabled) {
+        requireUid(uid);
+        await callFunction('setBotPower', { botId: uid, enabled: !!enabled });
+        return true;
+    }
+
+    async function adminReportEvidencePath(path) {
+        if (!path) throw new Error('report evidence path required');
+        const targetStorage = resolveStorage();
+        if (!targetStorage) throw new Error('createFirebaseCloud requires storage');
+        return getDownloadURL(ref(targetStorage, path));
+    }
+
+    return {
+        user: {
+            vault: {
+                read: readVault,
+                exists: vaultExists,
+                write: writeVault,
+                watch: watchVault,
+            },
+            onboarding: readOnboarding,
+            community: {
+                accept: acceptCommunity,
+            },
+            delete: deleteUser,
+            username: {
+                get: getUsername,
+            },
+            profile: {
+                watch: watchProfile,
+                avatar: {
+                    write: writeProfileAvatar,
+                    upload: uploadProfileAvatar,
+                    delete: deleteProfileAvatar,
+                },
+                walletpk: {
+                    write: writeProfileWalletPK,
+                },
+                chatpk: {
+                    write: writeProfileChatPK,
+                },
+            },
+            private: {
+                watch: watchPrivate,
+            },
+            banned: watchUserBanned,
+            settings: {
+                write: writeSettings,
+            },
+            active: {
+                write: writeUserActive,
+            },
+            push: {
+                add: addUserPush,
+                drop: dropUserPush,
+            },
+            blocked: {
+                add: addBlocked,
+                remove: removeBlocked,
+                watch: watchBlocked,
+            },
+            chats: {
+                watch: watchUserChats,
+                list: listUserChats,
+                read: readUserChat,
+                write: writeUserChat,
+                delete: deleteUserChat,
+            },
+            admin: {
+                is: isAdmin,
+                watch: watchAdmin,
+            },
+        },
+        bitcoin: {
+            watch: watchBitcoin,
+        },
+        peer: {
+            read: readPeer,
+            active: {
+                read: readPeerActive,
+                watch: watchPeerActive,
+            },
+            avatar: {
+                read: readPeerAvatar,
+                url: peerAvatarUrl,
+            },
+        },
+        search: {
+            peer: {
+                byUsername: (username) => searchPeerByField('username', username),
+                byUsernamePrefix: searchPeerByUsernamePrefix,
+                byWalletPK: (walletPK, options) => searchPeerByField('walletPK', walletPK, options),
+                byWalletPKs: (walletPKs, options) => searchPeerByFields('walletPK', walletPKs, options),
+                byChatPK: (chatPK) => searchPeerByField('chatPK', chatPK),
+                byChatPKs: (chatPKs) => searchPeerByFields('chatPK', chatPKs),
+                byRole: searchPeerByRole,
+            },
+        },
+        chat: {
+            check: checkChats,
+            delete: deleteChat,
+            links: {
+                open: openChatLink,
+            },
+            messages: {
+                id: newChatMessageId,
+                watch: watchChatMessages,
+                list: listChatMessages,
+                read: readChatMessage,
+                send: sendChatMessage,
+                update: updateChatMessage,
+                delete: deleteChatMessage,
+                deleteMany: deleteManyChatMessages,
+                ttl: setChatMessageTtl,
+            },
+            media: {
+                upload: uploadChatMedia,
+                uploadShared: uploadSharedMedia,
+                read: readChatMedia,
+            },
+        },
+        inbox: {
+            watch: watchInbox,
+            list: listInbox,
+            delete: deleteInboxItem,
+            push: pushInbox,
+        },
+        admin: {
+            reports: {
+                watchOffenders: watchAdminReportOffenders,
+                watchUser: watchAdminUserReports,
+                evidence: {
+                    path: adminReportEvidencePath,
+                },
+            },
+            bots: {
+                watch: watchAdminBots,
+                watchBot: watchAdminBot,
+                watchEvents: watchAdminBotEvents,
+                watchRuntime: watchAdminBotRuntime,
+                power: powerAdminBot,
+            },
+            moderation: {
+                watch: watchAdminModeration,
+                ban: banAdminUser,
+                unban: unbanAdminUser,
+            },
+        },
+        reports: {
+            submit: submitReport,
+            evidence: {
+                reserve: reserveReportEvidence,
+                upload: uploadReportEvidence,
+            },
+        },
+        auth: authApi,
+    };
+}

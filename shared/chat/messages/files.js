@@ -1,4 +1,4 @@
-import { CHAT_MEDIA_TTL_MS, getMediaFileId } from '../filepayload.js';
+import { getChatMediaFileRef, getMediaFileRef, getSharedMediaFileRef } from '../filepayload.js';
 import { formatBytes } from '../../utils/display.js';
 import { cleanText, lowerText } from '../../utils/text.js';
 import { nonNegativeInt } from '../../utils/number.js';
@@ -21,33 +21,37 @@ export function hasStoredFileRef(msg) {
     }
 
     try {
-        getMediaFileId(msg.p);
+        getMediaFileRef(msg.p);
         return true;
     } catch {
         return false;
     }
 }
 
-export function mediaStayRef(msg) {
-    const id = cleanText(msg?.stay);
-    const key = cleanText(msg?.stayKey);
-    return id && key ? { id, key } : null;
-}
-
-export function hasMediaStay(msg) {
-    return !!mediaStayRef(msg);
-}
-
-export function savedMediaStayRef(msg) {
-    const stay = mediaStayRef(msg);
-    if (!stay || !isAttachmentMsgType(msg?.t) || !hasStoredFileRef(msg)) {
-        return null;
+export function hasChatMediaFileRef(msg) {
+    if (!hasText(msg?.p) || !hasText(msg?.k) || hasLocalFileRef(msg)) {
+        return false;
     }
-    return {
-        path: msg.p,
-        stayId: stay.id,
-        stayKey: stay.key,
-    };
+
+    try {
+        getChatMediaFileRef(msg.p);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+export function hasSharedMediaFileRef(msg) {
+    if (!hasText(msg?.p) || !hasText(msg?.k) || hasLocalFileRef(msg)) {
+        return false;
+    }
+
+    try {
+        getSharedMediaFileRef(msg.p);
+        return true;
+    } catch {
+        return false;
+    }
 }
 
 export function storedFileKey(peerChatPK, msg, { type = false } = {}) {
@@ -87,8 +91,12 @@ export function getAttachmentCaption(msg) {
     return caption && caption !== getAttachmentTitle(msg) ? caption : '';
 }
 
+function isPermanentAttachmentMsg(msg) {
+    return msg?.permanent === true || (Object.prototype.hasOwnProperty.call(msg || {}, 'ttl') && msg.ttl == null);
+}
+
 export function isExpiredAttachmentMsg(msg, now = Date.now()) {
-    return isAttachmentMsgType(msg?.t) && !hasMediaStay(msg) && Number.isFinite(msg?.x) && msg.x <= now;
+    return isAttachmentMsgType(msg?.t) && !isPermanentAttachmentMsg(msg) && Number.isFinite(msg?.x) && msg.x <= now;
 }
 
 export function getImageAspect(msg, fallback = 4 / 3) {
@@ -134,8 +142,6 @@ export function makeAttachment(t, file) {
         ...numberField('h', file?.h),
         ...numberField('d', file?.d),
         ...numberField('x', file?.x),
-        ...(hasText(file?.stay) ? { stay: cleanText(file.stay) } : {}),
-        ...(hasText(file?.stay) && hasText(file?.stayKey) ? { stayKey: cleanText(file.stayKey) } : {}),
         ...(file?.n ? { n: String(file.n) } : {}),
         ...(hasText(file?.c) ? { c: cleanText(file.c) } : {}),
     };
@@ -163,7 +169,6 @@ export function makeSharedAttachment(msg) {
         throw new Error('file unavailable');
     }
 
-    const x = hasText(msg?.stay) && (!Number.isFinite(msg?.x) || msg.x <= Date.now()) ? Date.now() + CHAT_MEDIA_TTL_MS : msg.x;
     return makeAttachment(msg.t, {
         p: msg.p,
         k: msg.k,
@@ -172,7 +177,7 @@ export function makeSharedAttachment(msg) {
         ...(Number.isFinite(msg?.w) ? { w: msg.w } : {}),
         ...(Number.isFinite(msg?.h) ? { h: msg.h } : {}),
         ...(Number.isFinite(msg?.d) ? { d: msg.d } : {}),
-        ...(Number.isFinite(x) ? { x } : {}),
+        ...(Number.isFinite(msg?.x) ? { x: msg.x } : {}),
         ...(msg?.n ? { n: msg.n } : {}),
         ...(hasText(msg?.c) ? { c: cleanText(msg.c) } : {}),
     });

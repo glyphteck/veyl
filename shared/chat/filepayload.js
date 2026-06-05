@@ -5,41 +5,104 @@ import {
     CHAT_MAX_UPLOAD_FILES,
     CHAT_IMAGE_COMPRESS as CONFIG_CHAT_IMAGE_COMPRESS,
     CHAT_IMAGE_MAX_EDGE,
-    CHAT_MEDIA_ID_BYTES,
     CHAT_MEDIA_TTL_DAYS as CONFIG_CHAT_MEDIA_TTL_DAYS,
     CHAT_MEDIA_TTL_MS as CONFIG_CHAT_MEDIA_TTL_MS,
 } from '../config.js';
 import { cleanBytes, randomBytes, toBytes, toHex } from '../crypto/core.js';
-import { cleanText } from '../utils/text.js';
 
-export const CHAT_MEDIA_ROOT = 'media';
+export const CHAT_MEDIA_ROOT = 'chat-media';
+export const SHARED_MEDIA_ROOT = 'shared';
 export const CHAT_SLOT = 'main';
 export const CHAT_MEDIA_TTL_DAYS = CONFIG_CHAT_MEDIA_TTL_DAYS;
 export const CHAT_MEDIA_TTL_MS = CONFIG_CHAT_MEDIA_TTL_MS;
 export const MAX_CHAT_UPLOAD_FILES = CHAT_MAX_UPLOAD_FILES;
 export const MAX_CHAT_IMAGE_EDGE = CHAT_IMAGE_MAX_EDGE;
 export const CHAT_IMAGE_COMPRESS = CONFIG_CHAT_IMAGE_COMPRESS;
-const MEDIA_ID_BYTES = CHAT_MEDIA_ID_BYTES;
-const MEDIA_ID_PATTERN = '[0-9a-fA-F]{32}';
-const MEDIA_FILE_PATTERN = new RegExp(`^${CHAT_MEDIA_ROOT}/(${MEDIA_ID_PATTERN})/${CHAT_SLOT}$`);
+const CHAT_ID_PATTERN = '[0-9a-fA-F]{64}';
+const SHARED_MEDIA_ID_PATTERN = '[0-9a-fA-F]{32}';
+const MESSAGE_KEY_PATTERN = '[A-Za-z0-9_-]{8,128}';
+const CHAT_MEDIA_FILE_PATTERN = new RegExp(`^${CHAT_MEDIA_ROOT}/(${CHAT_ID_PATTERN})/(${MESSAGE_KEY_PATTERN})/${CHAT_SLOT}$`);
+const SHARED_MEDIA_FILE_PATTERN = new RegExp(`^${SHARED_MEDIA_ROOT}/(${SHARED_MEDIA_ID_PATTERN})$`);
 
-export function makeMediaId() {
-    return toHex(randomBytes(MEDIA_ID_BYTES));
+export function cleanMediaChatId(value) {
+    const chatId = String(value || '').trim();
+    if (!new RegExp(`^${CHAT_ID_PATTERN}$`).test(chatId)) {
+        throw new Error('invalid media chat id');
+    }
+    return chatId.toLowerCase();
 }
 
-export function mediaFilePath(mediaId = makeMediaId(), slot = CHAT_SLOT) {
-    if (!mediaId || !slot) {
+export function cleanMediaMessageKey(value) {
+    const messageKey = String(value || '').trim();
+    if (!new RegExp(`^${MESSAGE_KEY_PATTERN}$`).test(messageKey)) {
+        throw new Error('invalid media message key');
+    }
+    return messageKey;
+}
+
+export function cleanSharedMediaId(value) {
+    const sharedId = String(value || '').trim();
+    if (!new RegExp(`^${SHARED_MEDIA_ID_PATTERN}$`).test(sharedId)) {
+        throw new Error('invalid shared media id');
+    }
+    return sharedId.toLowerCase();
+}
+
+export function mediaFilePath(chatId, messageKey, slot = CHAT_SLOT) {
+    const nextChatId = cleanMediaChatId(chatId);
+    const nextMessageKey = cleanMediaMessageKey(messageKey);
+    if (!slot) {
         throw new Error('media file path parts required');
     }
-    return `${CHAT_MEDIA_ROOT}/${mediaId}/${slot}`;
+    return `${CHAT_MEDIA_ROOT}/${nextChatId}/${nextMessageKey}/${slot}`;
 }
 
-export function getMediaFileId(path) {
-    const match = String(path || '').trim().match(MEDIA_FILE_PATTERN);
-    if (!match?.[1]) {
+export function sharedMediaFilePath(sharedId) {
+    const nextSharedId = cleanSharedMediaId(sharedId);
+    return `${SHARED_MEDIA_ROOT}/${nextSharedId}`;
+}
+
+export function makeSharedMediaId() {
+    return toHex(randomBytes(16));
+}
+
+export function getMediaFileRef(path) {
+    const value = String(path || '').trim();
+    const chatMatch = value.match(CHAT_MEDIA_FILE_PATTERN);
+    if (chatMatch?.[1] && chatMatch?.[2]) {
+        return {
+            type: 'chat',
+            chatId: chatMatch[1].toLowerCase(),
+            messageKey: chatMatch[2],
+            slot: CHAT_SLOT,
+        };
+    }
+
+    const sharedMatch = value.match(SHARED_MEDIA_FILE_PATTERN);
+    if (sharedMatch?.[1]) {
+        return {
+            type: 'shared',
+            sharedId: sharedMatch[1].toLowerCase(),
+        };
+    }
+
+    throw new Error('invalid media file path');
+}
+
+export function getChatMediaFileRef(path) {
+    const ref = getMediaFileRef(path);
+    if (ref?.type !== 'chat') {
         throw new Error('invalid media file path');
     }
-    return match[1];
+    return ref;
+}
+
+export function getSharedMediaFileRef(path) {
+    const ref = getMediaFileRef(path);
+    if (ref?.type !== 'shared') {
+        throw new Error('invalid shared media file path');
+    }
+    return ref;
 }
 
 export function makeTooManyChatFilesError(count) {
@@ -107,19 +170,20 @@ async function toUploadBytes(data) {
     return toBytes(data, 'upload bytes');
 }
 
-export async function makeChatFileUploadPayload(_pair, cid, data, { slot = CHAT_SLOT, contentType = 'application/octet-stream', cacheControl = 'private, max-age=0, no-transform', stay = '', stayKey = '' } = {}) {
-    const mediaId = makeMediaId();
-    const path = mediaFilePath(mediaId, slot);
+export async function makeChatFileUploadPayload(pair, cid, data, { slot = CHAT_SLOT, contentType = 'application/octet-stream', cacheControl = 'private, max-age=0, no-transform' } = {}) {
+    const chatId = cleanMediaChatId(pair?.chatId);
+    const messageKey = cleanMediaMessageKey(cid);
+    const path = mediaFilePath(chatId, messageKey, slot);
     const expiresAt = Date.now() + CHAT_MEDIA_TTL_MS;
-    const stayId = cleanText(stay);
-    const mediaStayKey = cleanText(stayKey);
     const key = createFileKey();
     try {
         const uploadBytes = await toUploadBytes(data);
         assertChatUploadByteSize(uploadBytes);
         return {
+            chatId,
+            messageKey,
             path,
-            body: await sealFile(_pair, key, uploadBytes, path),
+            body: await sealFile(pair, key, uploadBytes, path),
             metadata: {
                 contentType,
                 cacheControl,
@@ -128,14 +192,45 @@ export async function makeChatFileUploadPayload(_pair, cid, data, { slot = CHAT_
                 p: path,
                 k: encodeFileKey(key),
                 x: expiresAt,
-                ...(stayId ? { stay: stayId } : {}),
-                ...(stayId && mediaStayKey ? { stayKey: mediaStayKey } : {}),
             },
         };
     } catch (error) {
         if (error && typeof error === 'object') {
             error.path = error?.path || path;
             error.cid = error?.cid || cid;
+        }
+        throw error;
+    } finally {
+        cleanBytes(key);
+    }
+}
+
+export async function makeSharedFileUploadPayload(data, { contentType = 'application/octet-stream', cacheControl = 'private, max-age=0, no-transform' } = {}) {
+    const sharedId = makeSharedMediaId();
+    const path = sharedMediaFilePath(sharedId);
+    const expiresAt = Date.now() + CHAT_MEDIA_TTL_MS;
+    const key = createFileKey();
+    try {
+        const uploadBytes = await toUploadBytes(data);
+        assertChatUploadByteSize(uploadBytes);
+        return {
+            sharedId,
+            path,
+            body: await sealFile(null, key, uploadBytes, path),
+            metadata: {
+                contentType,
+                cacheControl,
+            },
+            file: {
+                p: path,
+                k: encodeFileKey(key),
+                x: expiresAt,
+            },
+        };
+    } catch (error) {
+        if (error && typeof error === 'object') {
+            error.path = error?.path || path;
+            error.sharedId = error?.sharedId || sharedId;
         }
         throw error;
     } finally {

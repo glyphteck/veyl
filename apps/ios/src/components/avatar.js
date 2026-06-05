@@ -9,7 +9,7 @@ import { getDotMetrics } from './dot';
 import Icon from '@/components/icon';
 import { useTap } from '@/lib/tap';
 import { useTheme } from '../providers/themeprovider';
-import { prefetchAvatarImage, readAvatarImageCache } from '../lib/user/avatarimages';
+import { loadAvatarImageCache, readAvatarImageCache } from '../lib/user/avatarimages';
 
 const AVATAR_ANIMATION_MS = 160;
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
@@ -32,7 +32,7 @@ function useAvatarImageSource(source) {
         return sourceNumber == null ? { uri: resolvedKey } : sourceNumber;
     }, [resolvedKey, sourceNumber]);
 
-    return { sourceKey, imageSource, cachedSource };
+    return { sourceKey, imageSource };
 }
 
 function isRemoteAvatarSource(sourceKey) {
@@ -40,12 +40,25 @@ function isRemoteAvatarSource(sourceKey) {
 }
 
 function useCachedAvatarSource(sourceKey) {
-    const cachedSource = useMemo(() => readAvatarImageCache(sourceKey), [sourceKey]);
+    const [cachedSource, setCachedSource] = useState(() => readAvatarImageCache(sourceKey));
 
     useEffect(() => {
-        if (!isRemoteAvatarSource(sourceKey) || cachedSource) return;
-        void prefetchAvatarImage(sourceKey);
-    }, [cachedSource, sourceKey]);
+        let cancelled = false;
+        const nextCachedSource = readAvatarImageCache(sourceKey);
+        setCachedSource((current) => (current === nextCachedSource ? current : nextCachedSource));
+
+        if (isRemoteAvatarSource(sourceKey) && !nextCachedSource) {
+            void loadAvatarImageCache(sourceKey).then((uri) => {
+                if (!cancelled && uri) {
+                    setCachedSource((current) => (current === uri ? current : uri));
+                }
+            });
+        }
+
+        return () => {
+            cancelled = true;
+        };
+    }, [sourceKey]);
 
     return cachedSource;
 }
@@ -363,10 +376,10 @@ export default function Avatar({
     const { theme } = useTheme();
     const resolvedGlyphColor = glyphColor ?? theme.foreground;
     const id = useId();
-    const { sourceKey, imageSource, cachedSource } = useAvatarImageSource(source);
+    const { sourceKey, imageSource } = useAvatarImageSource(source);
     const [loadedKey, setLoadedKey] = useState(() => (sourceKey && loadedSourceKeys.has(sourceKey) ? sourceKey : ''));
-    const alreadyLoaded = !!sourceKey && (assumeImageLoaded || loadedSourceKeys.has(sourceKey) || !!cachedSource);
-    const imageLoaded = !!sourceKey && (alreadyLoaded || !!cachedSource || loadedKey === sourceKey);
+    const alreadyLoaded = !!sourceKey && (assumeImageLoaded || loadedSourceKeys.has(sourceKey));
+    const imageLoaded = !!sourceKey && (alreadyLoaded || loadedKey === sourceKey);
     const dot = useMemo(() => getAvatarAdornmentMetrics(size), [size]);
     const maskItems = useMemo(() => [active ? { key: 'active', ...dot } : null, ...maskAdornments].map(normalizeMaskAdornment).filter(Boolean), [active, dot, maskAdornments]);
     const selectable = selected != null;

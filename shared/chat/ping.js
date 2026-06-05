@@ -18,6 +18,7 @@ function pingProofInput(payload) {
     return {
         v: CHAT_PING_VERSION,
         kind: cleanText(payload?.kind) || 'ping',
+        linkId: cleanText(payload?.linkId),
         chatId: cleanText(payload?.chatId),
         senderChatPK: cleanText(payload?.senderChatPK),
         senderUid: cleanText(payload?.senderUid),
@@ -32,7 +33,7 @@ function pingProof(root, payload) {
 }
 
 export async function sealPing(senderChatPK, senderPrivKey, recipientChatPK, fields = {}) {
-    const pair = await openChatPair(senderChatPK, senderPrivKey, recipientChatPK);
+    const pair = await openChatPair(senderChatPK, senderPrivKey, recipientChatPK, { chatId: fields.chatId });
     const eph = getKeyPair(randomBytes(32));
     const recipientPK = fromHex(recipientChatPK, 'recipient chat public key');
     const shared = x25519.getSharedSecret(eph.priv, recipientPK);
@@ -42,6 +43,7 @@ export async function sealPing(senderChatPK, senderPrivKey, recipientChatPK, fie
         const payload = {
             v: CHAT_PING_VERSION,
             kind: cleanText(fields.kind) || 'ping',
+            linkId: pair.linkId,
             chatId: pair.chatId,
             senderChatPK,
             senderUid: cleanText(fields.senderUid),
@@ -79,10 +81,11 @@ export async function openPing(chatPK, chatPrivKey, ping) {
         if (!senderChatPK || payload?.v !== CHAT_PING_VERSION) {
             throw new Error('invalid chat ping payload');
         }
-        const pair = await openChatPair(chatPK, chatPrivKey, senderChatPK);
-        if (payload.chatId !== pair.chatId || payload.proof !== pingProof(pair.root, payload)) {
+        const linkPair = await openChatPair(chatPK, chatPrivKey, senderChatPK);
+        if (payload.linkId !== linkPair.linkId || payload.proof !== pingProof(linkPair.root, payload)) {
             throw new Error('invalid chat ping proof');
         }
+        const pair = await openChatPair(chatPK, chatPrivKey, senderChatPK, { chatId: payload.chatId });
         return {
             pair,
             payload: {

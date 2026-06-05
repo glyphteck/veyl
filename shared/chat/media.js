@@ -1,6 +1,6 @@
 'use client';
 
-import { putChatFile, readChatFile } from '../files.js';
+import { putChatFile, putSharedFile, readChatFile } from '../files.js';
 import { makeAttachment, makeFile, makeImg, makeMp3, makeMp4 } from './messages.js';
 
 export function pickAttachmentMeta(meta = {}) {
@@ -30,34 +30,42 @@ function buildAttachmentMsg(type, file) {
     }
 }
 
-export async function putAttachment(storage, pair, cid, type, data, meta = {}) {
-    const file = await putChatFile(storage, pair, cid, data, meta);
+export async function putAttachment(pair, cid, type, data, meta = {}) {
+    const file = await putChatFile(pair, cid, data, meta);
     return buildAttachmentMsg(type, {
         ...file,
         ...pickAttachmentMeta(meta),
     });
 }
 
-export async function putImg(storage, pair, cid, data, meta = {}) {
-    return putAttachment(storage, pair, cid, 'img', data, meta);
+export async function putSharedAttachment(type, data, meta = {}) {
+    const file = await putSharedFile(data, meta);
+    return buildAttachmentMsg(type, {
+        ...file,
+        ...pickAttachmentMeta(meta),
+    });
 }
 
-export async function putMp3(storage, pair, cid, data, meta = {}) {
-    return putAttachment(storage, pair, cid, 'mp3', data, meta);
+export async function putImg(pair, cid, data, meta = {}) {
+    return putAttachment(pair, cid, 'img', data, meta);
 }
 
-export async function putMp4(storage, pair, cid, data, meta = {}) {
-    return putAttachment(storage, pair, cid, 'mp4', data, meta);
+export async function putMp3(pair, cid, data, meta = {}) {
+    return putAttachment(pair, cid, 'mp3', data, meta);
 }
 
-export async function putFile(storage, pair, cid, data, meta = {}) {
-    return putAttachment(storage, pair, cid, 'file', data, meta);
+export async function putMp4(pair, cid, data, meta = {}) {
+    return putAttachment(pair, cid, 'mp4', data, meta);
 }
 
-export function readMsgAttachment(storage, pair, msg) {
-    return readChatFile(storage, pair, msg);
+export async function putFile(pair, cid, data, meta = {}) {
+    return putAttachment(pair, cid, 'file', data, meta);
 }
 
-export function readMsgFile(storage, pair, msg) {
-    return readMsgAttachment(storage, pair, msg);
+export function readMsgAttachment(readChatMedia, pair, msg) {
+    return readChatFile(readChatMedia, pair, msg);
+}
+
+export function readMsgFile(readChatMedia, pair, msg) {
+    return readMsgAttachment(readChatMedia, pair, msg);
 }

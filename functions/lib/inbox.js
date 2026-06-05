@@ -3,6 +3,7 @@ import { db, Timestamp } from './admin.js';
 import { getPushDocs, sendPush as notifyPush } from './push.js';
 import { isChatBanned } from './moderation.js';
 import { DAY_MS } from './ratelimit.js';
+import { isUsername, normalizeUsername } from './regex.js';
 
 const UID_RE = /^[^/]{1,128}$/;
 const PING_BODY_MAX_BYTES = 64 * 1024;
@@ -61,21 +62,23 @@ export function cleanPing(value) {
     };
 }
 
-function notificationTitle(profile) {
-    const username = cleanString(profile?.username);
+function cleanUsername(value) {
+    const username = normalizeUsername(value || '');
+    return isUsername(username) ? username : '';
+}
+
+function notificationTitle(username) {
     return username ? `@${username}` : 'New message';
+}
+
+async function readSenderUsername(senderUid) {
+    const snap = await db.collection('profiles').doc(senderUid).get();
+    return cleanUsername(snap.data()?.username);
 }
 
 function timestampMs(value) {
     const ms = typeof value?.toMillis === 'function' ? value.toMillis() : Number(value);
     return Number.isFinite(ms) ? ms : Date.now();
-}
-
-async function profile(uid) {
-    inboxLog('read profile', { uid: safeLogId(uid) });
-    const snap = await db.collection('profiles').doc(uid).get();
-    inboxLog('read profile done', { uid: safeLogId(uid), hit: snap.exists });
-    return snap.exists ? { uid: snap.id, ...snap.data() } : null;
 }
 
 export async function sendPush({ senderUid, recipientUid, ping, now = Timestamp.now(), sendNotification = true }) {
@@ -84,28 +87,17 @@ export async function sendPush({ senderUid, recipientUid, ping, now = Timestamp.
     if (sender === recipient) {
         throw new HttpsError('invalid-argument', 'cannot push self');
     }
-
     inboxLog('read push checks', { senderUid: safeLogId(sender), recipientUid: safeLogId(recipient) });
-    const [senderProfile, recipientProfile, senderBanned, blockedSnap] = await Promise.all([
-        profile(sender),
-        profile(recipient),
+    const [senderBanned, blockedSnap] = await Promise.all([
         isChatBanned(sender),
         db.collection('users').doc(recipient).collection('blocked').doc(sender).get(),
     ]);
     inboxLog('read push checks done', {
         senderUid: safeLogId(sender),
         recipientUid: safeLogId(recipient),
-        senderProfile: Boolean(senderProfile),
-        recipientProfile: Boolean(recipientProfile),
         senderBanned,
         blocked: blockedSnap.exists,
     });
-    if (!senderProfile) {
-        throw new HttpsError('failed-precondition', 'sender profile missing');
-    }
-    if (!recipientProfile) {
-        throw new HttpsError('not-found', 'recipient');
-    }
     if (senderBanned) {
         throw new HttpsError('permission-denied', 'chat unavailable');
     }
@@ -132,10 +124,16 @@ export async function sendPush({ senderUid, recipientUid, ping, now = Timestamp.
         return { pingId: pingRef.id, sent: 0 };
     }
 
+    const username = await readSenderUsername(sender);
+    if (!username) {
+        console.warn('push notification skipped: sender username missing', { senderUid: safeLogId(sender), recipientUid: safeLogId(recipient) });
+        return { pingId: pingRef.id, sent: 0 };
+    }
+
     inboxLog('send push notification', { recipientUid: safeLogId(recipient), count: pushDocs.length });
     await notifyPush(recipient, pushDocs, {
         collapseId: `chat-${recipient}`,
-        title: notificationTitle(senderProfile),
+        title: notificationTitle(username),
         body: 'sent you a message',
         data: {
             type: 'chat',

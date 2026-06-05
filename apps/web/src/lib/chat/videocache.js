@@ -68,6 +68,13 @@ export function loadVideoObjectUrl(peerChatPK, msg, readMessageFile, options = {
     return task;
 }
 
+export function readCachedMsgVideoUrl(peerChatPK, msg) {
+    if (msg?.t !== 'mp4' || !peerChatPK || !hasStoredFileRef(msg) || isExpiredAttachmentMsg(msg)) {
+        return '';
+    }
+    return videoCache.getReady(getVideoCacheKey(peerChatPK, msg))?.url || '';
+}
+
 export function getReadyPoster(key) {
     return videoPosterCache.getReadyUrl(key, { touch: true });
 }

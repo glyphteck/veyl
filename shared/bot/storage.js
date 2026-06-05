@@ -1,5 +1,5 @@
 import { decodeFileKey, openFileForPath } from '../crypto/file.js';
-import { getMediaFileId, makeChatFileUploadPayload } from '../chat/filepayload.js';
+import { getMediaFileRef, makeChatFileUploadPayload } from '../chat/filepayload.js';
 import { pickAttachmentMeta } from '../chat/media.js';
 
 function buildAttachmentMessage(type, file, meta = {}) {
@@ -8,8 +8,6 @@ function buildAttachmentMessage(type, file, meta = {}) {
         p: file.p,
         k: file.k,
         ...(Number.isFinite(file?.x) ? { x: file.x } : {}),
-        ...(typeof file?.stay === 'string' && file.stay ? { stay: file.stay } : {}),
-        ...(typeof file?.stay === 'string' && file.stay && typeof file?.stayKey === 'string' && file.stayKey ? { stayKey: file.stayKey } : {}),
         ...pickAttachmentMeta(meta),
     };
 }
@@ -21,8 +19,6 @@ export async function putBotAttachment(bucket, pair, cid, type, data, meta = {})
 
     const upload = await makeChatFileUploadPayload(pair, cid, data, {
         contentType: meta?.mimeType || 'application/octet-stream',
-        stay: typeof meta?.stay === 'string' ? meta.stay : '',
-        stayKey: typeof meta?.stayKey === 'string' ? meta.stayKey : '',
     });
 
     const file = bucket.file(upload.path);
@@ -41,6 +37,6 @@ export async function readBotAttachment(bucket, msg) {
     }
 
     const [body] = await bucket.file(msg?.p).download();
-    getMediaFileId(msg?.p);
+    getMediaFileRef(msg?.p);
     return openFileForPath(decodeFileKey(msg?.k), new Uint8Array(body), msg?.p);
 }

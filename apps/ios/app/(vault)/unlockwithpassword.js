@@ -22,7 +22,7 @@ import { isPassword, MAX_PASSWORD, normalizePassword } from '@veyl/shared/passwo
 export default function UnlockScreen() {
     const { theme } = useTheme();
     const router = useRouter();
-    const { unlockWithPsw, lockState, encSeed, lock } = useVault();
+    const { unlockWithPsw, lockState, vault, lock } = useVault();
     const user = useUser();
 
     const [password, setPassword] = useState('');
@@ -36,15 +36,15 @@ export default function UnlockScreen() {
 
     const coverStyle = useAnimatedStyle(() => ({ opacity: cover.value }));
 
-    const seedReady = !!encSeed;
+    const vaultReady = !!vault;
     const isUnlocking = status === 'loading' || lockState === 'unlocking' || lockState === 'seed-decrypted';
-    const disabled = isUnlocking || !seedReady || isCovering;
+    const disabled = isUnlocking || !vaultReady || isCovering;
 
     const labelText = useMemo(() => {
-        if (!seedReady) return 'loading your vault';
+        if (!vaultReady) return 'loading your vault';
         if (status === 'error') return 'wrong password';
         return 'unlock your vault';
-    }, [status, seedReady]);
+    }, [status, vaultReady]);
 
     useEffect(() => {
         if (isUnlocking) {
@@ -84,7 +84,7 @@ export default function UnlockScreen() {
     const onSubmit = async () => {
         if (!canSubmit) return;
         const startedAt = Date.now();
-        mark('unlock.password.submit.start', { seedReady, lockState });
+        mark('unlock.password.submit.start', { vaultReady, lockState });
         try {
             await swap(() => setStatus('loading'));
             await unlockWithPsw(normalizePassword(password), { source: 'password', onSeedDecrypted: animateUnlock });

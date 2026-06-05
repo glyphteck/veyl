@@ -171,13 +171,13 @@ export function createPeerProvider({ useChat, useUser, useTxData, useVault, peer
             [fetchAndCachePeer, walletPeers]
         );
 
-        const updatePeers = useCallback(async (uids, { throttleMs = 0, refreshAvatar = false } = {}) => {
+        const updatePeers = useCallback(async (uids, { throttleMs = 0 } = {}) => {
             const uniqueUids = uniqueValues(uids);
             if (!uniqueUids.length) return [];
 
             const results = [];
             for (const uid of uniqueUids) {
-                const result = await updatePeerByUID(uid, { refreshAvatar });
+                const result = await updatePeerByUID(uid);
                 if (result) results.push(result);
                 if (throttleMs > 0) {
                     await sleep(throttleMs);
@@ -192,8 +192,8 @@ export function createPeerProvider({ useChat, useUser, useTxData, useVault, peer
         }, []);
 
         const updatePeer = useCallback(
-            async (uid, options = {}) => {
-                const results = await updatePeers([uid], options);
+            async (uid) => {
+                const results = await updatePeers([uid]);
                 return results[0] ?? null;
             },
             [updatePeers]

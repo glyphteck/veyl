@@ -95,8 +95,8 @@ Use [workflow.md](workflow.md) for the detailed task-file, branch, worktree, han
 
 - When touching auth, remember accounts are company-wide and passkeys are rooted at `glyphteck.com`.
 - When touching encrypted chat, treat payload shape changes as cross-platform and backend-sensitive.
-- When touching chat lifecycle, keep the shared module as the source of truth for retention, read visibility, owner saved records, hidden checkpoints, hard source-doc deletion, and action-log rendering. Do not duplicate those calculations in web and iOS message lists.
-- Chat/account deletion UI must use shared provider flows, not direct callable invocations, so encrypted saved-media stays can be collected before server-side message deletion and released afterward.
+- When touching chat lifecycle, keep the shared module as the source of truth for retention, read visibility, saved-message TTL, hidden checkpoints, hard source-doc deletion, and action-log rendering. Do not duplicate those calculations in web and iOS message lists.
+- Chat/account deletion UI must use shared provider flows, not direct callable invocations, so message deletes can pass saved/media keys and whole-chat deletes can remove the chat media prefix consistently.
 - When touching wallet code, remember that boot, address derivation, transfer history, and peer analytics are spread across vault, wallet, and tx data providers.
 - When touching bots, start with deterministic scripted behavior and normal account primitives.
 - Bot action contracts belong in `shared/bot/*`; admin scripts and runtimes should consume the same validators instead of carrying parallel rules.

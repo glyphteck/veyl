@@ -29,6 +29,7 @@ Before starting feature work in this repo:
 - Use `bun map` for a compact live repo map before broad crawls, and use `bun check:paths` after file moves or import-path restructures.
 - Work in the current branch by default. Do not create, switch, or rename git branches unless the user explicitly asks for branch work or the concurrent-agent collision rule below applies.
 - When creating branches, never use agent prefixes or namespace prefixes like `codex/`, `codex-`, or similar. Branch names should be as short as possible; prefer a meaningful single word when one is clear, using the naming rules in [guidelines/code.md](guidelines/code.md).
+- Treat committed commits as stable. Do not amend, rebase, squash, reset, or otherwise rewrite existing commits unless the user explicitly asks for history cleanup.
 - When running repo push or merge workflows, use a specific commit message that describes the actual changes being committed. Do not use vague defaults like `update` unless the user explicitly asks for that exact message.
 - Before running repo push or merge workflows, update [CHANGELOG.md](CHANGELOG.md). Broad updates need grouped, concrete bullets; narrow fixes can use one short bugfix or cleanup entry, but it must still name the actual change.
 - Veyl wallet/backend data is pre-production unless the user says otherwise. Do not add legacy wallet/account compatibility or migrations by default; prefer the clean current architecture. Still ask before destructive live backend data deletion.

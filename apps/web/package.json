@@ -1,6 +1,6 @@
 {
     "name": "@glyphteck/veyl-web",
-    "version": "2.7.5",
+    "version": "0.7.0",
     "appName": "veyl",
     "private": true,
     "license": "Apache-2.0",

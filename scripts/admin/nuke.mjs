@@ -7,11 +7,33 @@ import { uniqueValues } from '@veyl/shared/utils/array';
 import { lowerText } from '@veyl/shared/utils/text';
 
 const ALL = ['db', 'storage', 'auth'];
-const EXTRA = ['bots'];
+const EXTRA = ['chat', 'bots'];
 const KNOWN = [...ALL, ...EXTRA];
 
+const CHAT_ROOT_COLLECTIONS = Object.freeze([
+    'chats',
+    'links',
+    'chatMedia',
+    'mediaStays',
+    'media_upload_reservations',
+    'shared_media_upload_reservations',
+]);
+
+const USER_CHAT_SUBCOLLECTIONS = Object.freeze([
+    'chats',
+    'inbox',
+    'savedMessages',
+]);
+
+const CHAT_STORAGE_PREFIXES = Object.freeze([
+    'chat-media/',
+    'shared/',
+    'media/',
+]);
+
 function usage() {
-    console.error('usage: bun nuke <db|storage|auth|bots|all> [...]');
+    console.error('usage: bun nuke <db|storage|auth|chat|bots|all> [...]');
+    console.error('usage: bun nuke chat');
     console.error('usage: bun nuke bots [@username|uid]');
     process.exit(1);
 }
@@ -44,7 +66,7 @@ function parseArgs(args) {
             continue;
         }
 
-        if (ALL.includes(target)) {
+        if (ALL.includes(target) || target === 'chat') {
             targets.add(target);
             continue;
         }
@@ -65,6 +87,21 @@ async function mapLimit(items, limit, mapper) {
     }
 }
 
+function isMissingError(error) {
+    return error?.code === 404
+        || error?.code === 5
+        || error?.errors?.some?.((item) => item?.reason === 'notFound');
+}
+
+async function recursiveDelete(ref) {
+    await db.recursiveDelete(ref).catch((error) => {
+        if (isMissingError(error) || /not found/i.test(String(error?.message || ''))) {
+            return;
+        }
+        throw error;
+    });
+}
+
 async function nukeDb() {
     const deleted = [];
     let rounds = 0;
@@ -75,7 +112,7 @@ async function nukeDb() {
 
         rounds += 1;
         for (const collection of collections.sort((a, b) => a.id.localeCompare(b.id))) {
-            await db.recursiveDelete(collection);
+            await recursiveDelete(collection);
             deleted.push(collection.id);
         }
     }
@@ -88,6 +125,73 @@ async function nukeDb() {
     return {
         collections: deleted,
         rounds,
+    };
+}
+
+async function deleteChatRootCollections() {
+    const deleted = [];
+    for (const name of CHAT_ROOT_COLLECTIONS) {
+        await recursiveDelete(db.collection(name));
+        deleted.push(name);
+    }
+    return deleted;
+}
+
+async function deleteUserChatState() {
+    const users = await db.collection('users').listDocuments();
+    let deleted = 0;
+
+    for (const userRef of users) {
+        for (const name of USER_CHAT_SUBCOLLECTIONS) {
+            await recursiveDelete(userRef.collection(name));
+            deleted += 1;
+        }
+    }
+
+    return { users: users.length, subcollections: deleted };
+}
+
+async function deleteStoragePrefix(bucket, prefix) {
+    let deleted = 0;
+
+    while (true) {
+        const [files] = await bucket.getFiles({ prefix, autoPaginate: false, maxResults: 1000 });
+        if (!files.length) return deleted;
+
+        await mapLimit(files, 20, async (file) => {
+            await file.setMetadata({ temporaryHold: false }).catch((error) => {
+                if (isMissingError(error)) return;
+                throw error;
+            });
+            await file.delete({ ignoreNotFound: true }).catch((error) => {
+                if (isMissingError(error)) return;
+                throw error;
+            });
+            deleted += 1;
+        });
+    }
+}
+
+async function deleteChatStorage() {
+    const bucket = admin.storage().bucket();
+    const prefixes = [];
+
+    for (const prefix of CHAT_STORAGE_PREFIXES) {
+        prefixes.push({ prefix, deleted: await deleteStoragePrefix(bucket, prefix) });
+    }
+
+    return { bucket: bucket.name, prefixes };
+}
+
+async function nukeChat() {
+    const roots = await deleteChatRootCollections();
+    const users = await deleteUserChatState();
+    const storage = await deleteChatStorage();
+
+    return {
+        rootCollections: roots,
+        users,
+        storage,
     };
 }
 
@@ -133,6 +237,7 @@ const runners = {
     db: nukeDb,
     storage: nukeStorage,
     auth: nukeAuth,
+    chat: nukeChat,
     bots: nukeBots,
 };
 
@@ -156,6 +261,15 @@ function printResult(target, result) {
     if (target === 'auth') {
         const failed = result.failed ? `, ${result.failed} failed` : '';
         console.log(`deleted ${plural(result.deleted, 'auth user')}${failed}`);
+        return;
+    }
+
+    if (target === 'chat') {
+        const roots = result.rootCollections.join(', ');
+        const storage = result.storage.prefixes.map((item) => `${item.prefix}${item.deleted}`).join(', ');
+        console.log(`deleted chat root collections: ${roots}`);
+        console.log(`deleted ${plural(result.users.subcollections, 'user chat subcollection')} across ${plural(result.users.users, 'user')}`);
+        console.log(`deleted chat storage objects from ${result.storage.bucket}: ${storage}`);
         return;
     }
 

@@ -25,6 +25,7 @@ export default function GlassIcon({
     glassEffectStyle,
     pressableStyle,
     drift,
+    isInteractive = false,
 }) {
     const { theme } = useTheme();
     const scale = useSharedValue(1);
@@ -57,7 +58,7 @@ export default function GlassIcon({
                     style,
                 ]}
             >
-                <GlassView glassEffectStyle={resolvedGlassEffectStyle} tintColor={resolvedTintColor} style={[{ flex: 1, alignItems: 'center', justifyContent: 'center', borderRadius }, glassStyle]}>
+                <GlassView glassEffectStyle={resolvedGlassEffectStyle} tintColor={resolvedTintColor} isInteractive={isInteractive} style={[{ flex: 1, alignItems: 'center', justifyContent: 'center', borderRadius }, glassStyle]}>
                     {visible ? <Icon icon={icon} size={iconSize} color={resolvedColor} style={{ margin: inset }} /> : null}
                 </GlassView>
             </Animated.View>

@@ -6,7 +6,7 @@ import { hasCurrentCommunityRules } from '@veyl/shared/community';
 import { useTheme } from '@/providers/themeprovider';
 import AvatarPicker from '@/components/avatarpicker';
 import GlassButton from '@/components/glass/glassbutton';
-import { auth } from '@/lib/firebase';
+import { cloud } from '@/lib/cloud';
 import { skipAvatar, uploadAvatar } from '@/lib/avatarupload';
 import { useTap } from '@/lib/tap';
 import { useUser } from '@/providers/userprovider';
@@ -19,7 +19,7 @@ export default function NewUserAvatar() {
     const { theme } = useTheme();
     const router = useRouter();
     const { uid, hasAvatarEntry, refetchAvatar, communityRulesVersion, communityRulesAcceptedAt, communityRulesPending } = useUser();
-    const { encSeed } = useVault();
+    const { vault } = useVault();
     const [selectedAsset, setSelectedAsset] = useState(null);
     const [pendingAction, setPendingAction] = useState(null);
     const isUploading = !!pendingAction;
@@ -33,7 +33,7 @@ export default function NewUserAvatar() {
     const actionTransitionRef = useRef(0);
     const { lockRoute } = useRouteLock();
     const acceptedRules = hasCurrentCommunityRules({ communityRulesVersion, communityRulesAcceptedAt, communityRulesPending });
-    const isOnboarding = !hasAvatarEntry || !encSeed || !acceptedRules;
+    const isOnboarding = !hasAvatarEntry || !vault || !acceptedRules;
     const pendingLabel = pendingAction === 'upload' ? 'uploading avatar' : pendingAction === 'skip' ? 'confirming' : '';
     const title = pendingLabel || 'set your avatar';
     const canContinue = hasSelectedAsset && !isUploading;
@@ -100,7 +100,7 @@ export default function NewUserAvatar() {
             return;
         }
 
-        const effectiveUid = uid || auth.currentUser?.uid;
+        const effectiveUid = uid || cloud.auth.user?.uid;
         if (!effectiveUid) {
             Alert.alert('Not ready', 'Your profile is still loading. Please try again in a moment.');
             return;
@@ -134,7 +134,7 @@ export default function NewUserAvatar() {
         if (!selectedAsset) return;
         if (isUploading) return;
 
-        const effectiveUid = uid || auth.currentUser?.uid;
+        const effectiveUid = uid || cloud.auth.user?.uid;
         if (!effectiveUid) {
             Alert.alert('Not ready', 'Your profile is still loading. Please try again in a moment.');
             return;

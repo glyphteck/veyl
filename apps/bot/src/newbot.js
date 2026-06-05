@@ -171,6 +171,7 @@ export async function provisionBot(rawInput) {
         await admin.auth().setCustomUserClaims(uid, {
             ...(user.customClaims || {}),
             bot: true,
+            username,
         });
 
         return {

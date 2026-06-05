@@ -81,7 +81,7 @@ export default function UserDetails({ data, close }) {
 
     useEffect(() => {
         if (user?.uid && user.uid !== uid) {
-            updatePeer(user.uid, { refreshAvatar: true });
+            updatePeer(user.uid);
         }
     }, [user?.uid, uid, updatePeer]);
 

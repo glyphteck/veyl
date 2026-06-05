@@ -12,11 +12,10 @@ import { BitcoinProvider } from '@/providers/bitcoinprovider';
 import { VaultProvider, useVault } from '@/providers/vaultprovider';
 import { Stack } from 'expo-router';
 import { usePathname } from 'expo-router';
-import { onAuthStateChanged } from 'firebase/auth';
 import * as SplashScreen from 'expo-splash-screen';
 import { hasCurrentCommunityRules } from '@veyl/shared/community';
 import { cleanText } from '@veyl/shared/utils/text';
-import { auth } from '@/lib/firebase';
+import { cloud } from '@/lib/cloud';
 import { KeyboardRootProvider } from '@/components/keyboardscroll';
 import { installDiagnostics, mark } from '@/lib/diagnostics';
 import { stackScreenOptions } from '@/lib/navigation/stackoptions';
@@ -60,14 +59,14 @@ function safeRoute(pathname) {
 function AppContent() {
     const { theme } = useTheme();
     const user = useUser();
-    const { seedReady, encSeed, lockState, touch } = useVault();
+    const { vaultReady, vault, lockState, touch } = useVault();
     const pathname = usePathname();
-    const [authReady, setAuthReady] = useState(!!auth.currentUser);
+    const [authReady, setAuthReady] = useState(!!cloud.auth.user);
     const [ready, setReady] = useState(false);
 
     useEffect(() => {
         if (authReady) return;
-        const unsub = onAuthStateChanged(auth, () => {
+        const unsub = cloud.auth.watch(() => {
             setAuthReady(true);
             unsub();
         });
@@ -78,9 +77,9 @@ function AppContent() {
         mark('route.path', { pathname, route: safeRoute(pathname) });
     }, [pathname]);
 
-    const hasAuthSession = !!auth.currentUser || !!user.uid;
+    const hasAuthSession = !!cloud.auth.user || !!user.uid;
     const signedIn = !!user.uid;
-    const routeReady = !hasAuthSession || (signedIn && user.profileReady && user.settingsReady && seedReady);
+    const routeReady = !hasAuthSession || (signedIn && user.profileReady && user.settingsReady && vaultReady);
     const loaded = authReady && (!hasAuthSession || routeReady);
 
     useEffect(() => {
@@ -94,9 +93,9 @@ function AppContent() {
 
     const hasUsername = !!user.username;
     const hasAvatarEntry = !!user.hasAvatarEntry;
-    const hasSeed = !!encSeed;
+    const hasVault = !!vault;
     const acceptedRules = hasCurrentCommunityRules(user);
-    const onboardingComplete = hasUsername && hasAvatarEntry && hasSeed && acceptedRules;
+    const onboardingComplete = hasUsername && hasAvatarEntry && hasVault && acceptedRules;
     const showLogin = !signedIn || !routeReady;
     const showAuthed = signedIn && routeReady;
 
@@ -107,14 +106,14 @@ function AppContent() {
             signedIn,
             profileReady: !!user.profileReady,
             settingsReady: !!user.settingsReady,
-            seedReady: !!seedReady,
+            vaultReady: !!vaultReady,
             lockState,
             routeReady,
             loaded,
             ready,
             onboardingComplete,
         });
-    }, [authReady, hasAuthSession, loaded, lockState, onboardingComplete, ready, routeReady, seedReady, signedIn, user.profileReady, user.settingsReady]);
+    }, [authReady, hasAuthSession, loaded, lockState, onboardingComplete, ready, routeReady, vaultReady, signedIn, user.profileReady, user.settingsReady]);
 
     if (!ready) {
         return null;

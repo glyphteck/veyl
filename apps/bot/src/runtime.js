@@ -1056,7 +1056,7 @@ export class BotRuntime {
         const snap = await db.collection('chats').doc(chatId).collection('messages').orderBy('ts', 'desc').limit(TRAFFIC_READ_RECEIPT_SCAN_LIMIT).get();
         for (const msgSnap of snap.docs) {
             const data = msgSnap.data();
-            const msg = await decryptBotMsg(data, session.chatPK, session.chatPrivKey, peerChatPK, { actors: entry?.actors }).catch(() => null);
+            const msg = await decryptBotMsg(data, session.chatPK, session.chatPrivKey, peerChatPK, { actors: entry?.actors, chatId }).catch(() => null);
             if (!msg || msg.s !== peerChatPK || isControlMsg(msg) || isSystemMsg(msg) || (msg.actionOp && msg.actionOp !== 'create')) {
                 continue;
             }
@@ -1648,7 +1648,7 @@ export class BotRuntime {
     }
 
     async readChatMessage(session, context, msgData) {
-        const msg = await decryptBotMsg(msgData, session.chatPK, session.chatPrivKey, context.peerChatPK, { actors: context.actors }).catch(() => null);
+        const msg = await decryptBotMsg(msgData, session.chatPK, session.chatPrivKey, context.peerChatPK, { actors: context.actors, chatId: context.chatId }).catch(() => null);
         if (!msg) {
             return null;
         }
@@ -1678,6 +1678,7 @@ export class BotRuntime {
                 data: body,
                 meta: attachmentFields(msg),
             }, {
+                chatId: context.chatId,
                 msgId,
                 retention: context.retention,
                 senderUid: session.uid,
@@ -1688,6 +1689,7 @@ export class BotRuntime {
         }
 
         await this.sendPayload(session, context.peerChatPK, cleanPayload(msg), {
+            chatId: context.chatId,
             cid: botReplyCid(context, 'reply'),
             msgId: botReplyId(context, 'reply'),
             retention: context.retention,
@@ -1720,6 +1722,7 @@ export class BotRuntime {
 
         if (!Number.isFinite(balance) || balance < amountSats) {
             await this.sendPayload(session, context.peerChatPK, makeTxt(BOT_UNDERFUNDED_TEXT), {
+                chatId: context.chatId,
                 cid: botReplyCid(context, 'funds'),
                 msgId: botReplyId(context, 'funds'),
                 retention: context.retention,
@@ -1738,6 +1741,7 @@ export class BotRuntime {
         }
 
         await this.sendPayload(session, context.peerChatPK, makeReq(amount), {
+            chatId: context.chatId,
             cid: botReplyCid(context, 'req'),
             msgId: botReplyId(context, 'req'),
             retention: context.retention,
@@ -1766,6 +1770,8 @@ export class BotRuntime {
             cid: options.cid || makeCid(),
         }, {
             ...(options.msgId ? { msgId: options.msgId } : {}),
+            ...(options.chatId ? { chatId: options.chatId } : {}),
+            ...(options.linkId ? { linkId: options.linkId } : {}),
             retention: options.retention,
             senderUid: session.uid,
             receiverUid: options.receiverUid,
@@ -1786,7 +1792,7 @@ export class BotRuntime {
                 cid: makeCid(),
                 s: session.chatPK,
             },
-            { updateLastMsg: false, retention, senderUid: session.uid, ...(msgId ? { msgId } : {}) }
+            { updateLastMsg: false, retention, senderUid: session.uid, ...(context.chatId ? { chatId: context.chatId } : {}), ...(msgId ? { msgId } : {}) }
         );
     }
 
@@ -1803,7 +1809,7 @@ export class BotRuntime {
                 cid: makeCid(),
                 s: session.chatPK,
             },
-            { updateLastMsg: false, retention, senderUid: session.uid, ...(msgId ? { msgId } : {}) }
+            { updateLastMsg: false, retention, senderUid: session.uid, ...(context.chatId ? { chatId: context.chatId } : {}), ...(msgId ? { msgId } : {}) }
         );
     }
 }

@@ -2,8 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Animated as RNAnimated, Keyboard, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { signOut } from 'firebase/auth';
-import { httpsCallable } from 'firebase/functions';
 import { BanknoteArrowUp, ChevronLeft, Eye, EyeOff, KeyRound, Lock, Trash2 } from 'lucide-react-native';
 import Animated, { cancelAnimation, useAnimatedStyle, useSharedValue, withRepeat, withSequence, withTiming } from 'react-native-reanimated';
 
@@ -13,17 +11,17 @@ import GlassHeader from '@/components/glass/glassheader';
 import GlassIcon from '@/components/glass/glassicon';
 import GlassView from '@/components/glass/glassview';
 import Icon from '@/components/icon';
-import { auth, functions } from '@/lib/firebase';
+import { cloud } from '@/lib/cloud';
 import { clearFaceIdPassword } from '@/lib/faceid';
 import { dropPush } from '@/lib/push';
 import { useTap } from '@/lib/tap';
 import { userAvatarCache } from '@/lib/user/avatarcache';
 import { useBitcoin } from '@/providers/bitcoinprovider';
+import { useChat } from '@/providers/chatprovider';
 import { useTheme } from '@/providers/themeprovider';
 import { useUser } from '@/providers/userprovider';
 import { useVault } from '@/providers/vaultprovider';
 import { useWallet } from '@/providers/walletprovider';
-import { useChat } from '@/providers/chatprovider';
 import { renderMoney } from '@veyl/shared/money';
 import { yieldToUi } from '@veyl/shared/utils/async';
 import { hasAvailableBalance } from '@veyl/shared/wallet/balance';
@@ -44,9 +42,9 @@ export default function DeleteAccountScreen() {
     const insets = useSafeAreaInsets();
     const buttonColor = theme.background;
     const router = useRouter();
-    const { encSeed, localCache, lock } = useVault();
-    const { collectAccountSavedMediaStays, releaseSavedMediaStays } = useChat();
+    const { vault, localCache, lock } = useVault();
     const { uid, settings, clearAvatar } = useUser();
+    const { deleteAllChats } = useChat() || {};
     const bitcoin = useBitcoin();
     const { balance } = useWallet();
     const openRef = useRef(true);
@@ -121,7 +119,7 @@ export default function DeleteAccountScreen() {
 
         try {
             await yieldToUi();
-            await verifyVaultPassword(encSeed, password);
+            await verifyVaultPassword(vault, password);
             if (openRef.current) {
                 setIsVerified(true);
                 setPassword('');
@@ -138,7 +136,7 @@ export default function DeleteAccountScreen() {
                 setIsVerifying(false);
             }
         }
-    }, [encSeed, isDeleting, isVerifying, password, yieldToUi]);
+    }, [vault, isDeleting, isVerifying, password, yieldToUi]);
 
     const handleDelete = useCallback(async () => {
         if (!uid || !isVerified || isDeleting) return;
@@ -146,16 +144,15 @@ export default function DeleteAccountScreen() {
         setIsDeleting(true);
 
         try {
-            const savedMediaStays = await collectAccountSavedMediaStays?.();
             await dropPush({ uid }).catch(() => {});
-            await httpsCallable(functions, 'deleteAccount')();
-            await releaseSavedMediaStays?.(savedMediaStays)?.catch(() => {});
+            await deleteAllChats?.();
+            await cloud.user.delete();
             await localCache?.clear?.().catch(() => {});
             clearAvatar?.();
             await clearFaceIdPassword(uid).catch(() => {});
             await userAvatarCache.forget?.(uid).catch(() => {});
             lock?.();
-            await signOut(auth).catch(() => {});
+            await cloud.auth.logout().catch(() => {});
         } catch (err) {
             console.warn('delete account failed', err);
             if (openRef.current) {
@@ -163,7 +160,7 @@ export default function DeleteAccountScreen() {
                 setIsDeleting(false);
             }
         }
-    }, [clearAvatar, collectAccountSavedMediaStays, isDeleting, isVerified, localCache, lock, releaseSavedMediaStays, uid]);
+    }, [clearAvatar, deleteAllChats, isDeleting, isVerified, localCache, lock, uid]);
 
     const WarningCopy = () => (
         <GlassView glassEffectStyle="clear" tintColor={theme.background} style={{ borderRadius: 24, paddingHorizontal: 18, paddingVertical: 18, gap: 12 }}>

@@ -1,8 +1,6 @@
 'use client';
 
-import { signInWithCustomToken } from 'firebase/auth';
-import { httpsCallable } from 'firebase/functions';
-import { auth, getFunctions } from '@/lib/firebase/firebaseclient';
+import { cloud } from '@/lib/cloud';
 import { randomPasskeyLabel } from '@veyl/shared/passkeylabel';
 import { isPasskeyEnvironmentMismatchError, isPasskeyRpMismatchError, isUnlinkedPasskeyError, normalizePasskeyLoginError, normalizePasskeyRegisterError } from '@veyl/shared/passkey';
 
@@ -39,10 +37,7 @@ export { isPasskeyEnvironmentMismatchError, isPasskeyRpMismatchError, isUnlinked
 export async function passkeyLogin({ uid, onPrompt } = {}) {
     try {
         const origin = window.location.origin;
-        const functions = getFunctions();
-        const {
-            data: { opts },
-        } = await httpsCallable(functions, 'passkeyLoginOptions')({ origin, uid });
+        const { opts } = await cloud.auth.login.start({ origin, uid });
 
         if (typeof onPrompt === 'function') {
             onPrompt();
@@ -57,16 +52,9 @@ export async function passkeyLogin({ uid, onPrompt } = {}) {
             throw new Error('No assertion received');
         }
 
-        const {
-            data: { token },
-        } = await httpsCallable(
-            functions,
-            'passkeyLoginVerify'
-        )({
+        await cloud.auth.login.finish({
             assertion: credToJSON(assertion),
         });
-
-        await signInWithCustomToken(auth, token);
 
         return { success: true };
     } catch (error) {
@@ -78,11 +66,8 @@ export async function passkeyRegister({ label: providedLabel } = {}) {
     try {
         const label = providedLabel?.trim() || randomPasskeyLabel();
         const origin = window.location.origin;
-        const functions = getFunctions();
 
-        const {
-            data: { opts },
-        } = await httpsCallable(functions, 'passkeyRegisterOptions')({ label, origin });
+        const { opts } = await cloud.auth.register.start({ label, origin });
 
         const cred = await navigator.credentials.create({
             publicKey: optsFromServer(opts),
@@ -92,16 +77,9 @@ export async function passkeyRegister({ label: providedLabel } = {}) {
             throw new Error('No credential received');
         }
 
-        const {
-            data: { token },
-        } = await httpsCallable(
-            functions,
-            'passkeyRegisterVerify'
-        )({
+        await cloud.auth.register.finish({
             attestation: credToJSON(cred),
         });
-
-        await signInWithCustomToken(auth, token);
 
         return { success: true };
     } catch (error) {

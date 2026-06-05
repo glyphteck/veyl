@@ -2,13 +2,12 @@ import { Alert, Animated, AppState, Pressable, ScrollView, Switch, Text, View } 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import { ChevronLeft, Clock3, Flag, History, UserX } from 'lucide-react-native';
-import { httpsCallable } from 'firebase/functions';
 
 import Avatar from '@/components/avatar';
 import GlassHeader from '@/components/glass/glassheader';
 import GlassIcon from '@/components/glass/glassicon';
 import Icon from '@/components/icon';
-import { functions } from '@/lib/firebase';
+import { cloud } from '@/lib/cloud';
 import { useRouteLock } from '@/lib/navigation/routelock';
 import { useTap } from '@/lib/tap';
 import { useChat } from '@/providers/chatprovider';
@@ -81,7 +80,6 @@ export default function ChatSettingsRoute() {
     const { peerByUsername, peerByUid, peerByChatPK, peerByWalletPK, addPeer, dropPeer } = usePeer() || {};
     const backTap = useTap({ onPress: router.back });
     const { lockRoute } = useRouteLock();
-    const submitReport = useMemo(() => httpsCallable(functions, 'submitReport'), []);
     const [fetchedPeer, setFetchedPeer] = useState(null);
     const [headerHeight, setHeaderHeight] = useState(0);
 
@@ -302,7 +300,7 @@ export default function ChatSettingsRoute() {
     const runReport = useCallback(
         async ({ nextUid, note }) => {
             try {
-                await submitReport({
+                await cloud.reports.submit({
                     uid: nextUid,
                     ...(note ? { note } : {}),
                 });
@@ -312,7 +310,7 @@ export default function ChatSettingsRoute() {
                 Alert.alert('Report failed', error?.message || 'Could not submit this report.');
             }
         },
-        [submitReport]
+        []
     );
 
     const handleReportUser = useCallback(

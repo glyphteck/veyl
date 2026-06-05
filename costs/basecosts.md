@@ -9,7 +9,6 @@ Sources:
 - Firestore location pricing: https://cloud.google.com/firestore/pricing
 - Cloud Run pricing: https://cloud.google.com/run/pricing
 - Cloud Storage pricing: https://cloud.google.com/storage/pricing
-- Identity Platform pricing: https://cloud.google.com/identity-platform/pricing
 
 ## Unit costs used
 
@@ -40,18 +39,12 @@ Current project locations checked on 2026-05-29:
 | Firestore writes | 20,000/day |
 | Firestore deletes | 20,000/day |
 | Cloud Functions invocations | 2,000,000/month |
-| Auth monthly active users | 50,000/month |
 
 Storage operation free quotas are not applied because Firebase Storage bucket billing depends on project/bucket setup and location. The model counts Storage operations at paid unit cost, includes stored bytes from the default avatar/media assumptions, and leaves downloaded bytes separate.
 
 ## Auth
 
-Custom-token sign-ins are tracked as Auth monthly active users. The monthly totals in [README.md](README.md) assume Identity Platform-style paid Auth after the free MAU quota.
-
-A conservative simple estimate is:
-
-- first 50,000 MAU free,
-- then about `$0.0055` per MAU-month before volume discounts.
+Veyl uses Firebase Auth as the current Firestore/Storage auth adapter, but Firebase Auth is not a modeled cost in these totals.
 
 ## Important billing caveats
 

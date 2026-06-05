@@ -3,16 +3,7 @@
 import { addMessageKeys, collectMessageKeys, indexMessagesByKey, keySet, messageHasKey, targetMessageMs } from '../messagekeys.js';
 import { getMessageKey, getMessageOrderMs } from '../state.js';
 import { cleanText } from '../../utils/text.js';
-import {
-    canShowMsg,
-    getHiddenDisplayMessages,
-    isControlMsg,
-    isHiddenCheckpointMsg,
-    isPeerMsg,
-    isServerConfirmedMsg,
-    isSystemMsg,
-} from './control.js';
-import { hasMediaStay } from './files.js';
+import { canShowMsg, getHiddenDisplayMessages, isControlMsg, isHiddenCheckpointMsg, isPeerMsg, isServerConfirmedMsg, isSystemMsg } from './control.js';
 
 const pendingDeleteKeys = new Set();
 
@@ -68,10 +59,13 @@ export function getHiddenCheckpointTarget(messages, chatPK, peerChatPK, options 
         }
     }
 
-    const checkpointable = firstKeptMs == null ? hidden : hidden.filter((msg) => {
-        const ms = getMessageOrderMs(msg);
-        return Number.isFinite(ms) && ms < firstKeptMs;
-    });
+    const checkpointable =
+        firstKeptMs == null
+            ? hidden
+            : hidden.filter((msg) => {
+                  const ms = getMessageOrderMs(msg);
+                  return Number.isFinite(ms) && ms < firstKeptMs;
+              });
     const target = latestMessage(checkpointable);
     const minMs = Number.isFinite(options?.minMs) ? options.minMs : null;
     if (!target || !target.key || (minMs != null && target.ms <= minMs)) {
@@ -81,16 +75,7 @@ export function getHiddenCheckpointTarget(messages, chatPK, peerChatPK, options 
 }
 
 function canAutoDeleteMessage(msg, chatPK) {
-    return (
-        isServerConfirmedMsg(msg) &&
-        isPeerMsg(msg, chatPK) &&
-        canShowMsg(msg) &&
-        !isControlMsg(msg) &&
-        !isSystemMsg(msg) &&
-        msg.ttl != null &&
-        msg.permanent !== true &&
-        !hasMediaStay(msg)
-    );
+    return isServerConfirmedMsg(msg) && isPeerMsg(msg, chatPK) && canShowMsg(msg) && !isControlMsg(msg) && !isSystemMsg(msg) && msg.ttl != null && msg.permanent !== true;
 }
 
 export function getAutoDeleteMessages(messages, chatPK, peerChatPK, options = {}) {

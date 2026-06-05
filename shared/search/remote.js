@@ -1,24 +1,20 @@
-import { collection, getDocs, limit, orderBy, query, where } from 'firebase/firestore';
-import { SEARCH_USERNAME_LIMIT } from '../config.js';
 import { hasPeerKeys } from '../profile.js';
 import { compareProfilesByUsername } from './sort.js';
 import { getRole } from './roles.js';
 
-const USERNAME_LIMIT = SEARCH_USERNAME_LIMIT;
-
-// Firestore-backed profile queries. The peer api supplies the doc->profile
+// Cloud-backed profile queries. The peer api supplies the record->profile
 // adapter and the cache writer so this layer doesn't need to know how peers
 // are shaped or stored.
-export function createProfileQueries({ db, createProfileFromDoc, cachePeer }) {
-    if (!db || typeof createProfileFromDoc !== 'function' || typeof cachePeer !== 'function') {
-        throw new Error('createProfileQueries requires db, createProfileFromDoc, and cachePeer');
+export function createProfileQueries({ cloud, createProfileFromRecord, cachePeer }) {
+    if (!cloud || typeof createProfileFromRecord !== 'function' || typeof cachePeer !== 'function') {
+        throw new Error('createProfileQueries requires cloud, createProfileFromRecord, and cachePeer');
     }
 
-    function collect(snapshot, excludeUid) {
+    function collect(records, excludeUid) {
         const out = [];
-        for (const doc of snapshot.docs) {
-            if (doc.id === excludeUid) continue;
-            const next = createProfileFromDoc(doc);
+        for (const record of records || []) {
+            if (record.uid === excludeUid) continue;
+            const next = createProfileFromRecord(record);
             if (!hasPeerKeys(next)) continue;
             const cached = cachePeer(next);
             if (cached) out.push({ ...cached });
@@ -28,23 +24,15 @@ export function createProfileQueries({ db, createProfileFromDoc, cachePeer }) {
 
     async function byUsername(value, { excludeUid } = {}) {
         if (!value) return [];
-        const snapshot = await getDocs(
-            query(
-                collection(db, 'profiles'),
-                where('username', '>=', value),
-                where('username', '<=', value + '\uf8ff'),
-                orderBy('username'),
-                limit(USERNAME_LIMIT)
-            )
-        );
-        return collect(snapshot, excludeUid);
+        const records = await cloud.search.peer.byUsernamePrefix(value);
+        return collect(records, excludeUid);
     }
 
     async function byRole(roleId, { excludeUid } = {}) {
         const role = getRole(roleId);
         if (!role) return [];
-        const snapshot = await getDocs(role.buildQuery(db));
-        const profiles = collect(snapshot, excludeUid);
+        const records = await cloud.search.peer.byRole(role.id);
+        const profiles = collect(records, excludeUid);
         return profiles.sort(compareProfilesByUsername);
     }
 

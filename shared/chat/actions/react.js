@@ -2,16 +2,17 @@
 
 import { useCallback } from 'react';
 import { makeChatUnavailableError } from '../attachments.js';
+import { sendReaction as sendReactionMessage } from '../messages/write.js';
 
-export function useChatReact({ chat, uid, chatBanned, chatPK, chatPrivateKey, sendOptionsForPeer }) {
+export function useChatReact({ cloud, uid, chatBanned, chatPK, chatPrivateKey, sendOptionsForPeer }) {
     const sendReaction = useCallback(
         (peerChatPK, target, emoji) => {
             if (chatBanned) {
                 throw makeChatUnavailableError();
             }
-            return chat.sendReaction(chatPK, chatPrivateKey, peerChatPK, target, emoji, { ...sendOptionsForPeer(peerChatPK), senderUid: uid });
+            return sendReactionMessage(cloud, chatPK, chatPrivateKey, peerChatPK, target, emoji, { ...sendOptionsForPeer(peerChatPK), senderUid: uid });
         },
-        [chat, uid, chatBanned, chatPK, chatPrivateKey, sendOptionsForPeer]
+        [cloud, uid, chatBanned, chatPK, chatPrivateKey, sendOptionsForPeer]
     );
 
     return {

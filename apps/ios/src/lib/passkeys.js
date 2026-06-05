@@ -1,8 +1,6 @@
-import { httpsCallable } from 'firebase/functions';
-import { signInWithCustomToken } from 'firebase/auth';
 import { create, get } from 'react-native-passkeys';
 
-import { auth, functions } from '@/lib/firebase';
+import { cloud } from '@/lib/cloud';
 import { randomPasskeyLabel } from '@veyl/shared/passkeylabel';
 import { getPasskeyOrigin } from '@veyl/shared/network';
 import { isPasskeyRpMismatchError, isUnlinkedPasskeyError, normalizePasskeyLoginError, normalizePasskeyRegisterError } from '@veyl/shared/passkey';
@@ -14,12 +12,7 @@ export async function passkeyRegister({ onPrompt, onVerified, label: providedLab
         const label = providedLabel?.trim() || randomPasskeyLabel();
         const origin = getPasskeyOrigin();
 
-        const {
-            data: { uid, opts },
-        } = await httpsCallable(
-            functions,
-            'passkeyRegisterOptions'
-        )({
+        const { uid, opts } = await cloud.auth.register.start({
             label,
             origin,
         });
@@ -33,20 +26,13 @@ export async function passkeyRegister({ onPrompt, onVerified, label: providedLab
             throw new Error('no credential created');
         }
 
-        const {
-            data: { token },
-        } = await httpsCallable(
-            functions,
-            'passkeyRegisterVerify'
-        )({
+        await cloud.auth.register.finish({
             attestation,
         });
 
         if (typeof onVerified === 'function') {
             await onVerified({ uid });
         }
-
-        await signInWithCustomToken(auth, token);
 
         return { success: true };
     } catch (error) {
@@ -58,9 +44,7 @@ export async function passkeyLogin({ uid, onPrompt } = {}) {
     try {
         const origin = getPasskeyOrigin();
 
-        const {
-            data: { opts },
-        } = await httpsCallable(functions, 'passkeyLoginOptions')({ origin, uid });
+        const { opts } = await cloud.auth.login.start({ origin, uid });
 
         if (typeof onPrompt === 'function') {
             onPrompt();
@@ -71,16 +55,9 @@ export async function passkeyLogin({ uid, onPrompt } = {}) {
             throw new Error('no assertion received');
         }
 
-        const {
-            data: { token },
-        } = await httpsCallable(
-            functions,
-            'passkeyLoginVerify'
-        )({
+        await cloud.auth.login.finish({
             assertion,
         });
-
-        await signInWithCustomToken(auth, token);
 
         return { success: true };
     } catch (error) {

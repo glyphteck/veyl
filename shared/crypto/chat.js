@@ -19,8 +19,8 @@ export function hasMsgData(data) {
     return hasMsgHead(data) && hasMsgBody(data);
 }
 
-export function openChatPair(chatPK, chatPrivKey, peerChatPK) {
-    return openPair(chatPK, chatPrivKey, peerChatPK);
+export function openChatPair(chatPK, chatPrivKey, peerChatPK, options = {}) {
+    return openPair(chatPK, chatPrivKey, peerChatPK, options);
 }
 
 export function closeChatPair(pair) {

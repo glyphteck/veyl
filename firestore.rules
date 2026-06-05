@@ -48,10 +48,22 @@ service cloud.firestore {
       return value == null || value is timestamp;
     }
 
+    function chatIdFormatAllowed(chatId) {
+      return chatId is string
+        && chatId.size() == 64
+        && chatId.matches('^[0-9a-f]{64}$');
+    }
+
+    function chatDeleted(chatId) {
+      return chatIdFormatAllowed(chatId)
+        && exists(/databases/$(database)/documents/chats/$(chatId))
+        && get(/databases/$(database)/documents/chats/$(chatId)).data.deleted is string;
+    }
+
     function chatIdAllowed(chatId) {
       return request.auth != null
-        && chatId is string
-        && chatId.size() == 64;
+        && chatIdFormatAllowed(chatId)
+        && !chatDeleted(chatId);
     }
 
     function maxInitialTtl() {
@@ -100,15 +112,6 @@ service cloud.firestore {
 
     function ownerChatEntryValid(data) {
       return data.keys().hasOnly(['body', 'ts'])
-        && bytesSizeAllowed(data.body, 128 * 1024)
-        && data.ts is timestamp;
-    }
-
-    function savedMessageValid(data) {
-      return data.keys().hasOnly(['chatId', 'body', 'ts'])
-        && data.chatId is string
-        && data.chatId.size() >= 32
-        && data.chatId.size() <= 128
         && bytesSizeAllowed(data.body, 128 * 1024)
         && data.ts is timestamp;
     }
@@ -217,14 +220,6 @@ service cloud.firestore {
         allow create, update: if false;
       }
 
-      match /savedMessages/{savedId} {
-        allow get, list: if request.auth != null && request.auth.uid == uid;
-        allow create, update: if request.auth != null
-                              && request.auth.uid == uid
-                              && savedMessageValid(request.resource.data);
-        allow delete: if request.auth != null && request.auth.uid == uid;
-      }
-
       match /push/{did} {
         allow read, write: if false;
       }
@@ -302,6 +297,10 @@ service cloud.firestore {
     }
 
     /* ---------- chats ---------- */
+    match /links/{linkId} {
+      allow read, write: if false;
+    }
+
     match /chats/{chatId} {
 
       /* parent chat document */
@@ -315,7 +314,7 @@ service cloud.firestore {
                       && messageCreateAllowed();
 
         allow update: if false;
-        allow delete: if chatIdAllowed(chatId);
+        allow delete: if false;
       }
     }
 

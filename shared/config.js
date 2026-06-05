@@ -42,7 +42,6 @@ export const CHAT_MEDIA_TTL_MS = CHAT_MEDIA_TTL_DAYS * DAY_MS;
 export const CHAT_MAX_UPLOAD_FILES = 5;
 export const CHAT_IMAGE_MAX_EDGE = 1600;
 export const CHAT_IMAGE_COMPRESS = 0.82;
-export const CHAT_MEDIA_ID_BYTES = 16;
 
 // Chat Firestore read/delete/write cost knobs. Tune these first when message queries or cleanup are expensive.
 export const CHAT_MESSAGE_BATCH_SIZE = 20;

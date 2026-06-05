@@ -1,6 +1,6 @@
 'use client';
 
-import { hasStoredFileRef, storedFileKey } from '@veyl/shared/chat/messages';
+import { hasStoredFileRef, isExpiredAttachmentMsg, storedFileKey } from '@veyl/shared/chat/messages';
 import { createObjectUrlCache, revokeObjectUrl } from './objecturlcache';
 
 const audioCache = createObjectUrlCache({ max: 16 });
@@ -48,6 +48,13 @@ export function loadAudioObjectUrl(peerChatPK, msg, readMessageFile) {
 
     audioCache.setPending(key, task);
     return task;
+}
+
+export function readCachedMsgAudioUrl(peerChatPK, msg) {
+    if (msg?.t !== 'mp3' || !peerChatPK || !hasStoredFileRef(msg) || isExpiredAttachmentMsg(msg)) {
+        return '';
+    }
+    return audioCache.getReady(getAudioCacheKey(peerChatPK, msg))?.url || '';
 }
 
 export function clearAudioCache() {

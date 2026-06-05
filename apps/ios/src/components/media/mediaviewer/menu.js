@@ -72,7 +72,7 @@ export function ViewerMenu({ activeIsVideo, activeItem, muted, muteStyle, onTogg
         if (!activeItem?.msg || !canShareAttachmentMsg(activeItem.msg)) {
             return;
         }
-        const params = stageShareMedia(activeItem.msg);
+        const params = stageShareMedia(activeItem.msg, { sourcePeerChatPK: activeItem.peerChatPK });
         if (!params) {
             return;
         }

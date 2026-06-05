@@ -14,7 +14,7 @@ let faceIdPromptInFlight = false;
 
 export default function FaceIdUnlockScreen() {
     const { theme } = useTheme();
-    const { unlockWithPsw, lockState, encSeed, setFaceIdFailed } = useVault();
+    const { unlockWithPsw, lockState, vault, setFaceIdFailed } = useVault();
     const user = useUser();
 
     const [appActive, setAppActive] = useState(AppState.currentState === 'active');
@@ -23,10 +23,10 @@ export default function FaceIdUnlockScreen() {
     const lockIconOpacity = useRef(new Animated.Value(1)).current;
     const unlockIconOpacity = useRef(new Animated.Value(0)).current;
 
-    const seedReady = !!encSeed;
+    const vaultReady = !!vault;
 
     const attemptFaceId = useCallback(async () => {
-        if (!seedReady) {
+        if (!vaultReady) {
             mark('faceid.unlock.skip', { reason: 'seed-not-ready', lockState });
             return;
         }
@@ -73,7 +73,7 @@ export default function FaceIdUnlockScreen() {
         } finally {
             faceIdPromptInFlight = false;
         }
-    }, [lockState, seedReady, setFaceIdFailed, unlockWithPsw, user?.uid, lockIconOpacity, unlockIconOpacity]);
+    }, [lockState, vaultReady, setFaceIdFailed, unlockWithPsw, user?.uid, lockIconOpacity, unlockIconOpacity]);
 
     useEffect(() => {
         const sub = AppState.addEventListener('change', (nextState) => {
@@ -84,11 +84,11 @@ export default function FaceIdUnlockScreen() {
 
     useEffect(() => {
         if (attemptedRef.current) return;
-        if (!seedReady) return;
+        if (!vaultReady) return;
         if (!appActive) return;
         attemptedRef.current = true;
         attemptFaceId();
-    }, [appActive, attemptFaceId, seedReady]);
+    }, [appActive, attemptFaceId, vaultReady]);
 
     return (
         <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }} edges={['top', 'left', 'right', 'bottom']}>

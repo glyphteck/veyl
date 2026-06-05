@@ -215,7 +215,6 @@ export const passkeyLoginVerify = onCall(loggedCall('passkeyLoginVerify', async 
 
     await ensureUserDoc(uid);
 
-    // Create auth token
     const token = await admin.auth().createCustomToken(uid);
     return { token };
 }));

@@ -1,10 +1,9 @@
 'use client';
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef } from 'react';
-import { httpsCallable } from 'firebase/functions';
 import { WEB_CHAT_WARMING } from '@veyl/shared/chat/messages/session/config';
-import { createChat, createChatProvider } from '@veyl/shared/providers/chatprovider';
-import { db, getFunctions, getStorage } from '@/lib/firebase/firebaseclient';
+import { createChatProvider } from '@veyl/shared/providers/chatprovider';
+import { cloud } from '@/lib/cloud';
 import { useUser } from '@/components/providers/userprovider';
 import { useVault } from '@/components/providers/vaultprovider';
 import { clearAudioCache } from '@/lib/chat/audiocache';
@@ -13,29 +12,8 @@ import { clearMsgImageCache, seedMsgImage } from '@/lib/chat/useimage';
 import { clearMsgVideoCache } from '@/lib/chat/videocache';
 import { mark } from '@/lib/diagnostics';
 
-const chat = createChat({
-    db,
-    getStorage,
-    async reserveChatMediaUpload(payload) {
-        await httpsCallable(getFunctions(), 'reserveChatMediaUpload')(payload);
-        return true;
-    },
-    async sendPush(recipientUid, ping) {
-        await httpsCallable(getFunctions(), 'push')({ recipientUid, ping });
-        return true;
-    },
-    async setMediaSaved(path, stayId, stayKey, saved) {
-        await httpsCallable(getFunctions(), 'setMediaSaved')({ path, stayId, stayKey, saved });
-        return true;
-    },
-    async deleteChatRemote(chatId, { entryId } = {}) {
-        await httpsCallable(getFunctions(), 'deleteChat')({ chatId, entryId });
-        return true;
-    },
-});
-
 const { ChatProvider: SharedChatProvider, useChat } = createChatProvider({
-    chat,
+    cloud,
     useUser,
     useVault,
     chatWarming: WEB_CHAT_WARMING,

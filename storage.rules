@@ -37,23 +37,9 @@ service firebase.storage {
         );
     }
 
-    function chatMediaReservationPath(mediaId) {
-      return /databases/(default)/documents/media_upload_reservations/$(mediaId);
-    }
-
-    function isReservedChatBlob(mediaId) {
-      let reservation = firestore.get(chatMediaReservationPath(mediaId)).data;
-      return request.resource != null
-        && firestore.exists(chatMediaReservationPath(mediaId))
-        && reservation.uid == request.auth.uid
-        && reservation.path == 'media/' + mediaId + '/main'
-        && reservation.contentType == 'application/octet-stream'
-        && reservation.ttl is timestamp
-        && reservation.ttl > request.time
-        && reservation.size is int
-        && request.resource.size > 0
-        && request.resource.size <= reservation.size
-        && request.resource.contentType == reservation.contentType;
+    function chatDeleted(chatId) {
+      return firestore.exists(/databases/(default)/documents/chats/$(chatId))
+        && firestore.get(/databases/(default)/documents/chats/$(chatId)).data.deleted is string;
     }
 
     function isReportBlob() {
@@ -97,13 +83,17 @@ service firebase.storage {
       );
     }
 
-    match /media/{mediaId}/{slot} {
+    match /chat-media/{chatId}/{messageKey}/{slot} {
+      allow get: if signedIn() && !chatDeleted(chatId);
+      allow list: if false;
+      allow create: if false;
+      allow update, delete: if false;
+    }
+
+    match /shared/{sharedId} {
       allow get: if signedIn();
       allow list: if false;
-      allow create: if signedIn()
-        && mediaId.matches('^[0-9a-fA-F]{32}$')
-        && slot == 'main'
-        && isReservedChatBlob(mediaId);
+      allow create: if false;
       allow update, delete: if false;
     }
 

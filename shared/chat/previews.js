@@ -2,8 +2,8 @@ import { CHAT_MESSAGE_PREVIEW_COMPRESS, CHAT_MESSAGE_PREVIEW_MAX_EDGE, CHAT_MESS
 import { cleanText } from '../utils/text.js';
 import { hasStoredFileRef } from './messages/files.js';
 
-export const MESSAGE_PREVIEW_LABEL = 'preview';
-export const MESSAGE_PREVIEW_CACHE_LABEL = 'preview-v2';
+const MESSAGE_PREVIEW_LABEL = 'preview';
+const MESSAGE_PREVIEW_CACHE_LABEL = 'preview-v2';
 export const MESSAGE_PREVIEW_MIME = 'image/jpeg';
 export const MESSAGE_PREVIEW_EXT = 'jpg';
 export const MESSAGE_PREVIEW_COMPRESS = CHAT_MESSAGE_PREVIEW_COMPRESS;

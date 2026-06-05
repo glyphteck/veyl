@@ -2,8 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { auth, db } from '@/lib/firebase/firebaseclient';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Input } from '@/components/input';
@@ -14,6 +12,7 @@ import { useDialog } from '@/components/providers/dialogprovider';
 import { packSeedData } from '@veyl/shared/crypto/pack';
 import { encryptSeed } from '@/lib/crypto/seed';
 import { getPasswordFeedback, isPassword, MAX_PASSWORD, normalizePassword } from '@veyl/shared/password';
+import { cloud } from '@/lib/cloud';
 
 const passwordSchema = z.object({
     password: z.string().refine((value) => isPassword(value)),
@@ -59,20 +58,21 @@ const GetPsw = () => {
         const password = normalizePassword(raw);
         if (!isPassword(password)) return;
         setStatus('submitting');
-        const uid = auth.currentUser?.uid;
+        const uid = cloud.auth.user?.uid;
         if (!uid) {
             setStatus('idle');
             router.refresh();
             return;
         }
-        if ((await getDoc(doc(db, 'seeds', uid))).exists()) {
+        if (await cloud.user.vault.exists(uid)) {
             router.refresh();
             return;
         }
 
         try {
             const seedData = await encryptSeed(password);
-            await setDoc(doc(db, 'seeds', uid), { es: packSeedData(seedData) });
+            const vault = packSeedData(seedData);
+            await cloud.user.vault.write(uid, vault);
             router.refresh();
         } catch (error) {
             console.error('Error in encryption process:', error);

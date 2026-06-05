@@ -1,17 +1,9 @@
 'use client';
 
-import { addMessageKeys, indexMessagesByKey, keySet, targetMessageMs } from '../messagekeys.js';
+import { addMessageKeys, indexMessagesByKey, keySet, messageHasKey, targetMessageMs } from '../messagekeys.js';
 import { getMessageKey, getMessageOrderMs, sortMessages } from '../state.js';
 import { cleanText } from '../../utils/text.js';
-import {
-    canShowMsg,
-    isControlMsg,
-    isHiddenCheckpointMsg,
-    isReactionMsg,
-    isReadReceiptMsg,
-    isServerConfirmedMsg,
-    isSystemMsg,
-} from './control.js';
+import { canShowMsg, isControlMsg, isHiddenCheckpointMsg, isReactionMsg, isReadReceiptMsg, isServerConfirmedMsg, isSystemMsg } from './control.js';
 
 const pendingCompactKeys = new Set();
 
@@ -193,7 +185,7 @@ export function getCompactMessages(messages, options = {}) {
         addMsg(targets, msg);
     }
 
-    return [...targets.values()];
+    return [...targets.values()].filter((msg) => !messageHasKey(msg, deletedKeys));
 }
 
 function compactKey(chatId, msg) {

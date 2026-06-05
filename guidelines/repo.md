@@ -97,7 +97,7 @@ Veyl should move toward dumb server, smart cryptographic client.
 
 The server should store and route opaque records, enforce cheap shape, quota, TTL, upload, and abuse limits, and avoid being the source of truth for private chat semantics. Clients should own semantic validity by holding user secrets, decrypting records, verifying signatures, checking action permissions, and deriving the renderable state.
 
-This principle does not mean the server is useless. It can still provide transport, sync, storage lifecycle, rate limits, uploads, push triggers, public profile lookup, moderation surfaces, and future privacy-preserving mediation. If Glyphteck later owns custom server infrastructure, that server may participate in cryptographic protocols with users, but it should not become the default plaintext authority for private chat content, authorship, read state, payment-request state, saved-message state, or wallet secrets.
+This principle does not mean the server is useless. It can still provide transport, sync, storage lifecycle, rate limits, uploads, push triggers, public profile lookup, moderation surfaces, and future privacy-preserving mediation. If Glyphteck later owns custom server infrastructure, that server may participate in cryptographic protocols with users, but it should not become the default plaintext authority for private chat content, authorship, read state, payment-request state, per-user saved-message state, or wallet secrets.
 
 ## Data Model
 
@@ -107,7 +107,8 @@ Main Firestore collections:
 - `profiles/{uid}`: public profile data, wallet/chat public keys, presence
 - `seeds/{uid}`: encrypted master seed
 - `usernames/{username}`: username reservation
-- `chats/{chatId}/messages/{messageId}`: opaque pair chat action log. Parent chat docs are not app state; message docs carry encrypted signed actions with dumb TTL metadata. Owner chat entries live under `users/{uid}/chats/{entryId}`, sealed inbox pings under `users/{uid}/inbox/{pingId}`, and owner saved-message records under `users/{uid}/savedMessages/{savedId}`.
+- `links/{linkId}`: opaque pair link state with `links.chat.id`, `links.chat.version`, and `links.chat.ts` pointing at the current active chat instance.
+- `chats/{chatId}/messages/{messageId}`: opaque active-chat action log. Parent chat docs are not app state except the delete cleanup tag; message docs carry encrypted signed actions with dumb TTL metadata. `ttl: null` means the shared message is saved/permanent. Owner chat entries live under `users/{uid}/chats/{entryId}`, and sealed inbox pings live under `users/{uid}/inbox/{pingId}`.
 - `bitcoin/current`: public cached BTC price, block height, and compact fee-rate tiers watched by the app-level Bitcoin provider
 - `passkeys/{credentialId}`: stored passkey credentials
 

@@ -1,8 +1,6 @@
-import { dropAvatar, putAvatar } from '@veyl/shared/files';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import * as FileSystem from 'expo-file-system/legacy';
-import { doc, updateDoc } from 'firebase/firestore';
-import { db, storage } from './firebase';
+import { cloud } from '@/lib/cloud';
 
 function readAvatarGeneration(value) {
     const version = Number(value);
@@ -13,7 +11,7 @@ function readAvatarGeneration(value) {
 }
 
 async function updateProfileAvatar(uid, avatar) {
-    await updateDoc(doc(db, 'profiles', uid), { avatar });
+    await cloud.user.profile.avatar.write(uid, avatar);
 }
 
 async function prepareAvatarBlob(uri) {
@@ -48,12 +46,9 @@ export async function uploadAvatar({ uid, uri }) {
     if (!uid) {
         throw new Error('uid is required');
     }
-    if (!storage) {
-        throw new Error('storage unavailable');
-    }
 
     const blob = await prepareAvatarBlob(uri);
-    const result = await putAvatar(storage, uid, blob, 'image/webp');
+    const result = await cloud.user.profile.avatar.upload(uid, blob, { contentType: 'image/webp' });
     await updateProfileAvatar(uid, readAvatarGeneration(result?.generation));
     return result?.url || null;
 }
@@ -70,12 +65,9 @@ export async function deleteAvatar({ uid }) {
     if (!uid) {
         throw new Error('uid is required');
     }
-    if (!storage) {
-        throw new Error('storage unavailable');
-    }
 
     try {
-        await dropAvatar(storage, uid);
+        await cloud.user.profile.avatar.delete(uid);
     } catch (error) {
         if (error?.code !== 'storage/object-not-found') {
             throw error;

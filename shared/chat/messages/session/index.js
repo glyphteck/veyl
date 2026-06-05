@@ -6,6 +6,10 @@ import { saveMedia } from '../../attachments.js';
 import { filterChatMessages, getChatPeerPK, getChatLastMsgKey } from '../../ids.js';
 import { collectMessageKeys } from '../../messagekeys.js';
 import { canShowMsg, getDisplayMessages, getHiddenDisplayMessages, isControlMsg } from '../../messages.js';
+import { runMessageAutoDelete } from '../autodelete.js';
+import { compactMessages } from '../compact.js';
+import { listenToLatestMsgs } from '../query.js';
+import { readMsgMedia } from '../write.js';
 import { makeMessagePreviewMedia, MESSAGE_PREVIEW_MIME } from '../../previews.js';
 import { getMessageKey } from '../../state.js';
 import { MESSAGE_VIEW_CACHE_SIZE, normalizeChatWarming } from './config.js';
@@ -53,7 +57,19 @@ function warmKeyStore(ref) {
     return ref.current;
 }
 
-export function useChatMessageSessions({ chat, chatPK, chatPrivateKey, chatBanned, isActive, localCache, listRef, pendingDeleteIdsRef, config, preloadMessageMedia, onRead, onExpire, diag = null }) {
+function readMessageMedia(cloud, media, chatPK, chatPrivateKey, peerChatPK, message) {
+    const readChatMedia = cloud?.chat?.media?.read;
+    if (typeof media?.readMessageFile === 'function') {
+        return media.readMessageFile(readChatMedia, chatPK, chatPrivateKey, peerChatPK, message);
+    }
+    return readMsgMedia(readChatMedia, chatPK, chatPrivateKey, peerChatPK, message);
+}
+
+function isDenied(error) {
+    return error?.code === 'permission-denied';
+}
+
+export function useChatMessageSessions({ cloud, media = {}, chatPK, chatPrivateKey, chatBanned, isActive, localCache, listRef, pendingDeleteIdsRef, config, preloadMessageMedia, deleteMessages, markMessagesHidden, onRead, onExpire, onUnavailable, diag = null }) {
     const batchesRef = useRef(new Map());
     const generationRef = useRef(0);
     const warmTimerRef = useRef(null);
@@ -207,7 +223,7 @@ export function useChatMessageSessions({ chat, chatPK, chatPrivateKey, chatBanne
                     return cached;
                 }
 
-                const bytes = await chat.readMessageFile(chatPK, chatPrivateKey, peerChatPK, message);
+                const bytes = await readMessageMedia(cloud, media, chatPK, chatPrivateKey, peerChatPK, message);
                 if (bytes?.byteLength) {
                     saveMedia(localCache, message, bytes, message);
                 }
@@ -251,7 +267,7 @@ export function useChatMessageSessions({ chat, chatPK, chatPrivateKey, chatBanne
                 } catch {}
             }
         },
-        [buildMediaTasks, chat, chatBanned, chatPK, chatPrivateKey, isActive, localCache, preloadMessageMedia, warming.media]
+        [buildMediaTasks, cloud, media, chatBanned, chatPK, chatPrivateKey, isActive, localCache, preloadMessageMedia, warming.media]
     );
 
     const scheduleMedia = useCallback(() => {
@@ -270,6 +286,92 @@ export function useChatMessageSessions({ chat, chatPK, chatPrivateKey, chatBanne
             void runMedia(runId);
         }, nonNegativeNumber(mediaConfig.startDelayMs, 0));
     }, [chatBanned, chatPK, chatPrivateKey, isActive, runMedia, warming.media]);
+
+    const runSessionBatchCleanup = useCallback(
+        (entry, options = {}) => {
+            if (chatBanned || !isActive || !chatPK || !entry?.chatId || !entry.peerChatPK || !entry.ready || entry.exists === false || !entry.messages?.length || typeof deleteMessages !== 'function') {
+                return;
+            }
+
+            const cleanHiddenMessages = options.hiddenCleanup !== false;
+            const writeCheckpoint = cleanHiddenMessages && options.writeCheckpoint !== false && typeof markMessagesHidden === 'function';
+            const compactControls = options.compactControls !== false;
+            if (!cleanHiddenMessages && !compactControls) {
+                return;
+            }
+
+            const chatId = entry.chatId;
+            const peerChatPK = entry.peerChatPK;
+            const generation = entry.generation;
+            const messages = entry.messages.slice();
+            const deletedKeys = entry.deletedKeys instanceof Set ? entry.deletedKeys : new Set(entry.deletedKeys || []);
+            const autoDeleteState = entry.autoDeleteState || { checkpointMs: 0, pendingCheckpointMs: 0 };
+            entry.deletedKeys = deletedKeys;
+            entry.autoDeleteState = autoDeleteState;
+
+            void Promise.resolve()
+                .then(async () => {
+                    const dropped = [];
+                    const startedAt = Date.now();
+
+                    if (cleanHiddenMessages) {
+                        const result = await runMessageAutoDelete({
+                            chatId,
+                            messages,
+                            chatPK,
+                            peerChatPK,
+                            keepKeys: options.keepKeys,
+                            deletedKeys,
+                            state: autoDeleteState,
+                            writeHiddenCheckpoint: writeCheckpoint ? (target) => markMessagesHidden(chatId, target, peerChatPK) : null,
+                            deleteMessages: (targets) => deleteMessages(chatId, targets, peerChatPK),
+                        });
+                        if (result?.deleted?.length) {
+                            dropped.push(...result.deleted);
+                        }
+                    }
+
+                    if (compactControls) {
+                        const compacted = await compactMessages({
+                            chatId,
+                            messages,
+                            deletedKeys,
+                            deleteMessages: (targets) => deleteMessages(chatId, targets, peerChatPK),
+                        });
+                        if (compacted.length) {
+                            dropped.push(...compacted);
+                        }
+                    }
+
+                    if (dropped.length) {
+                        markDone(diag, 'chat.message.cleanup', startedAt, {
+                            hiddenCleanup: cleanHiddenMessages,
+                            writeCheckpoint,
+                            compactControls,
+                            droppedCount: dropped.length,
+                        });
+                    }
+
+                    const current = batchesRef.current.get(chatId);
+                    if (current !== entry || current.generation !== generation || !dropped.length) {
+                        return;
+                    }
+
+                    notifyPreviewDrop(onExpire, chatId, dropped, current.messages, chatPK, peerChatPK);
+                    notify(current);
+                })
+                .catch((error) => {
+                    if (!isDenied(error)) {
+                        markError(diag, 'chat.message.cleanup', Date.now(), error, {
+                            hiddenCleanup: cleanHiddenMessages,
+                            writeCheckpoint,
+                            compactControls,
+                        });
+                    }
+                });
+        },
+        [chatBanned, chatPK, deleteMessages, diag, isActive, markMessagesHidden, notify, onExpire]
+    );
 
     const ensureMessageBatch = useCallback(
         (chatId, options = {}) => {
@@ -311,6 +413,7 @@ export function useChatMessageSessions({ chat, chatPK, chatPrivateKey, chatBanne
                     }
                     notify(existing);
                     scheduleTrim();
+                    runSessionBatchCleanup(existing, { hiddenCleanup: !existing.route, writeCheckpoint: false });
                     return makeMessageSessionSnapshot(existing);
                 }
 
@@ -333,7 +436,7 @@ export function useChatMessageSessions({ chat, chatPK, chatPrivateKey, chatBanne
                 peerChatPK,
                 pageSize,
                 messages: [],
-                cursor: null,
+                before: null,
                 carry: null,
                 hasOlder: false,
                 hasMore: false,
@@ -348,6 +451,7 @@ export function useChatMessageSessions({ chat, chatPK, chatPrivateKey, chatBanne
                 batchKeys: new Set(),
                 expiredKeys: new Set(),
                 deletedKeys: new Set(),
+                autoDeleteState: { checkpointMs: 0, pendingCheckpointMs: 0 },
                 generation,
                 route,
                 warm,
@@ -355,20 +459,21 @@ export function useChatMessageSessions({ chat, chatPK, chatPrivateKey, chatBanne
             };
 
             batchesRef.current.set(chatId, entry);
-            entry.unsub = chat.listenToLatestMessages(
+            entry.unsub = listenToLatestMsgs(
+                cloud,
                 chatId,
                 chatPK,
                 chatPrivateKey,
                 peerChatPK,
                 pageSize,
-                ({ messages, cursor, carry, hasOlder, hasMore, fromCache, expiredKeys, deletedKeys }) => {
+                ({ messages, before, carry, hasOlder, hasMore, fromCache, expiredKeys, deletedKeys }) => {
                     if (fromCache || batchesRef.current.get(chatId) !== entry || entry.generation !== generationRef.current) {
                         return;
                     }
 
                     const chatMessages = filterChatMessages(messages, chatPK, peerChatPK);
                     entry.messages = chatMessages;
-                    entry.cursor = cursor ?? null;
+                    entry.before = before ?? null;
                     entry.carry = carry ?? null;
                     entry.hasOlder = !!hasOlder;
                     entry.hasMore = !!hasMore;
@@ -401,13 +506,14 @@ export function useChatMessageSessions({ chat, chatPK, chatPrivateKey, chatBanne
                     notify(entry);
                     scheduleMedia();
                     scheduleTrim();
+                    runSessionBatchCleanup(entry, { hiddenCleanup: !entry.route, writeCheckpoint: false });
                 },
                 (error) => {
                     if (batchesRef.current.get(chatId) !== entry || entry.generation !== generationRef.current) {
                         return;
                     }
                     entry.messages = [];
-                    entry.cursor = null;
+                    entry.before = null;
                     entry.carry = null;
                     entry.hasOlder = false;
                     entry.hasMore = false;
@@ -419,7 +525,9 @@ export function useChatMessageSessions({ chat, chatPK, chatPrivateKey, chatBanne
                     entry.batchLastMsgKey = null;
                     entry.expiredKeys = new Set();
                     entry.deletedKeys = new Set();
-                    if (error?.code !== 'permission-denied') {
+                    if (isDenied(error)) {
+                        onUnavailable?.(chatId, error);
+                    } else {
                         console.warn('Latest messages listener error', chatId, error);
                     }
                     notify(entry);
@@ -430,11 +538,11 @@ export function useChatMessageSessions({ chat, chatPK, chatPrivateKey, chatBanne
             notify(entry);
             return makeMessageSessionSnapshot(entry);
         },
-        [chat, chatBanned, chatPK, chatPrivateKey, closeBatch, isActive, notify, onExpire, onRead, pendingDeleteIdsRef, scheduleMedia, scheduleTrim, warming.pageSize]
+        [cloud, chatBanned, chatPK, chatPrivateKey, closeBatch, isActive, notify, onExpire, onRead, onUnavailable, pendingDeleteIdsRef, runSessionBatchCleanup, scheduleMedia, scheduleTrim, warming.pageSize]
     );
 
     const releaseMessageBatch = useCallback(
-        (chatId, source = 'route') => {
+        (chatId, source = 'route', options = {}) => {
             const entry = batchesRef.current.get(chatId);
             if (!entry) {
                 return;
@@ -443,6 +551,7 @@ export function useChatMessageSessions({ chat, chatPK, chatPrivateKey, chatBanne
                 notify(entry);
                 return;
             }
+            const wasRoute = source !== 'warm' && entry.route;
             if (source === 'warm') {
                 entry.warm = false;
             } else {
@@ -459,10 +568,15 @@ export function useChatMessageSessions({ chat, chatPK, chatPrivateKey, chatBanne
                     notify(entry);
                 }
             }
+            runSessionBatchCleanup(entry, {
+                hiddenCleanup: !entry.route,
+                keepKeys: options.keepKeys,
+                writeCheckpoint: wasRoute && options.writeCheckpoint !== false,
+            });
             scheduleTrim();
             maybeCloseBatch(entry);
         },
-        [isActive, maybeCloseBatch, notify, onExpire, scheduleTrim]
+        [chatPK, isActive, maybeCloseBatch, notify, onExpire, runSessionBatchCleanup, scheduleTrim]
     );
 
     const expireMessageBatch = useCallback(

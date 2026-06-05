@@ -1,9 +1,8 @@
-import { collection, doc, getDocFromServer, getDocsFromServer, limit, onSnapshot, orderBy, query, startAfter } from 'firebase/firestore';
 import { CHAT_LIST_PAGE_SIZE, CHAT_LIST_SNAPSHOT_COALESCE_MS } from '../config.js';
 import { canShowMsg, canStoreMsg, isControlMsg } from './messages.js';
 import { openOwnChatEntry, ownChatEntryId } from './entry.js';
-import { inboxQuery, processInbox } from './inbox.js';
-import { isChatUnseenForUser } from './chats.js';
+import { processInbox } from './inbox.js';
+import { canonicalChatVersions, duplicateChatEntryIds, isChatUnseenForUser, isCurrentUserChatEntry } from './chats.js';
 import { timestampKey, timestampMs } from '../utils/time.js';
 import { positiveInt } from '../utils/number.js';
 
@@ -12,15 +11,6 @@ function chatDocDataEqual(a, b) {
         return true;
     }
     return !!a && !!b && timestampKey(a.ts ?? null) === timestampKey(b.ts ?? null) && a.body === b.body;
-}
-
-function chatEntriesQuery(db, uid, count, cursor) {
-    const clauses = [collection(db, 'users', uid, 'chats'), orderBy('ts', 'desc')];
-    if (cursor) {
-        clauses.push(startAfter(cursor));
-    }
-    clauses.push(limit(positiveInt(count, CHAT_LIST_PAGE_SIZE)));
-    return query(...clauses);
 }
 
 function normalizeChatLastMsg(msgData, message) {
@@ -37,8 +27,12 @@ function normalizeChatLastMsg(msgData, message) {
 }
 
 async function readEntries(userChatPK, userPrivKey, docs, cache, options = {}) {
+    return (await readEntryPage(null, userChatPK, userPrivKey, docs, cache, { ...options, checkStatus: false })).chats;
+}
+
+async function readEntryPage(cloud, userChatPK, userPrivKey, docs, cache, options = {}) {
     if (cache?.size && options?.prune !== false) {
-        const keep = new Set(docs.map((docSnap) => docSnap.id));
+        const keep = new Set((docs || []).map((entry) => entry.id));
         for (const id of cache.keys()) {
             if (!keep.has(id)) {
                 cache.delete(id);
@@ -46,11 +40,58 @@ async function readEntries(userChatPK, userPrivKey, docs, cache, options = {}) {
         }
     }
 
-    const chats = await Promise.all((docs || []).map((docSnap) => chatFromEntry(docSnap, userChatPK, userPrivKey, cache)));
-    return chats.filter(Boolean).sort((a, b) => (b?.ts || 0) - (a?.ts || 0));
+    const results = await Promise.all((docs || []).map((docSnap) => readEntryResult(docSnap, userChatPK, userPrivKey, cache)));
+    const rawChats = results.map((result) => result.chat).filter(Boolean);
+    const canonicalChats = canonicalChatVersions(rawChats);
+    const inactiveChatIds = options?.checkStatus === false ? new Set() : await getInactiveChatIds(cloud, canonicalChats);
+    const activeChats = inactiveChatIds.size ? canonicalChats.filter((chat) => !inactiveChatIds.has(chat.id)) : canonicalChats;
+    return {
+        chats: activeChats,
+        staleEntryIds: [
+            ...results.map((result) => result.invalidEntryId).filter(Boolean),
+            ...duplicateChatEntryIds(rawChats),
+            ...canonicalChats.filter((chat) => inactiveChatIds.has(chat.id)).map((chat) => chat.entryId).filter(Boolean),
+        ],
+    };
 }
 
-export function listenToChats(db, uid, userChatPK, userPrivKey, onUpdate, onError, options = {}) {
+async function pruneDuplicateUserChats(cloud, uid, entryIds) {
+    if (typeof cloud?.user?.chats?.delete !== 'function' || !Array.isArray(entryIds) || !entryIds.length) {
+        return;
+    }
+    await Promise.all(entryIds.map((entryId) => cloud.user.chats.delete(uid, entryId).catch(() => {})));
+}
+
+async function getInactiveChatIds(cloud, chats) {
+    if (typeof cloud?.chat?.check !== 'function' || !Array.isArray(chats) || !chats.length) {
+        return new Set();
+    }
+
+    const ids = [...new Set(chats.map((chat) => chat?.id).filter(Boolean))];
+    if (!ids.length) {
+        return new Set();
+    }
+
+    const status = await cloud.chat.check(ids);
+    return new Set((status || []).filter((item) => item?.active === false).map((item) => item.chatId).filter(Boolean));
+}
+
+export async function filterActiveUserChats(cloud, uid, chats) {
+    const canonicalChats = canonicalChatVersions(chats || []);
+    const inactiveChatIds = await getInactiveChatIds(cloud, canonicalChats);
+    if (!inactiveChatIds.size) {
+        return canonicalChats;
+    }
+
+    await pruneDuplicateUserChats(
+        cloud,
+        uid,
+        canonicalChats.filter((chat) => inactiveChatIds.has(chat.id)).map((chat) => chat.entryId).filter(Boolean)
+    );
+    return canonicalChats.filter((chat) => !inactiveChatIds.has(chat.id));
+}
+
+export function listenToChats(cloud, uid, userChatPK, userPrivKey, onUpdate, onError, options = {}) {
     const pageSize = positiveInt(options?.limitCount ?? options?.pageSize ?? options?.count, CHAT_LIST_PAGE_SIZE);
     const cache = new Map();
     let run = 0;
@@ -87,7 +128,7 @@ export function listenToChats(db, uid, userChatPK, userPrivKey, onUpdate, onErro
                 nextById.set(id, chat);
             }
         }
-        return [...nextById.values()].sort((a, b) => (b?.ts || 0) - (a?.ts || 0));
+        return canonicalChatVersions([...nextById.values()]);
     };
 
     const publishPingChat = (chat) => {
@@ -119,11 +160,12 @@ export function listenToChats(db, uid, userChatPK, userPrivKey, onUpdate, onErro
         void Promise.resolve(current)
             .then(async (snapshot) => ({
                 snapshot,
-                chats: await readEntries(userChatPK, userPrivKey, snapshot.docs, cache),
+                page: await readEntryPage(cloud, userChatPK, userPrivKey, snapshot.docs, cache),
             }))
-            .then(({ snapshot, chats }) => {
+            .then(({ snapshot, page }) => {
                 if (!closed && runId === run) {
                     processedFirst = true;
+                    const chats = page.chats;
                     latestChats = mergedChats(chats);
                     latestMeta = {
                         cursor: snapshot.cursor,
@@ -133,6 +175,7 @@ export function listenToChats(db, uid, userChatPK, userPrivKey, onUpdate, onErro
                         cursor: snapshot.cursor,
                         hasMore: snapshot.hasMore,
                     });
+                    void pruneDuplicateUserChats(cloud, uid, page.staleEntryIds);
                 }
             })
             .catch((error) => {
@@ -154,7 +197,7 @@ export function listenToChats(db, uid, userChatPK, userPrivKey, onUpdate, onErro
         }
         inboxQueued = false;
         inboxProcessing = true;
-        void processInbox(db, uid, userChatPK, userPrivKey, {
+        void processInbox(cloud, uid, userChatPK, userPrivKey, {
             currentChats: latestChats,
             onPingChat: publishPingChat,
         })
@@ -188,26 +231,24 @@ export function listenToChats(db, uid, userChatPK, userPrivKey, onUpdate, onErro
         timer = setTimeout(processPending, delayMs);
     };
 
-    const unsub = onSnapshot(
-        chatEntriesQuery(db, uid, pageSize),
-        (snap) => {
-            if (snap.metadata?.hasPendingWrites) {
-                return;
-            }
+    const unsub = cloud.user.chats.watch(
+        uid,
+        (entries, meta = {}) => {
             pending = {
                 version: ++snapshotVersion,
-                docs: snap.docs,
-                cursor: snap.docs[snap.docs.length - 1] ?? null,
-                hasMore: snap.docs.length >= pageSize,
+                docs: entries,
+                cursor: meta.cursor ?? null,
+                hasMore: !!meta.hasMore,
             };
             schedule(processedFirst ? CHAT_LIST_SNAPSHOT_COALESCE_MS : 0);
         },
-        onError
+        onError,
+        { limitCount: pageSize }
     );
-    const inboxUnsub = onSnapshot(
-        inboxQuery(db, uid),
-        (snap) => {
-            if (snap.metadata?.hasPendingWrites || snap.empty) {
+    const inboxUnsub = cloud.inbox.watch(
+        uid,
+        (items, info = {}) => {
+            if (info.pending || !items.length) {
                 return;
             }
             queueInboxProcess();
@@ -227,8 +268,8 @@ export function listenToChats(db, uid, userChatPK, userPrivKey, onUpdate, onErro
     };
 }
 
-export async function loadMoreChats(db, uid, userChatPK, userPrivKey, cursor, pageSize) {
-    if (!db || !uid || !userChatPK || !userPrivKey || !cursor) {
+export async function loadMoreChats(cloud, uid, userChatPK, userPrivKey, cursor, pageSize) {
+    if (!cloud || !uid || !userChatPK || !userPrivKey || !cursor) {
         return {
             chats: [],
             peers: [],
@@ -238,32 +279,67 @@ export async function loadMoreChats(db, uid, userChatPK, userPrivKey, cursor, pa
     }
 
     const count = positiveInt(pageSize, CHAT_LIST_PAGE_SIZE);
-    const snap = await getDocsFromServer(chatEntriesQuery(db, uid, count, cursor));
-    const chats = await readEntries(userChatPK, userPrivKey, snap.docs, new Map(), { prune: false });
+    const page = await cloud.user.chats.list(uid, { count, cursor });
+    const entryPage = await readEntryPage(cloud, userChatPK, userPrivKey, page.records, new Map(), { prune: false });
+    void pruneDuplicateUserChats(cloud, uid, entryPage.staleEntryIds);
     return {
-        chats,
-        peers: chats.map((chat) => chat.peerChatPK).filter(Boolean),
-        cursor: snap.docs[snap.docs.length - 1] ?? cursor,
-        hasMore: snap.docs.length >= count,
+        chats: entryPage.chats,
+        peers: entryPage.chats.map((chat) => chat.peerChatPK).filter(Boolean),
+        cursor: page.cursor ?? cursor,
+        hasMore: !!page.hasMore,
     };
 }
 
-export async function getChat(db, uid, chatId, userChatPK, userPrivKey) {
-    if (!db || !uid || !chatId || !userChatPK || !userPrivKey) {
+export async function loadAllChats(cloud, uid, userChatPK, userPrivKey, pageSize = CHAT_LIST_PAGE_SIZE) {
+    if (!cloud || !uid || !userChatPK || !userPrivKey) {
+        return [];
+    }
+
+    const count = positiveInt(pageSize, CHAT_LIST_PAGE_SIZE);
+    const cache = new Map();
+    const chats = [];
+    let cursor = null;
+    let hasMore = true;
+
+    while (hasMore) {
+        const page = await cloud.user.chats.list(uid, { count, cursor });
+        const records = Array.isArray(page?.records) ? page.records : [];
+        if (!records.length) {
+            break;
+        }
+        const pageChats = await readEntries(userChatPK, userPrivKey, records, cache, { prune: false });
+        chats.push(...pageChats);
+        cursor = page?.cursor ?? null;
+        hasMore = !!page?.hasMore && !!cursor;
+    }
+
+    return canonicalChatVersions(chats);
+}
+
+export async function getChat(cloud, uid, chatId, userChatPK, userPrivKey) {
+    if (!cloud || !uid || !chatId || !userChatPK || !userPrivKey) {
         return null;
     }
     const entryId = ownChatEntryId(userPrivKey, chatId);
-    const snap = await getDocFromServer(doc(db, 'users', uid, 'chats', entryId)).catch(() => null);
-    if (!snap?.exists?.()) {
+    const entry = await cloud.user.chats.read(uid, entryId).catch(() => null);
+    if (!entry) {
         return null;
     }
-    const chat = await chatFromEntry(snap, userChatPK, userPrivKey, new Map());
-    return chat?.id === chatId ? chat : null;
+    const chat = await chatFromEntry(entry, userChatPK, userPrivKey, new Map());
+    if (chat?.id !== chatId) {
+        return null;
+    }
+    const inactiveChatIds = await getInactiveChatIds(cloud, [chat]);
+    if (inactiveChatIds.has(chatId)) {
+        await pruneDuplicateUserChats(cloud, uid, [entry.id]);
+        return null;
+    }
+    return chat;
 }
 
-async function decryptChatEntry(docSnap, userChatPK, userPrivKey) {
-    const data = docSnap.data();
-    const entry = await openOwnChatEntry(userPrivKey, docSnap.id, data?.body);
+async function decryptChatEntry(entryRecord, userChatPK, userPrivKey) {
+    const data = entryRecord;
+    const entry = await openOwnChatEntry(userPrivKey, entryRecord.id, data?.body);
     const lastMsg = normalizeChatLastMsg({ ts: data?.ts ?? null, ttl: entry?.lastMsg?.ttl ?? null }, entry?.lastMsg);
     const visibleLastMsg = lastMsg && canShowMsg(lastMsg) && !isControlMsg(lastMsg) ? lastMsg : null;
     const ts = timestampMs(data?.ts, null) ?? timestampMs(visibleLastMsg?.ts, null) ?? 0;
@@ -273,7 +349,8 @@ async function decryptChatEntry(docSnap, userChatPK, userPrivKey) {
     }
     return {
         id: entry.chatId,
-        entryId: docSnap.id,
+        linkId: entry.linkId,
+        entryId: entryRecord.id,
         peerChatPK: entry.peerChatPK,
         peerUid: entry.peerUid || null,
         actors: entry.actors || {},
@@ -286,14 +363,26 @@ async function decryptChatEntry(docSnap, userChatPK, userPrivKey) {
     };
 }
 
-async function chatFromEntry(docSnap, userChatPK, userPrivKey, cache) {
-    const data = docSnap.data();
-    const cached = cache?.get?.(docSnap.id);
+async function chatFromEntry(entryRecord, userChatPK, userPrivKey, cache) {
+    const data = entryRecord;
+    const cached = cache?.get?.(entryRecord.id);
     if (cached && chatDocDataEqual(cached.data, data)) {
         return cached.chat;
     }
 
-    const chat = await decryptChatEntry(docSnap, userChatPK, userPrivKey).catch(() => null);
-    cache?.set?.(docSnap.id, { data, chat });
+    const chat = await decryptChatEntry(entryRecord, userChatPK, userPrivKey);
+    if (!isCurrentUserChatEntry(chat)) {
+        throw new Error('invalid chat entry');
+    }
+    cache?.set?.(entryRecord.id, { data, chat });
     return chat;
+}
+
+async function readEntryResult(entryRecord, userChatPK, userPrivKey, cache) {
+    try {
+        return { chat: await chatFromEntry(entryRecord, userChatPK, userPrivKey, cache), invalidEntryId: null };
+    } catch {
+        cache?.delete?.(entryRecord?.id);
+        return { chat: null, invalidEntryId: entryRecord?.id || null };
+    }
 }

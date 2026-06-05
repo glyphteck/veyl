@@ -1,16 +1,13 @@
 'use client';
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { collection, deleteDoc, doc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore';
-import { onAuthStateChanged } from 'firebase/auth';
-import { avatarUrlWithVersion, readAvatarVersion } from '../avatar.js';
-import { avatarPath, getFileUrl, readFile } from '../files.js';
+import { readAvatarVersion } from '../avatar.js';
 import { BAN_REFRESH_GRACE_MS } from '../config.js';
 import { COMMUNITY_RULES_DATE, COMMUNITY_RULES_VERSION } from '../community.js';
 import { markDiag, markDone, markError } from '../utils/diagnostics.js';
 import { banState, nextBanRefreshMs } from '../moderation.js';
 import { peerUid } from '../profile.js';
-import { defaultSettings, writeUserSettings } from '../settings.js';
+import { defaultSettings } from '../settings.js';
 import { cleanText } from '../utils/text.js';
 import { resolveWalletPK } from '../wallet/keys.js';
 
@@ -45,13 +42,9 @@ export const defaultUser = {
     },
 };
 
-export function createUserProvider({ auth, db, storage, getStorage, network, avatarCache = null, diag = null }) {
-    if (!auth || !db) {
-        throw new Error('createUserProvider requires { auth, db }');
-    }
-
-    function resolveStorage() {
-        return typeof getStorage === 'function' ? getStorage() : storage;
+export function createUserProvider({ cloud, network, avatarCache = null, diag = null }) {
+    if (!cloud) {
+        throw new Error('createUserProvider requires { cloud }');
     }
 
     async function readCachedAvatar(uid, expectedVersion = null) {
@@ -175,18 +168,15 @@ export function createUserProvider({ auth, db, storage, getStorage, network, ava
                             return cachedAvatar.url;
                         }
 
-                        const storage = resolveStorage();
-                        if (!storage) return null;
                         if (persist && avatarVersion != null) {
-                            const bytes = await readFile(storage, avatarPath(uid));
+                            const bytes = await cloud.peer.avatar.read(uid);
                             const cachedSource = await writeCachedAvatar(uid, { version: avatarVersion, bytes });
                             if (cachedSource) {
                                 return cachedSource;
                             }
                         }
 
-                        const avatarUrl = await getFileUrl(storage, avatarPath(uid));
-                        return avatarUrlWithVersion(avatarUrl, avatarVersion);
+                        return await cloud.peer.avatar.url(uid, { version: avatarVersion });
                     })().then((nextAvatar) => {
                         markDone(diag, 'user.avatar.fetch', startedAt, { found: !!nextAvatar, hasVersion: avatarVersion != null });
                         if (!nextAvatar) {
@@ -224,19 +214,19 @@ export function createUserProvider({ auth, db, storage, getStorage, network, ava
                     return null;
                 }
             },
-            [diag, getStorage, storage]
+            [cloud, diag]
         );
 
         const clearAvatar = useCallback(() => {
             avatarFetchRef.current = { uid: null, key: null, promise: null };
-            removeCachedAvatar(auth.currentUser?.uid);
+            removeCachedAvatar(cloud.auth.user?.uid);
             setUser((prevUser) => {
                 if (prevUser.avatar == null && prevUser.avatarVersion == null) {
                     return prevUser;
                 }
                 return { ...prevUser, avatar: null, avatarVersion: null };
             });
-        }, [auth]);
+        }, [cloud]);
 
         useEffect(() => {
             let unsubscribePrivate = () => {};
@@ -245,7 +235,7 @@ export function createUserProvider({ auth, db, storage, getStorage, network, ava
             let unsubscribeProfile = () => {};
             let unsubscribeBlocked = () => {};
 
-            const unsubscribeAuth = onAuthStateChanged(auth, (authUser) => {
+            const unsubscribeAuth = cloud.auth.watch((authUser) => {
                 const authStartedAt = Date.now();
                 const authSession = authSessionRef.current + 1;
                 authSessionRef.current = authSession;
@@ -273,7 +263,7 @@ export function createUserProvider({ auth, db, storage, getStorage, network, ava
                         : { ...defaultUser, authReady: true, uid: authUser.uid }
                 ));
                 void readCachedAvatar(authUser.uid).then((cached) => {
-                    if (!cached || authSessionRef.current !== authSession || auth.currentUser?.uid !== authUser.uid) {
+                    if (!cached || authSessionRef.current !== authSession || cloud.auth.user?.uid !== authUser.uid) {
                         return;
                     }
                     setUser((prevUser) => {
@@ -287,12 +277,12 @@ export function createUserProvider({ auth, db, storage, getStorage, network, ava
                     });
                 });
 
-                unsubscribeAdmin = onSnapshot(
-                    doc(db, 'admins', authUser.uid),
-                    (adminSnap) => {
+                unsubscribeAdmin = cloud.user.admin.watch(
+                    authUser.uid,
+                    (allowed) => {
                         setUser((prevUser) => ({
                             ...prevUser,
-                            isAdmin: adminSnap.exists(),
+                            isAdmin: allowed,
                             adminReady: true,
                         }));
                     },
@@ -306,25 +296,23 @@ export function createUserProvider({ auth, db, storage, getStorage, network, ava
                     }
                 );
 
-                unsubscribePrivate = onSnapshot(
-                    doc(db, 'users', authUser.uid),
-                    { includeMetadataChanges: true },
-                    (privateSnap) => {
+                unsubscribePrivate = cloud.user.private.watch(
+                    authUser.uid,
+                    (privateData, info = {}) => {
                         markDiag(diag, 'user.settings.snapshot', {
                             elapsedMs: Date.now() - authStartedAt,
-                            exists: privateSnap.exists(),
-                            fromCache: privateSnap.metadata.fromCache,
-                            pending: privateSnap.metadata.hasPendingWrites,
+                            exists: !!info.exists,
+                            fromCache: !!info.fromCache,
+                            pending: !!info.pending,
                         });
-                        const privateData = privateSnap.exists() ? privateSnap.data() : {};
                         const { autolock: rawAutolock, ...rawSettings } = privateData.settings || {};
                         setUser((prevUser) => ({
                             ...prevUser,
                             communityRulesVersion: privateData.communityRulesVersion ?? null,
                             communityRulesDate: privateData.communityRulesDate ?? null,
                             communityRulesAcceptedAt: privateData.communityRulesAcceptedAt ?? null,
-                            communityRulesPending: privateSnap.metadata.hasPendingWrites,
-                            settingsReady: prevUser.settingsReady || !privateSnap.metadata.fromCache,
+                            communityRulesPending: !!info.pending,
+                            settingsReady: prevUser.settingsReady || !info.fromCache,
                             settings: {
                                 ...defaultUser.settings,
                                 ...rawSettings,
@@ -356,13 +344,12 @@ export function createUserProvider({ auth, db, storage, getStorage, network, ava
                     }
                 );
 
-                unsubscribeModeration = onSnapshot(
-                    doc(db, 'moderation', authUser.uid),
-                    (moderationSnap) => {
-                        const moderationData = moderationSnap.exists() ? moderationSnap.data() : {};
+                unsubscribeModeration = cloud.user.banned(
+                    authUser.uid,
+                    (banned) => {
                         setUser((prevUser) => ({
                             ...prevUser,
-                            banned: moderationData?.banned ?? null,
+                            banned: banned ?? null,
                         }));
                     },
                     (error) => {
@@ -371,14 +358,9 @@ export function createUserProvider({ auth, db, storage, getStorage, network, ava
                     }
                 );
 
-                unsubscribeBlocked = onSnapshot(
-                    collection(db, 'users', authUser.uid, 'blocked'),
-                    (blockedSnap) => {
-                        const blocked = blockedSnap.docs
-                            .map((item) => item.id)
-                            .filter(Boolean)
-                            .sort();
-
+                unsubscribeBlocked = cloud.user.blocked.watch(
+                    authUser.uid,
+                    (blocked) => {
                         setUser((prevUser) => {
                             if (prevUser.blockedReady && prevUser.blocked.length === blocked.length && prevUser.blocked.every((id, i) => id === blocked[i])) {
                                 return prevUser;
@@ -392,21 +374,20 @@ export function createUserProvider({ auth, db, storage, getStorage, network, ava
                     }
                 );
 
-                unsubscribeProfile = onSnapshot(
-                    doc(db, 'profiles', authUser.uid),
-                    (profileSnap) => {
+                unsubscribeProfile = cloud.user.profile.watch(
+                    authUser.uid,
+                    (profileData, info = {}) => {
                         markDiag(diag, 'user.profile.snapshot', {
                             elapsedMs: Date.now() - authStartedAt,
-                            exists: profileSnap.exists(),
+                            exists: !!info.exists,
                         });
-                        const profileData = profileSnap.exists() ? profileSnap.data() : {};
                         setUser((prevUser) => {
                             const username = profileData.username || null;
                             const walletPKs = profileData.walletPKs || null;
                             const walletPK = resolveWalletPK(profileData, network);
                             const chatPK = profileData.chatPK || null;
                             const active = profileData.active ?? false;
-                            const hasAvatarEntry = profileSnap.exists() && Object.prototype.hasOwnProperty.call(profileData, 'avatar');
+                            const hasAvatarEntry = !!info.exists && Object.prototype.hasOwnProperty.call(profileData, 'avatar');
                             const avatarVersion = readAvatarVersion(profileData.avatar);
                             const avatar = avatarVersion == null ? null : prevUser.avatar;
                             if (
@@ -428,7 +409,7 @@ export function createUserProvider({ auth, db, storage, getStorage, network, ava
                         const avatarVersion = readAvatarVersion(profileData.avatar);
                         if (avatarVersion == null) {
                             void fetchAvatar(authUser.uid, { clear: true });
-                        } else if (profileSnap.exists()) {
+                        } else if (info.exists) {
                             void fetchAvatar(authUser.uid, { version: avatarVersion });
                         }
                     },
@@ -461,7 +442,7 @@ export function createUserProvider({ auth, db, storage, getStorage, network, ava
                 unsubscribeBlocked();
                 unsubscribeAuth();
             };
-        }, [auth, db, diag, fetchAvatar, network]);
+        }, [cloud, diag, fetchAvatar, network]);
 
         useEffect(() => {
             const untilMs = nextBanRefreshMs(user?.banned);
@@ -489,41 +470,36 @@ export function createUserProvider({ auth, db, storage, getStorage, network, ava
         const blockPeer = useCallback(
             async (peer) => {
                 const nextPeerUid = peerUid(peer);
-                const uid = auth.currentUser?.uid;
+                const uid = cloud.auth.user?.uid;
                 if (!uid) throw new Error('auth');
                 if (!nextPeerUid) throw new Error('peer uid required');
                 if (nextPeerUid === uid) return;
-                await setDoc(doc(db, 'users', uid, 'blocked', nextPeerUid), {});
+                await cloud.user.blocked.add(uid, nextPeerUid);
             },
-            [auth, db]
+            [cloud]
         );
 
         const unblockPeer = useCallback(
             async (peer) => {
                 const nextPeerUid = peerUid(peer);
-                const uid = auth.currentUser?.uid;
+                const uid = cloud.auth.user?.uid;
                 if (!uid) throw new Error('auth');
                 if (!nextPeerUid) throw new Error('peer uid required');
-                await deleteDoc(doc(db, 'users', uid, 'blocked', nextPeerUid));
+                await cloud.user.blocked.remove(uid, nextPeerUid);
             },
-            [auth, db]
+            [cloud]
         );
 
         const acceptCommunityRules = useCallback(
             async (version) => {
-                const uid = auth.currentUser?.uid;
+                const uid = cloud.auth.user?.uid;
                 const nextVersion = cleanText(version);
                 if (!uid) throw new Error('auth');
                 if (!nextVersion) throw new Error('community rules version required');
-                await setDoc(
-                    doc(db, 'users', uid),
-                    {
-                        communityRulesVersion: nextVersion,
-                        ...(nextVersion === COMMUNITY_RULES_VERSION ? { communityRulesDate: COMMUNITY_RULES_DATE } : {}),
-                        communityRulesAcceptedAt: serverTimestamp(),
-                    },
-                    { merge: true }
-                );
+                await cloud.user.community.accept(uid, {
+                    version: nextVersion,
+                    ...(nextVersion === COMMUNITY_RULES_VERSION ? { date: COMMUNITY_RULES_DATE } : {}),
+                });
                 setUser((prevUser) => ({
                     ...prevUser,
                     communityRulesVersion: nextVersion,
@@ -532,20 +508,15 @@ export function createUserProvider({ auth, db, storage, getStorage, network, ava
                     communityRulesPending: false,
                 }));
             },
-            [auth, db]
+            [cloud]
         );
 
         const updateSettings = useCallback(
             async (patch) => {
-                const uid = auth.currentUser?.uid;
+                const uid = cloud.auth.user?.uid;
                 if (!uid) throw new Error('auth');
 
-                const nextSettings = await writeUserSettings({
-                    db,
-                    uid,
-                    settings: patch,
-                    currentSettings: user.settings,
-                });
+                const nextSettings = await cloud.user.settings.write(uid, patch, { currentSettings: user.settings });
                 setUser((prevUser) => ({
                     ...prevUser,
                     settingsReady: true,
@@ -553,7 +524,7 @@ export function createUserProvider({ auth, db, storage, getStorage, network, ava
                 }));
                 return nextSettings;
             },
-            [auth, db, user.settings]
+            [cloud, user.settings]
         );
 
         const isBlocked = useCallback(

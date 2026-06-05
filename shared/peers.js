@@ -1,17 +1,11 @@
-import { collection, doc, getDoc, getDocs, limit, query, where } from 'firebase/firestore';
 import { uniqueValues } from './utils/array.js';
-import { avatarUrlWithVersion, readAvatarVersion } from './avatar.js';
-import { avatarPath, getFileUrl } from './files.js';
+import { readAvatarVersion } from './avatar.js';
 import { hasPeerKeys, isFullProfile, normalizeProfile } from './profile.js';
-import { normalizeWalletNetwork, resolveWalletPK, walletPKField } from './wallet/keys.js';
+import { normalizeWalletNetwork, resolveWalletPK } from './wallet/keys.js';
 
-export function createPeersApi({ db, storage, getStorage, network }) {
-    if (!db) {
-        throw new Error('createPeersApi requires db');
-    }
-
-    function resolveStorage() {
-        return typeof getStorage === 'function' ? getStorage() : storage;
+export function createPeersApi({ cloud, network }) {
+    if (!cloud) {
+        throw new Error('createPeersApi requires cloud');
     }
 
     const walletNetwork = normalizeWalletNetwork(network);
@@ -39,25 +33,19 @@ export function createPeersApi({ db, storage, getStorage, network }) {
         };
     }
 
-    function createProfileFromDoc(docSnap) {
-        return createProfileFromData(docSnap.id, docSnap.data());
+    function createProfileFromRecord(record) {
+        return createProfileFromData(record?.uid, record);
     }
 
-    async function getAvatarUrl(uid, options = {}) {
+    async function getAvatarUrl(uid, version) {
         if (!uid) return null;
-        const version = readAvatarVersion(options?.version);
         const key = version == null ? 'unknown' : String(version);
-        const force = options?.force === true;
         const cached = avatarCache.get(uid);
-        if (!force && cached?.key === key) {
+        if (cached?.key === key) {
             return cached.promise;
         }
 
-        const storage = resolveStorage();
-        if (!storage) return null;
-        const promise = getFileUrl(storage, avatarPath(uid))
-            .then((url) => avatarUrlWithVersion(url, version))
-            .catch(() => null);
+        const promise = cloud.peer.avatar.url(uid, { version }).catch(() => null);
         avatarCache.set(uid, { key, promise });
         return promise;
     }
@@ -114,7 +102,7 @@ export function createPeersApi({ db, storage, getStorage, network }) {
         return storeProfile(mergeCachedProfile(existing, profile));
     }
 
-    async function resolveProfileAvatar(profile, existing, options = {}) {
+    async function resolveProfileAvatar(profile, existing) {
         if (!profile?.uid) return null;
         if (profile.avatarVersion == null) {
             clearAvatarUrl(profile.uid);
@@ -123,13 +111,11 @@ export function createPeersApi({ db, storage, getStorage, network }) {
 
         const changedAvatarState = avatarStateChanged(existing, profile);
         const currentAvatar = changedAvatarState ? null : profile.avatar ?? existing?.avatar ?? null;
-        if (currentAvatar && (options?.refreshAvatar !== true || profile.avatarVersion != null)) {
+        if (currentAvatar) {
             return currentAvatar;
         }
 
-        const avatarUrl = await getAvatarUrl(profile.uid, {
-            version: profile.avatarVersion,
-        });
+        const avatarUrl = await getAvatarUrl(profile.uid, profile.avatarVersion);
         return avatarUrl || null;
     }
 
@@ -153,10 +139,10 @@ export function createPeersApi({ db, storage, getStorage, network }) {
         return uid ? profileCache.get(uid) : null;
     }
 
-    async function buildPeer(profile, stats, options = {}) {
+    async function buildPeer(profile, stats) {
         if (!profile?.uid || !hasPeerKeys(profile)) return null;
 
-        const avatar = await resolveProfileAvatar(profile, profileCache.get(profile.uid), options);
+        const avatar = await resolveProfileAvatar(profile, profileCache.get(profile.uid));
         if ((profile.avatar ?? null) !== avatar) {
             profile.avatar = avatar;
             storeProfile(profile);
@@ -179,11 +165,10 @@ export function createPeersApi({ db, storage, getStorage, network }) {
         if (profileCache.has(uid)) return profileCache.get(uid);
 
         try {
-            const docRef = doc(db, 'profiles', uid);
-            const docSnap = await getDoc(docRef);
-            if (!docSnap.exists()) return null;
+            const record = await cloud.peer.read(uid);
+            if (!record) return null;
 
-            const nextProfile = createProfileFromDoc(docSnap);
+            const nextProfile = createProfileFromRecord(record);
             if (!hasPeerKeys(nextProfile)) return null;
             const profile = cachePeer(nextProfile);
             return profile;
@@ -192,17 +177,16 @@ export function createPeersApi({ db, storage, getStorage, network }) {
         }
     }
 
-    async function updatePeerByUID(uid, options = {}) {
+    async function updatePeerByUID(uid) {
         if (!uid) return null;
 
         try {
-            const docRef = doc(db, 'profiles', uid);
-            const docSnap = await getDoc(docRef);
-            if (!docSnap.exists()) return null;
+            const record = await cloud.peer.read(uid);
+            if (!record) return null;
 
-            const nextProfile = createProfileFromDoc(docSnap);
+            const nextProfile = createProfileFromRecord(record);
             const existing = profileCache.get(uid);
-            const nextAvatar = await resolveProfileAvatar(nextProfile, existing, options);
+            const nextAvatar = await resolveProfileAvatar(nextProfile, existing);
             const merged = mergeCachedProfile(existing, { ...nextProfile, avatar: nextAvatar });
 
             if (existing) {
@@ -235,11 +219,14 @@ export function createPeersApi({ db, storage, getStorage, network }) {
         }
 
         try {
-            const queryField = field === 'walletPK' ? walletPKField(walletNetwork) : field;
-            const snapshot = await getDocs(query(collection(db, 'profiles'), where(queryField, '==', value), limit(1)));
-            if (snapshot.empty) return null;
+            const record = field === 'walletPK'
+                ? await cloud.search.peer.byWalletPK(value, { network: walletNetwork })
+                : field === 'chatPK'
+                    ? await cloud.search.peer.byChatPK(value)
+                    : await cloud.search.peer.byUsername(value);
+            if (!record) return null;
 
-            const nextProfile = createProfileFromDoc(snapshot.docs[0]);
+            const nextProfile = createProfileFromRecord(record);
             if (!hasPeerKeys(nextProfile)) return null;
             const profile = cachePeer(nextProfile);
             return profile;
@@ -300,16 +287,6 @@ export function createPeersApi({ db, storage, getStorage, network }) {
         return await fetchAndCachePeer({ uid });
     }
 
-    function fetchByField(field, keys) {
-        if (!keys?.length) return [];
-        const chunks = [];
-        for (let i = 0; i < keys.length; i += 10) {
-            chunks.push(keys.slice(i, i + 10));
-        }
-        const queryField = field === 'walletPK' ? walletPKField(walletNetwork) : field;
-        return chunks.map((chunk) => getDocs(query(collection(db, 'profiles'), where(queryField, 'in', chunk), limit(chunk.length))));
-    }
-
     function uniqueLookupKeys(keys) {
         return uniqueValues(keys);
     }
@@ -320,18 +297,18 @@ export function createPeersApi({ db, storage, getStorage, network }) {
 
         if (uncachedWalletPKs.length === 0 && uncachedChatPKs.length === 0) return;
 
-        const queryJobs = [...fetchByField('walletPK', uncachedWalletPKs), ...fetchByField('chatPK', uncachedChatPKs)];
-        const snapshots = await Promise.all(queryJobs);
+        const [walletRecords, chatRecords] = await Promise.all([
+            cloud.search.peer.byWalletPKs(uncachedWalletPKs, { network: walletNetwork }),
+            cloud.search.peer.byChatPKs(uncachedChatPKs),
+        ]);
         const uniqueProfiles = new Map();
 
-        for (const snapshot of snapshots) {
-            for (const docSnap of snapshot.docs) {
-                const nextProfile = createProfileFromDoc(docSnap);
-                if (!hasPeerKeys(nextProfile)) continue;
-                const profile = cachePeer(nextProfile);
-                if (!profile) continue;
-                uniqueProfiles.set(profile.uid, profile);
-            }
+        for (const record of [...walletRecords, ...chatRecords]) {
+            const nextProfile = createProfileFromRecord(record);
+            if (!hasPeerKeys(nextProfile)) continue;
+            const profile = cachePeer(nextProfile);
+            if (!profile) continue;
+            uniqueProfiles.set(profile.uid, profile);
         }
 
         await Promise.all(Array.from(uniqueProfiles.values()).map(async (profile) => buildPeer(profile)));
@@ -372,7 +349,7 @@ export function createPeersApi({ db, storage, getStorage, network }) {
     }
 
     return {
-        createProfileFromDoc,
+        createProfileFromRecord,
         buildPeer,
         cachePeer,
         hydrateProfiles,

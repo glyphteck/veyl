@@ -34,9 +34,17 @@ export const setUsername = onCall(loggedCall('setUsername', async (context) => {
 
     await db.runTransaction(async (t) => {
         const unameRef = db.collection('usernames').doc(username);
-        if ((await t.get(unameRef)).exists) throw new HttpsError('already-exists', 'username unavailable', { reason: 'taken' });
+        const profileRef = db.collection('profiles').doc(context.auth.uid);
+        const [unameSnap, profileSnap] = await Promise.all([t.get(unameRef), t.get(profileRef)]);
+        const currentUsername = normalizeUsername(profileSnap.data()?.username || '');
+        if (currentUsername && currentUsername !== username) {
+            throw new HttpsError('failed-precondition', 'username already set');
+        }
+        if (unameSnap.exists && unameSnap.data()?.uid !== context.auth.uid) {
+            throw new HttpsError('already-exists', 'username unavailable', { reason: 'taken' });
+        }
         t.set(unameRef, { uid: context.auth.uid });
-        t.set(db.collection('profiles').doc(context.auth.uid), { username }, { merge: true });
+        t.set(profileRef, { username }, { merge: true });
     });
     return OK;
 }));

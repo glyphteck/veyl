@@ -2,9 +2,7 @@ import { useMemo, useState } from 'react';
 import { ActivityIndicator, Animated, Pressable, Text, TextInput, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { CircleQuestionMark, Eye, EyeOff, KeyRound } from 'lucide-react-native';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { useTheme } from '@/providers/themeprovider';
-import { auth, db } from '@/lib/firebase';
 import GlassButton from '@/components/glass/glassbutton';
 import GlassField from '@/components/glass/glassfield';
 import Icon from '@/components/icon';
@@ -13,6 +11,7 @@ import { encryptSeed } from '@/lib/crypto/seed';
 import { yieldToUi } from '@veyl/shared/utils/async';
 import { getPasswordFeedback, isPassword, MAX_PASSWORD, normalizePassword } from '@veyl/shared/password';
 import { useTap } from '@/lib/tap';
+import { cloud } from '@/lib/cloud';
 
 export default function NewUserPassword() {
     const router = useRouter();
@@ -48,7 +47,7 @@ export default function NewUserPassword() {
             return;
         }
 
-        const uid = auth.currentUser?.uid;
+        const uid = cloud.auth.user?.uid;
         if (!uid) {
             setSubmitError('not signed in — please go back and login again');
             return;
@@ -58,14 +57,14 @@ export default function NewUserPassword() {
         try {
             setSubmitStatus('checking your vault…');
             await yieldToUi();
-            const seedDoc = await getDoc(doc(db, 'seeds', uid));
-            if (!seedDoc.exists()) {
+            if (!(await cloud.user.vault.exists(uid))) {
                 setSubmitStatus('securing your vault…');
                 await yieldToUi();
                 const seedData = await encryptSeed(nextPassword);
                 setSubmitStatus('saving…');
                 await yieldToUi();
-                await setDoc(doc(db, 'seeds', uid), { es: packSeedData(seedData) });
+                const vault = packSeedData(seedData);
+                await cloud.user.vault.write(uid, vault);
             }
         } catch (err) {
             console.warn('password setup failed', err);

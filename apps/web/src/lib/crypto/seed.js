@@ -19,21 +19,21 @@ export function decryptSeed(ciphertext, salt, iv, password, kdf) {
     return decryptSeedShared(ciphertext, salt, iv, password, kdf, { deriveKey: deriveVaultKey });
 }
 
-export async function decryptMasterSeed(encSeed, password) {
+export async function decryptMasterSeed(vault, password) {
     const nextPassword = normalizePassword(password);
     if (!nextPassword) {
         throw new Error('password required');
     }
-    if (!encSeed) {
+    if (!vault) {
         throw new Error('vault not ready');
     }
 
-    const { salt, iv, ct, kdf } = unpackSeedData(encSeed);
+    const { salt, iv, ct, kdf } = unpackSeedData(vault);
     return decryptSeed(ct, salt, iv, nextPassword, kdf);
 }
 
-export async function decryptWalletMnemonic(encSeed, password) {
-    const masterSeed = await decryptMasterSeed(encSeed, password);
+export async function decryptWalletMnemonic(vault, password) {
+    const masterSeed = await decryptMasterSeed(vault, password);
     try {
         return deriveWalletMnemonicShared(masterSeed);
     } finally {
@@ -41,8 +41,8 @@ export async function decryptWalletMnemonic(encSeed, password) {
     }
 }
 
-export async function verifyVaultPassword(encSeed, password) {
-    const masterSeed = await decryptMasterSeed(encSeed, password);
+export async function verifyVaultPassword(vault, password) {
+    const masterSeed = await decryptMasterSeed(vault, password);
     try {
         return masterSeed.length === 32;
     } finally {

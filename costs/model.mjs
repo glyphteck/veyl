@@ -1,32 +1,38 @@
 const GIB_PER_MIB = 1 / 1024;
 const GIB_PER_KIB = 1 / (1024 * 1024);
+const SECONDS_PER_DAY = 24 * 60 * 60;
 
 export const DEFAULT_ASSUMPTIONS = Object.freeze({
     daysPerMonth: 30,
     retainedSavedDays: 360,
-    monthlyActiveUsersPerDau: 3,
     averageMediaMiB: 5,
     averageAvatarKiB: 25,
     avatarUploadRate: 0.9,
-    textMessagesPerDauDay: 10,
-    mediaMessagesPerDauDay: 1,
+    textMessagesPerActiveUserDay: 24,
+    mediaMessagesPerActiveUserDay: 1,
+    readReceiptsPerActiveUserDay: 25,
+    reactionsPerActiveUserDay: 2,
+    walletTransactionsPerActiveUserDay: 0.1,
     savedTextMessageRate: 0.1,
     savedMediaMessageRate: 0.1,
     savedMessageDocKiB: 2,
     routineMediaLiveDays: 21,
-    mediaDownloadGiBPerDauMonth: 0,
-    functionComputeCostPerDauMonth: 0,
-    sparkCostPerDauMonth: 0,
+    mediaDownloadGiBPerActiveUserMonth: 0,
+    functionComputeCostPerActiveUserMonth: 0,
+    sparkCostPerActiveUserMonth: 0,
     moderationLaborCostMonth: 0,
-    baseReadsPerDauDay: 205,
-    baseWritesPerDauDay: 24,
-    baseFunctionInvocationsPerDauDay: 11,
-    baseStorageClassAOpsPerDauDay: 1,
+    fixedReadsPerActiveUserDay: 147,
+    fixedWritesPerActiveUserDay: 5,
+    fixedFunctionInvocationsPerActiveUserDay: 1,
+    fixedStorageClassAOpsPerActiveUserDay: 0,
     messageSendFirestoreReadsPerMessage: 6,
     messageSendFirestoreWritesPerMessage: 4,
     messageSendFunctionInvocationsPerMessage: 1,
-    readReceiptFirestoreReadsPerMessage: 0,
+    readReceiptFirestoreReadsPerMessage: 1,
     readReceiptFirestoreWritesPerMessage: 1,
+    reactionFirestoreReadsPerReaction: 1,
+    reactionFirestoreWritesPerReaction: 1,
+    mediaStorageClassAOpsPerMessage: 1,
     btcSchedulerWritesPerDay: 1440,
     btcSchedulerFunctionInvocationsPerDay: 1440,
 });
@@ -41,10 +47,8 @@ export const DEFAULT_RATES = Object.freeze({
     storageClassA: 0.005 / 1000,
     storageClassB: 0.0004 / 1000,
     mediaDownloadGiB: 0,
-    authMau: 0.0055,
     createAccountSkipAvatar: 0.000027,
     createAccountUploadAvatar: 0.000033,
-    saveOpsPerDauDay: 0.00001027,
 });
 
 export const DEFAULT_FREE_QUOTAS = Object.freeze({
@@ -52,7 +56,6 @@ export const DEFAULT_FREE_QUOTAS = Object.freeze({
     firestoreWritesPerDay: 20000,
     firestoreDeletesPerDay: 20000,
     functionInvocationsPerMonth: 2000000,
-    authMauPerMonth: 50000,
 });
 
 function mergeModel({ assumptions = {}, rates = {}, freeQuotas = {} } = {}) {
@@ -71,24 +74,76 @@ function roundCost(value, digits = 6) {
     return Number(value.toFixed(digits));
 }
 
+function visibleMessagesPerActiveUserDay(assumptions) {
+    return assumptions.textMessagesPerActiveUserDay + assumptions.mediaMessagesPerActiveUserDay;
+}
+
+function savedMessageDocsPerActiveUserDay(assumptions) {
+    return assumptions.textMessagesPerActiveUserDay * assumptions.savedTextMessageRate +
+        assumptions.mediaMessagesPerActiveUserDay * assumptions.savedMediaMessageRate;
+}
+
+function saveTextOpsCost(rates) {
+    return 4 * rates.firestoreRead + 3 * rates.firestoreWrite + rates.functionInvocation;
+}
+
+function saveMediaOpsCost(rates) {
+    return saveTextOpsCost(rates) + rates.storageClassA;
+}
+
+function saveOpsPerActiveUserDay(assumptions, rates) {
+    return assumptions.textMessagesPerActiveUserDay * assumptions.savedTextMessageRate * saveTextOpsCost(rates) +
+        assumptions.mediaMessagesPerActiveUserDay * assumptions.savedMediaMessageRate * saveMediaOpsCost(rates);
+}
+
+function activeOpsPerActiveUserDay(assumptions) {
+    const visibleMessages = visibleMessagesPerActiveUserDay(assumptions);
+    return {
+        visibleMessages,
+        walletTransactions: assumptions.walletTransactionsPerActiveUserDay,
+        firestoreReads:
+            assumptions.fixedReadsPerActiveUserDay +
+            visibleMessages * assumptions.messageSendFirestoreReadsPerMessage +
+            assumptions.readReceiptsPerActiveUserDay * assumptions.readReceiptFirestoreReadsPerMessage +
+            assumptions.reactionsPerActiveUserDay * assumptions.reactionFirestoreReadsPerReaction,
+        firestoreWrites:
+            assumptions.fixedWritesPerActiveUserDay +
+            visibleMessages * assumptions.messageSendFirestoreWritesPerMessage +
+            assumptions.readReceiptsPerActiveUserDay * assumptions.readReceiptFirestoreWritesPerMessage +
+            assumptions.reactionsPerActiveUserDay * assumptions.reactionFirestoreWritesPerReaction,
+        functionInvocations:
+            assumptions.fixedFunctionInvocationsPerActiveUserDay +
+            visibleMessages * assumptions.messageSendFunctionInvocationsPerMessage,
+        storageClassAOps:
+            assumptions.fixedStorageClassAOpsPerActiveUserDay +
+            assumptions.mediaMessagesPerActiveUserDay * assumptions.mediaStorageClassAOpsPerMessage,
+    };
+}
+
 export function dailyActiveUserCost(options = {}) {
     const { assumptions, rates } = mergeModel(options);
+    const activeOps = activeOpsPerActiveUserDay(assumptions);
+    const saveOps = saveOpsPerActiveUserDay(assumptions, rates);
     const baseOps =
-        assumptions.baseReadsPerDauDay * rates.firestoreRead +
-        assumptions.baseWritesPerDauDay * rates.firestoreWrite +
-        assumptions.baseFunctionInvocationsPerDauDay * rates.functionInvocation +
-        assumptions.baseStorageClassAOpsPerDauDay * rates.storageClassA;
+        activeOps.firestoreReads * rates.firestoreRead +
+        activeOps.firestoreWrites * rates.firestoreWrite +
+        activeOps.functionInvocations * rates.functionInvocation +
+        activeOps.storageClassAOps * rates.storageClassA;
 
-    const savedMessageDocs =
-        assumptions.textMessagesPerDauDay * assumptions.savedTextMessageRate +
-        assumptions.mediaMessagesPerDauDay * assumptions.savedMediaMessageRate;
+    const savedMessageDocs = savedMessageDocsPerActiveUserDay(assumptions);
     const savedFirestoreKiB = savedMessageDocs * assumptions.savedMessageDocKiB;
-    const savedMediaMiB = assumptions.mediaMessagesPerDauDay * assumptions.savedMediaMessageRate * assumptions.averageMediaMiB;
+    const savedMediaMiB = assumptions.mediaMessagesPerActiveUserDay * assumptions.savedMediaMessageRate * assumptions.averageMediaMiB;
 
     return {
+        visibleMessages: roundCost(activeOps.visibleMessages, 3),
+        walletTransactions: roundCost(activeOps.walletTransactions, 3),
+        firestoreReads: roundCost(activeOps.firestoreReads, 3),
+        firestoreWrites: roundCost(activeOps.firestoreWrites, 3),
+        functionInvocations: roundCost(activeOps.functionInvocations, 3),
+        storageClassAOps: roundCost(activeOps.storageClassAOps, 3),
         baseOps: roundCost(baseOps),
-        saveOps: roundCost(rates.saveOpsPerDauDay),
-        immediateOps: roundCost(baseOps + rates.saveOpsPerDauDay),
+        saveOps: roundCost(saveOps),
+        immediateOps: roundCost(baseOps + saveOps),
         savedMessageDocs: roundCost(savedMessageDocs, 3),
         savedFirestoreKiB: roundCost(savedFirestoreKiB, 3),
         savedMediaMiB: roundCost(savedMediaMiB, 3),
@@ -105,25 +160,23 @@ export function newAccountCost(options = {}) {
         assumptions.averageAvatarKiB *
         GIB_PER_KIB *
         rates.storageGiBMonth;
-    const paidAuthMau = rates.authMau;
 
     return {
         weightedOps: roundCost(weightedOps),
         avatarStorageMonth: roundCost(avatarStorageMonth, 9),
-        paidAuthMau: roundCost(paidAuthMau),
-        paidMarginalTotal: roundCost(weightedOps + avatarStorageMonth + paidAuthMau),
-        withinAuthFreeTierTotal: roundCost(weightedOps + avatarStorageMonth),
+        total: roundCost(weightedOps + avatarStorageMonth),
     };
 }
 
 export function monthlyBaseOpsCost(dau, options = {}) {
     const { assumptions, rates, freeQuotas } = mergeModel(options);
     const days = assumptions.daysPerMonth;
-    const readsPerDay = dau * assumptions.baseReadsPerDauDay;
-    const writesPerDay = dau * assumptions.baseWritesPerDauDay + assumptions.btcSchedulerWritesPerDay;
+    const activeOps = activeOpsPerActiveUserDay(assumptions);
+    const readsPerDay = dau * activeOps.firestoreReads;
+    const writesPerDay = dau * activeOps.firestoreWrites + assumptions.btcSchedulerWritesPerDay;
     const functionsPerMonth =
-        (dau * assumptions.baseFunctionInvocationsPerDauDay + assumptions.btcSchedulerFunctionInvocationsPerDay) * days;
-    const storageClassAOpsPerMonth = dau * assumptions.baseStorageClassAOpsPerDauDay * days;
+        (dau * activeOps.functionInvocations + assumptions.btcSchedulerFunctionInvocationsPerDay) * days;
+    const storageClassAOpsPerMonth = dau * activeOps.storageClassAOps * days;
 
     const firestoreReads = paidUsage(readsPerDay, freeQuotas.firestoreReadsPerDay) * rates.firestoreRead * days;
     const firestoreWrites = paidUsage(writesPerDay, freeQuotas.firestoreWritesPerDay) * rates.firestoreWrite * days;
@@ -142,25 +195,23 @@ export function monthlyBaseOpsCost(dau, options = {}) {
 export function monthlyRetentionCost(dau, options = {}) {
     const { assumptions, rates } = mergeModel(options);
     const days = assumptions.daysPerMonth;
-    const savedDocsPerDauDay =
-        assumptions.textMessagesPerDauDay * assumptions.savedTextMessageRate +
-        assumptions.mediaMessagesPerDauDay * assumptions.savedMediaMessageRate;
-    const savedFirestoreGiBPerDauDay = savedDocsPerDauDay * assumptions.savedMessageDocKiB * GIB_PER_KIB;
-    const savedMediaGiBPerDauDay =
-        assumptions.mediaMessagesPerDauDay *
+    const savedDocsPerActiveUserDay = savedMessageDocsPerActiveUserDay(assumptions);
+    const savedFirestoreGiBPerActiveUserDay = savedDocsPerActiveUserDay * assumptions.savedMessageDocKiB * GIB_PER_KIB;
+    const savedMediaGiBPerActiveUserDay =
+        assumptions.mediaMessagesPerActiveUserDay *
         assumptions.savedMediaMessageRate *
         assumptions.averageMediaMiB *
         GIB_PER_MIB;
-    const routineLiveMediaGiBPerDau =
-        assumptions.mediaMessagesPerDauDay *
+    const routineLiveMediaGiBPerActiveUser =
+        assumptions.mediaMessagesPerActiveUserDay *
         assumptions.averageMediaMiB *
         assumptions.routineMediaLiveDays *
         GIB_PER_MIB;
 
-    const saveOps = dau * days * rates.saveOpsPerDauDay;
-    const routineLiveMedia = dau * routineLiveMediaGiBPerDau * rates.storageGiBMonth;
-    const savedMedia = dau * assumptions.retainedSavedDays * savedMediaGiBPerDauDay * rates.storageGiBMonth;
-    const savedFirestore = dau * assumptions.retainedSavedDays * savedFirestoreGiBPerDauDay * rates.firestoreStorageGiBMonth;
+    const saveOps = dau * days * saveOpsPerActiveUserDay(assumptions, rates);
+    const routineLiveMedia = dau * routineLiveMediaGiBPerActiveUser * rates.storageGiBMonth;
+    const savedMedia = dau * assumptions.retainedSavedDays * savedMediaGiBPerActiveUserDay * rates.storageGiBMonth;
+    const savedFirestore = dau * assumptions.retainedSavedDays * savedFirestoreGiBPerActiveUserDay * rates.firestoreStorageGiBMonth;
 
     return {
         saveOps: roundCost(saveOps),
@@ -171,24 +222,11 @@ export function monthlyRetentionCost(dau, options = {}) {
     };
 }
 
-export function monthlyAuthCost(dau, options = {}) {
-    const { assumptions, rates, freeQuotas } = mergeModel(options);
-    const mau = dau * assumptions.monthlyActiveUsersPerDau;
-    const paidMau = paidUsage(mau, freeQuotas.authMauPerMonth);
-    const total = paidMau * rates.authMau;
-
-    return {
-        mau,
-        paidMau,
-        total: roundCost(total),
-    };
-}
-
 export function monthlyExtraCost(dau, options = {}) {
     const { assumptions, rates } = mergeModel(options);
-    const mediaDownload = dau * assumptions.mediaDownloadGiBPerDauMonth * rates.mediaDownloadGiB;
-    const functionCompute = dau * assumptions.functionComputeCostPerDauMonth;
-    const spark = dau * assumptions.sparkCostPerDauMonth;
+    const mediaDownload = dau * assumptions.mediaDownloadGiBPerActiveUserMonth * rates.mediaDownloadGiB;
+    const functionCompute = dau * assumptions.functionComputeCostPerActiveUserMonth;
+    const spark = dau * assumptions.sparkCostPerActiveUserMonth;
     const moderation = assumptions.moderationLaborCostMonth;
     const total = mediaDownload + functionCompute + spark + moderation;
 
@@ -201,6 +239,28 @@ export function monthlyExtraCost(dau, options = {}) {
     };
 }
 
+export function throughputAtDau(dau, options = {}) {
+    if (!Number.isFinite(dau) || dau < 0) {
+        throw new Error('dau must be a non-negative number');
+    }
+
+    const { assumptions } = mergeModel(options);
+    const visibleMessages = visibleMessagesPerActiveUserDay(assumptions);
+    const walletTransactions = assumptions.walletTransactionsPerActiveUserDay;
+    const messagesPerDay = dau * visibleMessages;
+    const walletTransactionsPerDay = dau * walletTransactions;
+
+    return {
+        dau,
+        messagesPerActiveUserDay: roundCost(visibleMessages, 3),
+        walletTransactionsPerActiveUserDay: roundCost(walletTransactions, 3),
+        messagesPerDay: roundCost(messagesPerDay, 3),
+        walletTransactionsPerDay: roundCost(walletTransactionsPerDay, 3),
+        messagesPerSecond: roundCost(messagesPerDay / SECONDS_PER_DAY, 3),
+        walletTransactionsPerSecond: roundCost(walletTransactionsPerDay / SECONDS_PER_DAY, 3),
+    };
+}
+
 export function monthlyMessageRateCost(messagesPerSecond, options = {}) {
     if (!Number.isFinite(messagesPerSecond) || messagesPerSecond < 0) {
         throw new Error('messagesPerSecond must be a non-negative number');
@@ -209,9 +269,8 @@ export function monthlyMessageRateCost(messagesPerSecond, options = {}) {
     const { includeReadReceipts = false, ...modelOptions } = options;
     const { assumptions, rates, freeQuotas } = mergeModel(modelOptions);
     const days = assumptions.daysPerMonth;
-    const secondsPerDay = 24 * 60 * 60;
-    const secondsPerMonth = secondsPerDay * days;
-    const messagesPerDay = messagesPerSecond * secondsPerDay;
+    const secondsPerMonth = SECONDS_PER_DAY * days;
+    const messagesPerDay = messagesPerSecond * SECONDS_PER_DAY;
     const messagesPerMonth = messagesPerSecond * secondsPerMonth;
 
     const firestoreReadsPerMessage =
@@ -264,15 +323,15 @@ export function monthlyMessageRateCost(messagesPerSecond, options = {}) {
 export function monthlyCost(dau, options = {}) {
     const baseOps = monthlyBaseOpsCost(dau, options);
     const retention = monthlyRetentionCost(dau, options);
-    const auth = monthlyAuthCost(dau, options);
     const extras = monthlyExtraCost(dau, options);
-    const total = baseOps.total + retention.total + auth.total + extras.total;
+    const throughput = throughputAtDau(dau, options);
+    const total = baseOps.total + retention.total + extras.total;
 
     return {
         dau,
+        throughput,
         baseOps,
         retention,
-        auth,
         extras,
         total: roundCost(total),
     };
@@ -302,15 +361,19 @@ function cliOptions() {
         assumptions: {
             daysPerMonth: readNumberEnv('DAYS_PER_MONTH', DEFAULT_ASSUMPTIONS.daysPerMonth),
             retainedSavedDays: readNumberEnv('RETAINED_SAVED_DAYS', DEFAULT_ASSUMPTIONS.retainedSavedDays),
-            monthlyActiveUsersPerDau: readNumberEnv('MAU_PER_DAU', DEFAULT_ASSUMPTIONS.monthlyActiveUsersPerDau),
             averageMediaMiB: readNumberEnv('MEDIA_MIB', DEFAULT_ASSUMPTIONS.averageMediaMiB),
             averageAvatarKiB: readNumberEnv('AVATAR_KIB', DEFAULT_ASSUMPTIONS.averageAvatarKiB),
             avatarUploadRate: readNumberEnv('AVATAR_UPLOAD_RATE', DEFAULT_ASSUMPTIONS.avatarUploadRate),
+            textMessagesPerActiveUserDay: readNumberEnv('TEXT_MESSAGES_PER_ACTIVE_USER_DAY', DEFAULT_ASSUMPTIONS.textMessagesPerActiveUserDay),
+            mediaMessagesPerActiveUserDay: readNumberEnv('MEDIA_MESSAGES_PER_ACTIVE_USER_DAY', DEFAULT_ASSUMPTIONS.mediaMessagesPerActiveUserDay),
+            readReceiptsPerActiveUserDay: readNumberEnv('READ_RECEIPTS_PER_ACTIVE_USER_DAY', DEFAULT_ASSUMPTIONS.readReceiptsPerActiveUserDay),
+            reactionsPerActiveUserDay: readNumberEnv('REACTIONS_PER_ACTIVE_USER_DAY', DEFAULT_ASSUMPTIONS.reactionsPerActiveUserDay),
+            walletTransactionsPerActiveUserDay: readNumberEnv('WALLET_TXS_PER_ACTIVE_USER_DAY', DEFAULT_ASSUMPTIONS.walletTransactionsPerActiveUserDay),
             savedTextMessageRate: readNumberEnv('SAVED_TEXT_RATE', DEFAULT_ASSUMPTIONS.savedTextMessageRate),
             savedMediaMessageRate: readNumberEnv('SAVED_MEDIA_RATE', DEFAULT_ASSUMPTIONS.savedMediaMessageRate),
-            mediaDownloadGiBPerDauMonth: readNumberEnv('MEDIA_DOWNLOAD_GIB_PER_DAU_MONTH', DEFAULT_ASSUMPTIONS.mediaDownloadGiBPerDauMonth),
-            functionComputeCostPerDauMonth: readNumberEnv('FUNCTION_COMPUTE_COST_PER_DAU_MONTH', DEFAULT_ASSUMPTIONS.functionComputeCostPerDauMonth),
-            sparkCostPerDauMonth: readNumberEnv('SPARK_COST_PER_DAU_MONTH', DEFAULT_ASSUMPTIONS.sparkCostPerDauMonth),
+            mediaDownloadGiBPerActiveUserMonth: readNumberEnv('MEDIA_DOWNLOAD_GIB_PER_ACTIVE_USER_MONTH', DEFAULT_ASSUMPTIONS.mediaDownloadGiBPerActiveUserMonth),
+            functionComputeCostPerActiveUserMonth: readNumberEnv('FUNCTION_COMPUTE_COST_PER_ACTIVE_USER_MONTH', DEFAULT_ASSUMPTIONS.functionComputeCostPerActiveUserMonth),
+            sparkCostPerActiveUserMonth: readNumberEnv('SPARK_COST_PER_ACTIVE_USER_MONTH', DEFAULT_ASSUMPTIONS.sparkCostPerActiveUserMonth),
             moderationLaborCostMonth: readNumberEnv('MODERATION_COST_MONTH', DEFAULT_ASSUMPTIONS.moderationLaborCostMonth),
             messageSendFirestoreReadsPerMessage: readNumberEnv('MESSAGE_SEND_READS', DEFAULT_ASSUMPTIONS.messageSendFirestoreReadsPerMessage),
             messageSendFirestoreWritesPerMessage: readNumberEnv('MESSAGE_SEND_WRITES', DEFAULT_ASSUMPTIONS.messageSendFirestoreWritesPerMessage),

@@ -7,7 +7,7 @@ import { useUser } from '@/components/providers/userprovider';
 import { usePeer } from '@/components/providers/peerprovider';
 import { useWallet } from '@/components/providers/walletprovider';
 import { useDialog } from '@/components/providers/dialogprovider';
-import { canShareAttachmentMsg, canShowMsg, canToggleSaveForeverMsg, collapseSystemMessages, getLatestReadOutgoingReceipt, getMessageUnsaveTtlMs, isPeerMsg, isSavedForeverMsg, setReqTx } from '@veyl/shared/chat/messages';
+import { canShareAttachmentMsg, canShowMsg, canToggleSaveForeverMsg, collapseSystemMessages, getLatestReadOutgoingReceipt, isPeerMsg, isSavedForeverMsg, setReqTx } from '@veyl/shared/chat/messages';
 import { useOptimisticMessageReactions } from '@veyl/shared/chat/usereactions';
 import { formatUserDisplay } from '@veyl/shared/profile';
 import { formatFullDateTime } from '@veyl/shared/utils/time';
@@ -572,7 +572,6 @@ export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
             const key = getMessageKey(msg);
             const saved = isSavedForeverMsg(msg);
             const targetSaved = !saved;
-            const unsaveTtlMs = saved ? getMessageUnsaveTtlMs(msg, msgs, chatPK, peerChatPK) : null;
 
             if (key) {
                 setSavingForeverMessages((prev) => new Map(prev).set(key, targetSaved));
@@ -580,9 +579,9 @@ export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
 
             try {
                 if (saved) {
-                    await makeMessageTemporary(selectedChatId, msg, peerChatPK, { ttlMs: unsaveTtlMs });
+                    await makeMessageTemporary(selectedChatId, msg);
                 } else {
-                    await makeMessagePermanent(selectedChatId, msg, peerChatPK);
+                    await makeMessagePermanent(selectedChatId, msg);
                 }
             } catch (error) {
                 console.warn('message save forever update failed', error);
@@ -598,7 +597,7 @@ export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
                 }
             }
         },
-        [canToggleSaveForeverMessage, chatPK, makeMessagePermanent, makeMessageTemporary, msgs, peerChatPK, selectedChatId]
+        [canToggleSaveForeverMessage, makeMessagePermanent, makeMessageTemporary, selectedChatId]
     );
 
     const toggleLikeMessage = useCallback(
@@ -771,9 +770,9 @@ export function MessageList({ onReply, onEdit, bottomPad = 96 }) {
             if (!canShareAttachmentMsg(msg)) {
                 return;
             }
-            openDialog('sharemedia', { msg });
+            openDialog('sharemedia', { msg, sourcePeerChatPK: peerChatPK });
         },
-        [openDialog]
+        [openDialog, peerChatPK]
     );
 
     const retrySentMessage = useCallback((msg) => retryMessage(selectedChatId, msg.cid), [retryMessage, selectedChatId]);

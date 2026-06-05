@@ -13,7 +13,7 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/classes';
 
 export default function ExportWallet() {
-    const { encSeed } = useVault();
+    const { vault } = useVault();
     const { openDialog } = useDialog();
     const walletMnemonicRef = useRef(null);
     const [password, setPassword] = useState('');
@@ -47,7 +47,7 @@ export default function ExportWallet() {
             setIsRevealed(false);
 
             try {
-                const nextMnemonic = await decryptWalletMnemonic(encSeed, nextPassword);
+                const nextMnemonic = await decryptWalletMnemonic(vault, nextPassword);
                 replaceWalletMnemonic(nextMnemonic);
                 setPassword('');
             } catch (err) {
@@ -56,7 +56,7 @@ export default function ExportWallet() {
                 setIsLoading(false);
             }
         },
-        [encSeed, isLoading, password, replaceWalletMnemonic]
+        [vault, isLoading, password, replaceWalletMnemonic]
     );
 
     const handlePasswordChange = useCallback(

@@ -6,12 +6,13 @@ import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import { CHAT_IMAGE_COMPRESS, CHAT_MEDIA_TTL_MS, assertChatUploadByteSize, fitChatImageSize } from '@veyl/shared/chat/filepayload';
 import { filenameWithExtension } from '@veyl/shared/utils/filename';
 import { fileExtension, fileMime, isImageFile, isPngFile, isVideoFile } from '@veyl/shared/utils/filetype';
-import { getMediaFileId, mediaFilePath, readFile } from '@veyl/shared/files';
+import { getMediaFileRef, mediaFilePath } from '@veyl/shared/files';
 import { createFileKey, decodeFileKey, encodeFileKey, FILE_IV_BYTES, FILE_TAG_BYTES, getFileAadForPath } from '@veyl/shared/crypto/file';
 import { cleanBytes, randomBytes, toBytes } from '@veyl/shared/crypto/core';
 import { packRawData, unpackBodyData } from '@veyl/shared/crypto/pack';
 import { makeAttachment } from '@veyl/shared/chat/messages';
 import { pickAttachmentMeta } from '@veyl/shared/chat/media';
+import { getCachedPair } from '@veyl/shared/chat/pairs';
 import { positiveNumber } from '@veyl/shared/utils/number';
 import { cleanText } from '@veyl/shared/utils/text';
 import { mark } from '@/lib/diagnostics';
@@ -107,28 +108,6 @@ async function uploadStorageBody(uploadUrl, body, contentType) {
     return response;
 }
 
-function uploadByteSize(data) {
-    if (Number.isFinite(data?.byteLength)) {
-        return data.byteLength;
-    }
-    if (Number.isFinite(data?.size)) {
-        return data.size;
-    }
-    return toBytes(data, 'upload bytes').byteLength;
-}
-
-async function reserveChatFileUploadNative(upload, meta = {}) {
-    const reserveChatMediaUpload = meta?.reserveChatMediaUpload;
-    if (typeof reserveChatMediaUpload !== 'function') {
-        throw new Error('chat media reservation required');
-    }
-    await reserveChatMediaUpload({
-        path: upload.path,
-        size: uploadByteSize(upload.body),
-        contentType: upload.metadata?.contentType || 'application/octet-stream',
-    });
-}
-
 function isImageAsset(asset) {
     if (asset?.type === 'image' || asset?.type === 'livePhoto') {
         return true;
@@ -188,6 +167,32 @@ export async function uploadStorageBytesNative(storage, path, data, metadata = {
     return path;
 }
 
+export async function uploadSignedStorageBytesNative(url, data, options = {}) {
+    if (!url) {
+        throw new Error('signed upload url required');
+    }
+    const body = toBytes(data, 'upload bytes');
+    const path = cleanText(options?.path);
+    const headers = options?.headers || {
+        'Content-Type': options?.metadata?.contentType || 'application/octet-stream',
+    };
+    mark('chat.media.signedUpload.start', { path, bytes: body.byteLength || 0, contentType: headers['Content-Type'] || headers['content-type'] || '' });
+    const response = await nativeFetch(url, {
+        method: options?.method || 'PUT',
+        headers,
+        body,
+    });
+    if (!response.ok) {
+        const error = new Error(`signed upload failed (${response.status || 0})`);
+        error.status = response.status || 0;
+        error.stage = 'upload';
+        error.responseText = await response.text().catch(() => '');
+        throw error;
+    }
+    mark('chat.media.signedUpload.done', { path, status: response.status || 0 });
+    return true;
+}
+
 async function sealChatFileNative(key, bytes, path) {
     const fileKey = new Uint8Array(decodeFileKey(key));
     try {
@@ -222,15 +227,15 @@ async function openChatFileNative(key, body, path) {
     }
 }
 
-async function makeChatFileUploadNative(_cid, data, meta = {}) {
-    const stayId = cleanText(meta?.stay);
-    const stayKey = cleanText(meta?.stayKey);
-    const path = mediaFilePath();
+async function makeChatFileUploadNative(pair, cid, data, meta = {}) {
+    const path = mediaFilePath(pair?.chatId, cid);
     const key = createFileKey();
     try {
         const uploadBytes = toBytes(data, 'upload bytes');
         assertChatUploadByteSize(uploadBytes);
         return {
+            chatId: pair.chatId,
+            messageKey: cleanText(cid),
             path,
             body: await sealChatFileNative(key, uploadBytes, path),
             metadata: {
@@ -241,8 +246,6 @@ async function makeChatFileUploadNative(_cid, data, meta = {}) {
                 p: path,
                 k: encodeFileKey(key),
                 x: Date.now() + CHAT_MEDIA_TTL_MS,
-                ...(stayId ? { stay: stayId } : {}),
-                ...(stayId && stayKey ? { stayKey } : {}),
             },
         };
     } finally {
@@ -387,10 +390,7 @@ export async function prepareAssetForChatUpload(asset) {
     };
 }
 
-export async function uploadAttachmentMsgNative(storage, senderPubkey, senderPrivkey, _receiverChatPK, attachment = {}) {
-    if (!storage) {
-        throw new Error('storage required');
-    }
+export async function uploadAttachmentMsgNative(senderPubkey, senderPrivkey, receiverChatPK, attachment = {}) {
     if (!senderPrivkey || !senderPubkey) {
         throw new Error('vault locked');
     }
@@ -406,9 +406,16 @@ export async function uploadAttachmentMsgNative(storage, senderPubkey, senderPri
     let upload = null;
 
     try {
-        upload = await makeChatFileUploadNative(nextCid, data, meta);
-        await reserveChatFileUploadNative(upload, meta);
-        await uploadStorageBytesNative(storage, upload.path, upload.body, upload.metadata);
+        const chatId = cleanText(attachment?.chatId || meta?.chatId);
+        if (!chatId) {
+            throw new Error('chat id required');
+        }
+        const pair = await getCachedPair(senderPubkey, senderPrivkey, receiverChatPK, { chatId });
+        upload = await makeChatFileUploadNative(pair, nextCid, data, meta);
+        if (typeof meta?.uploadChatMedia !== 'function') {
+            throw new Error('chat media upload required');
+        }
+        await meta.uploadChatMedia(upload);
         return makeAttachment(type, {
             ...upload.file,
             ...pickAttachmentMeta(meta),
@@ -422,17 +429,17 @@ export async function uploadAttachmentMsgNative(storage, senderPubkey, senderPri
     }
 }
 
-export async function readMessageFileNative(storage, userChatPK, userPrivKey, peerChatPK, msg) {
-    if (!storage) {
-        throw new Error('storage required');
+export async function readMessageFileNative(readChatMedia, userChatPK, userPrivKey, peerChatPK, msg) {
+    if (typeof readChatMedia !== 'function') {
+        throw new Error('chat media read required');
     }
     if (!userChatPK || !userPrivKey || !peerChatPK || !msg?.p || !msg?.k) {
         throw new Error('file unavailable');
     }
 
     try {
-        getMediaFileId(msg.p);
-        const body = await readFile(storage, msg.p);
+        getMediaFileRef(msg.p);
+        const body = await readChatMedia(msg.p);
         return await openChatFileNative(msg.k, body, msg.p);
     } catch (error) {
         if (error && typeof error === 'object') {
@@ -443,8 +450,8 @@ export async function readMessageFileNative(storage, userChatPK, userPrivKey, pe
     }
 }
 
-export async function uploadImgMsgNative(storage, senderPubkey, senderPrivkey, receiverChatPK, cid, data, meta = {}) {
-    return uploadAttachmentMsgNative(storage, senderPubkey, senderPrivkey, receiverChatPK, {
+export async function uploadImgMsgNative(senderPubkey, senderPrivkey, receiverChatPK, cid, data, meta = {}) {
+    return uploadAttachmentMsgNative(senderPubkey, senderPrivkey, receiverChatPK, {
         cid,
         type: 'img',
         data,

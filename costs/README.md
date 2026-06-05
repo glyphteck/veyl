@@ -1,19 +1,19 @@
 # Veyl cost snapshot
 
-Source of truth: [model.mjs](model.mjs). Defaults: 30-day month, 3x MAU per DAU, 360 retained saved-history days, and zero-dollar extras unless changed in the model.
+Source of truth: [model.mjs](model.mjs). Defaults: 30-day month, 360 retained saved-history days, and zero-dollar extras unless changed in the model.
 
 ## Key numbers
 
 | Question | Default answer |
 | --- | ---: |
-| New signup event | ~$0.000033 before paid Auth MAU |
-| Paid Auth MAU add-on | ~$0.0055 for that active month after the free quota |
-| One normal active user-day | ~$0.00024 in immediate Firebase ops |
-| 100k DAU monthly run-rate | ~$2,500/month |
-| 100k DAU all-in user-day | ~$0.00083 per DAU-day |
-| 1M DAU monthly run-rate | ~$27,501/month |
+| New signup event | ~$0.000033 |
+| One active user, one day | ~$0.00047 in immediate Firebase ops |
+| 100k DAU monthly run-rate | ~$1,990/month |
+| 100k DAU all-in daily user cost | ~$0.00067 per active user/day |
+| 1M DAU monthly run-rate | ~$19,925/month |
+| 1M DAU default throughput | ~289 visible messages/s and ~1.2 wallet tx/s |
 
-The signup path is cheap. Scale cost comes from daily active use, Auth MAU, media storage, and saved-message retention.
+The default active-user bundle assumes 25 visible sends per active user/day, based on broad messaging-app and SMS benchmarks. Wallet tx/s is expected Spark/network throughput; Spark vendor cost stays in the zero-dollar extras until real rates are known.
 
 ## 100k DAU month
 
@@ -21,28 +21,27 @@ This is the default planning case the app should be able to scan quickly.
 
 | Component | Monthly cost |
 | --- | ---: |
-| Base Firebase ops | ~$524 |
-| Save ops + media/message storage at 360 retained days | ~$601 |
-| Paid Auth MAU, assuming 300k MAU | ~$1,375 |
-| **Total** | **~$2,500/month** |
+| Base Firebase ops | ~$1,340 |
+| Save ops + media/message storage at 360 retained days | ~$651 |
+| **Total** | **~$1,990/month** |
 
-At 100k DAU, the all-in run-rate is about `$2,500 / 100,000 / 30 = $0.00083` per DAU-day.
+At 100k DAU, the all-in run-rate is about `$1,990 / 100,000 / 30 = $0.00066` per active user/day.
 
 ## 100k DAU cost buildup
 
-Saved media and saved message docs grow with retained DAU-days. At sustained 100k DAU, each additional retained year adds about **$365/month** to the future monthly run-rate.
+Saved media and saved message docs grow with active users and the retained saved-history window. At sustained 100k DAU, each additional retained year adds about **$382/month** to the future monthly run-rate.
 
 | Retained saved history | Monthly run-rate |
 | ---: | ---: |
-| 0 days | ~$2,135 |
-| 30 days | ~$2,165 |
-| 90 days | ~$2,226 |
-| 180 days | ~$2,318 |
-| 1 year | ~$2,500 |
-| 2 years | ~$2,865 |
-| 3 years | ~$3,230 |
-| 4 years | ~$3,596 |
-| 5 years | ~$3,961 |
+| 0 days | ~$1,608 |
+| 30 days | ~$1,639 |
+| 90 days | ~$1,703 |
+| 180 days | ~$1,799 |
+| 1 year | ~$1,990 |
+| 2 years | ~$2,373 |
+| 3 years | ~$2,755 |
+| 4 years | ~$3,137 |
+| 5 years | ~$3,520 |
 
 ## Signup cost
 
@@ -50,14 +49,11 @@ Saved media and saved message docs grow with retained DAU-days. At sustained 100
 | --- | ---: |
 | Account creation ops, avatar weighted | ~$0.000032 |
 | First-month avatar storage, avatar weighted | ~$0.0000004 |
-| Paid Auth MAU for that active month | ~$0.0055 |
-| **Paid marginal first active month** | **~$0.00553** |
-
-The monthly model applies the first 50,000 Auth MAU free before charging Auth.
+| **Total** | **~$0.000033** |
 
 ## Where details live
 
-- [assumptions.md](assumptions.md): model variables and the normal DAU bundle.
+- [assumptions.md](assumptions.md): model variables and the normal daily active-user bundle.
 - [dau-scale.md](dau-scale.md): larger DAU grids and 100k DAU retention buildup.
 - [basecosts.md](basecosts.md): Firebase/Google unit costs and free quotas.
 - [action-costs.md](action-costs.md): gross cost per user action.

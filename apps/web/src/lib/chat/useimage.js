@@ -83,6 +83,13 @@ export function preloadMsgImage(peerChatPK, msg, readMessageFile, options = {}) 
     return task;
 }
 
+export function readCachedMsgImageUrl(msg) {
+    if (!isRemoteImageMsg(msg) || isExpiredAttachmentMsg(msg)) {
+        return '';
+    }
+    return imageCache.getReady(getCacheKey(msg))?.url || '';
+}
+
 export function seedMsgImage(msg, url, options = {}) {
     if (!isRemoteImageMsg(msg) || !url) {
         return '';

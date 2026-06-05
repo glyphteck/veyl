@@ -47,7 +47,7 @@ export async function openOwnChatEntry(chatPrivKey, entryId, body) {
     try {
         const { nonce, ct } = unpackBodyData(body);
         const entry = await openJson(key, nonce, ct, entryAad(entryId));
-        if (entry?.v !== CHAT_ENTRY_VERSION || !entry?.chatId || !entry?.peerChatPK) {
+        if (entry?.v !== CHAT_ENTRY_VERSION || !entry?.linkId || !entry?.chatId || !entry?.peerChatPK) {
             throw new Error('invalid chat entry');
         }
         return {
@@ -61,6 +61,7 @@ export async function openOwnChatEntry(chatPrivKey, entryId, body) {
 
 export function makeOwnChatEntry(pair, fields = {}) {
     return {
+        linkId: pair.linkId,
         chatId: pair.chatId,
         peerChatPK: pair.peerChatPK,
         peerUid: cleanText(fields.peerUid),

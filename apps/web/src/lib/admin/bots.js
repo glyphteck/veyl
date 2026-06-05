@@ -1,9 +1,5 @@
-import { deleteField, doc, setDoc } from 'firebase/firestore';
-import { httpsCallable } from 'firebase/functions';
 import { cleanText, lowerText } from '@veyl/shared/utils/text';
 import { timestampMs } from '@veyl/shared/utils/time';
-import { db, getFunctions, getStorage } from '@/lib/firebase/firebaseclient';
-import { dropAvatar } from '@veyl/shared/files';
 
 function botRank(bot) {
     const status = lowerText(bot?.status);
@@ -27,32 +23,4 @@ export function sortBots(rows = []) {
 
         return cleanText(a?.id).localeCompare(cleanText(b?.id));
     });
-}
-
-export async function ban(uid, feature = 'chat') {
-    await setDoc(
-        doc(db, 'moderation', uid),
-        { banned: { [feature]: { until: null } } },
-        { merge: true }
-    );
-
-    if (feature === 'avatar') {
-        await dropAvatar(getStorage(), uid).catch((error) => {
-            if (error?.code !== 'storage/object-not-found') {
-                throw error;
-            }
-        });
-    }
-}
-
-export async function unban(uid, feature = 'chat') {
-    await setDoc(
-        doc(db, 'moderation', uid),
-        { banned: { [feature]: deleteField() } },
-        { merge: true }
-    );
-}
-
-export async function powerBot(uid, enabled) {
-    await httpsCallable(getFunctions(), 'setBotPower')({ botId: uid, enabled: !!enabled });
 }

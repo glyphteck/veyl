@@ -1,7 +1,6 @@
 'use client';
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { doc, onSnapshot } from 'firebase/firestore';
 import { normalizeOnchainFeeEstimate } from '../wallet/fees.js';
 
 const DEFAULT_BITCOIN = Object.freeze({
@@ -28,9 +27,9 @@ function normalizeBitcoinData(data, current = DEFAULT_BITCOIN) {
     };
 }
 
-export function createBitcoinProvider({ db }) {
-    if (!db) {
-        throw new Error('createBitcoinProvider requires db');
+export function createBitcoinProvider({ cloud }) {
+    if (!cloud) {
+        throw new Error('createBitcoinProvider requires cloud');
     }
 
     const BitcoinContext = createContext(null);
@@ -39,11 +38,9 @@ export function createBitcoinProvider({ db }) {
         const [bitcoin, setBitcoin] = useState(DEFAULT_BITCOIN);
 
         useEffect(() => {
-            const ref = doc(db, 'bitcoin', 'current');
-            return onSnapshot(
-                ref,
-                (snap) => {
-                    setBitcoin((current) => normalizeBitcoinData(snap.data(), current));
+            return cloud.bitcoin.watch(
+                (data) => {
+                    setBitcoin((current) => normalizeBitcoinData(data, current));
                 },
                 (error) => {
                     console.debug?.('Failed to watch Bitcoin data', error?.message ?? error);
@@ -54,7 +51,7 @@ export function createBitcoinProvider({ db }) {
                     }));
                 }
             );
-        }, [db]);
+        }, [cloud]);
 
         const estimateTransactionFees = useCallback(
             ({ feeRate, speed = 'medium', vbytes, weightUnits, baseSats = 0 } = {}) => {

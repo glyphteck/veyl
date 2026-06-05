@@ -3,11 +3,12 @@
 import { useCallback, useRef } from 'react';
 import { dropCachedChat } from '../../cache/localdata.js';
 import { filterPendingDeleteChats, getLastChat, sameChats, sameLastChat, setLocalChats } from '../chats.js';
-import { getChatPeerPK } from '../ids.js';
+import { ownChatEntryId } from '../entry.js';
 import { clearReadWrite } from '../read.js';
+import { cleanText } from '../../utils/text.js';
 
 export function useChatDelete({
-    chat,
+    cloud,
     uid,
     chatPK,
     chatPrivateKey,
@@ -90,12 +91,19 @@ export function useChatDelete({
         [lastServerChatsRef]
     );
 
-    const getChatPeer = useCallback(
+    const getLinkIdForChat = useCallback(
         (chatId) => {
-            const chatItem = lastServerChatsRef.current.find((item) => item?.id === chatId);
-            return getChatPeerPK(chatItem, chatPK);
+            if (!chatId) {
+                return '';
+            }
+            const serverLinkId = cleanText(lastServerChatsRef.current.find((chatItem) => chatItem?.id === chatId)?.linkId);
+            if (serverLinkId) {
+                return serverLinkId;
+            }
+            const locals = localByChatRef.current.get(chatId) || [];
+            return cleanText(locals.find((message) => message?.linkId)?.linkId);
         },
-        [chatPK, lastServerChatsRef]
+        [lastServerChatsRef, localByChatRef]
     );
 
     const waitForPeerDelete = useCallback(
@@ -153,22 +161,25 @@ export function useChatDelete({
         [chatPK, lastServerChatsRef, listActionsRef, localByChatRef]
     );
 
-    const hideDeletingChat = useCallback(
-        (chatId, options = {}) => {
-            if (!chatId) {
+    const hideDeletingChats = useCallback(
+        (chatIds, options = {}) => {
+            const ids = [...new Set((chatIds || []).filter(Boolean))];
+            if (!ids.length) {
                 return;
             }
 
-            pendingDeleteIdsRef.current.add(chatId);
-            locallyDeletedChatIdsRef.current.add(chatId);
-            if (options?.keepSelected) {
-                keepSelectedDeletedChatIdsRef.current.add(chatId);
-            } else {
-                keepSelectedDeletedChatIdsRef.current.delete(chatId);
+            for (const chatId of ids) {
+                pendingDeleteIdsRef.current.add(chatId);
+                locallyDeletedChatIdsRef.current.add(chatId);
+                if (options?.keepSelected) {
+                    keepSelectedDeletedChatIdsRef.current.add(chatId);
+                } else {
+                    keepSelectedDeletedChatIdsRef.current.delete(chatId);
+                }
             }
-            const localForRender = clearDeletedChatState([chatId]);
+            const localForRender = clearDeletedChatState(ids);
             renderVisibleChats(localForRender);
-            setSelectedChat((current) => (current === chatId && !options?.keepSelected ? null : current));
+            setSelectedChat((current) => (current && ids.includes(current) && !options?.keepSelected ? null : current));
         },
         [clearDeletedChatState, renderVisibleChats, setSelectedChat]
     );
@@ -190,18 +201,42 @@ export function useChatDelete({
         [hiddenChatPreviewKeysRef, localByChatRef, releaseDeleteWait, renderVisibleChats]
     );
 
-    const confirmDeletedChat = useCallback(
-        (chatId) => {
-            if (!chatId) {
+    const restoreDeletedChats = useCallback(
+        (chatIds) => {
+            const ids = [...new Set((chatIds || []).filter(Boolean))];
+            if (!ids.length) {
                 return;
             }
 
-            pendingDeleteIdsRef.current.delete(chatId);
-            locallyDeletedChatIdsRef.current.delete(chatId);
-            keepSelectedDeletedChatIdsRef.current.delete(chatId);
-            hiddenChatPreviewKeysRef.current.delete(chatId);
-            listActionsRef.current?.commitServerChats?.(lastServerChatsRef.current.filter((chatItem) => chatItem?.id !== chatId), { warm: false });
-            releaseDeleteWait(chatId);
+            for (const chatId of ids) {
+                pendingDeleteIdsRef.current.delete(chatId);
+                locallyDeletedChatIdsRef.current.delete(chatId);
+                keepSelectedDeletedChatIdsRef.current.delete(chatId);
+                hiddenChatPreviewKeysRef.current.delete(chatId);
+                releaseDeleteWait(chatId);
+            }
+
+            renderVisibleChats(localByChatRef.current);
+        },
+        [hiddenChatPreviewKeysRef, localByChatRef, releaseDeleteWait, renderVisibleChats]
+    );
+
+    const confirmDeletedChats = useCallback(
+        (chatIds) => {
+            const ids = [...new Set((chatIds || []).filter(Boolean))];
+            if (!ids.length) {
+                return;
+            }
+
+            for (const chatId of ids) {
+                pendingDeleteIdsRef.current.delete(chatId);
+                locallyDeletedChatIdsRef.current.delete(chatId);
+                keepSelectedDeletedChatIdsRef.current.delete(chatId);
+                hiddenChatPreviewKeysRef.current.delete(chatId);
+                releaseDeleteWait(chatId);
+            }
+            const idSet = new Set(ids);
+            listActionsRef.current?.commitServerChats?.(lastServerChatsRef.current.filter((chatItem) => !idSet.has(chatItem?.id)), { warm: false });
         },
         [hiddenChatPreviewKeysRef, lastServerChatsRef, listActionsRef, releaseDeleteWait]
     );
@@ -222,54 +257,63 @@ export function useChatDelete({
         [clearDeletedChatState, finishPendingDeleteWait, lastServerChatsRef, listActionsRef, setSelectedChat]
     );
 
-    const releaseSavedMediaStays = useCallback(
-        async (stays) => {
-            if (!Array.isArray(stays) || !stays.length || typeof chat?.setMediaSaved !== 'function') {
+    const dropUnavailableChat = useCallback(
+        (chatId) => {
+            if (!chatId) {
                 return;
             }
 
-            await Promise.allSettled(stays.map((stay) => chat.setMediaSaved(stay.path, stay.stayId, stay.stayKey, false)));
+            const entryId = uid && chatPrivateKey ? ownChatEntryId(chatPrivateKey, chatId) : '';
+            if (entryId && typeof cloud?.user?.chats?.delete === 'function') {
+                void cloud.user.chats.delete(uid, entryId).catch(() => {});
+            }
+            dropChat(chatId);
         },
-        [chat]
+        [chatPrivateKey, cloud, dropChat, uid]
     );
 
-    const collectSavedMediaStays = useCallback(
-        async (chatId) => {
-            if (!chatId || !chatPK || !chatPrivateKey || typeof chat?.collectSavedMediaStays !== 'function') {
-                return [];
+    const getDeleteTargets = useCallback(
+        (chat) => {
+            const raw = Array.isArray(chat) ? chat : [chat];
+            const byId = new Map();
+            for (const item of raw) {
+                const chatId = cleanText(typeof item === 'string' ? item : item?.chatId || item?.id);
+                if (!chatId || byId.has(chatId)) {
+                    continue;
+                }
+                const entryId = cleanText(typeof item === 'object' ? item?.entryId : '') || (uid && chatPrivateKey ? ownChatEntryId(chatPrivateKey, chatId) : '');
+                const linkId = cleanText(typeof item === 'object' ? item?.linkId : '') || getLinkIdForChat(chatId);
+                byId.set(chatId, {
+                    chatId,
+                    ...(entryId ? { entryId } : {}),
+                    ...(linkId ? { linkId } : {}),
+                });
             }
-            if (uid && typeof chat?.collectOwnerSavedMediaStays === 'function') {
-                return chat.collectOwnerSavedMediaStays(uid, chatPrivateKey, chatId).catch(() => []);
-            }
-            const peerChatPK = getChatPeer(chatId);
-            if (!peerChatPK) {
-                return [];
-            }
-            return chat.collectSavedMediaStays(chatId, chatPK, chatPrivateKey, peerChatPK).catch(() => []);
+            return [...byId.values()];
         },
-        [chat, uid, chatPK, chatPrivateKey, getChatPeer]
+        [chatPrivateKey, getLinkIdForChat, uid]
     );
 
     const deleteChat = useCallback(
-        async (chatId, options = {}) => {
-            if (!chatId || typeof chat?.deleteChatRemote !== 'function') {
+        async (chat, options = {}) => {
+            const targets = getDeleteTargets(chat);
+            if (!targets.length) {
                 return false;
             }
 
-            hideDeletingChat(chatId, options);
-            const savedMediaStays = await collectSavedMediaStays(chatId);
+            const chatIds = targets.map((target) => target.chatId);
+            hideDeletingChats(chatIds, options);
             try {
-                await chat.deleteChatRemote(chatId, uid, chatPrivateKey);
-                confirmDeletedChat(chatId);
+                await cloud.chat.delete(targets, { cleanup: options.cleanup !== false });
+                confirmDeletedChats(chatIds);
             } catch (error) {
-                restoreDeletedChat(chatId);
+                restoreDeletedChats(chatIds);
                 throw error;
             }
 
-            void releaseSavedMediaStays(savedMediaStays);
-            return true;
+            return Array.isArray(chat) ? targets.length : true;
         },
-        [chat, uid, chatPrivateKey, collectSavedMediaStays, confirmDeletedChat, hideDeletingChat, releaseSavedMediaStays, restoreDeletedChat]
+        [cloud, confirmDeletedChats, getDeleteTargets, hideDeletingChats, restoreDeletedChats]
     );
 
     const wasChatDeletedLocally = useCallback((chatId) => !!chatId && locallyDeletedChatIdsRef.current.has(chatId), []);
@@ -304,6 +348,7 @@ export function useChatDelete({
         restoreDeletedChat,
         deleteChat,
         dropChat,
+        dropUnavailableChat,
         wasChatDeletedLocally,
         ackDeletedChat,
         isChatPendingDelete,

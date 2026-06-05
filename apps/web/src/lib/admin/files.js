@@ -1,9 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { getDownloadURL, ref } from 'firebase/storage';
 import { cleanText } from '@veyl/shared/utils/text';
-import { getStorage } from '@/lib/firebase/firebaseclient';
+import { cloud } from '@/lib/cloud';
 
 const fileUrlCache = new Map();
 
@@ -14,10 +13,9 @@ function loadFileUrl(path) {
     }
 
     if (!fileUrlCache.has(key)) {
-        const storage = getStorage();
         fileUrlCache.set(
             key,
-            getDownloadURL(ref(storage, key)).catch(() => null)
+            cloud.admin.reports.evidence.path(key).catch(() => null)
         );
     }
 

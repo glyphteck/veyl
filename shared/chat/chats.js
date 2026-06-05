@@ -5,12 +5,17 @@ import { collectMessageKeys, messageHasKey } from './messagekeys.js';
 import { ttlMillis } from './ttl.js';
 import { timestampMs } from '../utils/time.js';
 import { uniqueValues } from '../utils/array.js';
+import { cleanText } from '../utils/text.js';
 import { getChatPeerPK } from './ids.js';
+
+const HEX_32_RE = /^[0-9a-f]{32}$/i;
+const HEX_64_RE = /^[0-9a-f]{64}$/i;
 
 function sameChatShape(a, b) {
     if (!a || !b) return a === b;
     return (
         a.id === b.id &&
+        a.linkId === b.linkId &&
         a.ts === b.ts &&
         a.unseen === b.unseen &&
         a.settings?.retention === b.settings?.retention &&
@@ -87,6 +92,125 @@ function sortChats(chats) {
         }
         return String(a?.id || '').localeCompare(String(b?.id || ''));
     });
+}
+
+function chatVersionKey(chat) {
+    const peerChatPK = cleanText(chat?.peerChatPK);
+    if (peerChatPK) {
+        return `peer:${peerChatPK}`;
+    }
+    const linkId = cleanText(chat?.linkId);
+    if (linkId) {
+        return `link:${linkId}`;
+    }
+    const id = cleanText(chat?.id);
+    return id ? `chat:${id}` : '';
+}
+
+function isHex32(value) {
+    return HEX_32_RE.test(cleanText(value));
+}
+
+function isHex64(value) {
+    return HEX_64_RE.test(cleanText(value));
+}
+
+function hasPositiveTimestamp(value) {
+    return timestampMs(value, null, { positive: true }) != null;
+}
+
+export function isCurrentChatCacheEntry(chat) {
+    return !!chat
+        && isHex64(chat.id)
+        && isHex64(chat.linkId)
+        && isHex32(chat.entryId)
+        && isHex64(chat.peerChatPK)
+        && hasPositiveTimestamp(chat.ts);
+}
+
+export function isCurrentUserChatEntry(chat) {
+    return isCurrentChatCacheEntry(chat);
+}
+
+function hasPendingPreview(chat) {
+    return chat?.lastMsg?.pending === true && chat?.lastMsg?.failed !== true;
+}
+
+function hasUsableEntry(chat) {
+    return !!cleanText(chat?.entryId);
+}
+
+function hasLink(chat) {
+    return !!cleanText(chat?.linkId);
+}
+
+function preferredChatVersion(current, candidate) {
+    if (!current) {
+        return candidate;
+    }
+    if (hasPendingPreview(candidate) !== hasPendingPreview(current)) {
+        return hasPendingPreview(candidate) ? candidate : current;
+    }
+
+    const currentTs = timestampMs(current?.ts, 0) ?? 0;
+    const candidateTs = timestampMs(candidate?.ts, 0) ?? 0;
+    if (candidateTs !== currentTs) {
+        return candidateTs > currentTs ? candidate : current;
+    }
+
+    if (hasUsableEntry(candidate) !== hasUsableEntry(current)) {
+        return hasUsableEntry(candidate) ? candidate : current;
+    }
+    if (hasLink(candidate) !== hasLink(current)) {
+        return hasLink(candidate) ? candidate : current;
+    }
+
+    return current;
+}
+
+export function canonicalChatVersions(chats) {
+    if (!Array.isArray(chats) || chats.length < 2) {
+        return chats || [];
+    }
+
+    const byVersion = new Map();
+    const unkeyed = [];
+
+    for (const chat of chats) {
+        const key = chatVersionKey(chat);
+        if (!key) {
+            unkeyed.push(chat);
+            continue;
+        }
+        byVersion.set(key, preferredChatVersion(byVersion.get(key), chat));
+    }
+
+    return sortChats([...byVersion.values(), ...unkeyed]);
+}
+
+export function duplicateChatEntryIds(chats) {
+    if (!Array.isArray(chats) || chats.length < 2) {
+        return [];
+    }
+
+    const winnerByKey = new Map();
+    for (const chat of canonicalChatVersions(chats)) {
+        const key = chatVersionKey(chat);
+        const entryId = cleanText(chat?.entryId);
+        if (key && entryId) {
+            winnerByKey.set(key, entryId);
+        }
+    }
+
+    const ids = [];
+    for (const chat of chats) {
+        const winnerEntryId = winnerByKey.get(chatVersionKey(chat));
+        const entryId = cleanText(chat?.entryId);
+        if (entryId && winnerEntryId && entryId !== winnerEntryId) {
+            ids.push(entryId);
+        }
+    }
+    return uniqueValues(ids);
 }
 
 export function filterPendingDeleteChats(chats, pendingDeleteIds) {
@@ -335,6 +459,7 @@ export function setLocalChats(chats, localByChat) {
         const chat = {
             id: chatId,
             ...(current || {}),
+            linkId: current?.linkId || lastMsg?.linkId || null,
             peerChatPK: current?.peerChatPK || lastMsg?.peerChatPK || null,
             lastMsg,
             ts,

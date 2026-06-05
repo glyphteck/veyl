@@ -2,11 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { onAuthStateChanged } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
-import { hasCurrentCommunityRules } from '@veyl/shared/community';
 import Loading from '@/components/loading';
-import { auth, db } from '@/lib/firebase/firebaseclient';
+import { cloud } from '@/lib/cloud';
 
 const STEP_HREF = {
     username: '/getusername',
@@ -19,7 +16,7 @@ let leavingAuth = false;
 function useAuthUser() {
     const [state, setState] = useState({ ready: false, user: null });
 
-    useEffect(() => onAuthStateChanged(auth, (user) => setState({ ready: true, user })), []);
+    useEffect(() => cloud.auth.watch((user) => setState({ ready: true, user })), []);
 
     return state;
 }
@@ -35,34 +32,11 @@ function replaceDocument(href) {
     window.location.replace(href);
 }
 
-export async function readOnboardingState(uid) {
-    if (!uid) throw new Error('uid required');
-
-    const [profileDoc, seedDoc, userDoc] = await Promise.all([
-        getDoc(doc(db, 'profiles', uid)),
-        getDoc(doc(db, 'seeds', uid)),
-        getDoc(doc(db, 'users', uid)),
-    ]);
-    const profile = profileDoc.exists() ? profileDoc.data() : null;
-    const user = userDoc.exists() ? userDoc.data() : null;
-
-    return {
-        uid,
-        hasUsername: !!profile?.username,
-        hasAvatarEntry: !!profile && Object.prototype.hasOwnProperty.call(profile, 'avatar'),
-        hasSeed: seedDoc.exists(),
-        communityRulesVersion: user?.communityRulesVersion || null,
-        communityRulesDate: user?.communityRulesDate || null,
-        communityRulesAcceptedAt: user?.communityRulesAcceptedAt || null,
-        hasCurrentCommunityRules: hasCurrentCommunityRules(user),
-    };
-}
-
 export function hrefForOnboardingState(state) {
     if (!state?.hasUsername) return STEP_HREF.username;
     if (!state.hasAvatarEntry) return STEP_HREF.avatar;
     if (!state.hasCurrentCommunityRules) return STEP_HREF.community;
-    if (!state.hasSeed) return STEP_HREF.password;
+    if (!state.hasVault) return STEP_HREF.password;
     return '/unlock';
 }
 
@@ -78,7 +52,7 @@ function useOnboardingState(user, enabled) {
         let active = true;
         setState({ loading: true, uid: user.uid, value: null, error: null });
 
-        readOnboardingState(user.uid)
+        cloud.user.onboarding(user.uid)
             .then((value) => {
                 if (active) setState({ loading: false, uid: user.uid, value, error: null });
             })
@@ -203,9 +177,9 @@ export function AdminGate({ children }) {
         let active = true;
         setAdminState({ loading: true, allowed: false });
 
-        getDoc(doc(db, 'admins', user.uid))
-            .then((snap) => {
-                if (active) setAdminState({ loading: false, allowed: snap.exists() });
+        cloud.user.admin.is(user.uid)
+            .then((allowed) => {
+                if (active) setAdminState({ loading: false, allowed });
             })
             .catch(() => {
                 if (active) setAdminState({ loading: false, allowed: false });

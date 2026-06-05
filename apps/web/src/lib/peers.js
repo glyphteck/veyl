@@ -3,22 +3,21 @@
 import { createPeersApi } from '@veyl/shared/peers';
 import { createProfileQueries } from '@veyl/shared/search/remote';
 import { resolveNetwork } from '@veyl/shared/network';
-import { db, getStorage } from '@/lib/firebase/firebaseclient';
+import { cloud } from '@/lib/cloud';
 
 const peerApi = createPeersApi({
-    db,
-    getStorage,
+    cloud,
     network: resolveNetwork({ NEXT_PUBLIC_NETWORK: process.env.NEXT_PUBLIC_NETWORK }),
 });
 
 export const profileQueries = createProfileQueries({
-    db,
-    createProfileFromDoc: peerApi.createProfileFromDoc,
+    cloud,
+    createProfileFromRecord: peerApi.createProfileFromRecord,
     cachePeer: peerApi.cachePeer,
 });
 
 export const {
-    createProfileFromDoc,
+    createProfileFromRecord,
     buildPeer,
     cachePeer,
     hydrateProfiles,

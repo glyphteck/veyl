@@ -3,7 +3,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronLeft } from 'lucide-react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Image as ExpoImage } from 'expo-image';
 import Reanimated, { Easing, LinearTransition, useDerivedValue, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useTheme } from '@/providers/themeprovider';
 import { useChat } from '@/providers/chatprovider';
@@ -33,8 +32,8 @@ const ENABLE_CHAT_COMPOSER = true;
 const ENABLE_CHAT_INPUT = true;
 const COMPOSER_KEYBOARD_GAP = 8;
 const COMPOSER_OVERLAY_GAP = 8;
-const COMPOSER_OVERLAY_MS = 160;
-const COMPOSER_OVERLAY_EXIT_HOLD_MS = COMPOSER_OVERLAY_MS + 40;
+const COMPOSER_OVERLAY_MS = 80;
+const COMPOSER_OVERLAY_EXIT_HOLD_MS = COMPOSER_OVERLAY_MS;
 const composerOverlayTiming = {
     duration: COMPOSER_OVERLAY_MS,
     easing: Easing.out(Easing.cubic),
@@ -168,20 +167,10 @@ export default function PeerChatRoute() {
             return undefined;
         }
         const timer = setTimeout(() => {
-            updatePeer?.(peerProfile.uid, { refreshAvatar: true });
+            updatePeer?.(peerProfile.uid);
         }, 450);
         return () => clearTimeout(timer);
     }, [peerProfile?.uid, updatePeer]);
-
-    useEffect(() => {
-        if (!peerProfile?.avatar) {
-            return undefined;
-        }
-        const timer = setTimeout(() => {
-            void ExpoImage.prefetch(peerProfile.avatar, 'memory-disk');
-        }, 450);
-        return () => clearTimeout(timer);
-    }, [peerProfile?.avatar]);
 
     useEffect(() => {
         if (!chatBanned) {
@@ -231,7 +220,8 @@ export default function PeerChatRoute() {
             const base = makeTxt(text);
             const canReply = draftState?.mode === 'reply' && canReplyToMsg(draftState?.msg);
             const replyId = String(canReply ? (typeof draftState?.msg?.id === 'string' && !draftState.msg.id.startsWith('local:') ? draftState.msg.id : draftState?.msg?.cid) || '' : '').trim();
-            await sendMessage?.(peerChatPK, replyId ? setReply(base, replyId) : base);
+            const result = await sendMessage?.(peerChatPK, replyId ? setReply(base, replyId) : base);
+            if (result?.chatId) setChatId(result.chatId);
         },
         [peerChatPK, sendMessage]
     );
@@ -266,12 +256,14 @@ export default function PeerChatRoute() {
             try {
                 if (String(prepared?.mimeType || '').startsWith('video/')) {
                     mark('chat.image.sendVideo.start', { size: prepared?.size || prepared?.data?.byteLength || 0 });
-                    await sendAttachment?.(peerChatPK, prepared);
+                    const result = await sendAttachment?.(peerChatPK, prepared);
+                    if (result?.chatId) setChatId(result.chatId);
                     mark('chat.image.sendVideo.done', {});
                     return;
                 }
                 mark('chat.image.send.start', { size: prepared?.size || prepared?.data?.byteLength || 0 });
-                await sendImage?.(peerChatPK, prepared);
+                const result = await sendImage?.(peerChatPK, prepared);
+                if (result?.chatId) setChatId(result.chatId);
                 mark('chat.image.send.done', {});
             } catch (error) {
                 mark('chat.image.send.error', { message: error?.message || String(error), code: error?.code || '', stage: error?.stage || '' });
@@ -296,7 +288,8 @@ export default function PeerChatRoute() {
             }
 
             try {
-                await sendAttachment?.(peerChatPK, prepared);
+                const result = await sendAttachment?.(peerChatPK, prepared);
+                if (result?.chatId) setChatId(result.chatId);
             } catch (error) {
                 console.warn('chat attachment send failed', error);
                 showUploadError('Upload failed', error, 'Could not send this attachment. Please try again.');
@@ -418,7 +411,8 @@ export default function PeerChatRoute() {
                     return;
                 }
                 try {
-                    await sendMessage?.(peerChatPK, makeReq(amountSats));
+                    const result = await sendMessage?.(peerChatPK, makeReq(amountSats));
+                    if (result?.chatId) setChatId(result.chatId);
                 } catch (error) {
                     Alert.alert('Request failed', error?.message || 'Failed to send request.');
                 }

@@ -1,7 +1,6 @@
 import { createBitcoinProvider } from '@veyl/shared/providers/bitcoinprovider';
-import { db } from '@/lib/firebase';
+import { cloud } from '@/lib/cloud';
 
-const { BitcoinProvider, useBitcoin } = createBitcoinProvider({ db });
+const { BitcoinProvider, useBitcoin } = createBitcoinProvider({ cloud });
 
 export { BitcoinProvider, useBitcoin };
-

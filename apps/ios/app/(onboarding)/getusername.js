@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Text, TextInput, View } from 'react-native';
 import { TriangleAlert } from 'lucide-react-native';
-import { httpsCallable } from 'firebase/functions';
 import { useTheme } from '@/providers/themeprovider';
-import { functions } from '@/lib/firebase';
+import { cloud } from '@/lib/cloud';
 import GlassButton from '@/components/glass/glassbutton';
 import GlassField from '@/components/glass/glassfield';
 import Icon from '@/components/icon';
@@ -77,7 +76,7 @@ export default function NewUserUsername() {
         clearTimeout(resetRef.current);
         setStatus('submitting');
         try {
-            await httpsCallable(functions, 'setUsername')({ username: trimmed });
+            await cloud.user.username.get(trimmed);
         } catch (err) {
             console.warn('set username failed', err);
             setUsername('');

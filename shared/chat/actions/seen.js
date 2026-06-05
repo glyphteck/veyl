@@ -2,9 +2,10 @@
 
 import { useCallback } from 'react';
 import { writeCachedChats } from '../../cache/localdata.js';
+import { sendReadReceipt, setChatRead } from '../messages/write.js';
 import { markChatsRead, readCandidate, scheduleReadReceiptWrite } from '../read.js';
 
-export function useChatSeen({ chat, uid, chatBanned, chatPK, chatPrivateKey, localCache, pendingReadRef, readCacheRef, readReceiptWriteDelay, getChatRetention, setChats }) {
+export function useChatSeen({ cloud, uid, chatBanned, chatPK, chatPrivateKey, localCache, pendingReadRef, readCacheRef, readReceiptWriteDelay, getChatRetention, setChats }) {
     const scheduleReadReceipt = useCallback(
         (chatId, message, lastMsgMs) => {
             scheduleReadReceiptWrite({
@@ -13,13 +14,13 @@ export function useChatSeen({ chat, uid, chatBanned, chatPK, chatPrivateKey, loc
                 message,
                 lastMsgMs,
                 delay: readReceiptWriteDelay,
-                write: (pending) => chat.sendReadReceipt(chatPK, chatPrivateKey, pending.peerChatPK, pending.target, { retention: getChatRetention(chatId), senderUid: uid }),
+                write: (pending) => sendReadReceipt(cloud, chatPK, chatPrivateKey, pending.peerChatPK, pending.target, { chatId, retention: getChatRetention(chatId), senderUid: uid }),
                 onError: () => {
                     readCacheRef.current.delete(chatId);
                 },
             });
         },
-        [chat, uid, chatPK, chatPrivateKey, getChatRetention, pendingReadRef, readCacheRef, readReceiptWriteDelay]
+        [cloud, uid, chatPK, chatPrivateKey, getChatRetention, pendingReadRef, readCacheRef, readReceiptWriteDelay]
     );
 
     const checkLastRead = useCallback(
@@ -46,14 +47,14 @@ export function useChatSeen({ chat, uid, chatBanned, chatPK, chatPrivateKey, loc
             });
 
             readCacheRef.current.set(chatId, read.lastMsgMs);
-            void chat.setChatRead?.(uid, chatPrivateKey, chatId, read.lastMsgMs).catch((error) => {
+            void setChatRead(cloud, uid, chatPrivateKey, chatId, read.lastMsgMs).catch((error) => {
                 console.warn('chat read state write failed', error);
             });
             if (sendReceipt) {
                 scheduleReadReceipt(chatId, read.lastMsg, read.lastMsgMs);
             }
         },
-        [chat, uid, chatPK, chatPrivateKey, localCache, readCacheRef, scheduleReadReceipt, setChats]
+        [cloud, uid, chatPK, chatPrivateKey, localCache, readCacheRef, scheduleReadReceipt, setChats]
     );
 
     const markChatReadReceipt = useCallback(

@@ -1,6 +1,7 @@
 'use client';
 
 import { timestampMs } from '../../utils/time.js';
+import { isCurrentChatCacheEntry } from '../../chat/chats.js';
 import { collectMediaIds } from './media.js';
 import { isObject, jsonClean, reviveTs } from './schema.js';
 
@@ -50,6 +51,8 @@ function serializeChat(chat) {
 
     return {
         id: chat.id,
+        linkId: chat.linkId || null,
+        entryId: chat.entryId || null,
         peerChatPK: chat.peerChatPK || null,
         peerUid: chat.peerUid || null,
         actors: isObject(chat.actors) ? jsonClean(chat.actors) : undefined,
@@ -69,6 +72,8 @@ function reviveChat(chat) {
     const lastMsg = reviveMsg(chat.lastMsg);
     return {
         id: chat.id,
+        linkId: chat.linkId || null,
+        entryId: chat.entryId || null,
         peerChatPK: chat.peerChatPK || null,
         peerUid: chat.peerUid || null,
         actors: isObject(chat.actors) ? chat.actors : undefined,
@@ -85,10 +90,22 @@ export function readCachedChats(cache) {
     if (!payload?.chatsById) {
         return [];
     }
-    return Object.values(payload.chatsById)
-        .map(reviveChat)
+    const invalidIds = [];
+    const chats = Object.entries(payload.chatsById)
+        .map(([id, value]) => {
+            const chat = reviveChat(value);
+            if (!chat || !isCurrentChatCacheEntry(chat)) {
+                invalidIds.push(id);
+                return null;
+            }
+            return chat;
+        })
         .filter(Boolean)
         .sort((a, b) => (b.ts || 0) - (a.ts || 0));
+    if (invalidIds.length) {
+        dropCachedChats(cache, invalidIds, payload);
+    }
+    return chats;
 }
 
 export function writeCachedChats(cache, chats) {
@@ -100,7 +117,7 @@ export function writeCachedChats(cache, chats) {
         const next = {};
         for (const chat of chats) {
             const item = serializeChat(chat);
-            if (item?.id && item.ts) {
+            if (item?.id && item.ts && isCurrentChatCacheEntry(item)) {
                 next[item.id] = item;
             }
         }
@@ -110,17 +127,32 @@ export function writeCachedChats(cache, chats) {
     });
 }
 
+function dropCachedChats(cache, chatIds, currentPayload = null) {
+    if (!cache?.patch || !chatIds?.length) {
+        return;
+    }
+
+    const mediaIds = [];
+    const current = currentPayload || cache.read?.();
+    for (const chatId of chatIds) {
+        const lastMsg = current?.chatsById?.[chatId]?.lastMsg;
+        if (lastMsg) {
+            mediaIds.push(...collectMediaIds(current, [lastMsg]));
+        }
+    }
+
+    void cache.patch((payload) => {
+        for (const chatId of chatIds) {
+            delete payload.chatsById?.[chatId];
+        }
+        return payload;
+    }).then(() => cache.removeMediaIds?.(mediaIds));
+}
+
 export function dropCachedChat(cache, chatId) {
     if (!cache?.patch || !chatId) {
         return;
     }
 
-    const mediaIds = [];
-    void cache.patch((payload) => {
-        if (payload.chatsById?.[chatId]?.lastMsg) {
-            mediaIds.push(...collectMediaIds(payload, [payload.chatsById[chatId].lastMsg]));
-        }
-        delete payload.chatsById?.[chatId];
-        return payload;
-    }).then(() => cache.removeMediaIds?.(mediaIds));
+    dropCachedChats(cache, [chatId]);
 }

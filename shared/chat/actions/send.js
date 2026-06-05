@@ -1,12 +1,14 @@
 'use client';
 
 import { useCallback, useRef } from 'react';
-import { checkAttachmentSize, getAttachmentType, isAttachmentType, makeAttachmentUnavailableError, makeChatUnavailableError, makeTxtFileAttachment, saveMedia } from '../attachments.js';
+import { attachmentBytes, checkAttachmentSize, getAttachmentType, isAttachmentType, makeAttachmentUnavailableError, makeChatUnavailableError, makeTxtFileAttachment, saveMedia } from '../attachments.js';
 import { setLocalChats } from '../chats.js';
-import { hasStoredFileRef, isAttachmentMsgType, isLongTxt, makeSharedAttachment } from '../messages.js';
+import { hasSharedMediaFileRef, hasStoredFileRef, isAttachmentMsgType, isLongTxt, makeSharedAttachment } from '../messages.js';
+import { putSharedAttachment } from '../media.js';
 import { usePendingSendQueue } from './pending.js';
-import { newMediaStayId, newMediaStayKey, requireMediaSaved } from './save.js';
 import { getPeerChatPKFromChatId } from '../ids.js';
+import { resolveLinkId } from '../pairs.js';
+import { sendMsg, uploadAttachmentMsg } from '../messages/write.js';
 import { getMessageKey, makeCid, sortMessages } from '../state.js';
 import { getMessageRetention, retentionPatch, withMessageRetention } from '../ttl.js';
 import { cleanText } from '../../utils/text.js';
@@ -47,6 +49,30 @@ export function makeLocalMessage(chatId, chatPK, peerChatPK, message) {
     };
 
     return { chatId, cid, local, ms };
+}
+
+async function resolvePeerChat(cloud, chatPK, chatPrivateKey, peerChatPK, options = {}) {
+    const existingChatId = cleanText(options?.chatId);
+    const existingLinkId = cleanText(options?.linkId);
+    if (existingChatId && existingLinkId) {
+        return { chatId: existingChatId, linkId: existingLinkId, version: Number.isInteger(options?.linkVersion) ? options.linkVersion : 0, exists: true };
+    }
+
+    const linkId = existingLinkId || await resolveLinkId(chatPK, chatPrivateKey, peerChatPK);
+    if (!linkId || typeof cloud?.chat?.links?.open !== 'function') {
+        throw makeChatUnavailableError();
+    }
+    const linkChat = await cloud.chat.links.open(linkId);
+    const chatId = cleanText(linkChat?.id);
+    if (!chatId) {
+        throw makeChatUnavailableError();
+    }
+    return {
+        chatId,
+        linkId,
+        version: Number.isInteger(linkChat?.version) ? linkChat.version : 0,
+        exists: linkChat?.exists === true,
+    };
 }
 
 export function addLocalMessage(localByChat, chatId, local) {
@@ -187,7 +213,7 @@ export function prepareAttachment(chatPK, attachment) {
 }
 
 export function splitRetryMessage(message) {
-    const { id, ts, from, pending, failed, localUri, localData, ...payload } = message;
+    const { id, ts, from, pending, failed, localUri, localData, peerChatPK, chatId, linkId, linkVersion, version, ...payload } = message;
     return { localUri, localData, payload };
 }
 
@@ -221,27 +247,6 @@ export function uniqueChatTargets(peerChatPKs) {
     return targets;
 }
 
-export function shouldUploadPermanentMedia(attachment) {
-    return attachment?.permanent === true || attachment?.meta?.permanent === true;
-}
-
-export function attachmentWithPermanence(attachment, permanent, stay = null) {
-    if (!permanent) {
-        return attachment;
-    }
-    const stayId = cleanText(stay?.id);
-    const stayKey = cleanText(stay?.key);
-    return {
-        ...attachment,
-        meta: {
-            ...(attachment?.meta || {}),
-            permanent: true,
-            stay: stayId,
-            stayKey,
-        },
-    };
-}
-
 function localMediaAdoptionKey(chatId, cid, message) {
     if (!chatId || !cid || !message?.p || !message?.k || String(message.p).startsWith('local:') || message.k === 'local') {
         return '';
@@ -249,7 +254,64 @@ function localMediaAdoptionKey(chatId, cid, message) {
     return `${chatId}\n${cid}\n${message.p}\n${message.k}`;
 }
 
-export function useChatSend({ chat, uid, chatBanned, chatPK, chatPrivateKey, localCache, localByChatRef, setLocalByChat, setChats, setLastChat, waitForPeerDelete, sendOptionsForPeer, adoptLocalMessageMedia }) {
+function sendableMessage(message) {
+    const { localData, localUri, pending, failed, peerChatPK, id, from, ts, chatId, linkId, linkVersion, version, ...payload } = message || {};
+    return payload;
+}
+
+function withMediaUpload(cloud, media, attachment = {}) {
+    const uploadChatMedia = media?.uploadChatMedia || cloud?.chat?.media?.upload;
+    if (typeof uploadChatMedia !== 'function') {
+        return attachment;
+    }
+    return {
+        ...attachment,
+        meta: {
+            ...(attachment?.meta || {}),
+            uploadChatMedia,
+        },
+    };
+}
+
+function withSharedMediaUpload(cloud, media, meta = {}) {
+    const uploadSharedMedia = media?.uploadSharedMedia || cloud?.chat?.media?.uploadShared;
+    if (typeof uploadSharedMedia !== 'function') {
+        return meta;
+    }
+    return {
+        ...meta,
+        uploadSharedMedia,
+    };
+}
+
+function uploadMessageAttachment(cloud, media, senderPubkey, senderPrivkey, receiverChatPK, attachment = {}) {
+    if (typeof media?.uploadAttachment === 'function') {
+        return media.uploadAttachment(senderPubkey, senderPrivkey, receiverChatPK, attachment);
+    }
+    return uploadAttachmentMsg(cloud, senderPubkey, senderPrivkey, receiverChatPK, withMediaUpload(cloud, media, attachment));
+}
+
+async function makeSharedMediaAttachment(cloud, media, message, data) {
+    const source = makeSharedAttachment(message);
+    if (hasSharedMediaFileRef(source)) {
+        return source;
+    }
+    const bytes = await attachmentBytes(data);
+    if (!bytes?.byteLength) {
+        throw makeChatUnavailableError();
+    }
+    return putSharedAttachment(source.t, bytes, withSharedMediaUpload(cloud, media, {
+        ...(source?.m ? { mimeType: source.m } : {}),
+        ...(Number.isFinite(source?.z) ? { size: source.z } : { size: bytes.byteLength }),
+        ...(Number.isFinite(source?.w) ? { width: source.w } : {}),
+        ...(Number.isFinite(source?.h) ? { height: source.h } : {}),
+        ...(Number.isFinite(source?.d) ? { duration: source.d } : {}),
+        ...(source?.n ? { name: source.n } : {}),
+        ...(source?.c ? { caption: source.c } : {}),
+    }));
+}
+
+export function useChatSend({ cloud, media = {}, uid, chatBanned, chatPK, chatPrivateKey, localCache, localByChatRef, setLocalByChat, setChats, setLastChat, waitForPeerDelete, sendOptionsForPeer, selectLocalChat, adoptLocalMessageMedia, readMessageFile }) {
     const adoptedLocalMediaRef = useRef(new Set());
     const cachedLocalMediaRef = useRef(new Set());
     const sentChatIdsRef = useRef(new Set());
@@ -402,32 +464,31 @@ export function useChatSend({ chat, uid, chatBanned, chatPK, chatPrivateKey, loc
         []
     );
 
-    const resolvePeerChatId = useCallback(
-        async (peerChatPK) => {
-            if (!chatPK || !chatPrivateKey || !peerChatPK || typeof chat.resolveChatId !== 'function') {
+    const resolvePeerChatForSend = useCallback(
+        async (peerChatPK, options = {}) => {
+            if (!chatPK || !chatPrivateKey || !peerChatPK) {
                 throw makeChatUnavailableError();
             }
-            const chatId = await chat.resolveChatId(chatPK, chatPrivateKey, peerChatPK);
-            if (!chatId) {
-                throw makeChatUnavailableError();
-            }
-            return chatId;
+            return resolvePeerChat(cloud, chatPK, chatPrivateKey, peerChatPK, options);
         },
-        [chat, chatPK, chatPrivateKey]
+        [cloud, chatPK, chatPrivateKey]
     );
 
     const showLocalMessage = useCallback(
-        async (peerChatPK, message) => {
-            const chatId = await resolvePeerChatId(peerChatPK);
+        async (peerChatPK, message, options = {}) => {
+            const chat = await resolvePeerChatForSend(peerChatPK, options);
+            const chatId = chat.chatId;
             const { cid, local, ms } = makeLocalMessage(chatId, chatPK, peerChatPK, message);
+            local.linkId = chat.linkId;
 
             setLocalByChat((prev) => addLocalMessage(prev, chatId, local));
             setChats((prev) => addLocalMessageToChats(prev, chatId, local, localByChatRef.current.get(chatId) || []));
             setLastChat((current) => updateLastChatWithLocal(current, peerChatPK, local, ms));
+            selectLocalChat?.(peerChatPK, chatId);
 
-            return { chatId, cid };
+            return { ...chat, cid };
         },
-        [chatPK, localByChatRef, resolvePeerChatId, setChats, setLastChat, setLocalByChat]
+        [chatPK, localByChatRef, resolvePeerChatForSend, selectLocalChat, setChats, setLastChat, setLocalByChat]
     );
 
     const markLocalStatus = useCallback(
@@ -448,7 +509,7 @@ export function useChatSend({ chat, uid, chatBanned, chatPK, chatPrivateKey, loc
 
     const queueSend = useCallback(
         async (peerChatPK, message, run, { lastMsgRequired = false } = {}) => {
-            const local = await showLocalMessage(peerChatPK, message);
+            const local = await showLocalMessage(peerChatPK, message, sendOptionsForPeer(peerChatPK));
 
             return new Promise((resolve, reject) => {
                 const job = {
@@ -467,13 +528,17 @@ export function useChatSend({ chat, uid, chatBanned, chatPK, chatPrivateKey, loc
                 enqueueSendJob(peerChatPK, job, reject);
             });
         },
-        [chat, enqueueSendJob, markLocalStatus, showLocalMessage]
+        [enqueueSendJob, markLocalStatus, sendOptionsForPeer, showLocalMessage]
     );
 
-    const sendOptionsForQueuedWrite = useCallback((baseOptions, chatId, updateLastMsg) => {
+    const sendOptionsForQueuedWrite = useCallback((baseOptions, local, updateLastMsg) => {
+        const chatId = local?.chatId;
         const chatExists = baseOptions?.chatExists === true || sentChatIdsRef.current.has(chatId);
         return {
             ...baseOptions,
+            chatId,
+            linkId: local?.linkId || baseOptions?.linkId,
+            linkVersion: local?.version || baseOptions?.linkVersion,
             senderUid: uid,
             chatExists,
             updateLastMsg: !chatExists || updateLastMsg !== false,
@@ -496,20 +561,20 @@ export function useChatSend({ chat, uid, chatBanned, chatPK, chatPrivateKey, loc
                 const localMessage = makeLongTxtLocalMessage(chatPK, cid, attachment, nextMessage);
 
                 return queueSend(peerChatPK, localMessage, async ({ local, updateLastMsg }) => {
-                    const writeOptions = sendOptionsForQueuedWrite(sendOptions, local.chatId, updateLastMsg);
-                    const uploaded = await chat.uploadAttachment(chatPK, chatPrivateKey, peerChatPK, { cid, ...attachment, meta: attachment });
+                    const writeOptions = sendOptionsForQueuedWrite(sendOptions, local, updateLastMsg);
+                    const uploaded = await uploadMessageAttachment(cloud, media, chatPK, chatPrivateKey, peerChatPK, { cid, ...attachment, chatId: local.chatId, meta: { ...attachment, chatId: local.chatId } });
                     saveMedia(localCache, uploaded, attachment.data, attachment);
                     rememberCachedLocalMedia(local.chatId, cid, uploaded);
-                    return chat.sendMessage(chatPK, chatPrivateKey, peerChatPK, makeSentLongTxtMessage(chatPK, cid, uploaded, nextMessage), writeOptions);
+                    return sendMsg(cloud, chatPK, chatPrivateKey, peerChatPK, makeSentLongTxtMessage(chatPK, cid, uploaded, nextMessage), writeOptions);
                 }, { lastMsgRequired: sendOptions.chatExists !== true });
             }
 
             const queued = makeSendMessage(chatPK, nextMessage);
             return queueSend(peerChatPK, queued.message, async ({ local, updateLastMsg }) => {
-                return chat.sendMessage(chatPK, chatPrivateKey, peerChatPK, queued.message, sendOptionsForQueuedWrite(sendOptions, local.chatId, updateLastMsg));
+                return sendMsg(cloud, chatPK, chatPrivateKey, peerChatPK, queued.message, sendOptionsForQueuedWrite(sendOptions, local, updateLastMsg));
             }, { lastMsgRequired: sendOptions.chatExists !== true });
         },
-        [chat, chatBanned, chatPK, chatPrivateKey, localCache, queueSend, rememberCachedLocalMedia, sendOptionsForPeer, sendOptionsForQueuedWrite]
+        [cloud, media, chatBanned, chatPK, chatPrivateKey, localCache, queueSend, rememberCachedLocalMedia, sendOptionsForPeer, sendOptionsForQueuedWrite]
     );
 
     const retryMessage = useCallback(
@@ -534,7 +599,14 @@ export function useChatSend({ chat, uid, chatBanned, chatPK, chatPrivateKey, loc
             const { localUri, localData, payload } = splitRetryMessage(failedMsg);
             const baseSendOptions = sendOptionsForPeer(peerChatPK);
             const retryRetention = getMessageRetention(failedMsg, baseSendOptions.retention);
-            const sendOptions = { ...baseSendOptions, retention: retryRetention, senderUid: uid };
+            const sendOptions = {
+                ...baseSendOptions,
+                chatId,
+                linkId: failedMsg.linkId || baseSendOptions.linkId,
+                linkVersion: failedMsg.version || baseSendOptions.linkVersion,
+                retention: retryRetention,
+                senderUid: uid,
+            };
 
             if (isAttachmentType(failedMsg?.t) && localData) {
                 const meta = retryAttachmentMeta(failedMsg, localUri);
@@ -546,15 +618,16 @@ export function useChatSend({ chat, uid, chatBanned, chatPK, chatPrivateKey, loc
                         onSuccess: () => markLocalStatus(chatId, cid, LOCAL_SENT),
                         onError: () => markLocalStatus(chatId, cid, LOCAL_FAILED),
                         run: async () => {
-                            const uploaded = await chat.uploadAttachment(chatPK, chatPrivateKey, peerChatPK, {
+                            const uploaded = await uploadMessageAttachment(cloud, media, chatPK, chatPrivateKey, peerChatPK, {
                                 cid,
                                 type: failedMsg.t,
                                 data: localData,
-                                meta,
+                                chatId,
+                                meta: { ...meta, chatId },
                             });
                             saveMedia(localCache, uploaded, localData, meta);
                             rememberCachedLocalMedia(chatId, cid, uploaded);
-                            await chat.sendMessage(chatPK, chatPrivateKey, peerChatPK, withMessageRetention({ ...uploaded, cid, s: chatPK }, retryRetention), sendOptions);
+                            await sendMsg(cloud, chatPK, chatPrivateKey, peerChatPK, withMessageRetention({ ...uploaded, cid, s: chatPK }, retryRetention), sendOptions);
                         },
                     };
 
@@ -569,14 +642,14 @@ export function useChatSend({ chat, uid, chatBanned, chatPK, chatPrivateKey, loc
                     onSuccess: () => markLocalStatus(chatId, cid, LOCAL_SENT),
                     onError: () => markLocalStatus(chatId, cid, LOCAL_FAILED),
                     run: async () => {
-                        return chat.sendMessage(chatPK, chatPrivateKey, peerChatPK, withMessageRetention(payload, retryRetention), sendOptions);
+                        return sendMsg(cloud, chatPK, chatPrivateKey, peerChatPK, withMessageRetention(payload, retryRetention), sendOptions);
                     },
                 };
 
                 enqueueSendJob(peerChatPK, job, reject);
             });
         },
-        [chat, chatBanned, chatPK, chatPrivateKey, enqueueSendJob, localByChatRef, localCache, markLocalStatus, rememberCachedLocalMedia, sendOptionsForPeer, uid]
+        [cloud, media, chatBanned, chatPK, chatPrivateKey, enqueueSendJob, localByChatRef, localCache, markLocalStatus, rememberCachedLocalMedia, sendOptionsForPeer, uid]
     );
 
     const sendAttachment = useCallback(
@@ -588,33 +661,18 @@ export function useChatSend({ chat, uid, chatBanned, chatPK, chatPrivateKey, loc
                 throw makeChatUnavailableError();
             }
             const { cid, nextAttachment, localMessage } = prepareAttachment(chatPK, attachment);
-            const permanent = shouldUploadPermanentMedia(attachment);
-            const stay = permanent ? { id: newMediaStayId(), key: newMediaStayKey() } : null;
-            const uploadAttachment = attachmentWithPermanence(nextAttachment, permanent, stay);
             const sendOptions = sendOptionsForPeer(peerChatPK);
             const localPayload = withMessageRetention(localMessage, sendOptions.retention);
 
             return queueSend(peerChatPK, localPayload, async ({ local, updateLastMsg }) => {
-                const writeOptions = sendOptionsForQueuedWrite(sendOptions, local.chatId, updateLastMsg);
-                const uploaded = await chat.uploadAttachment(chatPK, chatPrivateKey, peerChatPK, uploadAttachment);
-                let savedMedia = false;
-                try {
-                    if (permanent) {
-                        await requireMediaSaved(chat, uploaded.p, stay, true);
-                        savedMedia = true;
-                    }
-                    saveMedia(localCache, uploaded, attachment?.data, attachment);
-                    rememberCachedLocalMedia(local.chatId, cid, uploaded);
-                    return chat.sendMessage(chatPK, chatPrivateKey, peerChatPK, withMessageRetention({ ...uploaded, cid, s: chatPK }, sendOptions.retention), writeOptions);
-                } catch (error) {
-                    if (savedMedia) {
-                        await requireMediaSaved(chat, uploaded.p, stay, false).catch(() => {});
-                    }
-                    throw error;
-                }
+                const writeOptions = sendOptionsForQueuedWrite(sendOptions, local, updateLastMsg);
+                const uploaded = await uploadMessageAttachment(cloud, media, chatPK, chatPrivateKey, peerChatPK, { ...nextAttachment, chatId: local.chatId, meta: { ...(nextAttachment.meta || {}), chatId: local.chatId } });
+                saveMedia(localCache, uploaded, attachment?.data, attachment);
+                rememberCachedLocalMedia(local.chatId, cid, uploaded);
+                return sendMsg(cloud, chatPK, chatPrivateKey, peerChatPK, withMessageRetention({ ...uploaded, cid, s: chatPK }, sendOptions.retention), writeOptions);
             }, { lastMsgRequired: sendOptions.chatExists !== true });
         },
-        [chat, chatBanned, chatPK, chatPrivateKey, localCache, queueSend, rememberCachedLocalMedia, sendOptionsForPeer, sendOptionsForQueuedWrite]
+        [cloud, media, chatBanned, chatPK, chatPrivateKey, localCache, queueSend, rememberCachedLocalMedia, sendOptionsForPeer, sendOptionsForQueuedWrite]
     );
 
     const sendImage = useCallback((peerChatPK, image) => sendAttachment(peerChatPK, { ...image, type: 'img' }), [sendAttachment]);
@@ -636,19 +694,17 @@ export function useChatSend({ chat, uid, chatBanned, chatPK, chatPrivateKey, loc
 
             const locals = await Promise.all(targets.map(async (peerChatPK) => {
                 const prepared = prepareAttachment(chatPK, attachment);
-                const permanent = shouldUploadPermanentMedia(attachment);
                 const sendOptions = sendOptionsForPeer(peerChatPK);
                 const localMessage = withMessageRetention(prepared.localMessage, sendOptions.retention);
-                const local = await showLocalMessage(peerChatPK, localMessage);
-                const stay = permanent ? { id: newMediaStayId(), key: newMediaStayKey() } : null;
+                const local = await showLocalMessage(peerChatPK, localMessage, sendOptions);
                 return {
                     peerChatPK,
                     cid: prepared.cid,
                     chatId: local.chatId,
+                    linkId: local.linkId,
+                    version: local.version,
                     sendOptions,
-                    permanent,
-                    stay,
-                    nextAttachment: attachmentWithPermanence(prepared.nextAttachment, permanent, stay),
+                    nextAttachment: prepared.nextAttachment,
                 };
             }));
 
@@ -667,7 +723,7 @@ export function useChatSend({ chat, uid, chatBanned, chatPK, chatPrivateKey, loc
                         const uploadErrors = new Map();
 
                         for (const item of locals) {
-                            const uploadKey = item.permanent ? 'permanent' : 'expiring';
+                            const uploadKey = item.chatId;
                             const uploadError = uploadErrors.get(uploadKey);
                             if (uploadError) {
                                 markLocalStatus(item.chatId, item.cid, LOCAL_FAILED);
@@ -675,35 +731,25 @@ export function useChatSend({ chat, uid, chatBanned, chatPK, chatPrivateKey, loc
                                 continue;
                             }
 
-                            let savedMedia = false;
                             try {
                                 let uploaded = uploads.get(uploadKey);
                                 if (!uploaded) {
-                                    uploaded = await chat.uploadAttachment(chatPK, chatPrivateKey, item.peerChatPK, item.nextAttachment);
+                                    uploaded = await uploadMessageAttachment(cloud, media, chatPK, chatPrivateKey, item.peerChatPK, { ...item.nextAttachment, chatId: item.chatId, meta: { ...(item.nextAttachment.meta || {}), chatId: item.chatId } });
                                     uploads.set(uploadKey, uploaded);
                                     saveMedia(localCache, uploaded, attachment?.data, attachment);
-                                }
-                                if (item.permanent) {
-                                    await requireMediaSaved(chat, uploaded.p, item.stay, true);
-                                    savedMedia = true;
                                 }
 
                                 const sent = {
                                     ...uploaded,
-                                    ...(item.permanent ? { stay: item.stay.id, stayKey: item.stay.key } : {}),
                                     cid: item.cid,
                                     s: chatPK,
                                 };
                                 const sentMessage = withMessageRetention(sent, item.sendOptions.retention);
                                 rememberCachedLocalMedia(item.chatId, item.cid, sentMessage);
-                                await chat.sendMessage(chatPK, chatPrivateKey, item.peerChatPK, sentMessage, { ...item.sendOptions, senderUid: uid });
+                                await sendMsg(cloud, chatPK, chatPrivateKey, item.peerChatPK, sentMessage, { ...item.sendOptions, chatId: item.chatId, linkId: item.linkId, senderUid: uid });
                                 markLocalStatus(item.chatId, item.cid, LOCAL_SENT);
                                 results.push({ peerChatPK: item.peerChatPK, ok: true, message: sentMessage });
                             } catch (error) {
-                                const uploaded = uploads.get(uploadKey);
-                                if (savedMedia && uploaded?.p) {
-                                    await requireMediaSaved(chat, uploaded.p, item.stay, false).catch(() => {});
-                                }
                                 if (!uploads.has(uploadKey)) {
                                     uploadErrors.set(uploadKey, error);
                                 }
@@ -719,27 +765,72 @@ export function useChatSend({ chat, uid, chatBanned, chatPK, chatPrivateKey, loc
                 enqueueSendJob(targets, job, reject);
             });
         },
-        [chat, chatBanned, chatPK, chatPrivateKey, enqueueSendJob, localCache, markLocalStatus, rememberCachedLocalMedia, sendOptionsForPeer, showLocalMessage, uid]
+        [cloud, media, chatBanned, chatPK, chatPrivateKey, enqueueSendJob, localCache, markLocalStatus, rememberCachedLocalMedia, sendOptionsForPeer, showLocalMessage, uid]
     );
 
     const sendImageMany = useCallback((peerChatPKs, image) => sendAttachmentMany(peerChatPKs, { ...image, type: 'img' }), [sendAttachmentMany]);
 
-    const shareAttachment = useCallback(
-        async (peerChatPK, message) => {
+    const resolveSharePayload = useCallback(
+        async (message, options = {}) => {
             if (chatBanned) {
                 throw makeChatUnavailableError();
             }
-            if (!chatPK || !chatPrivateKey || !peerChatPK) {
+            if (!chatPK || !chatPrivateKey) {
                 throw makeChatUnavailableError();
             }
+            const sourcePeerChatPK = cleanText(options?.sourcePeerChatPK) || cleanText(message?.peerChatPK) || (message?.s && message.s !== chatPK ? cleanText(message.s) : '');
+            let data = options?.data ?? options?.bytes ?? message?.localData;
+            if (!hasSharedMediaFileRef(message)) {
+                const bytes = await attachmentBytes(data);
+                data = bytes?.byteLength ? bytes : null;
+                if (!data && sourcePeerChatPK && typeof readMessageFile === 'function') {
+                    data = await readMessageFile(sourcePeerChatPK, message);
+                }
+            }
+            return makeSharedMediaAttachment(cloud, media, message, data);
+        },
+        [chatBanned, chatPK, chatPrivateKey, cloud, media, readMessageFile]
+    );
+
+    const sendSharedAttachment = useCallback(
+        async (peerChatPK, sharedMessage) => {
             const sendOptions = sendOptionsForPeer(peerChatPK);
-            const shared = withMessageRetention(makeSharedAttachment(message), sendOptions.retention);
-            const queued = makeSendMessage(chatPK, shared);
-            return queueSend(peerChatPK, queued.message, async ({ local, updateLastMsg }) => {
-                return chat.sendMessage(chatPK, chatPrivateKey, peerChatPK, queued.message, sendOptionsForQueuedWrite(sendOptions, local.chatId, updateLastMsg));
+            const cid = makeCid();
+            const message = withMessageRetention({ ...sharedMessage, cid, s: chatPK }, sendOptions.retention);
+            return queueSend(peerChatPK, message, async ({ local, updateLastMsg }) => {
+                const writeOptions = sendOptionsForQueuedWrite(sendOptions, local, updateLastMsg);
+                if (sharedMessage?.localData != null) {
+                    saveMedia(localCache, message, sharedMessage.localData, message);
+                    rememberCachedLocalMedia(local.chatId, cid, message);
+                }
+                return sendMsg(cloud, chatPK, chatPrivateKey, peerChatPK, sendableMessage(message), writeOptions);
             }, { lastMsgRequired: sendOptions.chatExists !== true });
         },
-        [chat, chatBanned, chatPK, chatPrivateKey, queueSend, sendOptionsForPeer, sendOptionsForQueuedWrite]
+        [chatPK, chatPrivateKey, cloud, localCache, queueSend, rememberCachedLocalMedia, sendOptionsForPeer, sendOptionsForQueuedWrite]
+    );
+
+    const share = useCallback(
+        async (peerChatPKs, message, options = {}) => {
+            const targets = uniqueChatTargets(peerChatPKs);
+            if (!targets.length) {
+                return [];
+            }
+            const sharedMessage = await resolveSharePayload(message, options);
+            const payload = {
+                ...sharedMessage,
+                ...(options?.data != null ? { localData: options.data } : {}),
+            };
+            const results = [];
+            for (const peerChatPK of targets) {
+                try {
+                    results.push({ peerChatPK, ok: true, result: await sendSharedAttachment(peerChatPK, payload) });
+                } catch (error) {
+                    results.push({ peerChatPK, ok: false, error });
+                }
+            }
+            return results;
+        },
+        [resolveSharePayload, sendSharedAttachment]
     );
 
     return {
@@ -752,6 +843,6 @@ export function useChatSend({ chat, uid, chatBanned, chatPK, chatPrivateKey, loc
         sendImage,
         sendAttachmentMany,
         sendImageMany,
-        shareAttachment,
+        share,
     };
 }

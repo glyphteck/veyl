@@ -5,9 +5,10 @@ import { writeCachedChats } from '../../cache/localdata.js';
 import { makeChatUnavailableError } from '../attachments.js';
 import { filterPendingDeleteChats, sameChats } from '../chats.js';
 import { getChatPeerPK } from '../ids.js';
+import { setChatRetention } from '../messages/write.js';
 import { cleanChatRetention, normalizeChatSettings } from '../ttl.js';
 
-export function useChatSettings({ chat, uid, chatBanned, chatPK, chatPrivateKey, localCache, lastServerChatsRef, pendingDeleteIdsRef, chatsRef, setChats }) {
+export function useChatSettings({ cloud, uid, chatBanned, chatPK, chatPrivateKey, localCache, lastServerChatsRef, pendingDeleteIdsRef, chatsRef, setChats }) {
     const setChatTtl = useCallback(
         (chatId, retention) => {
             if (chatBanned) {
@@ -20,7 +21,7 @@ export function useChatSettings({ chat, uid, chatBanned, chatPK, chatPrivateKey,
                 throw makeChatUnavailableError();
             }
             const nextRetention = cleanChatRetention(retention);
-            return chat.setChatTtl(chatId, chatPK, chatPrivateKey, peerChatPK, nextRetention, { senderUid: uid, ownEntry: serverChat?.entryId ? serverChat : null }).then((savedRetention) => {
+            return setChatRetention(cloud, chatId, chatPK, chatPrivateKey, peerChatPK, nextRetention, { senderUid: uid, ownEntry: serverChat?.entryId ? serverChat : null }).then((savedRetention) => {
                 const retentionValue = cleanChatRetention(savedRetention);
                 const patchChat = (chatItem) => {
                     const settings = normalizeChatSettings(chatItem?.settings);
@@ -43,7 +44,7 @@ export function useChatSettings({ chat, uid, chatBanned, chatPK, chatPrivateKey,
                 return retentionValue;
             });
         },
-        [chat, uid, chatBanned, chatPK, chatPrivateKey, chatsRef, lastServerChatsRef, localCache, pendingDeleteIdsRef, setChats]
+        [cloud, uid, chatBanned, chatPK, chatPrivateKey, chatsRef, lastServerChatsRef, localCache, pendingDeleteIdsRef, setChats]
     );
 
     return {

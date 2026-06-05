@@ -173,7 +173,7 @@ function ChatRow({ onPress, onDelete, title, subtitle, rightLabel, isUnseen, ava
                     )}
                 </View>
                 {hasSubtitle ? (
-                    <Text style={{ marginTop: 7, fontSize: 14, color: isUnseen ? theme.foreground : theme.muted }} numberOfLines={1}>
+                    <Text style={{ marginTop: 7, fontSize: 14, fontWeight: '700', color: isUnseen ? theme.foreground : theme.muted }} numberOfLines={1}>
                         {subtitle}
                     </Text>
                 ) : null}

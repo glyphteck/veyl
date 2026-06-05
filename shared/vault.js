@@ -23,10 +23,9 @@ function bytesToHex(bytes) {
         .join('');
 }
 
-export async function bootWallet(walletMnemonic, user, { SparkWallet, httpsCallable, functions, network, enableTokenSync = false, diag = null } = {}) {
+export async function bootWallet(walletMnemonic, user, { SparkWallet, cloud, network, enableTokenSync = false, diag = null } = {}) {
     if (!SparkWallet) throw new Error('SparkWallet missing');
-    if (!httpsCallable) throw new Error('httpsCallable missing');
-    if (!functions) throw new Error('functions missing');
+    if (!cloud) throw new Error('cloud missing');
     if (!network) throw new Error('network missing');
     const startedAt = Date.now();
     markDiag(diag, 'vault.bootWallet.start', {
@@ -61,13 +60,13 @@ export async function bootWallet(walletMnemonic, user, { SparkWallet, httpsCalla
         const setupStartedAt = Date.now();
         if (!user.walletPK) {
             markDiag(diag, 'vault.bootWallet.setup.start', { reason: 'missing-wallet-pk' });
-            await httpsCallable(functions, 'setWalletPK')({ walletPK: idPk, network });
+            await cloud.user.profile.walletpk.write(idPk, { network });
             markDone(diag, 'vault.bootWallet.setup', setupStartedAt, { wrote: true });
         } else if (!sameText(user.walletPK, walletPK)) {
             throw new Error('wallet identity mismatch for account');
         } else if (!hasWalletPKForNetwork(user, network)) {
             markDiag(diag, 'vault.bootWallet.setup.start', { reason: 'missing-network-wallet-pk' });
-            await httpsCallable(functions, 'setWalletPK')({ walletPK: idPk, network });
+            await cloud.user.profile.walletpk.write(idPk, { network });
             markDone(diag, 'vault.bootWallet.setup', setupStartedAt, { wrote: true });
         } else {
             markDiag(diag, 'vault.bootWallet.setup.skip', { elapsedMs: Date.now() - setupStartedAt });
@@ -80,12 +79,11 @@ export async function bootWallet(walletMnemonic, user, { SparkWallet, httpsCalla
     }
 }
 
-export async function bootChat(chatSeed, user, { httpsCallable, functions, diag = null } = {}) {
+export async function bootChat(chatSeed, user, { cloud, diag = null } = {}) {
     const startedAt = Date.now();
     markDiag(diag, 'vault.bootChat.start', { hasChatPK: !!user?.chatPK });
     try {
-        if (!httpsCallable) throw new Error('httpsCallable missing');
-        if (!functions) throw new Error('functions missing');
+        if (!cloud) throw new Error('cloud missing');
         // Generate chat key pair
         const keyStartedAt = Date.now();
         const chatKeyPair = getKeyPair(chatSeed);
@@ -96,7 +94,7 @@ export async function bootChat(chatSeed, user, { httpsCallable, functions, diag 
         if (!user.chatPK) {
             const setupStartedAt = Date.now();
             markDiag(diag, 'vault.bootChat.setup.start', { reason: 'missing-chat-pk' });
-            await httpsCallable(functions, 'setChatPK')({ chatPK: chatPKHex });
+            await cloud.user.profile.chatpk.write(chatPKHex);
             markDone(diag, 'vault.bootChat.setup', setupStartedAt, { wrote: true });
         } else if (!sameText(user.chatPK, chatPKHex)) {
             chatKeyPair.priv.fill(0);

@@ -23,7 +23,7 @@ export default function ExportWalletScreen() {
     const { theme, isDark } = useTheme();
     const insets = useSafeAreaInsets();
     const router = useRouter();
-    const { encSeed } = useVault();
+    const { vault } = useVault();
     const walletMnemonicRef = useRef(null);
 
     const [step, setStep] = useState('intro');
@@ -52,7 +52,7 @@ export default function ExportWalletScreen() {
     });
     const eyeFeedback = useTap({ disabled: isLoading, onPress: () => setShowPassword((prev) => !prev) });
 
-    const canLoad = !!encSeed && !isLoading && isPassword(password);
+    const canLoad = !!vault && !isLoading && isPassword(password);
     const mnemonicWords = walletMnemonic ? walletMnemonic.trim().split(/\s+/).filter(Boolean) : [];
 
     const handlePasswordChange = useCallback(
@@ -72,7 +72,7 @@ export default function ExportWalletScreen() {
 
         try {
             await yieldToUi();
-            const nextMnemonic = await decryptWalletMnemonic(encSeed, normalizePassword(password));
+            const nextMnemonic = await decryptWalletMnemonic(vault, normalizePassword(password));
             replaceWalletMnemonic(nextMnemonic);
             setPassword('');
             setShowPassword(false);
@@ -85,7 +85,7 @@ export default function ExportWalletScreen() {
         } finally {
             setIsLoading(false);
         }
-    }, [canLoad, encSeed, password, replaceWalletMnemonic, yieldToUi]);
+    }, [canLoad, vault, password, replaceWalletMnemonic, yieldToUi]);
 
     useEffect(() => {
         if (step !== 'seed') return;

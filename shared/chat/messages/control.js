@@ -1,8 +1,8 @@
 import { getMessageKey, getMessageOrderMs } from '../state.js';
 import { collectMessageKeys, indexMessagesByKey, messageHasKey, messageKeys } from '../messagekeys.js';
-import { CHAT_RETENTION_24H, CHAT_RETENTION_SEEN, cleanChatRetention, getMessageRetention, hasChatRetention, isTtlExpired, onSeenMessageTtlMs, seenMessageTtlMs, withMessageRetention } from '../ttl.js';
+import { CHAT_RETENTION_24H, CHAT_RETENTION_SEEN, cleanChatRetention, getMessageRetention, hasChatRetention, isTtlExpired, seenMessageTtlMs, withMessageRetention } from '../ttl.js';
 import { cleanText } from '../../utils/text.js';
-import { isAttachmentMsg } from './files.js';
+import { hasSharedMediaFileRef, isAttachmentMsg } from './files.js';
 import { hasText } from './text.js';
 import {
     DEFAULT_REACTION_EMOJI,
@@ -48,7 +48,7 @@ export function isSavedForeverMsg(msg) {
 }
 
 export function canToggleSaveForeverMsg(msg) {
-    return isServerConfirmedMsg(msg) && !isSystemMsg(msg);
+    return isServerConfirmedMsg(msg) && !isSystemMsg(msg) && !hasSharedMediaFileRef(msg);
 }
 
 function messageOrderMs(message) {
@@ -381,39 +381,6 @@ function messageSeenAtMs(msg, receipts, byKey, chatPK, peerChatPK) {
         }
     }
     return seenAt;
-}
-
-function positiveMs(value) {
-    const ms = Number(value);
-    return Number.isFinite(ms) && ms > 0 ? ms : null;
-}
-
-export function getMessageSeenAtMs(messages, msg, chatPK, peerChatPK, now = Date.now()) {
-    if (!Array.isArray(messages) || !msg || !chatPK) {
-        return null;
-    }
-
-    const byKey = indexMessagesByKey(messages, { keep: 'last' });
-    const receipts = [];
-    for (const item of messages) {
-        if (isServerConfirmedMsg(item) && isReadReceiptMsg(item)) {
-            receipts.push(item);
-        }
-    }
-
-    const seenAt = messageSeenAtMs(msg, receipts, byKey, chatPK, peerChatPK);
-    if (seenAt == null && isPeerMsg(msg, chatPK) && canShowMsg(msg)) {
-        return now;
-    }
-    return seenAt;
-}
-
-export function getMessageUnsaveTtlMs(msg, messages, chatPK, peerChatPK, now = Date.now()) {
-    const seenAt = getMessageSeenAtMs(messages, msg, chatPK, peerChatPK, now);
-    if (seenAt != null) {
-        return getMessageRetention(msg) === CHAT_RETENTION_SEEN ? onSeenMessageTtlMs(seenAt) : seenMessageTtlMs(seenAt);
-    }
-    return positiveMs(msg?.savedTtl);
 }
 
 function isSeenHiddenMsg(msg, receipts, byKey, chatPK, peerChatPK, now) {

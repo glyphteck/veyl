@@ -1,22 +1,21 @@
 import { createPeersApi } from '@veyl/shared/peers';
 import { createProfileQueries } from '@veyl/shared/search/remote';
 import { resolveNetwork } from '@veyl/shared/network';
-import { db, storage } from '@/lib/firebase';
+import { cloud } from '@/lib/cloud';
 
 const peerApi = createPeersApi({
-    db,
-    storage,
+    cloud,
     network: resolveNetwork(globalThis?.process?.env ?? {}),
 });
 
 export const profileQueries = createProfileQueries({
-    db,
-    createProfileFromDoc: peerApi.createProfileFromDoc,
+    cloud,
+    createProfileFromRecord: peerApi.createProfileFromRecord,
     cachePeer: peerApi.cachePeer,
 });
 
 export const {
-    createProfileFromDoc,
+    createProfileFromRecord,
     buildPeer,
     cachePeer,
     hydrateProfiles,

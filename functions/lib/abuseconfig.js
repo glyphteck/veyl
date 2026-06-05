@@ -11,12 +11,12 @@ export const NEW_ACCOUNT_WINDOW_MS = 7 * DAY_MS;
 export const NEW_ACCOUNT_UPLOAD_BYTES_PER_DAY = 50 * MIB_BYTES;
 export const ESTABLISHED_ACCOUNT_UPLOAD_BYTES_PER_DAY = 250 * MIB_BYTES;
 
-export const CHAT_MEDIA_UPLOAD_RESERVATION_TTL_MS = 15 * MINUTE_MS;
+export const CHAT_MEDIA_UPLOAD_URL_TTL_MS = 15 * MINUTE_MS;
 export const CHAT_MEDIA_CONTENT_TYPE = 'application/octet-stream';
 
-export const CHAT_MEDIA_RESERVE_UID_MINUTE_LIMIT = 30;
-export const CHAT_MEDIA_RESERVE_UID_HOUR_LIMIT = 240;
-export const CHAT_MEDIA_RESERVE_UID_DAY_LIMIT = 1000;
+export const CHAT_MEDIA_UPLOAD_UID_MINUTE_LIMIT = 30;
+export const CHAT_MEDIA_UPLOAD_UID_HOUR_LIMIT = 240;
+export const CHAT_MEDIA_UPLOAD_UID_DAY_LIMIT = 1000;
 
 export const REPORT_EVIDENCE_UPLOAD_RESERVATION_TTL_MS = 15 * MINUTE_MS;
 export const REPORT_EVIDENCE_RESERVE_UID_MINUTE_LIMIT = 10;
@@ -29,10 +29,10 @@ export const accountCreateIpLimitRules = (key) => [
     { name: 'account-create-ip-day', key, limit: ACCOUNT_CREATE_IP_DAY_LIMIT, windowMs: DAY_MS },
 ];
 
-export const chatMediaReserveLimitRules = (key) => [
-    { name: 'reserve-chat-media-uid-minute', key, limit: CHAT_MEDIA_RESERVE_UID_MINUTE_LIMIT, windowMs: MINUTE_MS },
-    { name: 'reserve-chat-media-uid-hour', key, limit: CHAT_MEDIA_RESERVE_UID_HOUR_LIMIT, windowMs: HOUR_MS },
-    { name: 'reserve-chat-media-uid-day', key, limit: CHAT_MEDIA_RESERVE_UID_DAY_LIMIT, windowMs: DAY_MS },
+export const chatMediaUploadLimitRules = (key) => [
+    { name: 'chat-media-upload-uid-minute', key, limit: CHAT_MEDIA_UPLOAD_UID_MINUTE_LIMIT, windowMs: MINUTE_MS },
+    { name: 'chat-media-upload-uid-hour', key, limit: CHAT_MEDIA_UPLOAD_UID_HOUR_LIMIT, windowMs: HOUR_MS },
+    { name: 'chat-media-upload-uid-day', key, limit: CHAT_MEDIA_UPLOAD_UID_DAY_LIMIT, windowMs: DAY_MS },
 ];
 
 export const reportEvidenceReserveLimitRules = (key) => [

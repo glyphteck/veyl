@@ -66,10 +66,10 @@ export function Chatbox() {
         }
     }, [selectedChatId, focusChatInput]);
 
-    // Best-effort: refresh peer's volatile fields and avatar on direct interaction.
+    // Best-effort: refresh peer's volatile fields on direct interaction.
     useEffect(() => {
         if (peerProfile?.uid) {
-            updatePeer(peerProfile.uid, { refreshAvatar: true });
+            updatePeer(peerProfile.uid);
             return;
         }
         if (currentChat?.peerUid && peerChatPK) {

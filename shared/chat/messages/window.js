@@ -159,7 +159,7 @@ export function messageSeedFromBatch(msgBatch, chatPK, peerChatPK) {
         ready: true,
         exists: true,
         serverBatch: live.length ? getMessagesBatch(live, expiredKeys, deletedKeys) : { empty: true, expiredKeys, deletedKeys },
-        oldest: msgBatch.cursor,
+        oldest: msgBatch.before,
         olderLoaded: false,
     };
 }

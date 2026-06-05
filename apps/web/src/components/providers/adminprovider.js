@@ -1,16 +1,15 @@
 'use client';
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { collection, doc, getDoc, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
 import { resolveNetwork } from '@veyl/shared/network';
 import { banState } from '@veyl/shared/moderation';
 import { cleanText, lowerText } from '@veyl/shared/utils/text';
 import { timestampMs } from '@veyl/shared/utils/time';
 import { resolveWalletPK } from '@veyl/shared/wallet/keys';
-import { db } from '@/lib/firebase/firebaseclient';
+import { cloud } from '@/lib/cloud';
 import { usePeer } from '@/components/providers/peerprovider';
 import { useUser } from '@/components/providers/userprovider';
-import { ban, powerBot as callPowerBot, sortBots, unban } from '@/lib/admin/bots';
+import { sortBots } from '@/lib/admin/bots';
 import { parseReportEvidence, reportCount, sortOffenders } from '@/lib/admin/reports';
 
 const AdminContext = createContext(null);
@@ -75,9 +74,8 @@ export function AdminProvider({ children }) {
             return;
         }
 
-        const unsubscribe = onSnapshot(
-            doc(db, 'runtimes', 'bot'),
-            (snap) => setRuntimeRunning(snap.exists() && snap.data()?.running === true),
+        const unsubscribe = cloud.admin.bots.watchRuntime(
+            (running) => setRuntimeRunning(running === true),
             (error) => {
                 console.warn('failed to subscribe runtime status', error);
                 setRuntimeRunning(false);
@@ -102,14 +100,13 @@ export function AdminProvider({ children }) {
 
         setOffendersReady(false);
 
-        const unsubscribe = onSnapshot(
-            collection(db, 'reported'),
-            (snap) => {
+        const unsubscribe = cloud.admin.reports.watchOffenders(
+            (records = []) => {
                 const rows = sortOffenders(
-                    snap.docs.map((docSnap) => ({
-                        uid: docSnap.id,
-                        count: reportCount(docSnap.data()?.count),
-                        lastReportAt: docSnap.data()?.lastReportAt || null,
+                    records.map((record) => ({
+                        uid: cleanText(record?.uid || record?.id),
+                        count: reportCount(record?.count),
+                        lastReportAt: record?.lastReportAt || null,
                     }))
                 );
 
@@ -145,13 +142,12 @@ export function AdminProvider({ children }) {
 
         setBotsReady(false);
 
-        const unsubscribe = onSnapshot(
-            collection(db, 'bots'),
-            (snap) => {
+        const unsubscribe = cloud.admin.bots.watch(
+            (records = []) => {
                 const rows = sortBots(
-                    snap.docs.map((docSnap) => ({
-                        id: docSnap.id,
-                        ...docSnap.data(),
+                    records.map((record) => ({
+                        ...record,
+                        id: cleanText(record?.id),
                     }))
                 );
 
@@ -212,12 +208,12 @@ export function AdminProvider({ children }) {
                 return;
             }
 
-            const unsubscribe = onSnapshot(
-                doc(db, 'moderation', uid),
-                (snap) => {
+            const unsubscribe = cloud.admin.moderation.watch(
+                uid,
+                (banned) => {
                     setModerationRaw((prev) => ({
                         ...prev,
-                        [uid]: snap.exists() ? (snap.data()?.banned ?? null) : null,
+                        [uid]: banned ?? null,
                     }));
                 },
                 (error) => {
@@ -328,9 +324,8 @@ export function AdminProvider({ children }) {
             }
 
             try {
-                const snap = await getDoc(doc(db, 'usernames', raw));
-                const uid = snap.exists() ? cleanText(snap.data()?.uid) : '';
-                if (uid) return uid;
+                const peer = await cloud.search.peer.byUsername(raw);
+                if (peer?.uid) return cleanText(peer.uid);
             } catch (error) {
                 console.warn('failed to resolve offender username', error);
             }
@@ -352,8 +347,8 @@ export function AdminProvider({ children }) {
             if (byUsername) return byUsername.id;
 
             try {
-                const snap = await getDoc(doc(db, 'usernames', raw));
-                const uid = snap.exists() ? cleanText(snap.data()?.uid) : '';
+                const peer = await cloud.search.peer.byUsername(raw);
+                const uid = cleanText(peer?.uid);
                 if (uid) {
                     const match = botsRaw.find((row) => row.id === uid);
                     if (match) return match.id;
@@ -400,11 +395,10 @@ export function AdminProvider({ children }) {
             void primePeer({ uid });
 
             detailUnsubsRef.current.get(key)?.();
-            const unsubscribe = onSnapshot(
-                collection(db, 'reported', uid, 'reports'),
-                (snap) => {
-                    const reports = snap.docs
-                        .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
+            const unsubscribe = cloud.admin.reports.watchUser(
+                uid,
+                (records = []) => {
+                    const reports = records
                         .sort((a, b) => timestampMs(b.createdAt, 0, { parseString: true }) - timestampMs(a.createdAt, 0, { parseString: true }));
 
                     reports.forEach((report) => {
@@ -466,11 +460,10 @@ export function AdminProvider({ children }) {
             botDetailUnsubsRef.current.get(key)?.();
             botEventUnsubsRef.current.get(key)?.();
 
-            const botRef = doc(db, 'bots', botUid);
-            const detailUnsub = onSnapshot(
-                botRef,
-                (snap) => {
-                    if (!snap.exists()) {
+            const detailUnsub = cloud.admin.bots.watchBot(
+                botUid,
+                (record, info = {}) => {
+                    if (!info.exists || !record) {
                         setBotDetailsRaw((prev) => ({
                             ...prev,
                             [key]: { ...(prev[key] || {}), loading: false, error: 'not-found', botUid, bot: null },
@@ -478,7 +471,7 @@ export function AdminProvider({ children }) {
                         return;
                     }
 
-                    const bot = { id: snap.id, ...snap.data() };
+                    const bot = { ...record, id: cleanText(record?.id) };
                     if (bot?.id) void primePeer({ uid: bot.id });
 
                     setBotDetailsRaw((prev) => ({
@@ -495,10 +488,9 @@ export function AdminProvider({ children }) {
                 }
             );
 
-            const eventsUnsub = onSnapshot(
-                query(collection(db, 'bots', botUid, 'events'), orderBy('createdAt', 'desc'), limit(50)),
-                (snap) => {
-                    const events = snap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+            const eventsUnsub = cloud.admin.bots.watchEvents(
+                botUid,
+                (events = []) => {
                     events.forEach((event) => {
                         if (event?.peerUid) void primePeer({ uid: event.peerUid });
                     });
@@ -514,7 +506,8 @@ export function AdminProvider({ children }) {
                         ...prev,
                         [key]: { ...(prev[key] || {}), events: [], eventsError: error?.message || 'load-failed' },
                     }));
-                }
+                },
+                { count: 50 }
             );
 
             botDetailUnsubsRef.current.set(key, detailUnsub);
@@ -597,7 +590,7 @@ export function AdminProvider({ children }) {
     const banUser = useCallback(
         async (uid, feature = 'chat') => {
             if (!uid || !user.isAdmin) throw new Error('admin required');
-            await ban(uid, feature);
+            await cloud.admin.moderation.ban(uid, feature);
         },
         [user.isAdmin]
     );
@@ -605,7 +598,7 @@ export function AdminProvider({ children }) {
     const unbanUser = useCallback(
         async (uid, feature = 'chat') => {
             if (!uid || !user.isAdmin) throw new Error('admin required');
-            await unban(uid, feature);
+            await cloud.admin.moderation.unban(uid, feature);
         },
         [user.isAdmin]
     );
@@ -613,7 +606,7 @@ export function AdminProvider({ children }) {
     const powerBot = useCallback(
         async (uid, enabled) => {
             if (!uid || !user.isAdmin) throw new Error('admin required');
-            await callPowerBot(uid, enabled);
+            await cloud.admin.bots.power(uid, enabled);
         },
         [user.isAdmin]
     );

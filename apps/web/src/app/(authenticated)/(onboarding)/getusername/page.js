@@ -2,8 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { getFunctions } from '@/lib/firebase/firebaseclient';
-import { httpsCallable } from 'firebase/functions';
+import { cloud } from '@/lib/cloud';
 import { Input } from '@/components/input';
 import { Controller, useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -59,7 +58,7 @@ const GetUsername = () => {
         setStatus('submitting');
 
         try {
-            await httpsCallable(getFunctions(), 'setUsername')({ username });
+            await cloud.user.username.get(username);
             router.refresh();
         } catch (err) {
             form.reset({ username: '' });

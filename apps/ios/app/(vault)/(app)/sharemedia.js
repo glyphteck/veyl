@@ -11,7 +11,7 @@ import { usePeer } from '@/providers/peerprovider';
 import { useUser } from '@/providers/userprovider';
 import { useChat } from '@/providers/chatprovider';
 import { useSearch } from '@/lib/search/usesearch';
-import { clearShareMedia, readShareMedia } from '@/lib/chat/share';
+import { clearShareMedia, readShareMedia, readShareMediaBytes } from '@/lib/chat/share';
 import EmptyState from '@/components/emptystate';
 import GlassButton from '@/components/glass/glassbutton';
 import PeerPicker, { PEER_PICKER_BUTTON_FOOTER_HEIGHT } from '@/components/peerpicker';
@@ -20,7 +20,7 @@ export default function ShareMediaScreen() {
     const { theme } = useTheme();
     const { peers, recentPeers } = usePeer() || {};
     const { uid, chatBanned } = useUser();
-    const { shareAttachment, selectPeerChat } = useChat();
+    const { share, selectPeerChat } = useChat();
     const { searching, results, query, search: runSearch, clearSearch } = useSearch('profiles');
     const router = useRouter();
     const params = useLocalSearchParams();
@@ -90,9 +90,14 @@ export default function ShareMediaScreen() {
         if (openRef.current) router.dismiss();
 
         try {
-            for (const peer of selected) {
+            const shareData = await readShareMediaBytes(msg).catch(() => null);
+            const results = await share(selected.map((peer) => peer.chatPK), msg, { sourcePeerChatPK: msg?.peerChatPK, data: shareData });
+            for (const [index, peer] of selected.entries()) {
                 try {
-                    await shareAttachment(peer.chatPK, msg);
+                    const result = results[index];
+                    if (result?.ok === false) {
+                        throw result.error || new Error('share failed');
+                    }
                     if (selected.length === 1) {
                         await selectPeerChat?.(peer.chatPK);
                     }
@@ -103,7 +108,7 @@ export default function ShareMediaScreen() {
         } finally {
             busyRef.current = false;
         }
-    }, [chatBanned, msg, router, selectPeerChat, selected, shareAttachment, sending]);
+    }, [chatBanned, msg, router, selectPeerChat, selected, share, sending]);
 
     const selectedUids = useMemo(() => new Set(selected.map((p) => p.uid)), [selected]);
     const hasSelection = selected.length > 0;

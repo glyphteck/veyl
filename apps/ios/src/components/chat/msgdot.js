@@ -55,6 +55,7 @@ export default function MsgDot({ show, failed, saved = false, side = 'right', bo
         width: 8 * progress.value,
     }));
     const dotVisualStyle = useAnimatedStyle(() => ({
+        opacity: progress.value,
         transform: [{ scale: 0.01 + 0.99 * progress.value }],
     }));
 

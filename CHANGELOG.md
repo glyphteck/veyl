@@ -2,6 +2,15 @@
 
 Repo-level changes are listed newest first. Keep entries short and concrete. Broad pushes get grouped bullets, while narrow fixes can use one concise bugfix or cleanup bullet that still names the actual change.
 
+## 0.14.0 - 2026-06-05
+
+- Reset Veyl launch versioning back to the v0 line while preserving the current minor streams for repo and app packages.
+- Moved web and iOS onto the shared Firebase cloud adapter and updated chat/provider wiring around the clean opaque chat data path.
+- Reworked opaque chat lifecycle around backend-issued active chat ids, encrypted owner entries, sealed inbox pings, shared message TTL saves, chat media holds, and client-owned stale owner-entry pruning.
+- Added whole-chat batch deletion for manual and account-delete flows, unthrottled chat marking, deleted-chat status checks, active-link clearing, and scheduled physical cleanup for deleted chat messages/media.
+- Updated web, iOS, bot runtime, Firestore/Storage rules, Functions, cost model, and chat/security docs to match the current encrypted chat architecture.
+- Cleaned active todo state and documentation around saved messages, presence, native storage/cloud adapters, pagination, chat media retention, and opaque chat cutover follow-ups.
+
 ## 4.14.13 - 2026-06-02
 
 - Removed legacy chat-key push routing, the no-op chat deletion callable, wallet webhook cleanup paths, and the old participant-array Firestore index from the opaque chat backend.

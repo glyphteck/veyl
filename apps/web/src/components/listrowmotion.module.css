@@ -1,0 +1,39 @@
+.row { contain: layout paint; overflow: hidden; position: relative; }
+
+.divided::after { content: ''; position: absolute; inset-inline: 0; bottom: 0; height: 1px; background: var(--border); pointer-events: none; }
+
+.divided.last::after,
+.divided.leaving::after { opacity: 0; }
+
+.leaving,
+.entering { height: var(--row-motion-height, 60px); will-change: height; }
+
+.content { transform-origin: center top; will-change: opacity, transform; }
+
+.leaving { animation: row-motion-slot-out var(--row-motion-duration, 160ms) var(--row-motion-ease, ease-out) both; }
+
+.entering { animation: row-motion-slot-in var(--row-motion-duration, 160ms) var(--row-motion-ease, ease-out) both; }
+
+.leaving > .content { animation: row-motion-content-out var(--row-motion-duration, 160ms) var(--row-motion-ease, ease-out) both; }
+
+.entering > .content { animation: row-motion-content-in var(--row-motion-duration, 160ms) var(--row-motion-ease, ease-out) both; }
+
+@keyframes row-motion-slot-out {
+    0%, 50% { height: var(--row-motion-height, 60px); }
+    100% { height: 0; }
+}
+
+@keyframes row-motion-slot-in {
+    0% { height: 0; }
+    50%, 100% { height: var(--row-motion-height, 60px); }
+}
+
+@keyframes row-motion-content-in {
+    0%, 50% { opacity: 0; transform: scale(0.98); }
+    100% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes row-motion-content-out {
+    0% { opacity: 1; transform: scale(1); }
+    50%, 100% { opacity: 0; transform: scale(0.98); }
+}

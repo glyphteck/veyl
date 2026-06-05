@@ -12,7 +12,7 @@ import { getMainMenuHeight } from '@/components/mainmenu';
 import SearchInput from '@/components/search';
 import { deleteAvatar, uploadAvatar } from '@/lib/avatarupload';
 import { clearFaceIdPassword, FaceIdIcon } from '@/lib/faceid';
-import { auth } from '@/lib/firebase';
+import { cloud } from '@/lib/cloud';
 import { clearMsgImageCache } from '@/lib/chat/imagecache';
 import { hasQuickLoginAccount } from '@/lib/user/quicklogin';
 import { useRouteLock } from '@/lib/navigation/routelock';
@@ -244,7 +244,7 @@ function AccountBlock({ disabled = false }) {
     const [avatarHidden, setAvatarHidden] = useState(false);
     const [isUploading, setIsUploading] = useState(false);
     const [isRemoving, setIsRemoving] = useState(false);
-    const effectiveUid = uid || auth.currentUser?.uid;
+    const effectiveUid = uid || cloud.auth.user?.uid;
     const avatarSource = avatarHidden ? null : localAvatar ? { uri: localAvatar } : avatar ? { uri: avatar } : null;
     const isAvatarBusy = isUploading || isRemoving;
     const canRemoveAvatar = !!avatarSource && !avatarBanned && !isAvatarBusy && !disabled;
@@ -323,7 +323,7 @@ export default function SettingsScreen() {
     const isFocused = useIsFocused();
     const insets = useSafeAreaInsets();
     const user = useUser();
-    const { encSeed, localCache } = useVault();
+    const { vault, localCache } = useVault();
     const [headerHeight, setHeaderHeight] = useState(0);
     const [settingSearch, setSettingSearch] = useState('');
     const [isLoggingOut, setIsLoggingOut] = useState(false);
@@ -652,7 +652,7 @@ export default function SettingsScreen() {
                 {accountRows ? (
                     <>
                         {showBlocked ? <Row icon={UserX} label="blocked users" onPress={openBlocked} disabled={isBusy} /> : null}
-                        {showExportWallet ? <Row icon={KeyRound} label="export wallet" onPress={openExportWallet} disabled={isBusy || !encSeed} /> : null}
+                        {showExportWallet ? <Row icon={KeyRound} label="export wallet" onPress={openExportWallet} disabled={isBusy || !vault} /> : null}
                         {showLogout ? (
                             <Row
                                 left={isLoggingOut ? <ActivityIndicator color={theme.destructive} /> : <Icon icon={LogOut} size={26} color={theme.destructive} />}

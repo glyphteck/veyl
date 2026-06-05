@@ -2,11 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { Loader } from 'lucide-react';
 import { COMMUNITY_RULES_DATE, COMMUNITY_RULES_EFFECTIVE, COMMUNITY_RULES_VERSION, COMMUNITY_SECTIONS } from '@veyl/shared/community';
 import { Button } from '@/components/button';
-import { auth, db } from '@/lib/firebase/firebaseclient';
+import { cloud } from '@/lib/cloud';
 
 export default function CommunityAck() {
     const router = useRouter();
@@ -36,7 +35,7 @@ export default function CommunityAck() {
     }, []);
 
     const accept = useCallback(async () => {
-        const uid = auth.currentUser?.uid;
+        const uid = cloud.auth.user?.uid;
         if (isSubmitting || !canAccept) return;
         if (!uid) {
             setStatus('error');
@@ -45,15 +44,7 @@ export default function CommunityAck() {
 
         setStatus('submitting');
         try {
-            await setDoc(
-                doc(db, 'users', uid),
-                {
-                    communityRulesVersion: COMMUNITY_RULES_VERSION,
-                    communityRulesDate: COMMUNITY_RULES_DATE,
-                    communityRulesAcceptedAt: serverTimestamp(),
-                },
-                { merge: true }
-            );
+            await cloud.user.community.accept(uid, { version: COMMUNITY_RULES_VERSION, date: COMMUNITY_RULES_DATE });
             router.refresh();
         } catch (error) {
             console.warn('community rules acknowledgement failed', error);

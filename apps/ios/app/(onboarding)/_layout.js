@@ -10,15 +10,15 @@ const SHEET_ROUTES = new Set(['passwordrules']);
 export default function OnboardingLayout() {
     const { theme } = useTheme();
     const user = useUser();
-    const { encSeed } = useVault();
+    const { vault } = useVault();
 
     const hasUsername = !!user.username;
     const hasAvatarEntry = !!user.hasAvatarEntry;
-    const hasSeed = !!encSeed;
+    const hasVault = !!vault;
     const needsAvatar = hasUsername && !hasAvatarEntry;
     const acceptedRules = hasCurrentCommunityRules(user);
     const needsRules = hasUsername && hasAvatarEntry && !acceptedRules;
-    const needsPassword = hasUsername && hasAvatarEntry && acceptedRules && !hasSeed;
+    const needsPassword = hasUsername && hasAvatarEntry && acceptedRules && !hasVault;
 
     return (
         <Stack screenOptions={stackScreenOptions(theme, SHEET_ROUTES)}>

@@ -1,8 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState } from 'react-native';
-import { doc, onSnapshot } from 'firebase/firestore';
 
-import { auth, db } from '@/lib/firebase';
+import { cloud } from '@/lib/cloud';
 import { stageFaceIdPassword, shouldStageFaceIdPassword } from '@/lib/faceid';
 import { openLocalDataCache } from '@/lib/cache/localdata';
 import { clearMsgImageCache } from '@/lib/chat/imagecache';
@@ -12,7 +11,6 @@ import { deriveSeed, deriveWalletMnemonic } from '@veyl/shared/crypto/seed';
 import { LOCAL_DATA_CACHE_LABEL } from '@veyl/shared/cache/localdata';
 import { decryptSeed } from '@/lib/crypto/seed';
 import { normalizePassword } from '@veyl/shared/password';
-import { writePresence } from '@veyl/shared/presence';
 import { bootWallet, bootChat, lockWallet, lockChat } from '@/lib/vault';
 import { mark } from '@/lib/diagnostics';
 
@@ -25,8 +23,8 @@ function zero(bytes) {
 
 export function VaultProvider({ children }) {
     const user = useUser();
-    const [encSeed, setEncSeed] = useState(null);
-    const [seedReady, setSeedReady] = useState(false);
+    const [vault, setVault] = useState(null);
+    const [vaultReady, setVaultReady] = useState(false);
     const [wallet, setWallet] = useState(null);
     const [chatPrivateKey, setChatPrivateKey] = useState(null);
     const [localCache, setLocalCache] = useState(null);
@@ -34,7 +32,7 @@ export function VaultProvider({ children }) {
     const [faceIdFailed, setFaceIdFailed] = useState(false);
 
     const presenceRef = useRef({ uid: null, active: false });
-    const seedUidRef = useRef(null);
+    const vaultUidRef = useRef(null);
     const walletRef = useRef(null);
     const chatPrivateKeyRef = useRef(null);
     const localCacheRef = useRef(null);
@@ -60,7 +58,7 @@ export function VaultProvider({ children }) {
     const syncPresence = useCallback(async (uid, active) => {
         if (!uid) return;
         try {
-            await writePresence(db, uid, !!active);
+            await cloud.user.active.write(uid, !!active);
         } catch {
             // best-effort
         }
@@ -79,7 +77,7 @@ export function VaultProvider({ children }) {
 
     const setPresenceActive = useCallback(
         (nextActive) => {
-            const uid = user.uid || auth.currentUser?.uid;
+            const uid = user.uid || cloud.auth.user?.uid;
 
             if (!uid) {
                 if (presenceRef.current.uid) {
@@ -162,50 +160,49 @@ export function VaultProvider({ children }) {
     }, [lockState, resetIdle]);
 
     useEffect(() => {
-        const uid = user.uid || auth.currentUser?.uid;
-        if (seedUidRef.current !== uid) {
-            seedUidRef.current = uid || null;
+        const uid = user.uid || cloud.auth.user?.uid;
+        if (vaultUidRef.current !== uid) {
+            vaultUidRef.current = uid || null;
             setPresenceActive(false);
             wipeLiveSecrets({ resetState: true, resetFaceIdFailed: true });
-            setEncSeed(null);
-            setSeedReady(false);
+            setVault(null);
+            setVaultReady(false);
             setLockState('locked');
         }
 
         if (!uid) {
             setPresenceActive(false);
             wipeLiveSecrets({ resetState: true, resetFaceIdFailed: true });
-            setEncSeed(null);
-            setSeedReady(false);
+            setVault(null);
+            setVaultReady(false);
             setLockState('locked');
             return;
         }
 
         const listenStartedAt = Date.now();
-        mark('vault.seed.listen.start', {});
-        const unsub = onSnapshot(
-            doc(db, 'seeds', uid),
-            (snap) => {
-                const nextSeed = snap.data()?.es ?? null;
-                mark('vault.seed.snapshot', { elapsedMs: Date.now() - listenStartedAt, exists: snap.exists(), hasSeed: !!nextSeed });
-                setEncSeed(nextSeed);
-                setSeedReady(true);
+        mark('vault.cloud.listen.start', {});
+        const unsub = cloud.user.vault.watch(
+            uid,
+            (nextVault, info = {}) => {
+                mark('vault.cloud.snapshot', { elapsedMs: Date.now() - listenStartedAt, exists: !!info.exists, hasVault: !!nextVault });
+                setVault(nextVault);
+                setVaultReady(true);
             },
             (err) => {
-                mark('vault.seed.snapshot.error', { elapsedMs: Date.now() - listenStartedAt, code: err?.code || '', message: err?.message || String(err) });
-                console.warn('failed to fetch encrypted seed', err);
+                mark('vault.cloud.snapshot.error', { elapsedMs: Date.now() - listenStartedAt, code: err?.code || '', message: err?.message || String(err) });
+                console.warn('failed to fetch account vault', err);
                 setPresenceActive(false);
                 wipeLiveSecrets({ resetState: true, resetFaceIdFailed: true });
-                setEncSeed(null);
-                setSeedReady(true);
+                setVault(null);
+                setVaultReady(true);
                 setLockState('locked');
             }
         );
 
         return () => {
-            mark('vault.seed.listen.stop', { elapsedMs: Date.now() - listenStartedAt });
+            mark('vault.cloud.listen.stop', { elapsedMs: Date.now() - listenStartedAt });
             unsub();
-            setSeedReady(false);
+            setVaultReady(false);
         };
     }, [user.uid, setPresenceActive, wipeLiveSecrets]);
 
@@ -264,9 +261,9 @@ export function VaultProvider({ children }) {
         async (password, options = {}) => {
             const startedAt = Date.now();
             const source = options.source || (options.stageFaceId === false ? 'faceid' : 'password');
-            if (!encSeed) {
-                mark('vault.unlock.error', { elapsedMs: Date.now() - startedAt, source, reason: 'missing-seed' });
-                throw new Error('seed not ready');
+            if (!vault) {
+                mark('vault.unlock.error', { elapsedMs: Date.now() - startedAt, source, reason: 'missing-vault' });
+                throw new Error('vault not ready');
             }
             if (lockState === 'unlocking') {
                 mark('vault.unlock.error', { elapsedMs: Date.now() - startedAt, source, reason: 'already-unlocking' });
@@ -275,7 +272,7 @@ export function VaultProvider({ children }) {
 
             mark('vault.unlock.start', {
                 source,
-                hasSeed: !!encSeed,
+                hasVault: !!vault,
                 hasWalletPK: !!user.walletPK,
                 hasChatPK: !!user.chatPK,
                 hasFaceIDSetting: typeof user.settings?.faceID === 'boolean',
@@ -287,16 +284,16 @@ export function VaultProvider({ children }) {
             let chatSeed = null;
             let cacheKey = null;
             let nextCache = null;
-            const unlockUid = user.uid || auth.currentUser?.uid || null;
+            const unlockUid = user.uid || cloud.auth.user?.uid || null;
             if (!unlockUid) {
                 mark('vault.unlock.error', { elapsedMs: Date.now() - startedAt, source, reason: 'missing-account' });
                 throw new Error('account not ready');
             }
-            const isCurrentUnlock = () => seedUidRef.current === unlockUid && auth.currentUser?.uid === unlockUid;
+            const isCurrentUnlock = () => vaultUidRef.current === unlockUid && cloud.auth.user?.uid === unlockUid;
 
             try {
                 const unpackStartedAt = Date.now();
-                const { salt, iv, ct, kdf } = unpackSeedData(encSeed);
+                const { salt, iv, ct, kdf } = unpackSeedData(vault);
                 mark('vault.unlock.unpack.done', { elapsedMs: Date.now() - unpackStartedAt, source });
                 const decryptStartedAt = Date.now();
                 mark('vault.unlock.decrypt.start', { source });
@@ -397,13 +394,13 @@ export function VaultProvider({ children }) {
                 throw err;
             }
         },
-        [encSeed, lockState, user, setPresenceActive, syncPresence]
+        [vault, lockState, user, setPresenceActive, syncPresence]
     );
 
     const value = useMemo(
         () => ({
-            encSeed,
-            seedReady,
+            vault,
+            vaultReady,
             wallet,
             chatPrivateKey,
             localCache,
@@ -414,7 +411,7 @@ export function VaultProvider({ children }) {
             lock,
             touch,
         }),
-        [chatPrivateKey, encSeed, faceIdFailed, localCache, lock, lockState, seedReady, touch, unlockWithPsw, wallet]
+        [chatPrivateKey, vault, faceIdFailed, localCache, lock, lockState, vaultReady, touch, unlockWithPsw, wallet]
     );
 
     return <VaultContext.Provider value={value}>{children}</VaultContext.Provider>;

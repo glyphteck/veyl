@@ -2,7 +2,6 @@ import { ActivityIndicator, Alert, View, useWindowDimensions } from 'react-nativ
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { httpsCallable } from 'firebase/functions';
 import { ArrowDown, Bookmark, Copy, Download, Flag, History, Reply, RotateCcw, Share2, SquarePen, Trash2 } from 'lucide-react-native';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -22,15 +21,14 @@ import { MessageRow, ReportedBubble, SystemMessageRow } from '@/components/chat/
 import { MESSAGE_ROW_ENTER_STATE_MS, MESSAGE_ROW_LAYOUT, MESSAGE_ROW_LEAVE_MS, REPLY_SPRING, STAMP_TRAY, positivePx, rubberBand } from '@/components/chat/rowmotion';
 import { mark } from '@/lib/diagnostics';
 import { useChatMessages } from '@/lib/chat/usemessages';
-import { uploadStorageBytesNative } from '@/lib/chat/media';
 import { getMediaViewerKey, isMediaViewerMsg } from '@/lib/chat/viewer';
 import { copyMessageImage, copyMessageText, saveMessageFile, saveMessageImage } from '@/lib/chat/downloads';
 import { cancelPendingMsgFileLoads } from '@/lib/chat/imagecache';
 import { stageShareMedia } from '@/lib/chat/share';
-import { functions, storage } from '@/lib/firebase';
-import { canReplyToMsg, canShareAttachmentMsg, canShowMsg, canToggleSaveForeverMsg, collapseSystemMessages, getLatestReadOutgoingReceipt, getMessageUnsaveTtlMs, isPeerMsg, isSavedForeverMsg, isSystemMsg, setReqTx } from '@veyl/shared/chat/messages';
+import { cloud } from '@/lib/cloud';
+import { canReplyToMsg, canShareAttachmentMsg, canShowMsg, canToggleSaveForeverMsg, collapseSystemMessages, getLatestReadOutgoingReceipt, isPeerMsg, isSavedForeverMsg, isSystemMsg, setReqTx } from '@veyl/shared/chat/messages';
 import { useOptimisticMessageReactions } from '@veyl/shared/chat/usereactions';
-import { makeFileId, reportEvidencePath } from '@veyl/shared/files';
+import { makeFileId } from '@veyl/shared/files';
 import { buildReportFields, getReportAttachmentMeta } from '@veyl/shared/report';
 import { formatTimeHHMM } from '@veyl/shared/utils/time';
 import { messageKeys } from '@veyl/shared/chat/messagekeys';
@@ -273,8 +271,6 @@ export default function MessageList({
     const { height: keyboardHeight } = useReanimatedKeyboardAnimation();
     const { width: screenW } = useWindowDimensions();
     const { messages: messagesAsc, ready, hasOlder, loadingOlder, loadOlder, patchMessage, removeMessage } = useChatMessages(chatId);
-    const submitReport = useMemo(() => httpsCallable(functions, 'submitReport'), []);
-    const reserveReportEvidenceUpload = useMemo(() => httpsCallable(functions, 'reserveReportEvidenceUpload'), []);
     const [payingMessages, setPayingMessages] = useState(new Set());
     const [savingForeverMessages, setSavingForeverMessages] = useState(new Map());
     const [reportedMessageKeys, setReportedMessageKeys] = useState(new Set());
@@ -540,7 +536,7 @@ export default function MessageList({
     const runReport = useCallback(
         async ({ uid, type, content, path, note, onDone }) => {
             try {
-                await submitReport({
+                await cloud.reports.submit({
                     uid,
                     ...(type ? { type } : {}),
                     ...(content ? { content } : {}),
@@ -554,7 +550,7 @@ export default function MessageList({
                 Alert.alert('Report failed', error?.message || 'Could not submit this report.');
             }
         },
-        [submitReport]
+        []
     );
 
     const handleReportMessage = useCallback(
@@ -568,21 +564,11 @@ export default function MessageList({
 
                 if (attachment && uid && peerChatPK) {
                     const bytes = await readMessageFile(peerChatPK, msg);
-                    const nextPath = reportEvidencePath(uid, peerUid, makeFileId(12));
-                    await reserveReportEvidenceUpload({
-                        path: nextPath,
-                        size: bytes?.byteLength || 0,
+                    path = await cloud.reports.evidence.upload(uid, peerUid, makeFileId(12), bytes, {
                         contentType: attachment.mimeType || 'application/octet-stream',
+                        name: attachment.name,
+                        kind: attachment.kind,
                     });
-                    await uploadStorageBytesNative(storage, nextPath, bytes, {
-                        contentType: attachment.mimeType || 'application/octet-stream',
-                        cacheControl: 'private, max-age=0, no-transform',
-                        customMetadata: {
-                            ...(attachment.name ? { name: attachment.name } : {}),
-                            ...(attachment.kind ? { kind: attachment.kind } : {}),
-                        },
-                    });
-                    path = nextPath;
                 }
 
                 await runReport({
@@ -604,7 +590,7 @@ export default function MessageList({
                 Alert.alert('Report failed', error?.message || 'Could not submit this report.');
             }
         },
-        [peerChatPK, peerUid, readMessageFile, reserveReportEvidenceUpload, runReport, uid]
+        [peerChatPK, peerUid, readMessageFile, runReport, uid]
     );
 
     const handleDeleteMessage = useCallback(
@@ -653,13 +639,13 @@ export default function MessageList({
 
     const openShareRoute = useCallback(
         (msg) => {
-            const params = stageShareMedia(msg);
+            const params = stageShareMedia(msg, { sourcePeerChatPK: peerChatPK });
             if (!params) {
                 return;
             }
             router.push({ pathname: '/sharemedia', params });
         },
-        [router]
+        [peerChatPK, router]
     );
 
     const jumpToReply = useCallback(
@@ -683,14 +669,13 @@ export default function MessageList({
 
     const toggleSaveForeverMessage = useCallback(
         async (msg) => {
-            if (!chatId || !peerChatPK || !canToggleSaveForeverMsg(msg)) {
+            if (!chatId || !canToggleSaveForeverMsg(msg)) {
                 return;
             }
 
             const key = getMessageKey(msg);
             const saved = isSavedForeverMsg(msg);
             const targetSaved = !saved;
-            const unsaveTtlMs = saved ? getMessageUnsaveTtlMs(msg, messagesAsc, chatPK, peerChatPK) : null;
 
             if (key) {
                 setSavingForeverMessages((prev) => new Map(prev).set(key, targetSaved));
@@ -698,9 +683,9 @@ export default function MessageList({
 
             try {
                 if (saved) {
-                    await makeMessageTemporary?.(chatId, msg, peerChatPK, { ttlMs: unsaveTtlMs });
+                    await makeMessageTemporary?.(chatId, msg);
                 } else {
-                    await makeMessagePermanent?.(chatId, msg, peerChatPK);
+                    await makeMessagePermanent?.(chatId, msg);
                 }
             } catch (error) {
                 console.warn('message save forever update failed', error);
@@ -714,7 +699,7 @@ export default function MessageList({
                 }
             }
         },
-        [chatId, chatPK, makeMessagePermanent, makeMessageTemporary, messagesAsc, peerChatPK]
+        [chatId, makeMessagePermanent, makeMessageTemporary]
     );
 
     const getMenuItems = useCallback(

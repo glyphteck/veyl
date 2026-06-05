@@ -33,7 +33,7 @@
     },
     "apps/ios": {
       "name": "@glyphteck/veyl-ios",
-      "version": "2.7.5",
+      "version": "0.7.0",
       "dependencies": {
         "@azure/core-asynciterator-polyfill": "^1.0.2",
         "@buildonspark/spark-sdk": "catalog:",
@@ -107,7 +107,7 @@
     },
     "apps/web": {
       "name": "@glyphteck/veyl-web",
-      "version": "2.7.5",
+      "version": "0.7.0",
       "dependencies": {
         "@buildonspark/spark-sdk": "catalog:",
         "@hookform/resolvers": "^5.4.0",

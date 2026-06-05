@@ -1,7 +1,5 @@
 'use client';
 import { createContext, useContext, useState, useCallback, useEffect, useMemo, useRef } from 'react';
-import { getDoc, doc } from 'firebase/firestore';
-import { auth, db } from '@/lib/firebase/firebaseclient';
 import { openLocalDataCache } from '@/lib/cache/localdata';
 import { unpackSeedData } from '@veyl/shared/crypto/pack';
 import { deriveSeed, deriveWalletMnemonic } from '@veyl/shared/crypto/seed';
@@ -9,11 +7,11 @@ import { yieldToUi } from '@veyl/shared/utils/async';
 import { LOCAL_DATA_CACHE_LABEL } from '@veyl/shared/cache/localdata';
 import { decryptSeed } from '@/lib/crypto/seed';
 import { normalizePassword } from '@veyl/shared/password';
-import { writePresence } from '@veyl/shared/presence';
 import { bootWallet, lockWallet, bootChat, lockChat } from '@/lib/vault';
 import { useUser } from '@/components/providers/userprovider';
 import { toast } from 'sonner';
 import { Lock } from 'lucide-react';
+import { cloud } from '@/lib/cloud';
 
 export const VaultCtx = createContext(null);
 
@@ -21,43 +19,43 @@ const UNLOCK_STATES = new Set(['decrypting', 'seed-decrypted', 'deriving', 'wall
 
 export function VaultProvider({ children }) {
     const user = useUser();
-    const [encSeed, setEncSeed] = useState(null);
+    const [vault, setVault] = useState(null);
     const [wallet, setWallet] = useState(null);
     const [chatPrivateKey, setChatPrivateKey] = useState(null);
     const [localCache, setLocalCache] = useState(null);
     const [lockState, setLockState] = useState('locked');
     const { timer: autolockTimer, onHide: autolockOnHide, onBlur: autolockOnBlur } = user.settings?.autolock || {};
-    const seedUidRef = useRef(null);
+    const vaultUidRef = useRef(null);
     const walletRef = useRef(null);
     const chatPrivateKeyRef = useRef(null);
     const localCacheRef = useRef(null);
-    const encSeedRef = useRef(null);
-    const seedLoadErrorRef = useRef(null);
-    const seedWaitersRef = useRef(new Set());
+    const vaultRef = useRef(null);
+    const vaultLoadErrorRef = useRef(null);
+    const vaultWaitersRef = useRef(new Set());
 
-    const updateEncSeed = useCallback((nextSeed) => {
-        encSeedRef.current = nextSeed;
-        seedLoadErrorRef.current = null;
-        setEncSeed(nextSeed);
-        if (!nextSeed) return;
-        for (const waiter of seedWaitersRef.current) {
-            waiter.resolve(nextSeed);
+    const updateVault = useCallback((nextVault) => {
+        vaultRef.current = nextVault;
+        vaultLoadErrorRef.current = null;
+        setVault(nextVault);
+        if (!nextVault) return;
+        for (const waiter of vaultWaitersRef.current) {
+            waiter.resolve(nextVault);
         }
-        seedWaitersRef.current.clear();
+        vaultWaitersRef.current.clear();
     }, []);
 
-    const rejectSeedWaiters = useCallback((error) => {
-        for (const waiter of seedWaitersRef.current) {
+    const rejectVaultWaiters = useCallback((error) => {
+        for (const waiter of vaultWaitersRef.current) {
             waiter.reject(error);
         }
-        seedWaitersRef.current.clear();
+        vaultWaitersRef.current.clear();
     }, []);
 
-    const waitForEncSeed = useCallback(() => {
-        if (encSeedRef.current) return Promise.resolve(encSeedRef.current);
-        if (seedLoadErrorRef.current) return Promise.reject(seedLoadErrorRef.current);
+    const waitForVault = useCallback(() => {
+        if (vaultRef.current) return Promise.resolve(vaultRef.current);
+        if (vaultLoadErrorRef.current) return Promise.reject(vaultLoadErrorRef.current);
         return new Promise((resolve, reject) => {
-            seedWaitersRef.current.add({ resolve, reject });
+            vaultWaitersRef.current.add({ resolve, reject });
         });
     }, []);
 
@@ -73,15 +71,15 @@ export function VaultProvider({ children }) {
         localCacheRef.current = localCache;
     }, [localCache]);
 
-    //get encrypted seed on mount
+    // get account vault on mount
     useEffect(() => {
         const uid = user.uid || null;
-        const previousUid = seedUidRef.current;
+        const previousUid = vaultUidRef.current;
         const uidChanged = previousUid !== uid;
-        seedUidRef.current = uid;
+        vaultUidRef.current = uid;
 
         if (uidChanged) {
-            rejectSeedWaiters(new Error('account changed during seed load'));
+            rejectVaultWaiters(new Error('account changed during vault load'));
             const liveWallet = walletRef.current;
             const liveChatPrivateKey = chatPrivateKeyRef.current;
             const liveLocalCache = localCacheRef.current;
@@ -98,11 +96,11 @@ export function VaultProvider({ children }) {
             setWallet(null);
             setChatPrivateKey(null);
             setLocalCache(null);
-            updateEncSeed(null);
+            updateVault(null);
             setLockState('locked');
 
             if (previousUid) {
-                writePresence(db, previousUid, false).catch(() => {});
+                cloud.user.active.write(previousUid, false).catch(() => {});
             }
         }
 
@@ -110,38 +108,37 @@ export function VaultProvider({ children }) {
         let cancelled = false;
         (async () => {
             try {
-                const snap = await getDoc(doc(db, 'seeds', uid));
-                if (!cancelled && seedUidRef.current === uid) {
-                    const nextSeed = snap.data()?.es ?? null;
-                    updateEncSeed(nextSeed);
-                    if (!nextSeed) {
-                        const error = new Error('seed not available');
-                        seedLoadErrorRef.current = error;
-                        rejectSeedWaiters(error);
+                const nextVault = await cloud.user.vault.read(uid);
+                if (!cancelled && vaultUidRef.current === uid) {
+                    updateVault(nextVault);
+                    if (!nextVault) {
+                        const error = new Error('vault not available');
+                        vaultLoadErrorRef.current = error;
+                        rejectVaultWaiters(error);
                     }
                 }
             } catch (error) {
-                console.warn('failed to fetch encrypted seed', error);
-                if (!cancelled && seedUidRef.current === uid) {
-                    updateEncSeed(null);
-                    seedLoadErrorRef.current = error;
-                    rejectSeedWaiters(error);
+                console.warn('failed to fetch account vault', error);
+                if (!cancelled && vaultUidRef.current === uid) {
+                    updateVault(null);
+                    vaultLoadErrorRef.current = error;
+                    rejectVaultWaiters(error);
                 }
             }
         })();
         return () => {
             cancelled = true;
         };
-    }, [rejectSeedWaiters, updateEncSeed, user.uid]);
+    }, [rejectVaultWaiters, updateVault, user.uid]);
 
     //boot features from master seed
     const unlock = useCallback(
         async (password, options = {}) => {
             //decrypt seed
             if (UNLOCK_STATES.has(lockState)) throw new Error('unlock in progress');
-            const unlockUid = user.uid || auth.currentUser?.uid || null;
+            const unlockUid = user.uid || cloud.auth.user?.uid || null;
             if (!unlockUid) throw new Error('account not ready');
-            const isCurrentUnlock = () => seedUidRef.current === unlockUid && auth.currentUser?.uid === unlockUid;
+            const isCurrentUnlock = () => vaultUidRef.current === unlockUid && cloud.auth.user?.uid === unlockUid;
             setLockState('decrypting');
             let w = null;
             let chatPrivKey = null;
@@ -150,11 +147,11 @@ export function VaultProvider({ children }) {
             let cacheKey = null;
             let nextCache = null;
             try {
-                const seedData = await waitForEncSeed();
+                const vault = await waitForVault();
                 if (!isCurrentUnlock()) {
                     throw new Error('account changed during unlock');
                 }
-                const { salt, iv, ct, kdf } = unpackSeedData(seedData);
+                const { salt, iv, ct, kdf } = unpackSeedData(vault);
                 masterSeed = await decryptSeed(ct, salt, iv, normalizePassword(password), kdf);
                 setLockState('seed-decrypted');
                 const seedDecrypted = options.onSeedDecrypted?.();
@@ -216,7 +213,7 @@ export function VaultProvider({ children }) {
                 setLockState('unlocked');
 
                 // mark active (best-effort)
-                writePresence(db, unlockUid, true).catch(() => {});
+                cloud.user.active.write(unlockUid, true).catch(() => {});
             } catch (error) {
                 try {
                     masterSeed?.fill?.(0);
@@ -239,11 +236,11 @@ export function VaultProvider({ children }) {
                 }
 
                 // mark inactive (best-effort)
-                writePresence(db, unlockUid, false).catch(() => {});
+                cloud.user.active.write(unlockUid, false).catch(() => {});
                 throw error;
             }
         },
-        [lockState, user, waitForEncSeed]
+        [lockState, user, waitForVault]
     );
 
     //lock the app
@@ -266,7 +263,7 @@ export function VaultProvider({ children }) {
 
                 // mark inactive (best-effort)
                 if (user.uid) {
-                    writePresence(db, user.uid, false).catch(() => {});
+                    cloud.user.active.write(user.uid, false).catch(() => {});
                 }
                 if (!silent) {
                     toast('Vault locked', {
@@ -335,7 +332,7 @@ export function VaultProvider({ children }) {
 
     const value = useMemo(
         () => ({
-            encSeed,
+            vault,
             wallet,
             chatPrivateKey,
             localCache,
@@ -343,7 +340,7 @@ export function VaultProvider({ children }) {
             unlock,
             lock,
         }),
-        [encSeed, wallet, chatPrivateKey, localCache, lockState, unlock, lock]
+        [vault, wallet, chatPrivateKey, localCache, lockState, unlock, lock]
     );
 
     return <VaultCtx value={value}>{children}</VaultCtx>;

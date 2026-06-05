@@ -57,6 +57,7 @@ bun bot traffic tx @zxrl fast --count 300
 bun bot traffic fund --amount 1000
 bun bot traffic stop
 bun bot kill @mybot
+bun nuke chat
 ```
 
 ## Git Workflows
@@ -73,6 +74,8 @@ These commands prompt in the terminal. Use the arrow keys and Enter to choose th
 Before running either workflow, inspect the staged or intended diff, update [../CHANGELOG.md](../CHANGELOG.md), and choose a concise, specific commit message that reflects the real change. Avoid vague messages like `update` unless the user explicitly requests that exact message.
 
 Changelog entries carry the context that no single commit message can. Broad pushes should group the major product, backend, docs, and tooling changes. Small pushes can use one short bugfix or cleanup bullet, but the bullet still has to say what was fixed or cleaned up.
+
+Keep commit history append-only unless the user explicitly asks for history cleanup. Do not use `git commit --amend`, interactive rebase, squash, reset, or other history-rewrite commands just to keep a change tidy; commit follow-up fixes separately.
 
 The workflows preserve the old task behavior while suppressing routine command output:
 

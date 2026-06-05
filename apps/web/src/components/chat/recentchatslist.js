@@ -15,6 +15,8 @@ import { useChat, useChatInput } from '@/components/providers/chatprovider';
 import { usePeer } from '@/components/providers/peerprovider';
 import { useCloak } from '@veyl/shared/providers/cloakprovider';
 import { listNavigationStep, loopListIndex } from '@/lib/focus';
+import { cn } from '@/lib/classes';
+import rowMotion from '@/components/listrowmotion.module.css';
 
 const CHAT_ROW_APPEAR_MS = 640;
 const CHAT_ROW_PHASE_MS = CHAT_ROW_APPEAR_MS / 2;
@@ -114,8 +116,8 @@ const RecentChatRow = memo(function RecentChatRow({
     });
 
     return (
-        <div className={`recent-chat-row-stable ${isLast ? 'recent-chat-row-last' : ''} ${mode ? `recent-chat-row-${mode}` : ''}`}>
-            <div className={mode ? 'recent-chat-row-content' : ''}>
+        <div className={cn(rowMotion.row, rowMotion.divided, isLast && rowMotion.last, mode && rowMotion[mode])}>
+            <div className={mode ? rowMotion.content : ''}>
                 <Button
                     ref={(node) => {
                         if (!interactive || !node) {
@@ -142,7 +144,7 @@ const RecentChatRow = memo(function RecentChatRow({
                         interactive
                             ? () => {
                                   if (!selected && profile?.uid) {
-                                      updatePeer(profile.uid, { refreshAvatar: true });
+                                      updatePeer(profile.uid);
                                   }
                                   handleChatClick(chat.id);
                               }
@@ -391,65 +393,7 @@ export function RecentChatsList() {
     if (!isChatDataReady) return;
 
     return (
-        <Card>
-            <style>{`
-                .recent-chat-row-stable {
-                    contain: layout paint;
-                    overflow: hidden;
-                    position: relative;
-                }
-                .recent-chat-row-stable::after {
-                    content: '';
-                    position: absolute;
-                    inset-inline: 0;
-                    bottom: 0;
-                    height: 1px;
-                    background: var(--border);
-                    pointer-events: none;
-                }
-                .recent-chat-row-last::after,
-                .recent-chat-row-leaving::after {
-                    opacity: 0;
-                }
-                .recent-chat-row-leaving,
-                .recent-chat-row-entering {
-                    height: 60px;
-                }
-                .recent-chat-row-content {
-                    transform-origin: center top;
-                    will-change: opacity, transform;
-                }
-                .recent-chat-row-leaving {
-                    will-change: height;
-                    animation: recent-chat-row-slot-out ${CHAT_ROW_PHASE_MS}ms ${CHAT_ROW_APPEAR_EASE} both;
-                }
-                .recent-chat-row-entering {
-                    will-change: height;
-                    animation: recent-chat-row-slot-in ${CHAT_ROW_PHASE_MS}ms ${CHAT_ROW_APPEAR_EASE} both;
-                }
-                .recent-chat-row-leaving > .recent-chat-row-content {
-                    animation: recent-chat-row-content-out ${CHAT_ROW_PHASE_MS}ms ${CHAT_ROW_APPEAR_EASE} both;
-                }
-                .recent-chat-row-entering > .recent-chat-row-content {
-                    animation: recent-chat-row-content-in ${CHAT_ROW_PHASE_MS}ms ${CHAT_ROW_APPEAR_EASE} both;
-                }
-                @keyframes recent-chat-row-slot-out {
-                    0%, 50% { height: 60px; }
-                    100% { height: 0; }
-                }
-                @keyframes recent-chat-row-slot-in {
-                    0% { height: 0; }
-                    50%, 100% { height: 60px; }
-                }
-                @keyframes recent-chat-row-content-in {
-                    0%, 50% { opacity: 0; transform: scale(0.98); }
-                    100% { opacity: 1; transform: scale(1); }
-                }
-                @keyframes recent-chat-row-content-out {
-                    0% { opacity: 1; transform: scale(1); }
-                    50%, 100% { opacity: 0; transform: scale(0.98); }
-                }
-            `}</style>
+        <Card style={{ '--row-motion-duration': `${CHAT_ROW_PHASE_MS}ms`, '--row-motion-ease': CHAT_ROW_APPEAR_EASE }}>
             <div className="overflow-y-auto" onKeyDown={handleListKeyDown} onScroll={handleScroll}>
                 <div className={visibleChats.length < 12 ? 'border-b' : ''}>
                     {displayedChats.map((chat, index) =>

@@ -7,7 +7,7 @@ import { useChat } from '@/components/providers/chatprovider';
 import { useVault } from '@/components/providers/vaultprovider';
 import { useUser } from '@/components/providers/userprovider';
 import { useDialog } from '@/components/providers/dialogprovider';
-import { auth } from '@/lib/firebase/firebaseclient';
+import { cloud } from '@/lib/cloud';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Input } from '@/components/input';
@@ -126,7 +126,7 @@ export default function UnlockPage() {
         await yieldToUi();
         const password = normalizePassword(raw);
         if (!isPassword(password)) return;
-        if (!auth.currentUser?.uid) return;
+        if (!cloud.auth.user?.uid) return;
         try {
             await unlock(password, { onSeedDecrypted: animateUnlockIcon });
         } catch {

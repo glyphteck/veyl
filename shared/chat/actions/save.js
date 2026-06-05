@@ -2,30 +2,12 @@
 
 import { useCallback } from 'react';
 import { dropCachedMedia, readCachedMedia, writeCachedMedia } from '../../cache/localdata.js';
-import { randomBytes, toHex } from '../../crypto/core.js';
 import { attachmentBytes, isFileGoneError, makeChatUnavailableError, makeFileGoneError, saveMedia } from '../attachments.js';
-import { CHAT_MEDIA_TTL_MS, getMediaFileId } from '../filepayload.js';
-import { hasStoredFileRef, isAttachmentMsgType, isExpiredAttachmentMsg, mediaStayRef } from '../messages.js';
+import { getMediaFileRef } from '../filepayload.js';
+import { isExpiredAttachmentMsg } from '../messages.js';
 import { makeMessagePreviewMedia, MESSAGE_PREVIEW_MIME } from '../previews.js';
+import { makeMsgPermanent, makeMsgTemporary, readMsgMedia } from '../messages/write.js';
 import { cleanText } from '../../utils/text.js';
-import { timestampMs } from '../../utils/time.js';
-
-export function newMediaStayId() {
-    return toHex(randomBytes(16));
-}
-
-export function newMediaStayKey() {
-    return toHex(randomBytes(16));
-}
-
-export async function requireMediaSaved(chat, path, stay, saved) {
-    const id = cleanText(stay?.id);
-    const key = cleanText(stay?.key);
-    const updated = await chat.setMediaSaved(path, id, key, saved);
-    if (updated !== true) {
-        throw new Error('media save state unavailable');
-    }
-}
 
 function hasInvalidStoredMediaRef(message) {
     const path = cleanText(message?.p);
@@ -35,123 +17,42 @@ function hasInvalidStoredMediaRef(message) {
     }
 
     try {
-        getMediaFileId(path);
+        getMediaFileRef(path);
         return false;
     } catch {
         return true;
     }
 }
 
-function ensureMediaStay(message) {
-    return mediaStayRef(message) || { id: newMediaStayId(), key: newMediaStayKey() };
-}
-
-function makeSavedMessagePayload(message, stay) {
-    const { ttl, pending, failed, localUri, localData, reactions, type, ...payload } = message || {};
-    const savedTtl = timestampMs(ttl);
-    return {
-        ...payload,
-        ttl: null,
-        permanent: true,
-        ...(Number.isFinite(savedTtl) ? { savedTtl } : {}),
-        ...(stay?.id && stay?.key
-            ? {
-                  x: Number.isFinite(payload.x) ? payload.x : Date.now() + CHAT_MEDIA_TTL_MS,
-                  stay: stay.id,
-                  stayKey: stay.key,
-              }
-            : {}),
-    };
-}
-
-function makeUnsavedMessagePayload(message) {
-    const { id, ts, ttl, from, pending, failed, localUri, localData, reactions, type, stay, stayKey, savedTtl, savedTtlMs, permanent, ...payload } = message || {};
-    if (!isAttachmentMsgType(message?.t)) {
-        return payload;
+function readMessageMedia(cloud, media, chatPK, chatPrivateKey, peerChatPK, message) {
+    const readChatMedia = cloud?.chat?.media?.read;
+    if (typeof media?.readMessageFile === 'function') {
+        return media.readMessageFile(readChatMedia, chatPK, chatPrivateKey, peerChatPK, message);
     }
-    return {
-        ...payload,
-        x: Number.isFinite(payload.x) ? payload.x : Date.now() + CHAT_MEDIA_TTL_MS,
-    };
+    return readMsgMedia(readChatMedia, chatPK, chatPrivateKey, peerChatPK, message);
 }
 
-function hasSavedMessagePayload(message) {
-    return message?.permanent === true || Number.isFinite(Number(message?.savedTtl)) || !!mediaStayRef(message);
-}
-
-export function useChatSave({ chat, uid, chatBanned, chatPK, chatPrivateKey, localCache }) {
+export function useChatSave({ cloud, media = {}, chatBanned, chatPK, chatPrivateKey, localCache }) {
     const makeMessagePermanent = useCallback(
-        async (chatId, message, peerChatPKOption) => {
-            void peerChatPKOption;
+        async (chatId, message) => {
             if (chatBanned) {
                 throw makeChatUnavailableError();
             }
             const list = Array.isArray(message) ? message : [message];
-
-            for (const item of list) {
-                if (!item?.id || item.pending || item.failed) {
-                    continue;
-                }
-                if (!uid || !chatPrivateKey) {
-                    throw makeChatUnavailableError();
-                }
-                const saveMediaRef = isAttachmentMsgType(item.t) && hasStoredFileRef(item);
-                const stay = saveMediaRef ? ensureMediaStay(item) : null;
-                if (saveMediaRef) {
-                    await requireMediaSaved(chat, item.p, stay, true);
-                }
-                try {
-                    await chat.saveMessage(uid, chatPrivateKey, chatId, makeSavedMessagePayload(item, stay));
-                } catch (error) {
-                    if (saveMediaRef) {
-                        await requireMediaSaved(chat, item.p, stay, false).catch(() => {});
-                    }
-                    throw error;
-                }
-            }
-
-            return list.length;
+            return makeMsgPermanent(cloud, chatId, list);
         },
-        [chat, uid, chatBanned, chatPrivateKey]
+        [cloud, chatBanned]
     );
 
     const makeMessageTemporary = useCallback(
-        async (chatId, message, peerChatPKOption, options = {}) => {
-            void peerChatPKOption;
-            void options;
+        async (chatId, message) => {
             if (chatBanned) {
                 throw makeChatUnavailableError();
             }
             const list = Array.isArray(message) ? message : [message];
-            let updated = 0;
-
-            for (const item of list) {
-                if (!item?.id || item.pending || item.failed) {
-                    continue;
-                }
-                const updateBody = hasSavedMessagePayload(item) || (isAttachmentMsgType(item.t) && hasStoredFileRef(item));
-                if (updateBody && (!uid || !chatPrivateKey)) {
-                    throw makeChatUnavailableError();
-                }
-                if (isAttachmentMsgType(item.t) && hasStoredFileRef(item)) {
-                    const stay = mediaStayRef(item);
-                    await chat.unsaveMessage(uid, chatPrivateKey, chatId, makeUnsavedMessagePayload(item));
-                    updated += 1;
-                    if (stay) {
-                        await requireMediaSaved(chat, item.p, stay, false);
-                    }
-                    continue;
-                }
-
-                if (updateBody) {
-                    await chat.unsaveMessage(uid, chatPrivateKey, chatId, makeUnsavedMessagePayload(item));
-                }
-                updated += 1;
-            }
-
-            return updated;
+            return makeMsgTemporary(cloud, chatId, list);
         },
-        [chat, uid, chatBanned, chatPrivateKey]
+        [cloud, chatBanned]
     );
 
     const readMessageFile = useCallback(
@@ -179,7 +80,7 @@ export function useChatSave({ chat, uid, chatBanned, chatPK, chatPrivateKey, loc
             }
 
             try {
-                const bytes = await chat.readMessageFile(chatPK, chatPrivateKey, peerChatPK, message);
+                const bytes = await readMessageMedia(cloud, media, chatPK, chatPrivateKey, peerChatPK, message);
                 saveMedia(localCache, message, bytes, message);
                 return bytes;
             } catch (error) {
@@ -189,7 +90,7 @@ export function useChatSave({ chat, uid, chatBanned, chatPK, chatPrivateKey, loc
                 throw error;
             }
         },
-        [chat, chatBanned, chatPK, chatPrivateKey, localCache]
+        [cloud, media, chatBanned, chatPK, chatPrivateKey, localCache]
     );
 
     const readMessagePreview = useCallback(

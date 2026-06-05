@@ -12,8 +12,8 @@ import { mark } from '@/lib/diagnostics';
 import { parseCommand } from '@veyl/shared/commands';
 
 const INACTIVE_OPACITY = 0.32;
-const COMPOSER_POP_MS = 160;
-const COMPOSER_POP_EXIT_HOLD_MS = COMPOSER_POP_MS + 40;
+const COMPOSER_POP_MS = 80;
+const COMPOSER_POP_EXIT_HOLD_MS = COMPOSER_POP_MS;
 const COMPOSER_POP_FROM = 0.001;
 
 const composerLayout = LinearTransition.duration(COMPOSER_POP_MS).easing(Easing.out(Easing.cubic));
@@ -94,20 +94,34 @@ function MoneyButton({ onPress, disabled = false }) {
     );
 }
 
-function PopScale({ show, children, onHidden, animateIn = true }) {
+function PopScale({ show, children, onHidden, animateIn = true, enterDelayMs = 0 }) {
     const scale = useSharedValue(show && !animateIn ? 1 : COMPOSER_POP_FROM);
 
     useEffect(() => {
         if (show && !animateIn) {
             scale.value = 1;
-            return;
+            return undefined;
         }
-        scale.value = withTiming(show ? 1 : COMPOSER_POP_FROM, show ? composerPopInTiming : composerPopOutTiming, (finished) => {
-            if (finished && !show && onHidden) {
-                runOnJS(onHidden)();
+        let timer = null;
+        const animate = () => {
+            scale.value = withTiming(show ? 1 : COMPOSER_POP_FROM, show ? composerPopInTiming : composerPopOutTiming, (finished) => {
+                if (finished && !show && onHidden) {
+                    runOnJS(onHidden)();
+                }
+            });
+        };
+        if (show && enterDelayMs > 0) {
+            scale.value = COMPOSER_POP_FROM;
+            timer = setTimeout(animate, enterDelayMs);
+        } else {
+            animate();
+        }
+        return () => {
+            if (timer) {
+                clearTimeout(timer);
             }
-        });
-    }, [animateIn, onHidden, scale, show]);
+        };
+    }, [animateIn, enterDelayMs, onHidden, scale, show]);
 
     const style = useAnimatedStyle(() => ({
         transform: [{ scale: scale.value }],
@@ -200,7 +214,7 @@ export function DraftBar({ draft, onClear, onHidden }) {
     }
 
     return (
-        <PopScale show={!!draft} onHidden={hideDraft}>
+        <PopScale show={!!draft} onHidden={hideDraft} enterDelayMs={COMPOSER_POP_MS}>
             <GlassView
                 glassEffectStyle="regular"
                 tintColor={theme.background}

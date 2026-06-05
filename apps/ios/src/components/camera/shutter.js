@@ -45,7 +45,7 @@ export function CameraShutter({ disabled, isDark, lockGesture, onLongPress, onPr
                             </View>
                         </Reanimated.View>
                     ) : null}
-                    <GlassView style={[StyleSheet.absoluteFill, frame]} glassEffectStyle="clear" tintColor={tint} />
+                    <GlassView style={[StyleSheet.absoluteFill, frame]} glassEffectStyle="clear" tintColor={tint} isInteractive />
                     {recordingLocked ? (
                         <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>
                             <Lock pointerEvents="none" color={theme.foreground} size={24} strokeWidth={3} />

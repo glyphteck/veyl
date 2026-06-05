@@ -1,4 +1,3 @@
-import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { AUTOLOCK_MAX_MINUTES, AUTOLOCK_MIN_MINUTES } from './config.js';
 
 export const SEND_ON_SCAN_ENABLED = false;
@@ -94,41 +93,4 @@ export function normalizeSettings(settings, base = defaultSettings) {
     }
 
     return next;
-}
-
-export async function writeUserSettings({ db, uid, settings, currentSettings }) {
-    if (!db) throw new Error('db');
-    if (!uid) throw new Error('uid');
-
-    let base = currentSettings;
-
-    try {
-        const snap = await getDoc(doc(db, 'users', uid));
-        const saved = snap.exists() ? snap.data()?.settings : null;
-        const { autolock: rawAutolock, ...rawSettings } = saved || {};
-        base = {
-            ...defaultSettings,
-            ...rawSettings,
-            autolock: {
-                ...defaultSettings.autolock,
-                ...(rawAutolock || {}),
-            },
-        };
-    } catch (error) {
-        if (!base) {
-            throw error;
-        }
-    }
-
-    const nextSettings = normalizeSettings(settings, base);
-
-    await setDoc(
-        doc(db, 'users', uid),
-        {
-            settings: nextSettings,
-        },
-        { merge: true }
-    );
-
-    return nextSettings;
 }

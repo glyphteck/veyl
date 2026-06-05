@@ -16,6 +16,8 @@ import { usePeer } from '@/components/providers/peerprovider';
 import { useCloak } from '@veyl/shared/providers/cloakprovider';
 import { getInsertedRowBatch, sameListIds } from '@veyl/shared/chat/listanimation';
 import { listNavigationStep, loopListIndex } from '@/lib/focus';
+import { cn } from '@/lib/classes';
+import rowMotion from '@/components/listrowmotion.module.css';
 
 const TX_ROW_APPEAR_MS = 320;
 const TX_ROW_APPEAR_EASE = 'cubic-bezier(0.2, 0, 0, 1)';
@@ -315,40 +317,14 @@ export function RecentTxList() {
         );
     }
     return (
-        <Card>
-            <style>{`
-                .recent-tx-row-stable {
-                    contain: layout paint;
-                    overflow: hidden;
-                }
-                .recent-tx-row-entering {
-                    height: 60px;
-                    will-change: height;
-                    animation: recent-tx-row-slot-in ${TX_ROW_APPEAR_MS}ms ${TX_ROW_APPEAR_EASE} both;
-                }
-                .recent-tx-row-content {
-                    transform-origin: center top;
-                    will-change: opacity, transform;
-                }
-                .recent-tx-row-entering > .recent-tx-row-content {
-                    animation: recent-tx-row-content-in ${TX_ROW_APPEAR_MS}ms ${TX_ROW_APPEAR_EASE} both;
-                }
-                @keyframes recent-tx-row-slot-in {
-                    0% { height: 0; }
-                    50%, 100% { height: 60px; }
-                }
-                @keyframes recent-tx-row-content-in {
-                    0%, 50% { opacity: 0; transform: scale(0.98); }
-                    100% { opacity: 1; transform: scale(1); }
-                }
-            `}</style>
+        <Card style={{ '--row-motion-duration': `${TX_ROW_APPEAR_MS}ms`, '--row-motion-ease': TX_ROW_APPEAR_EASE }}>
             <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto" onKeyDown={handleListKeyDown} onScroll={handleScroll}>
                 <div className={`divide-y ${visibleTxs.length < 12 ? 'border-b' : ''}`}>
                     {visibleTxs.map((tx, index) => {
                         const entering = insertingIds.has(tx.id);
                         return (
-                            <div key={tx.id} className={`recent-tx-row-stable ${entering ? 'recent-tx-row-entering' : ''}`}>
-                                <div className={entering ? 'recent-tx-row-content' : ''}>
+                            <div key={tx.id} className={cn(rowMotion.row, entering && rowMotion.entering)}>
+                                <div className={entering ? rowMotion.content : ''}>
                                     <RecentTxRow
                                         bitcoinPrice={bitcoin.price}
                                         cloaked={cloaked}
