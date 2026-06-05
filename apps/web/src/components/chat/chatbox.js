@@ -3,7 +3,7 @@ import { Card } from '@/components/card';
 import { Button } from '@/components/button';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/avatar';
 import { ChatInput } from './chatinput';
-import { MessageList } from './messagelist';
+import { Messages } from './messages/list';
 import { useChat, useChatInput } from '@/components/providers/chatprovider';
 import { useUser } from '@/components/providers/userprovider';
 import { usePeer } from '@/components/providers/peerprovider';
@@ -347,7 +347,7 @@ export function Chatbox() {
             </div>
             {/* Messages */}
             <div className="flex-1 min-h-0">
-                <MessageList onReply={handleReply} onEdit={handleEdit} bottomPad={inputH} />
+                <Messages onReply={handleReply} onEdit={handleEdit} bottomPad={inputH} />
             </div>
             <ChatInput
                 inputRef={chatInputRef}

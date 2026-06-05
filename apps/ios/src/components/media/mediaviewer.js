@@ -74,7 +74,7 @@ export function FullscreenRail({ activeIndex, items, onCloseComplete, onCloseSta
     const mediaOpacity = useSharedValue(0);
     const mediaRadius = useSharedValue(0);
     const swipeProgress = useSharedValue(0);
-    const saveOpacity = useSharedValue(1);
+    const downloadOpacity = useSharedValue(1);
     const muteOpacity = useSharedValue(activeIsVideo ? 1 : 0);
     const railX = useSharedValue(-activeIndex * slideW);
     const panStartX = useSharedValue(-activeIndex * slideW);
@@ -120,8 +120,8 @@ export function FullscreenRail({ activeIndex, items, onCloseComplete, onCloseSta
     const backdropStyle = useAnimatedStyle(() => ({
         opacity: backdropOpacity.value,
     }));
-    const saveStyle = useAnimatedStyle(() => ({
-        opacity: saveOpacity.value,
+    const downloadStyle = useAnimatedStyle(() => ({
+        opacity: downloadOpacity.value,
     }));
     const muteStyle = useAnimatedStyle(() => ({
         opacity: muteOpacity.value,
@@ -173,7 +173,7 @@ export function FullscreenRail({ activeIndex, items, onCloseComplete, onCloseSta
         mediaOpacity.value = withTiming(0, MEDIA_OUT_TIMING);
         mediaRadius.value = withTiming(EXIT_MEDIA_RADIUS, MEDIA_OUT_TIMING);
         swipeProgress.value = withTiming(0, MEDIA_OUT_TIMING);
-        saveOpacity.value = withTiming(0, MEDIA_OUT_TIMING);
+        downloadOpacity.value = withTiming(0, MEDIA_OUT_TIMING);
         muteOpacity.value = withTiming(0, MEDIA_OUT_TIMING);
         openScale.value = withTiming(0.01, MEDIA_OUT_TIMING);
         setTimeout(() => {
@@ -183,7 +183,7 @@ export function FullscreenRail({ activeIndex, items, onCloseComplete, onCloseSta
             onCloseComplete();
             afterClose?.();
         }, CLOSE_UNMOUNT_MS);
-    }, [backdropOpacity, mediaOpacity, mediaRadius, muteOpacity, onCloseComplete, onCloseStart, openScale, saveOpacity, swipeProgress]);
+    }, [backdropOpacity, downloadOpacity, mediaOpacity, mediaRadius, muteOpacity, onCloseComplete, onCloseStart, openScale, swipeProgress]);
 
     useEffect(() => {
         openScale.value = 0.01;
@@ -191,7 +191,7 @@ export function FullscreenRail({ activeIndex, items, onCloseComplete, onCloseSta
         mediaOpacity.value = 0;
         mediaRadius.value = 0;
         swipeProgress.value = 0;
-        saveOpacity.value = 1;
+        downloadOpacity.value = 1;
         mediaShownRef.current = false;
         closingRef.current = false;
         setClosing(false);
@@ -213,7 +213,7 @@ export function FullscreenRail({ activeIndex, items, onCloseComplete, onCloseSta
                 shownTimerRef.current = null;
             }
         };
-    }, [backdropOpacity, mediaOpacity, mediaRadius, openScale, saveOpacity, showMedia, swipeProgress]);
+    }, [backdropOpacity, downloadOpacity, mediaOpacity, mediaRadius, openScale, showMedia, swipeProgress]);
 
     useEffect(() => {
         const target = -activeIndex * slideW;
@@ -229,8 +229,8 @@ export function FullscreenRail({ activeIndex, items, onCloseComplete, onCloseSta
         }
         mediaRadius.value = 0;
         swipeProgress.value = withTiming(0, MEDIA_OUT_TIMING);
-        saveOpacity.value = 1;
-    }, [activeIndex, mediaRadius, panStartX, railX, saveOpacity, slideW, swipeProgress]);
+        downloadOpacity.value = 1;
+    }, [activeIndex, downloadOpacity, mediaRadius, panStartX, railX, slideW, swipeProgress]);
 
     useEffect(() => {
         if (activeIsVideo) {
@@ -337,7 +337,7 @@ export function FullscreenRail({ activeIndex, items, onCloseComplete, onCloseSta
                         openScale.value = 1 - progress * 0.45;
                         mediaOpacity.value = 1 - progress * 0.45;
                         mediaRadius.value = EXIT_MEDIA_RADIUS * progress;
-                        saveOpacity.value = 1 - progress;
+                        downloadOpacity.value = 1 - progress;
                     }
                 })
                 .onEnd((event) => {
@@ -390,7 +390,7 @@ export function FullscreenRail({ activeIndex, items, onCloseComplete, onCloseSta
                         openScale.value = withSpring(1, SNAP_SPRING);
                         mediaOpacity.value = withTiming(1, MEDIA_OUT_TIMING);
                         mediaRadius.value = withTiming(0, MEDIA_OUT_TIMING);
-                        saveOpacity.value = withTiming(1, MEDIA_OUT_TIMING);
+                        downloadOpacity.value = withTiming(1, MEDIA_OUT_TIMING);
                     }
                 })
                 .onFinalize(() => {
@@ -408,7 +408,7 @@ export function FullscreenRail({ activeIndex, items, onCloseComplete, onCloseSta
                         openScale.value = withSpring(1, SNAP_SPRING);
                         mediaOpacity.value = withTiming(1, MEDIA_OUT_TIMING);
                         mediaRadius.value = withTiming(0, MEDIA_OUT_TIMING);
-                        saveOpacity.value = withTiming(1, MEDIA_OUT_TIMING);
+                        downloadOpacity.value = withTiming(1, MEDIA_OUT_TIMING);
                     } else if (panMode.value === PAN_SWIPE) {
                         railX.value = withTiming(-activeIndex * slideW, MEDIA_OUT_TIMING);
                         swipeProgress.value = withTiming(0, MEDIA_OUT_TIMING);
@@ -437,7 +437,7 @@ export function FullscreenRail({ activeIndex, items, onCloseComplete, onCloseSta
             panStartX,
             panStartedOnSlider,
             railX,
-            saveOpacity,
+            downloadOpacity,
             slideW,
             startScrub,
             swipeProgress,
@@ -498,7 +498,7 @@ export function FullscreenRail({ activeIndex, items, onCloseComplete, onCloseSta
                     muted={muted}
                     muteStyle={muteStyle}
                     onToggleMuted={toggleMuted}
-                    saveStyle={saveStyle}
+                    downloadStyle={downloadStyle}
                     theme={theme}
                 />
             </View>

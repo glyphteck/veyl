@@ -4,7 +4,7 @@ import { useIsFocused } from 'expo-router';
 import { Image } from 'expo-image';
 import { useMediaViewer } from '@/providers/mediaviewerprovider';
 import { useTheme } from '@/providers/themeprovider';
-import { useMessageGestureBlockers } from '@/components/chat/messagegesturecontext';
+import { useGestureBlockers } from './gesturecontext';
 import { getMediaViewerKey } from '@/lib/chat/viewer';
 import { imageWidth } from '@/lib/chat/messages';
 import { useMsgImage } from '@/lib/chat/useimage';
@@ -18,7 +18,7 @@ const MEDIA_ACTIVE_STYLE = { opacity: 0.01 };
 
 export default function ImageMessage({ msg, peerChatPK, fromPeer = false, menuItems, menuId, onLike, reactions = [], reactionUsers, reactionPreviewInset = 0 }) {
     const { theme } = useTheme();
-    const blockExternalGestures = useMessageGestureBlockers();
+    const blockExternalGestures = useGestureBlockers();
     const { openMedia } = useMediaViewer();
     const focused = useIsFocused();
     const { source, loading } = useMsgImage(peerChatPK, msg, focused);

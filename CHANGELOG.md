@@ -2,6 +2,11 @@
 
 Repo-level changes are listed newest first. Keep entries short and concrete. Broad pushes get grouped bullets, while narrow fixes can use one concise bugfix or cleanup bullet that still names the actual change.
 
+## 0.14.3 - 2026-06-05
+
+- Split web and iOS chat message lists into message-local row, action, scroll, dot, and gesture modules, while keeping save and download actions named distinctly.
+- Moved shared route-message derivation, deleted-window cleanup, and preview sync decisions into message helper modules so `usemessages` stays focused on route orchestration.
+
 ## 0.14.2 - 2026-06-05
 
 - Moved chat media uploads to direct client Storage writes at opaque `chats/{chatId}/{mediaId}` paths, with encrypted message payloads carrying the random media id and direct client delete/save/unsave retention handling.

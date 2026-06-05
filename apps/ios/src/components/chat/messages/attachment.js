@@ -7,7 +7,7 @@ import { useTheme } from '@/providers/themeprovider';
 import { warmMessageDownload } from '@/lib/chat/downloads';
 import { bubbleTint } from '@/lib/chat/messages';
 import { formatAttachmentSize, getAttachmentCaption, getAttachmentTitle } from '@veyl/shared/chat/messages';
-import { useMessageGestureBlockers } from '@/components/chat/messagegesturecontext';
+import { useGestureBlockers } from './gesturecontext';
 import GlassView from '@/components/glass/glassview';
 import Icon from '@/components/icon';
 import Menu from '@/components/menu';
@@ -18,7 +18,7 @@ const ATTACHMENT_LONG_SCALE = 0.9;
 export default function AttachmentMessage({ msg, peerChatPK, fromPeer = false, menuItems, menuId, reactions = [], reactionUsers, reactionPreviewInset = 0 }) {
     const { theme } = useTheme();
     const { readMessageFile } = useChat();
-    const blockExternalGestures = useMessageGestureBlockers();
+    const blockExternalGestures = useGestureBlockers();
     const focused = useIsFocused();
     const title = getAttachmentTitle(msg);
     const caption = getAttachmentCaption(msg);

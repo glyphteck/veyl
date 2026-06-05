@@ -4,7 +4,7 @@ import { useCallback, useState } from 'react';
 import { File, Loader } from 'lucide-react';
 import { useChat } from '@/components/providers/chatprovider';
 import { useCloak } from '@veyl/shared/providers/cloakprovider';
-import { attachmentMeta, bubbleBg, saveMsgFile, stopClick } from '@/lib/chat/messages';
+import { attachmentMeta, bubbleBg, downloadMsgFile, stopClick } from '@/lib/chat/messages';
 import { getAttachmentCaption, getAttachmentTitle, hasStoredFileRef } from '@veyl/shared/chat/messages';
 
 export default function AttachmentMessage({ msg, peerChatPK, fromPeer = false }) {
@@ -27,7 +27,7 @@ export default function AttachmentMessage({ msg, peerChatPK, fromPeer = false })
             setError('');
 
             try {
-                await saveMsgFile(readMessageFile, peerChatPK, msg);
+                await downloadMsgFile(readMessageFile, peerChatPK, msg);
             } catch (nextError) {
                 console.warn('chat attachment download failed', nextError);
                 setError(nextError?.message || 'download failed');

@@ -246,7 +246,7 @@ export async function copyMessageFile(msg, peerChatPK, readMessageFile) {
   await Clipboard.setStringAsync(uri);
 }
 
-export async function saveMessageImage(msg, peerChatPK, readMessageFile) {
+export async function downloadMessageImage(msg, peerChatPK, readMessageFile) {
   const uri = await resolveImageUri(msg, peerChatPK, readMessageFile);
   const existing = await MediaLibrary.getPermissionsAsync(true);
   const perm = existing.granted
@@ -258,7 +258,7 @@ export async function saveMessageImage(msg, peerChatPK, readMessageFile) {
   await MediaLibrary.Asset.create(uri);
 }
 
-export async function saveMessageFile(msg, peerChatPK, readMessageFile) {
+export async function downloadMessageFile(msg, peerChatPK, readMessageFile) {
   const uri = await resolveFileUri(msg, peerChatPK, readMessageFile);
   await showShareSheet(uri);
 }

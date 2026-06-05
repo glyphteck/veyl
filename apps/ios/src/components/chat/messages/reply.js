@@ -12,7 +12,7 @@ import { bubbleTint, imageWidth } from '@/lib/chat/messages';
 import { useMsgImage } from '@/lib/chat/useimage';
 import { UNAVAILABLE_REPLY_MSG_TYPE, getAttachmentCaption, getAttachmentTitle, getImageAspect, makeUnavailableReply } from '@veyl/shared/chat/messages';
 import { renderMoney } from '@veyl/shared/money';
-import { useMessageGestureBlockers } from '@/components/chat/messagegesturecontext';
+import { useGestureBlockers } from './gesturecontext';
 import GlassView from '@/components/glass/glassview';
 import Menu from '@/components/menu';
 import ReactionTray from './reactiontray';
@@ -213,8 +213,8 @@ function ReplyPreview({ blockExternalGestures, reply, replyFromPeer, peerChatPK,
 }
 
 export default function ReplyMessage({ msg, fromPeer = false, menuItems, menuId, reply, replyFromPeer = false, peerChatPK, peerDisplayName, onReplyPress, reactions = [], reactionUsers, reactionPreviewInset = 0 }) {
-    const blockExternalGestures = useMessageGestureBlockers();
-    const replyPreviewBlockers = useMessageGestureBlockers({ includeLike: true });
+    const blockExternalGestures = useGestureBlockers();
+    const replyPreviewBlockers = useGestureBlockers({ includeLike: true });
     const body = (
         <Menu id={menuId} items={menuItems} blockExternalGestures={blockExternalGestures} previewBottomInset={reactionPreviewInset}>
             <ReactionTray reactions={reactions} users={reactionUsers} fromPeer={fromPeer}>

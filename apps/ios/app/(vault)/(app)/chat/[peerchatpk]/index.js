@@ -11,7 +11,7 @@ import { usePeer } from '@/providers/peerprovider';
 import { useWallet } from '@/providers/walletprovider';
 import GlassHeader from '@/components/glass/glassheader';
 import ChatInput, { CommandBubbles, DraftBar } from '@/components/chat/chatinput';
-import MessageList from '@/components/chat/messagelist';
+import Messages from '@/components/chat/messages/list';
 import { KeyboardStickyView } from '@/components/keyboardscroll';
 import Icon from '@/components/icon';
 import Avatar from '@/components/avatar';
@@ -493,7 +493,7 @@ export default function PeerChatRoute() {
                     </Pressable>
                 </View>
             </GlassHeader>
-            <MessageList
+            <Messages
                 chatId={chatId}
                 chatTitle={chatTitle}
                 onRequestHold={handleOpenHistory}
@@ -551,7 +551,7 @@ export default function PeerChatRoute() {
                         </View>
                     </KeyboardStickyView>
                 ) : null}
-            </MessageList>
+            </Messages>
             </View>
         </View>
     );

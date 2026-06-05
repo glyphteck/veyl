@@ -2,7 +2,7 @@ import { dropCachedMedia } from '../../cache/localdata.js';
 import { filterChatMessages } from '../ids.js';
 import { addMessageKeys, keySet, messageHasKey } from '../messagekeys.js';
 import { getMessageKey, getMessageOrderMs, mergeMessages } from '../state.js';
-import { holdVisibleMsg, isExpiredMsg } from './control.js';
+import { deriveMessageReactions, getDisplayMessages, holdVisibleMsg, isExpiredMsg } from './control.js';
 
 export function trimExpiredMessages(messages, options = {}) {
     const keepKeys = options.keepKeys;
@@ -60,6 +60,141 @@ export function removeMessagesByKeys(messages, keys) {
         return messages || [];
     }
     return (messages || []).filter((message) => !messageHasKey(message, keys));
+}
+
+export function mergeKeySets(...groups) {
+    const keys = new Set();
+    for (const group of groups) {
+        for (const key of keySet(group)) {
+            keys.add(key);
+        }
+    }
+    return keys;
+}
+
+function messagePageMarker(message) {
+    if (!message?.id || String(message.id).startsWith('local:') || !message?.ts) {
+        return null;
+    }
+    return { id: message.id, ts: message.ts };
+}
+
+export function firstMessageWindowMarker(older, live) {
+    if (!older?.length) {
+        return null;
+    }
+
+    let first = null;
+    let firstMs = Infinity;
+    for (const messages of [older, live]) {
+        for (const message of messages || []) {
+            const marker = messagePageMarker(message);
+            const ms = getMessageOrderMs(marker);
+            if (!marker || !Number.isFinite(ms)) {
+                continue;
+            }
+            if (ms < firstMs || (ms === firstMs && marker.id < first.id)) {
+                first = marker;
+                firstMs = ms;
+            }
+        }
+    }
+    return first;
+}
+
+export function messageWindowMarkerKey(marker) {
+    if (!marker?.id) {
+        return '';
+    }
+    const ms = getMessageOrderMs(marker);
+    return `${marker.id}:${Number.isFinite(ms) ? ms : ''}`;
+}
+
+export function selectRouteMessageState({ stateScope, scopeKey, initialSeed, older, live, hasOlder, ready, exists, serverBatch, fallbackReady = false }) {
+    const matches = stateScope === scopeKey;
+    return {
+        older: matches ? older : initialSeed?.older ?? [],
+        live: matches ? live : initialSeed?.live ?? [],
+        hasOlder: matches ? hasOlder : initialSeed?.hasOlder ?? false,
+        ready: matches ? ready : initialSeed?.ready ?? fallbackReady,
+        exists: matches ? exists : initialSeed?.exists ?? false,
+        serverBatch: matches ? serverBatch : initialSeed?.serverBatch ?? null,
+    };
+}
+
+export function deriveRouteMessages({ older, live, locals, serverBatch, deletedKeys, visibleKeys, chatPK, peerChatPK }) {
+    const liveKeys = new Set((live || []).map(getMessageKey).filter(Boolean));
+    const sourceGoneKeys = mergeKeySets(serverBatch?.deletedKeys, deletedKeys);
+    const cleanOlder = serverBatch?.empty ? [] : dropMissingFromBatch(older, serverBatch, liveKeys);
+    const renderLocals =
+        liveKeys.size || sourceGoneKeys.size
+            ? (locals || []).filter((message) => {
+                  const key = getMessageKey(message);
+                  return (!key || !liveKeys.has(key)) && !messageHasKey(message, sourceGoneKeys);
+              })
+            : locals || [];
+    const rawMessages = filterChatMessages(mergeMessages(cleanOlder, live, renderLocals), chatPK, peerChatPK);
+    const retainedMessages = getDisplayMessages(rawMessages, chatPK, peerChatPK, {
+        keepKeys: visibleKeys,
+    });
+    return {
+        rawMessages,
+        messages: deriveMessageReactions(retainedMessages, chatPK, peerChatPK).map(holdVisibleMsg),
+    };
+}
+
+export function dropDeletedMessageWindow({ older, live, deletedKeys, removedKeys, snapshotKeys, fromMs, cidById }) {
+    const explicitKeys = keySet(removedKeys);
+    const currentKeys = snapshotKeys ? keySet(snapshotKeys) : null;
+    const currentCidById = cidById instanceof Map ? cidById : null;
+    if (!explicitKeys.size && !currentKeys && !currentCidById) {
+        return null;
+    }
+
+    const nextDeletedKeys = keySet(deletedKeys);
+    const deletedKeyCount = nextDeletedKeys.size;
+    for (const key of explicitKeys) {
+        nextDeletedKeys.add(key);
+    }
+    const deletedKeysChanged = nextDeletedKeys.size !== deletedKeyCount;
+
+    const drop = (messages) => {
+        let dropped = false;
+        const droppedMessages = [];
+        const next = [];
+        for (const message of messages || []) {
+            const isServerMessage = !!message?.id && !String(message.id).startsWith('local:');
+            const ms = getMessageOrderMs(message);
+            const inSnapshotRange = isServerMessage && Number.isFinite(ms) && Number.isFinite(fromMs) && ms >= fromMs;
+            const explicitlyRemoved = messageHasKey(message, explicitKeys);
+            const missingFromSnapshot = currentKeys && inSnapshotRange && !messageHasKey(message, currentKeys);
+            const sourceCid = currentCidById && inSnapshotRange ? currentCidById.get(message.id) : null;
+            const sourceChanged = !!(sourceCid && message?.cid && sourceCid !== message.cid);
+            if (explicitlyRemoved || missingFromSnapshot || sourceChanged) {
+                dropped = true;
+                addMessageKeys(nextDeletedKeys, message);
+                droppedMessages.push(message);
+            } else {
+                next.push(message);
+            }
+        }
+        return { messages: dropped ? next : messages, dropped, droppedMessages };
+    };
+
+    const olderDrop = drop(older);
+    const liveDrop = drop(live);
+    if (!deletedKeysChanged && !olderDrop.dropped && !liveDrop.dropped) {
+        return null;
+    }
+
+    return {
+        deletedKeys: nextDeletedKeys,
+        older: olderDrop.messages,
+        live: liveDrop.messages,
+        olderChanged: olderDrop.dropped,
+        liveChanged: liveDrop.dropped,
+        droppedMessages: [...olderDrop.droppedMessages, ...liveDrop.droppedMessages],
+    };
 }
 
 export function expireMessageView(updateMessageView, scopeKey, messages) {

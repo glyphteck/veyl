@@ -12,7 +12,7 @@ import { useUser } from '@/providers/userprovider';
 import { useWallet } from '@/providers/walletprovider';
 import { bubbleTint } from '@/lib/chat/messages';
 import { renderMoney } from '@veyl/shared/money';
-import { useMessageGestureBlockers } from '@/components/chat/messagegesturecontext';
+import { useGestureBlockers } from './gesturecontext';
 import GlassView from '@/components/glass/glassview';
 import Icon from '@/components/icon';
 import { alpha } from '@/lib/colors';
@@ -118,7 +118,7 @@ function RequestCard({ fromPeer = false, formattedAmount, label, amountColor, is
 }
 
 function RequestBubble({ card, menuId, menuItems, onHold, reactions = [], reactionUsers, reactionPreviewInset = 0 }) {
-    const blockExternalGestures = useMessageGestureBlockers();
+    const blockExternalGestures = useGestureBlockers();
     return (
         <Menu id={menuId} items={menuItems} onHold={onHold} blockExternalGestures={blockExternalGestures} previewBottomInset={reactionPreviewInset}>
             <ReactionTray reactions={reactions} users={reactionUsers} fromPeer={card?.fromPeer}>
@@ -141,7 +141,7 @@ export default function RequestMessage({ msg, fromPeer = false, peerDisplayName,
     const label = fromPeer ? (isPaying ? 'sending' : msg.tx ? 'You sent' : `${peerDisplayName} requested`) : msg.tx ? 'You received' : 'You requested';
     const amountColor = !msg.tx ? theme.foreground : fromPeer ? (isTransactionPending ? `${theme.outflow}80` : theme.outflow) : isTransactionPending ? `${theme.inflow}80` : theme.inflow;
     const card = { fromPeer, formattedAmount, label, amountColor, isPaying, theme };
-    const payBlockers = useMessageGestureBlockers({ includeLike: true });
+    const payBlockers = useGestureBlockers({ includeLike: true });
 
     if (fromPeer) {
         const canAfford = balance != null && Number(msg.a) <= balance;

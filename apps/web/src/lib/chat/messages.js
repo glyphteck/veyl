@@ -2,7 +2,7 @@ import { formatAttachmentSize, hasStoredFileRef, isPngMsg } from '@veyl/shared/c
 import { cleanText } from '@veyl/shared/utils/text';
 import { saveBytes, saveUrl } from '../download';
 
-const HOVER_SAVE_MSG_TYPES = ['img', 'mp3', 'mp4'];
+const HOVER_DOWNLOAD_MSG_TYPES = ['img', 'mp3', 'mp4'];
 
 export function bubbleBg(fromPeer = false) {
     return fromPeer ? 'bg-foreground/3' : 'bg-foreground/1';
@@ -12,8 +12,8 @@ export function stopClick(event) {
     event?.stopPropagation?.();
 }
 
-export function canSaveMsgFile(msg, peerChatPK) {
-    if (!HOVER_SAVE_MSG_TYPES.includes(msg?.t)) {
+export function canDownloadMsgFile(msg, peerChatPK) {
+    if (!HOVER_DOWNLOAD_MSG_TYPES.includes(msg?.t)) {
         return false;
     }
     if (cleanText(msg?.localUri)) {
@@ -53,7 +53,7 @@ export function msgMime(msg) {
     }
 }
 
-export async function saveMsgFile(readMessageFile, peerChatPK, msg) {
+export async function downloadMsgFile(readMessageFile, peerChatPK, msg) {
     const localUri = cleanText(msg?.localUri);
     if (localUri) {
         saveUrl(localUri, msgFileName(msg));

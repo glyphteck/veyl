@@ -5,8 +5,8 @@ import { Reply } from 'lucide-react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { scheduleOnRN } from 'react-native-worklets';
-import { TextBubble } from '@/components/chat/messages';
-import { MessageGestureProvider } from '@/components/chat/messagegesturecontext';
+import { TextBubble } from './text';
+import { GestureProvider } from './gesturecontext';
 import Icon from '@/components/icon';
 import { getSystemMsgText } from '@veyl/shared/chat/messages';
 import { getMessageOrderMs } from '@veyl/shared/chat/state';
@@ -101,7 +101,7 @@ export function ReportedBubble({ fromPeer = false }) {
     return <TextBubble msg={{ c: 'reported message hidden' }} fromPeer={fromPeer} />;
 }
 
-export function MessageRow({ chatPad, msg, rowState = 'present', fromPeer = false, theme, timeGesture, screenW, receiptStamp, stampBottomInset = 0, onReply, onLike, children }) {
+export function Row({ chatPad, msg, rowState = 'present', fromPeer = false, theme, timeGesture, screenW, receiptStamp, stampBottomInset = 0, onReply, onLike, children }) {
     const reply = useSharedValue(0);
     const appear = useSharedValue(rowState === 'entering' ? 0 : 1);
     const exit = useSharedValue(0);
@@ -259,7 +259,7 @@ export function MessageRow({ chatPad, msg, rowState = 'present', fromPeer = fals
 
     const gestureValue = useMemo(() => ({ likeGesture: tapGesture, replyGesture: hasPan ? replyGesture : null, timeGesture: timeGesture || null }), [hasPan, replyGesture, tapGesture, timeGesture]);
     const renderedChildren = typeof children === 'function' ? children({ onExitTargetLayout: handleExitTargetLayout }) : children;
-    const content = <MessageGestureProvider value={gestureValue}>{renderedChildren}</MessageGestureProvider>;
+    const content = <GestureProvider value={gestureValue}>{renderedChildren}</GestureProvider>;
     const contentOriginStyle = useMemo(() => ({ transformOrigin: fromPeer ? 'left bottom' : 'right bottom' }), [fromPeer]);
     const contentNode = (
         <Animated.View collapsable={false} onLayout={handleExitContentLayout} style={[contentOriginStyle, contentStyle]}>
@@ -355,7 +355,7 @@ export function MessageRow({ chatPad, msg, rowState = 'present', fromPeer = fals
     );
 }
 
-export function SystemMessageRow({ chatPad, msg, rowState = 'present', screenW, theme }) {
+export function SystemRow({ chatPad, msg, rowState = 'present', screenW, theme }) {
     const appear = useSharedValue(rowState === 'entering' ? 0 : 1);
     const exit = useSharedValue(0);
     const dropped = rowState === 'leaving';

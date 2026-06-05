@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { MESSAGE_ROW_ANIMATION_MS, MESSAGE_ROW_EASING, positivePx } from '@/components/chat/rowmotion';
 
-export default function MsgDot({ show, failed, saved = false, side = 'right', bottomInset = 0, exitToken = 0, theme }) {
+export default function Dot({ show, failed, saved = false, side = 'right', bottomInset = 0, exitToken = 0, theme }) {
     const progress = useSharedValue(exitToken ? 1 : 0);
     const bottomOffset = useSharedValue(bottomInset);
     const [visualSaved, setVisualSaved] = useState(saved);

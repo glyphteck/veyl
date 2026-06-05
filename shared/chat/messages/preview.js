@@ -1,5 +1,8 @@
 import { renderMoney } from '../../money.js';
-import { canShowMsg, getSystemMsgText, isSystemMsg } from './control.js';
+import { addMessageKeys, keySet, messageHasKey } from '../messagekeys.js';
+import { getMessageKey, getMessageOrderMs } from '../state.js';
+import { timestampMs } from '../../utils/time.js';
+import { canShowMsg, getSystemMsgText, isControlMsg, isSystemMsg } from './control.js';
 import { getAttachmentCaption, getAttachmentTitle, isAttachmentMsgType } from './files.js';
 import { hasText } from './text.js';
 
@@ -39,4 +42,81 @@ export function getMsgPreview(preview, chatPK, settings, btcPrice) {
     if (typeof preview.c === 'string') return preview.c;
     if (typeof preview.text === 'string') return preview.text;
     return 'sent a message';
+}
+
+export function latestPreviewMessage(messages) {
+    for (let index = (messages?.length || 0) - 1; index >= 0; index -= 1) {
+        const message = messages[index];
+        if (canShowMsg(message) && !isControlMsg(message)) {
+            return message;
+        }
+    }
+    return null;
+}
+
+export function previewValueKey(message) {
+    return [
+        getMessageKey(message),
+        message?.id,
+        message?.t,
+        message?.c,
+        message?.tx,
+        message?.sys,
+        message?.retention,
+        timestampMs(message?.ttl, null),
+        message?.pending === true ? 'pending' : '',
+        message?.failed === true ? 'failed' : '',
+    ]
+        .map((part) => part ?? '')
+        .join(':');
+}
+
+function batchCoversPreviewKey(batch, key) {
+    if (!batch || !key) {
+        return false;
+    }
+    if (batch.empty || batch.expiredKeys?.has?.(key) || batch.deletedKeys?.has?.(key)) {
+        return true;
+    }
+
+    const ms = getMessageOrderMs({ cid: key });
+    return Number.isFinite(ms) && Number.isFinite(batch.firstMs) && Number.isFinite(batch.lastMs) && ms >= batch.firstMs && ms <= batch.lastMs;
+}
+
+export function getPreviewDropSync({ chatId, chatPreviewKey, messages, serverBatch, deletedKeys, droppedKeys }) {
+    const visibleKeys = new Set();
+    for (const message of messages || []) {
+        if (canShowMsg(message) && !isControlMsg(message)) {
+            addMessageKeys(visibleKeys, message);
+        }
+    }
+    if (visibleKeys.has(chatPreviewKey)) {
+        return null;
+    }
+
+    const nextDroppedKeys = new Set([...keySet(serverBatch?.expiredKeys), ...keySet(serverBatch?.deletedKeys), ...keySet(deletedKeys), ...keySet(droppedKeys)]);
+    if (!nextDroppedKeys.has(chatPreviewKey) && !batchCoversPreviewKey(serverBatch, chatPreviewKey)) {
+        return null;
+    }
+
+    nextDroppedKeys.add(chatPreviewKey);
+    const replacement = latestPreviewMessage(messages);
+    const replacementKey = getMessageKey(replacement) || '';
+    return {
+        droppedKeys: nextDroppedKeys,
+        replacement,
+        syncKey: `${chatId}:${chatPreviewKey}:${[...nextDroppedKeys].sort().join('|')}:${replacementKey}`,
+    };
+}
+
+export function getPreviewUpdateSync({ chatId, chatPreviewKey, messages }) {
+    const replacement = latestPreviewMessage(messages);
+    if (!replacement || !messageHasKey(replacement, new Set([chatPreviewKey]))) {
+        return null;
+    }
+
+    return {
+        replacement,
+        syncKey: `${chatId}:${chatPreviewKey}:${previewValueKey(replacement)}`,
+    };
 }

@@ -10,7 +10,7 @@ import { useAudio, useAudioState } from '@/providers/audioprovider';
 import { useTheme } from '@/providers/themeprovider';
 import { getCachedMessageFileUri, resolveMessageFileUri } from '@/lib/chat/downloads';
 import { bubbleTint } from '@/lib/chat/messages';
-import { useMessageGestureBlockers } from '@/components/chat/messagegesturecontext';
+import { useGestureBlockers } from './gesturecontext';
 import { getAttachmentCaption, getAttachmentTitle, hasStoredFileRef } from '@veyl/shared/chat/messages';
 import { fileUri } from '@/lib/file';
 import { formatDuration } from '@veyl/shared/utils/time';
@@ -117,7 +117,7 @@ export default function AudioMessage({ msg, peerChatPK, fromPeer = false, menuIt
     const { readMessageFile } = useChat();
     const { kind, key: audioKey, play, pause, seek } = useAudio();
     const { status: audioStatus } = useAudioState();
-    const blockExternalGestures = useMessageGestureBlockers({ includeLike: true });
+    const blockExternalGestures = useGestureBlockers({ includeLike: true });
     const playScale = useSharedValue(1);
     const initialUri = fileUri(getCachedMessageFileUri(msg, peerChatPK));
     const [uri, setUri] = useState(() => initialUri);

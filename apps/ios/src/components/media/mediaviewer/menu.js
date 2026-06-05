@@ -5,7 +5,7 @@ import { Check, Download, Share2, Volume2, VolumeX } from 'lucide-react-native';
 import Animated from 'react-native-reanimated';
 import { canShareAttachmentMsg } from '@veyl/shared/chat/messages';
 import Icon from '@/components/icon';
-import { saveMessageFile, saveMessageImage } from '@/lib/chat/downloads';
+import { downloadMessageFile, downloadMessageImage } from '@/lib/chat/downloads';
 import { stageShareMedia } from '@/lib/chat/share';
 import { usePop } from '@/lib/pop';
 import { useTap } from '@/lib/tap';
@@ -35,38 +35,38 @@ function ActionIconButton({ children, disabled = false, onPress }) {
     );
 }
 
-export function ViewerMenu({ activeIsVideo, activeItem, muted, muteStyle, onToggleMuted, saveStyle, theme }) {
+export function ViewerMenu({ activeIsVideo, activeItem, muted, muteStyle, onToggleMuted, downloadStyle, theme }) {
     const router = useRouter();
-    const [saving, setSaving] = useState(false);
-    const [savedId, setSavedId] = useState(null);
+    const [downloading, setDownloading] = useState(false);
+    const [downloadedId, setDownloadedId] = useState(null);
     const mutePop = usePop({ show: activeIsVideo, from: 0.58, enterBounce: 16, exitDuration: MENU_OUT_MS });
-    const saved = !!activeItem && savedId === activeItem.id;
-    const saveDisabled = saving || saved || !activeItem;
+    const downloaded = !!activeItem && downloadedId === activeItem.id;
+    const downloadDisabled = downloading || downloaded || !activeItem;
     const shareDisabled = !canShareAttachmentMsg(activeItem?.msg);
 
     useEffect(() => {
-        setSavedId(null);
+        setDownloadedId(null);
     }, [activeItem?.id]);
 
-    const saveActiveMedia = useCallback(async () => {
-        if (saveDisabled || !activeItem) {
+    const downloadActiveMedia = useCallback(async () => {
+        if (downloadDisabled || !activeItem) {
             return;
         }
 
-        setSaving(true);
+        setDownloading(true);
         try {
             if (activeItem.type === 'img') {
-                await saveMessageImage(activeItem.msg, activeItem.peerChatPK, activeItem.readMessageFile);
+                await downloadMessageImage(activeItem.msg, activeItem.peerChatPK, activeItem.readMessageFile);
             } else {
-                await saveMessageFile(activeItem.msg, activeItem.peerChatPK, activeItem.readMessageFile);
+                await downloadMessageFile(activeItem.msg, activeItem.peerChatPK, activeItem.readMessageFile);
             }
-            setSavedId(activeItem.id);
+            setDownloadedId(activeItem.id);
         } catch (error) {
-            console.warn('viewer media save failed', error);
+            console.warn('viewer media download failed', error);
         } finally {
-            setSaving(false);
+            setDownloading(false);
         }
-    }, [activeItem, saveDisabled]);
+    }, [activeItem, downloadDisabled]);
 
     const shareActiveMedia = useCallback(() => {
         if (!activeItem?.msg || !canShareAttachmentMsg(activeItem.msg)) {
@@ -98,13 +98,13 @@ export function ViewerMenu({ activeIsVideo, activeItem, muted, muteStyle, onTogg
                     </ActionIconButton>
                 </RNAnimated.View>
             </Animated.View>
-            <Animated.View style={saveStyle}>
+            <Animated.View style={downloadStyle}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: ACTION_ROW_GAP }}>
                     <ActionIconButton onPress={shareActiveMedia} disabled={shareDisabled}>
                         <Icon icon={Share2} size={24} color={theme.foreground} />
                     </ActionIconButton>
-                    <ActionIconButton onPress={saveActiveMedia} disabled={saveDisabled}>
-                        {saving ? <ActivityIndicator color={theme.foreground} /> : <Icon icon={saved ? Check : Download} size={24} color={theme.foreground} />}
+                    <ActionIconButton onPress={downloadActiveMedia} disabled={downloadDisabled}>
+                        {downloading ? <ActivityIndicator color={theme.foreground} /> : <Icon icon={downloaded ? Check : Download} size={24} color={theme.foreground} />}
                     </ActionIconButton>
                 </View>
             </Animated.View>

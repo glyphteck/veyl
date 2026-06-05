@@ -5,7 +5,7 @@ import { Play } from 'lucide-react-native';
 import { useChat } from '@/providers/chatprovider';
 import { useMediaViewer } from '@/providers/mediaviewerprovider';
 import { useTheme } from '@/providers/themeprovider';
-import { useMessageGestureBlockers } from '@/components/chat/messagegesturecontext';
+import { useGestureBlockers } from './gesturecontext';
 import { getCachedMessageFileUri, resolveMessageFileUri } from '@/lib/chat/downloads';
 import { getMediaViewerKey } from '@/lib/chat/viewer';
 import { getCachedVideoPreviewUri, loadVideoPreviewUri } from '@/lib/chat/videopreview';
@@ -24,7 +24,7 @@ const MEDIA_ACTIVE_STYLE = { opacity: 0.01 };
 
 export default function VideoMessage({ msg, peerChatPK, fromPeer = false, menuItems, menuId, onLike, reactions = [], reactionUsers, reactionPreviewInset = 0 }) {
     const { theme } = useTheme();
-    const blockExternalGestures = useMessageGestureBlockers();
+    const blockExternalGestures = useGestureBlockers();
     const { readMessageFile, readMessagePreview, writeMessagePreview } = useChat();
     const { openMedia } = useMediaViewer();
     const msgType = msg?.t;

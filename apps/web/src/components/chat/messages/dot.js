@@ -1,9 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { MESSAGE_ROW_ANIMATION_MS } from './rowmotion';
+import { MESSAGE_ROW_ANIMATION_MS } from '../rowmotion';
 
-export default function MsgDot({ show, failed, saved = false, side = 'right' }) {
+export default function Dot({ show, failed, saved = false, side = 'right' }) {
     const [visualSaved, setVisualSaved] = useState(saved);
 
     useEffect(() => {

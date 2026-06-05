@@ -5,10 +5,10 @@ import { forwardRef, memo, useCallback, useLayoutEffect, useMemo, useRef, useSta
 import { Avatar, AvatarFallback, StaticAvatar } from '@/components/avatar';
 import { canReplyToMsg, canShareAttachmentMsg, getSystemMsgText, isSystemMsg } from '@veyl/shared/chat/messages';
 import { formatFullDateTime } from '@veyl/shared/utils/time';
-import { bubbleBg, canSaveMsgFile } from '@/lib/chat/messages';
+import { bubbleBg, canDownloadMsgFile } from '@/lib/chat/messages';
 import { cn } from '@/lib/classes';
-import { ChatMessageType } from './messages';
-import MsgDot from './msgdot';
+import { ChatMessageType } from './index';
+import Dot from './dot';
 import {
     MESSAGE_ROW_ANIMATION_MS,
     MESSAGE_ROW_EASE,
@@ -18,10 +18,10 @@ import {
     MESSAGE_ROW_EXIT_SCALE,
     MESSAGE_ROW_GAP_PX,
     afterNextPaint,
-} from './rowmotion';
+} from '../rowmotion';
 
-const MESSAGE_ACTION_ICON = 'size-4';
-const EMPTY_MESSAGE_ACTIONS = Object.freeze([]);
+const ACTION_ICON = 'size-4';
+const EMPTY_ACTIONS = Object.freeze([]);
 
 function ActionButton({ title, icon: Icon, className = 'text-muted', iconClassName = '', onClick, disabled = false }) {
     return (
@@ -38,12 +38,12 @@ function ActionButton({ title, icon: Icon, className = 'text-muted', iconClassNa
                 onClick?.();
             }}
         >
-            <Icon className={cn(MESSAGE_ACTION_ICON, iconClassName)} />
+            <Icon className={cn(ACTION_ICON, iconClassName)} />
         </button>
     );
 }
 
-function MessageActions({ actions, fromPeer }) {
+function Actions({ actions, fromPeer }) {
     if (!actions.length) {
         return null;
     }
@@ -59,7 +59,7 @@ function MessageActions({ actions, fromPeer }) {
     );
 }
 
-function makeMessageActions({
+function makeActions({
     msg,
     userSent,
     canReply,
@@ -210,7 +210,7 @@ function ReportedMessage({ fromPeer }) {
     );
 }
 
-const MessageRowShell = forwardRef(function MessageRowShell({ rowState = 'present', hasRowAbove = false, gapPx = MESSAGE_ROW_GAP_PX, className, children }, ref) {
+const RowShell = forwardRef(function RowShell({ rowState = 'present', hasRowAbove = false, gapPx = MESSAGE_ROW_GAP_PX, className, children }, ref) {
     const innerRef = useRef(null);
     const [height, setHeight] = useState(null);
     const [dropping, setDropping] = useState(false);
@@ -307,19 +307,19 @@ const MessageRowShell = forwardRef(function MessageRowShell({ rowState = 'presen
     );
 });
 
-function SystemMessageRow({ msg, rowState, hasRowAbove }) {
+function SystemRow({ msg, rowState, hasRowAbove }) {
     return (
-        <MessageRowShell rowState={rowState} hasRowAbove={hasRowAbove} gapPx={4} className="flex w-full shrink-0 items-center">
+        <RowShell rowState={rowState} hasRowAbove={hasRowAbove} gapPx={4} className="flex w-full shrink-0 items-center">
             <div className="mx-auto max-w-[76%] px-2 py-0.5 text-center text-xs font-black leading-4 text-muted">{getSystemMsgText(msg)}</div>
-        </MessageRowShell>
+        </RowShell>
     );
 }
 
-function MessageRow(props) {
-    return isSystemMsg(props.msg) ? <SystemMessageRow msg={props.msg} rowState={props.rowState} hasRowAbove={props.hasRowAbove} /> : <InteractiveMessageRow {...props} />;
+function Row(props) {
+    return isSystemMsg(props.msg) ? <SystemRow msg={props.msg} rowState={props.rowState} hasRowAbove={props.hasRowAbove} /> : <InteractiveRow {...props} />;
 }
 
-function InteractiveMessageRow({
+function InteractiveRow({
     msg,
     rowState,
     hasRowAbove,
@@ -334,7 +334,7 @@ function InteractiveMessageRow({
     receiptPeer,
     receiptTime,
     isReported,
-    isSaving,
+    isDownloading,
     isSavedForever,
     saveForeverTargetSaved,
     isSavingForever,
@@ -356,7 +356,7 @@ function InteractiveMessageRow({
 }) {
     const actionSavedForever = isSavingForever && typeof saveForeverTargetSaved === 'boolean' ? saveForeverTargetSaved : isSavedForever;
     const dotSavedForever = isSavedForever || saveForeverTargetSaved === true;
-    const showMsgDot = (userSent && (msg.pending || msg.failed)) || dotSavedForever;
+    const showDot = (userSent && (msg.pending || msg.failed)) || dotSavedForever;
     const dropped = rowState === 'leaving';
     const rowNodeRef = useRef(null);
     const exitTargetRef = useRef(null);
@@ -365,7 +365,7 @@ function InteractiveMessageRow({
     const canReport = fromPeer && !!peerProfile?.uid && msg?.t !== 'req';
     const actions = useMemo(
         () =>
-            makeMessageActions({
+            makeActions({
                 msg,
                 userSent,
                 canReply: canReplyToMsg(msg),
@@ -374,11 +374,11 @@ function InteractiveMessageRow({
                 canSaveForever: canSaveForever && !isReported,
                 savedForever: actionSavedForever,
                 savingForever: isSavingForever,
-                canDownload: canSaveMsgFile(msg, peerChatPK),
+                canDownload: canDownloadMsgFile(msg, peerChatPK),
                 canShare: canShareAttachmentMsg(msg),
                 canDelete: !!msg?.id && !String(msg.id).startsWith('local:'),
                 canReport,
-                downloading: isSaving,
+                downloading: isDownloading,
                 onReply,
                 onEdit,
                 onRetry: () => onRetry(msg),
@@ -388,7 +388,7 @@ function InteractiveMessageRow({
                 onDelete: () => onDelete(msg),
                 onReport: () => onReport(msg),
             }),
-        [actionSavedForever, canReport, canSaveForever, isReported, isSaving, isSavingForever, msg, onDelete, onDownload, onEdit, onReply, onReport, onRetry, onSaveForever, onShare, peerChatPK, userSent]
+        [actionSavedForever, canReport, canSaveForever, isDownloading, isReported, isSavingForever, msg, onDelete, onDownload, onEdit, onReply, onReport, onRetry, onSaveForever, onShare, peerChatPK, userSent]
     );
     const reactions = useMemo(() => (isReported ? [] : getOptimisticReactions(msg)), [getOptimisticReactions, isReported, msg]);
     const messageTime = useMemo(() => formatFullDateTime(msg.ts || Date.now()), [msg.ts]);
@@ -409,7 +409,7 @@ function InteractiveMessageRow({
     const handlePointerUp = useCallback((event) => onPointerUp(event, msg), [msg, onPointerUp]);
     const handlePay = useCallback(() => onPay(msg), [msg, onPay]);
     const handleReplyPress = useCallback(() => onJumpToReply(msg.r), [msg.r, onJumpToReply]);
-    const visibleActions = dropped ? EMPTY_MESSAGE_ACTIONS : actions;
+    const visibleActions = dropped ? EMPTY_ACTIONS : actions;
     const exitOuterTransform = visualExiting ? `translate3d(${exitTranslate}px, 0, 0)` : 'translate3d(0, 0, 0)';
     const exitInnerTransform = visualExiting ? `scale(${MESSAGE_ROW_EXIT_SCALE})` : 'scale(1)';
 
@@ -437,7 +437,7 @@ function InteractiveMessageRow({
     }, [dropped]);
 
     return (
-        <MessageRowShell ref={setRowRef} rowState={rowState} hasRowAbove={hasRowAbove} className={cn(!dropped && 'group', 'flex w-full shrink-0 flex-col', userSent ? 'items-end' : 'items-start')}>
+        <RowShell ref={setRowRef} rowState={rowState} hasRowAbove={hasRowAbove} className={cn(!dropped && 'group', 'flex w-full shrink-0 flex-col', userSent ? 'items-end' : 'items-start')}>
             <div className={`flex w-full items-center gap-2 flex-row ${userSent ? 'justify-end' : 'justify-start'}`}>
                 <div
                     data-message-exit-target
@@ -461,10 +461,10 @@ function InteractiveMessageRow({
                         }}
                     >
                         <div className="flex min-w-0 items-center">
-                            {fromPeer ? <MsgDot show={showMsgDot} failed={msg.failed} saved={dotSavedForever} side="left" /> : null}
+                            {fromPeer ? <Dot show={showDot} failed={msg.failed} saved={dotSavedForever} side="left" /> : null}
                             {isReported ? (
                                 <>
-                                    <MessageActions actions={visibleActions} fromPeer={fromPeer} />
+                                    <Actions actions={visibleActions} fromPeer={fromPeer} />
                                     <ReportedMessage fromPeer={fromPeer} />
                                 </>
                             ) : (
@@ -481,18 +481,18 @@ function InteractiveMessageRow({
                                         onReplyPress={handleReplyPress}
                                         reactions={reactions}
                                         reactionUsers={reactionUsers}
-                                        actionSlot={<MessageActions actions={visibleActions} fromPeer={fromPeer} />}
+                                        actionSlot={<Actions actions={visibleActions} fromPeer={fromPeer} />}
                                     />
                                 </div>
                             )}
-                            {!fromPeer ? <MsgDot show={showMsgDot} failed={msg.failed} saved={dotSavedForever} side="right" /> : null}
+                            {!fromPeer ? <Dot show={showDot} failed={msg.failed} saved={dotSavedForever} side="right" /> : null}
                         </div>
                         <MessageMeta time={messageTime} receiptTime={receiptTime} receiptPeer={receiptPeer} userSent={userSent} />
                     </div>
                 </div>
             </div>
-        </MessageRowShell>
+        </RowShell>
     );
 }
 
-export const MemoMessageRow = memo(MessageRow);
+export const MemoRow = memo(Row);
