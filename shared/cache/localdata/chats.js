@@ -1,5 +1,6 @@
 'use client';
 
+import { LOCAL_CHAT_CACHE_MAX_ITEMS } from '../../config.js';
 import { timestampMs } from '../../utils/time.js';
 import { isCurrentChatCacheEntry } from '../../chat/chats.js';
 import { collectMediaIds } from './media.js';
@@ -60,6 +61,7 @@ function serializeChat(chat) {
         lastMsg: serializeMsg(chat.lastMsg),
         readMs: timestampMs(chat.readMs, null, { positive: true }) || null,
         ts: timestampMs(chat.ts, null, { positive: true }) || 0,
+        lastUsedAt: Date.now(),
         unseen: !!chat.unseen,
     };
 }
@@ -81,8 +83,47 @@ function reviveChat(chat) {
         lastMsg,
         readMs: timestampMs(chat.readMs, null, { positive: true }),
         ts: timestampMs(chat.ts, null, { positive: true }) || 0,
+        lastUsedAt: timestampMs(chat.lastUsedAt, null, { positive: true }) || 0,
         unseen: !!chat.unseen,
     };
+}
+
+function chatRecencyMs(chat) {
+    return timestampMs(chat?.ts, null, { positive: true }) || timestampMs(chat?.lastUsedAt, null, { positive: true }) || 0;
+}
+
+function compareCachedChats(a, b) {
+    const delta = chatRecencyMs(b) - chatRecencyMs(a);
+    if (delta !== 0) return delta;
+    return String(a?.id || '').localeCompare(String(b?.id || ''));
+}
+
+function cappedCachedChats(chats) {
+    return (chats || []).slice().sort(compareCachedChats).slice(0, LOCAL_CHAT_CACHE_MAX_ITEMS);
+}
+
+function chatMap(chats) {
+    const next = {};
+    for (const chat of cappedCachedChats(chats)) {
+        if (chat?.id) {
+            next[chat.id] = chat;
+        }
+    }
+    return next;
+}
+
+function collectRemovedChatMediaIds(currentPayload, nextById) {
+    const mediaIds = [];
+    const chatsById = currentPayload?.chatsById;
+    if (!isObject(chatsById)) {
+        return mediaIds;
+    }
+    for (const [chatId, chat] of Object.entries(chatsById)) {
+        if (!nextById?.[chatId] && chat?.lastMsg) {
+            mediaIds.push(...collectMediaIds(currentPayload, [chat.lastMsg]));
+        }
+    }
+    return mediaIds;
 }
 
 export function readCachedChats(cache) {
@@ -101,11 +142,14 @@ export function readCachedChats(cache) {
             return chat;
         })
         .filter(Boolean)
-        .sort((a, b) => (b.ts || 0) - (a.ts || 0));
-    if (invalidIds.length) {
-        dropCachedChats(cache, invalidIds, payload);
+        .sort(compareCachedChats);
+    const cappedChats = cappedCachedChats(chats);
+    const cappedIds = new Set(cappedChats.map((chat) => chat.id));
+    const dropIds = [...invalidIds, ...chats.map((chat) => chat.id).filter((id) => !cappedIds.has(id))];
+    if (dropIds.length) {
+        dropCachedChats(cache, dropIds, payload);
     }
-    return chats;
+    return cappedChats;
 }
 
 export function writeCachedChats(cache, chats) {
@@ -113,18 +157,21 @@ export function writeCachedChats(cache, chats) {
         return;
     }
 
-    void cache.patch((payload) => {
-        const next = {};
-        for (const chat of chats) {
-            const item = serializeChat(chat);
-            if (item?.id && item.ts && isCurrentChatCacheEntry(item)) {
-                next[item.id] = item;
-            }
+    const items = [];
+    for (const chat of chats) {
+        const item = serializeChat(chat);
+        if (item?.id && item.ts && isCurrentChatCacheEntry(item)) {
+            items.push(item);
         }
+    }
+    const next = chatMap(items);
+    const mediaIds = collectRemovedChatMediaIds(cache.read?.(), next);
+
+    void cache.patch((payload) => {
         payload.chatsById = next;
         payload.chatsSavedAt = Date.now();
         return payload;
-    });
+    }).then(() => cache.removeMediaIds?.(mediaIds));
 }
 
 function dropCachedChats(cache, chatIds, currentPayload = null) {

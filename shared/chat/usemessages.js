@@ -9,6 +9,7 @@ import { getMessageKey, getMessageOrderMs, mergeMessages } from './state.js';
 import { canShowMsg, deriveMessageReactions, getDisplayMessages, getLatestOwnReadReceiptTarget, getLatestReadReceiptTarget, getSeenHiddenMessages, holdVisibleMsg, isControlMsg } from './messages.js';
 import { resolveRenderableMessages } from './resolve.js';
 import { VISITED_CHAT_PREFETCH_OLDER_BATCHES } from './messages/session/config.js';
+import { timestampMs } from '../utils/time.js';
 
 function isDenied(error) {
     return error?.code === 'permission-denied';
@@ -34,6 +35,40 @@ function batchCoversKey(batch, key) {
 
     const ms = getMessageOrderMs({ cid: key });
     return Number.isFinite(ms) && Number.isFinite(batch.firstMs) && Number.isFinite(batch.lastMs) && ms >= batch.firstMs && ms <= batch.lastMs;
+}
+
+function messagePageMarker(message) {
+    if (!message?.id || String(message.id).startsWith('local:') || !message?.ts) {
+        return null;
+    }
+    return { id: message.id, ts: message.ts };
+}
+
+function firstMessagePageMarker(...groups) {
+    let first = null;
+    let firstMs = Infinity;
+    for (const messages of groups) {
+        for (const message of messages || []) {
+            const marker = messagePageMarker(message);
+            const ms = timestampMs(marker?.ts, null);
+            if (!marker || ms == null) {
+                continue;
+            }
+            if (ms < firstMs || (ms === firstMs && marker.id < first.id)) {
+                first = marker;
+                firstMs = ms;
+            }
+        }
+    }
+    return first;
+}
+
+function pageMarkerKey(marker) {
+    if (!marker?.id) {
+        return '';
+    }
+    const ms = timestampMs(marker.ts, null);
+    return `${marker.id}:${Number.isFinite(ms) ? ms : ''}`;
 }
 
 export function createUseChatMessages({ useChat, useUser, useVault, appState, pageSize = MSG_BATCH_SIZE }) {
@@ -68,6 +103,7 @@ export function createUseChatMessages({ useChat, useUser, useVault, appState, pa
             adoptConfirmedMessages,
             readMessageFile,
             loadOlderMessages,
+            watchMessageWindow,
         } = useChat();
         const { chatPK } = useUser();
         const { chatPrivateKey, localCache } = useVault();
@@ -86,9 +122,10 @@ export function createUseChatMessages({ useChat, useUser, useVault, appState, pa
         const [serverBatch, setServerBatch] = useState(() => initialSeed?.serverBatch ?? null);
         const [stateScope, setStateScope] = useState(scopeKey);
 
-        const oldestRef = useRef(initialSeed?.oldest ?? null);
+        const olderThanRef = useRef(initialSeed?.olderThan ?? null);
         const olderLoadedRef = useRef(!!initialSeed?.olderLoaded);
         const hasOlderRef = useRef(initialSeed?.hasOlder ?? false);
+        const olderRef = useRef(initialSeed?.older ?? []);
         const liveRef = useRef(initialSeed?.live ?? []);
         const loadingOlderRef = useRef(false);
         const runRef = useRef(0);
@@ -103,6 +140,8 @@ export function createUseChatMessages({ useChat, useUser, useVault, appState, pa
         const visibleMessageKeysRef = useRef(new Set());
         const deletedMessageKeysRef = useRef(new Set());
         const lastPreviewDropSyncRef = useRef('');
+        const loadedWindowMarkerRef = useRef(null);
+        const messageWindowKeyRef = useRef('');
 
         if (scopeRef.current !== scopeKey) {
             scopeRef.current = scopeKey;
@@ -110,6 +149,8 @@ export function createUseChatMessages({ useChat, useUser, useVault, appState, pa
             visibleMessageKeysRef.current = new Set();
             deletedMessageKeysRef.current = new Set();
             lastPreviewDropSyncRef.current = '';
+            loadedWindowMarkerRef.current = null;
+            messageWindowKeyRef.current = '';
         }
         const chatExists = !!(chatId && hasChat(chatId));
         const chatLastMsgKey = chatId && typeof getChatLastMsgKey === 'function' ? getChatLastMsgKey(chatId) : null;
@@ -135,6 +176,10 @@ export function createUseChatMessages({ useChat, useUser, useVault, appState, pa
         }, [appState]);
 
         useEffect(() => {
+            olderRef.current = older;
+        }, [older]);
+
+        useEffect(() => {
             liveRef.current = live;
         }, [live]);
 
@@ -151,8 +196,9 @@ export function createUseChatMessages({ useChat, useUser, useVault, appState, pa
             setExists(nextInitial?.exists ?? false);
             setServerBatch(nextInitial?.serverBatch ?? null);
             setStateScope(scopeKey);
-            oldestRef.current = nextInitial?.oldest ?? null;
+            olderThanRef.current = nextInitial?.olderThan ?? null;
             olderLoadedRef.current = !!nextInitial?.olderLoaded;
+            olderRef.current = nextInitial?.older ?? [];
             liveRef.current = nextInitial?.live ?? [];
             loadingOlderRef.current = false;
             applyBatchRef.current += 1;
@@ -161,6 +207,8 @@ export function createUseChatMessages({ useChat, useUser, useVault, appState, pa
             visibleMessageKeysRef.current = new Set();
             deletedMessageKeysRef.current = new Set();
             lastPreviewDropSyncRef.current = '';
+            loadedWindowMarkerRef.current = null;
+            messageWindowKeyRef.current = '';
             olderPrefetchRef.current = { scopeKey, count: 0, queued: 0, exhausted: false };
         }, [chatId, chatPK, chatPrivateKey, getMessageView, getSharedMessageBatch, peerChatPK, scopeKey]);
 
@@ -175,6 +223,64 @@ export function createUseChatMessages({ useChat, useUser, useVault, appState, pa
             [releaseMessageBatch]
         );
 
+        const dropDeletedMessages = useCallback(
+            (removedKeys, snapshotKeys, fromMs, cidById) => {
+                const explicitKeys = keySet(removedKeys);
+                const currentKeys = snapshotKeys ? keySet(snapshotKeys) : null;
+                const currentCidById = cidById instanceof Map ? cidById : null;
+                if (!explicitKeys.size && !currentKeys && !currentCidById) {
+                    return;
+                }
+
+                const deletedKeys = keySet(deletedMessageKeysRef.current);
+                const deletedKeyCount = deletedKeys.size;
+                for (const key of explicitKeys) {
+                    deletedKeys.add(key);
+                }
+                const deletedKeysChanged = deletedKeys.size !== deletedKeyCount;
+
+                const drop = (messages) => {
+                    let dropped = false;
+                    const next = [];
+                    for (const message of messages || []) {
+                        const isServerMessage = !!message?.id && !String(message.id).startsWith('local:');
+                        const ms = timestampMs(message?.ts, null);
+                        const inSnapshotRange = isServerMessage && Number.isFinite(ms) && Number.isFinite(fromMs) && ms >= fromMs;
+                        const explicitlyRemoved = messageHasKey(message, explicitKeys);
+                        const missingFromSnapshot = currentKeys && inSnapshotRange && !messageHasKey(message, currentKeys);
+                        const sourceCid = currentCidById && inSnapshotRange ? currentCidById.get(message.id) : null;
+                        const sourceChanged = !!(sourceCid && message?.cid && sourceCid !== message.cid);
+                        if (explicitlyRemoved || missingFromSnapshot || sourceChanged) {
+                            dropped = true;
+                            addMessageKeys(deletedKeys, message);
+                            dropMessageMedia(localCache, message);
+                        } else {
+                            next.push(message);
+                        }
+                    }
+                    return { messages: dropped ? next : messages, dropped };
+                };
+
+                const olderDrop = drop(olderRef.current);
+                const liveDrop = drop(liveRef.current);
+                if (!deletedKeysChanged && !olderDrop.dropped && !liveDrop.dropped) {
+                    return;
+                }
+
+                deletedMessageKeysRef.current = deletedKeys;
+                if (olderDrop.dropped) {
+                    olderRef.current = olderDrop.messages;
+                    setOlder(olderDrop.messages);
+                }
+                if (liveDrop.dropped) {
+                    liveRef.current = liveDrop.messages;
+                    setLive(liveDrop.messages);
+                }
+                setServerBatch((prev) => (prev ? { ...prev, deletedKeys } : prev));
+            },
+            [localCache]
+        );
+
         useEffect(() => {
             rememberMessageView?.(
                 stateScope,
@@ -185,7 +291,7 @@ export function createUseChatMessages({ useChat, useUser, useVault, appState, pa
                     ready,
                     exists,
                     serverBatch,
-                    oldest: oldestRef.current,
+                    olderThan: olderThanRef.current,
                     olderLoaded: olderLoadedRef.current,
                 })
             );
@@ -207,7 +313,7 @@ export function createUseChatMessages({ useChat, useUser, useVault, appState, pa
                     setExists(false);
                     setServerBatch({ empty: true });
                     setReady(true);
-                    oldestRef.current = null;
+                    olderThanRef.current = null;
                     olderLoadedRef.current = false;
                     liveRef.current = [];
                     loadingOlderRef.current = false;
@@ -221,7 +327,7 @@ export function createUseChatMessages({ useChat, useUser, useVault, appState, pa
                 setExists(false);
                 setServerBatch(null);
                 setReady(false);
-                oldestRef.current = null;
+                olderThanRef.current = null;
                 olderLoadedRef.current = false;
                 liveRef.current = [];
                 loadingOlderRef.current = false;
@@ -254,7 +360,7 @@ export function createUseChatMessages({ useChat, useUser, useVault, appState, pa
                     setExists(false);
                     setServerBatch(null);
                     setReady(true);
-                    oldestRef.current = null;
+                    olderThanRef.current = null;
                     olderLoadedRef.current = false;
                     liveRef.current = [];
                     return;
@@ -345,11 +451,11 @@ export function createUseChatMessages({ useChat, useUser, useVault, appState, pa
                             setOlder((prev) => mergeMessages(prev, overflow));
                             if (!olderLoadedRef.current) {
                                 olderLoadedRef.current = true;
-                                oldestRef.current = msgBatch.carry ?? msgBatch.before;
+                                olderThanRef.current = msgBatch.carry ?? msgBatch.olderThan;
                                 setHasOlder(msgBatch.hasMore);
                             }
                         } else if (!olderLoadedRef.current) {
-                            oldestRef.current = msgBatch.before;
+                            olderThanRef.current = msgBatch.olderThan;
                             setHasOlder(msgBatch.hasOlder);
                         }
 
@@ -419,7 +525,7 @@ export function createUseChatMessages({ useChat, useUser, useVault, appState, pa
         }, [chatExists, chatId, chatPK, chatPrivateKey, ensureMessageBatch, isActive, pageSize, peerChatPK, chatLastMsgKey]);
 
         const loadOlder = useCallback(async () => {
-            if (stateScope !== scopeKey || !chatId || !chatExists || !chatPK || !chatPrivateKey || !peerChatPK || !hasOlderRef.current || loadingOlderRef.current || !oldestRef.current) {
+            if (stateScope !== scopeKey || !chatId || !chatExists || !chatPK || !chatPrivateKey || !peerChatPK || !hasOlderRef.current || loadingOlderRef.current || !olderThanRef.current) {
                 return false;
             }
 
@@ -427,15 +533,15 @@ export function createUseChatMessages({ useChat, useUser, useVault, appState, pa
             setLoadingOlder(true);
             const runId = runRef.current;
             try {
-                const previousCursor = oldestRef.current;
+                const previousOlderThan = olderThanRef.current;
                 const currentChat = (chats || []).find((chatItem) => chatItem?.id === chatId);
-                const page = await loadOlderMessages(chatId, chatPK, chatPrivateKey, peerChatPK, oldestRef.current, pageSize, { actors: currentChat?.actors });
+                const page = await loadOlderMessages(chatId, chatPK, chatPrivateKey, peerChatPK, olderThanRef.current, pageSize, { actors: currentChat?.actors });
                 if (runId !== runRef.current) {
                     return false;
                 }
-                const beforeChanged = !!page.nextBefore && page.nextBefore?.id !== previousCursor?.id;
-                if (page.nextBefore) {
-                    oldestRef.current = page.nextBefore;
+                const olderThanChanged = !!page.nextOlderThan && page.nextOlderThan?.id !== previousOlderThan?.id;
+                if (page.nextOlderThan) {
+                    olderThanRef.current = page.nextOlderThan;
                 }
                 olderLoadedRef.current = true;
                 if (page.messages.length) {
@@ -465,7 +571,7 @@ export function createUseChatMessages({ useChat, useUser, useVault, appState, pa
                 }
                 hasOlderRef.current = page.hasMore;
                 setHasOlder(page.hasMore);
-                return page.messages.length > 0 || beforeChanged;
+                return page.messages.length > 0 || olderThanChanged;
             } catch (error) {
                 if (!isDenied(error)) {
                     console.warn('Older messages load failed', chatId, error);
@@ -480,7 +586,7 @@ export function createUseChatMessages({ useChat, useUser, useVault, appState, pa
         }, [chatExists, chatId, chatPK, chatPrivateKey, chats, loadOlderMessages, localCache, pageSize, peerChatPK, readMessageFile, scopeKey, stateScope]);
 
         useEffect(() => {
-            if (stateScope !== scopeKey || !chatId || !ready || !exists || !hasOlder || !oldestRef.current || typeof queueMessagePreload !== 'function') {
+            if (stateScope !== scopeKey || !chatId || !ready || !exists || !hasOlder || !olderThanRef.current || typeof queueMessagePreload !== 'function') {
                 return undefined;
             }
 
@@ -503,7 +609,7 @@ export function createUseChatMessages({ useChat, useUser, useVault, appState, pa
                     key: `older:${scopeKey}:${batchNumber}`,
                     async run() {
                         const active = olderPrefetchRef.current;
-                        if (active.scopeKey !== scopeKey || active.exhausted || !hasOlderRef.current || !oldestRef.current) {
+                        if (active.scopeKey !== scopeKey || active.exhausted || !hasOlderRef.current || !olderThanRef.current) {
                             return false;
                         }
                         if (loadingOlderRef.current) {
@@ -517,7 +623,7 @@ export function createUseChatMessages({ useChat, useUser, useVault, appState, pa
 
                         if (loaded) {
                             olderPrefetchRef.current.count += 1;
-                        } else if (!hasOlderRef.current || !oldestRef.current) {
+                        } else if (!hasOlderRef.current || !olderThanRef.current) {
                             olderPrefetchRef.current.exhausted = true;
                         }
                         return loaded;
@@ -568,6 +674,8 @@ export function createUseChatMessages({ useChat, useUser, useVault, appState, pa
         const activeReady = stateMatchesScope ? ready : initialSeed?.ready ?? !chatId;
         const activeExists = stateMatchesScope ? exists : initialSeed?.exists ?? false;
         const activeServerBatch = stateMatchesScope ? serverBatch : initialSeed?.serverBatch ?? null;
+        const loadedWindowMarker = useMemo(() => (activeOlder.length ? firstMessagePageMarker(activeOlder, activeLive) : null), [activeOlder, activeLive]);
+        const loadedWindowKey = useMemo(() => pageMarkerKey(loadedWindowMarker), [loadedWindowMarker]);
 
         const liveKeys = useMemo(() => new Set(activeLive.map(getMessageKey).filter(Boolean)), [activeLive]);
         const cleanOlder = useMemo(() => {
@@ -602,6 +710,43 @@ export function createUseChatMessages({ useChat, useUser, useVault, appState, pa
             }
             visibleMessageKeysRef.current = keys;
         }, [messages]);
+
+        useEffect(() => {
+            loadedWindowMarkerRef.current = loadedWindowMarker;
+        }, [loadedWindowMarker]);
+
+        useEffect(() => {
+            const loadedWindowMarker = loadedWindowMarkerRef.current;
+            if (!chatId || !activeReady || !activeExists || !isActive || !loadedWindowMarker || !loadedWindowKey || typeof watchMessageWindow !== 'function') {
+                messageWindowKeyRef.current = '';
+                return undefined;
+            }
+
+            const watchKey = loadedWindowKey;
+            const fromMs = timestampMs(loadedWindowMarker.ts, null);
+            messageWindowKeyRef.current = watchKey;
+            const unsubscribe = watchMessageWindow(
+                chatId,
+                loadedWindowMarker,
+                ({ keys, removedKeys, cidById } = {}) => {
+                    if (messageWindowKeyRef.current !== watchKey) {
+                        return;
+                    }
+                    dropDeletedMessages(removedKeys, keys, fromMs, cidById);
+                },
+                (error) => {
+                    if (!isDenied(error)) {
+                        console.warn('Message window listener error', chatId, error);
+                    }
+                }
+            );
+            return () => {
+                if (messageWindowKeyRef.current === watchKey) {
+                    messageWindowKeyRef.current = '';
+                }
+                unsubscribe?.();
+            };
+        }, [activeExists, activeReady, chatId, dropDeletedMessages, isActive, loadedWindowKey, watchMessageWindow]);
 
         useEffect(() => {
             if (!chatId || !activeReady || !activeExists || !chatLastMsgKey || typeof syncChatPreviewDrop !== 'function') {

@@ -50,13 +50,6 @@ function addMessageRecordKeys(keys, record) {
     }
 }
 
-function getBeforeMillis(before) {
-    if (Number.isFinite(before?.ms)) {
-        return before.ms;
-    }
-    return timestampMs(before, null) ?? timestampMs(before?.ts, null);
-}
-
 function normalizeDecryptedMsg(msgData, message) {
     if (!message || typeof message !== 'object') {
         return null;
@@ -234,14 +227,13 @@ function recordIndexById(records, id) {
     return (records || []).findIndex((record) => record.id === id);
 }
 
-function messageBefore(record) {
+function olderThanMarker(record) {
     if (!record) {
         return null;
     }
     return {
         id: record.id,
-        token: record.pageToken ?? null,
-        ms: getBeforeMillis(record?.ts),
+        ts: record.ts ?? null,
     };
 }
 
@@ -285,7 +277,7 @@ export function listenToLatestMsgs(cloud, chatId, userChatPK, userPrivKey, peerC
                 if (info.fromCache) {
                     onUpdate({
                         messages: [],
-                        before: null,
+                        olderThan: null,
                         carry: null,
                         hasOlder: false,
                         hasMore: false,
@@ -336,7 +328,7 @@ export function listenToLatestMsgs(cloud, chatId, userChatPK, userPrivKey, peerC
                 const entries = readableWindow.entries;
                 const visibleRecords = entries.map((entry) => entry.record);
                 const visibleStart = recordIndexById(active, visibleRecords[0]?.id);
-                const carry = visibleStart > 0 ? messageBefore(active[visibleStart - 1]) : null;
+                const carry = visibleStart > 0 ? olderThanMarker(active[visibleStart - 1]) : null;
                 const queryFilled = records.length >= limitCount;
                 const queryStartMs = timestampMs(active[0]?.ts, null);
                 const deletedKeys = new Set();
@@ -353,13 +345,13 @@ export function listenToLatestMsgs(cloud, chatId, userChatPK, userPrivKey, peerC
                 }
                 pruneMessageCache(decryptedCache, visibleRecords);
                 const messages = entries.map((entry) => entry.message);
-                const before = messageBefore(visibleRecords[0] ?? active[0] ?? records[0] ?? null);
+                const olderThan = olderThanMarker(visibleRecords[0] ?? active[0] ?? records[0] ?? null);
                 lastVisibleRecords = visibleRecords.map((record) => ({ id: record.id, data: record }));
                 lastExpiredKeys = expiredKeysKey;
                 lastDeletedKeys = deletedKeysKey;
                 onUpdate({
                     messages,
-                    before,
+                    olderThan,
                     carry,
                     hasOlder: visibleStart > 0 || queryFilled,
                     hasMore: visibleStart > 1 || queryFilled,
@@ -380,11 +372,11 @@ export function listenToLatestMsgs(cloud, chatId, userChatPK, userPrivKey, peerC
     };
 }
 
-export async function loadOlderMsgs(cloud, chatId, userChatPK, userPrivKey, peerChatPK, before, pageSize, options = {}) {
-    if (!before) {
+export async function loadOlderMsgs(cloud, chatId, userChatPK, userPrivKey, peerChatPK, olderThan, pageSize, options = {}) {
+    if (!olderThan) {
         return {
             messages: [],
-            nextBefore: null,
+            nextOlderThan: null,
             hasMore: false,
         };
     }
@@ -392,7 +384,7 @@ export async function loadOlderMsgs(cloud, chatId, userChatPK, userPrivKey, peer
     try {
         const queryLimit = messageQueryLimit(pageSize);
         const maxQueryLimit = messageQueryMax(pageSize);
-        const firstPage = await cloud.chat.messages.list(chatId, { before, count: queryLimit });
+        const firstPage = await cloud.chat.messages.list(chatId, { olderThan, count: queryLimit });
         let rawRecords = firstPage.records || [];
         let filledQuery = !!firstPage.hasMore;
         const expiredKeys = new Set();
@@ -403,7 +395,7 @@ export async function loadOlderMsgs(cloud, chatId, userChatPK, userPrivKey, peer
         while (readableWindow.count < queryLimit && rawRecords.length < maxQueryLimit && filledQuery && rawRecords[0]) {
             const nextLimit = Math.min(queryLimit, maxQueryLimit - rawRecords.length);
             const nextPage = await cloud.chat.messages.list(chatId, {
-                before: messageBefore(rawRecords[0]),
+                olderThan: olderThanMarker(rawRecords[0]),
                 count: nextLimit,
             });
             const nextRecords = nextPage.records || [];
@@ -423,17 +415,17 @@ export async function loadOlderMsgs(cloud, chatId, userChatPK, userPrivKey, peer
         const visibleRecords = entries.map((entry) => entry.record);
         const visibleStart = recordIndexById(olderRecords, visibleRecords[0]?.id);
         const messages = entries.map((entry) => entry.message);
-        const nextBefore = messageBefore(visibleRecords[0] ?? olderRecords[0] ?? rawRecords[0] ?? null);
+        const nextOlderThan = olderThanMarker(visibleRecords[0] ?? olderRecords[0] ?? rawRecords[0] ?? null);
 
         return {
             messages,
-            nextBefore,
+            nextOlderThan,
             hasMore: visibleStart > 0 || filledQuery,
         };
     } catch {
         return {
             messages: [],
-            nextBefore: null,
+            nextOlderThan: null,
             hasMore: false,
         };
     }

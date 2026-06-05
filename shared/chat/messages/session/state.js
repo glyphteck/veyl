@@ -25,7 +25,7 @@ export function makeMessageSessionSnapshot(entry) {
     return {
         chatId: entry.chatId,
         messages: entry.messages || [],
-        before: entry.before ?? null,
+        olderThan: entry.olderThan ?? null,
         carry: entry.carry ?? null,
         hasOlder: !!entry.hasOlder,
         hasMore: !!entry.hasMore,

@@ -4,7 +4,7 @@ import { Buffer } from 'buffer';
 import { bytesView, imageExtension } from '@veyl/shared/utils/image';
 import { cleanAvatarUsername, compareRememberedAvatars, isRememberedAvatar, makeRememberedAvatar, readAvatarVersion, readRememberedAvatar } from '@veyl/shared/avatar';
 import { uniqueValues } from '@veyl/shared/utils/array';
-import { AVATAR_IMAGE_MAX_BYTES } from '@veyl/shared/config';
+import { AVATAR_IMAGE_MAX_BYTES, LOCAL_AVATAR_CACHE_MAX_AGE_MS, LOCAL_AVATAR_CACHE_MAX_BYTES, LOCAL_AVATAR_CACHE_MAX_ITEMS, LOCAL_AVATAR_CACHE_TOUCH_MIN_MS } from '@veyl/shared/config';
 import { safeFilePart } from '@veyl/shared/utils/filename';
 import { ensureDirectory } from '@/lib/file';
 
@@ -57,7 +57,15 @@ async function readMeta(uid) {
 function avatarMeta(meta, uid) {
     const version = readAvatarVersion(meta?.version);
     const uri = typeof meta?.uri === 'string' ? meta.uri : '';
-    return meta?.uid === uid && version != null && uri ? { uid, username: cleanAvatarUsername(meta?.username), version, uri, updatedAt: Date.now() } : null;
+    return meta?.uid === uid && version != null && uri ? { uid, username: cleanAvatarUsername(meta?.username), version, uri, lastUsedAt: Date.now() } : null;
+}
+
+function lastUsedAt(meta) {
+    return Number(meta?.lastUsedAt) || 0;
+}
+
+function isExpiredMeta(meta, now = Date.now()) {
+    return !isRememberedAvatar(meta) && now - lastUsedAt(meta) > LOCAL_AVATAR_CACHE_MAX_AGE_MS;
 }
 
 function rememberedMeta(meta) {
@@ -90,13 +98,78 @@ async function rememberedUidsFromKeys(keys) {
     return pairs.map(rememberedUidFromPair).filter(Boolean);
 }
 
+async function pruneAvatarCache() {
+    const now = Date.now();
+    const keys = await metaKeys();
+    if (!keys.length) {
+        return;
+    }
+
+    const pairs = await AsyncStorage.multiGet(keys).catch(() => []);
+    const entries = [];
+    let totalBytes = 0;
+    let count = 0;
+
+    for (const [key, raw] of pairs) {
+        let meta = null;
+        try {
+            meta = JSON.parse(raw || 'null');
+        } catch {}
+        if (isRememberedAvatar(meta)) {
+            continue;
+        }
+        const uid = key.slice(META_KEY_PREFIX.length);
+        const uri = typeof meta?.uri === 'string' ? meta.uri : '';
+        const version = readAvatarVersion(meta?.version);
+        const info = uri ? await FileSystem.getInfoAsync(uri).catch(() => null) : null;
+        const valid = meta?.uid === uid && version != null && info?.exists && Number.isFinite(info.size) && info.size > 0 && info.size <= AVATAR_IMAGE_MAX_BYTES && !isExpiredMeta(meta, now);
+        if (!valid) {
+            entries.push({ key, uid, remove: true });
+            continue;
+        }
+        count += 1;
+        totalBytes += info.size;
+        entries.push({ key, uid, size: info.size, lastUsedAt: lastUsedAt(meta), remove: false });
+    }
+
+    entries.sort((a, b) => {
+        const delta = (Number(a.lastUsedAt) || 0) - (Number(b.lastUsedAt) || 0);
+        if (delta !== 0) return delta;
+        return String(a.key || '').localeCompare(String(b.key || ''));
+    });
+
+    const removeKeys = [];
+    const removeUids = [];
+    for (const entry of entries) {
+        if (entry.remove) {
+            removeKeys.push(entry.key);
+            removeUids.push(entry.uid);
+            continue;
+        }
+        if (count <= LOCAL_AVATAR_CACHE_MAX_ITEMS && totalBytes <= LOCAL_AVATAR_CACHE_MAX_BYTES) {
+            continue;
+        }
+        removeKeys.push(entry.key);
+        removeUids.push(entry.uid);
+        count -= 1;
+        totalBytes -= Number(entry.size) || 0;
+    }
+
+    await Promise.all([
+        removeKeys.length ? AsyncStorage.multiRemove(removeKeys) : Promise.resolve(),
+        Promise.all(removeUids.map((uid) => removeFiles(uid))),
+    ]);
+}
+
 export const userAvatarCache = {
     async read(uid) {
         if (!uid) return null;
         const meta = await readMeta(uid);
+        const now = Date.now();
         const version = readAvatarVersion(meta?.version);
         const uri = typeof meta?.uri === 'string' ? meta.uri : '';
-        if (meta?.uid !== uid || version == null || !uri) {
+        if (meta?.uid !== uid || version == null || !uri || isExpiredMeta(meta, now)) {
+            await pruneAvatarCache();
             return null;
         }
 
@@ -111,6 +184,10 @@ export const userAvatarCache = {
             return null;
         }
 
+        if (now - lastUsedAt(meta) >= LOCAL_AVATAR_CACHE_TOUCH_MIN_MS) {
+            await AsyncStorage.setItem(metaKey(uid), JSON.stringify({ ...meta, lastUsedAt: now }));
+        }
+        void pruneAvatarCache();
         return { version, url: uri };
     },
     async write(uid, { version, bytes }) {
@@ -128,6 +205,7 @@ export const userAvatarCache = {
             encoding: FileSystem.EncodingType.Base64,
         });
         const previous = await readMeta(uid);
+        const now = Date.now();
         await AsyncStorage.setItem(
             metaKey(uid),
             JSON.stringify({
@@ -138,10 +216,12 @@ export const userAvatarCache = {
                 remember: isRememberedAvatar(previous),
                 rememberedAt: previous?.rememberedAt || null,
                 lastLoginAt: previous?.lastLoginAt || null,
-                updatedAt: Date.now(),
+                lastUsedAt: now,
+                updatedAt: now,
             })
         );
         await removeFiles(uid, uri);
+        void pruneAvatarCache();
         return uri;
     },
     async remember(uid, account = null) {

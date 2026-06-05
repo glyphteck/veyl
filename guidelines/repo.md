@@ -91,6 +91,8 @@ The unlocked vault also opens a local encrypted data cache for non-authoritative
 
 The cache exists to make unlock fast and reduce redundant expensive fetches. Message lists are not durable cache state; they must come from server-confirmed Firestore reads. Cached media bytes are used only after the server confirms the message document still exists. The cache is also not a source of spendable wallet truth; balances still come from live Spark calls and wallet events.
 
+Local cache eviction uses `lastUsedAt` only for data where recency decides whether the client should keep a copy. Peer profiles age out after 30 days and are capped at 500 rows. Chat-list hydration is capped at 1,000 rows. Vaulted chat media uses least-recently-used encrypted blobs with hard item and byte caps. Platform avatar blob caches keep remembered-login avatars protected while normal cached avatars age out after 30 days and are capped by item and byte budgets.
+
 ## Architecture Principle
 
 Veyl should move toward dumb server, smart cryptographic client.

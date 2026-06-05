@@ -436,7 +436,7 @@ export function useChatMessageSessions({ cloud, media = {}, chatPK, chatPrivateK
                 peerChatPK,
                 pageSize,
                 messages: [],
-                before: null,
+                olderThan: null,
                 carry: null,
                 hasOlder: false,
                 hasMore: false,
@@ -466,14 +466,14 @@ export function useChatMessageSessions({ cloud, media = {}, chatPK, chatPrivateK
                 chatPrivateKey,
                 peerChatPK,
                 pageSize,
-                ({ messages, before, carry, hasOlder, hasMore, fromCache, expiredKeys, deletedKeys }) => {
+                ({ messages, olderThan, carry, hasOlder, hasMore, fromCache, expiredKeys, deletedKeys }) => {
                     if (fromCache || batchesRef.current.get(chatId) !== entry || entry.generation !== generationRef.current) {
                         return;
                     }
 
                     const chatMessages = filterChatMessages(messages, chatPK, peerChatPK);
                     entry.messages = chatMessages;
-                    entry.before = before ?? null;
+                    entry.olderThan = olderThan ?? null;
                     entry.carry = carry ?? null;
                     entry.hasOlder = !!hasOlder;
                     entry.hasMore = !!hasMore;
@@ -513,7 +513,7 @@ export function useChatMessageSessions({ cloud, media = {}, chatPK, chatPrivateK
                         return;
                     }
                     entry.messages = [];
-                    entry.before = null;
+                    entry.olderThan = null;
                     entry.carry = null;
                     entry.hasOlder = false;
                     entry.hasMore = false;

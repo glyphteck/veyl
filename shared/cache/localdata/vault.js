@@ -155,11 +155,16 @@ export async function openVaultCache({ key, storage, uid, network }) {
                         return null;
                     }
                     const now = Date.now();
-                    if (now - (Number(entry?.savedAt) || 0) >= LOCAL_MEDIA_ACCESS_TOUCH_MIN_MS) {
+                    if (now - (Number(entry?.lastUsedAt) || 0) >= LOCAL_MEDIA_ACCESS_TOUCH_MIN_MS) {
                         void patchPayload((draft) => {
                             const current = draft.mediaByKey?.[key];
                             if (current?.id === id) {
-                                draft.mediaByKey[key] = { ...current, savedAt: now };
+                                draft.mediaByKey[key] = {
+                                    id,
+                                    size: Number(current.size) || 0,
+                                    type: typeof current.type === 'string' ? current.type : '',
+                                    lastUsedAt: now,
+                                };
                             }
                             return draft;
                         }).catch(() => {});
@@ -216,7 +221,7 @@ export async function openVaultCache({ key, storage, uid, network }) {
                     id,
                     size: Number(mediaBytes.byteLength) || 0,
                     type: mediaType(msg, meta),
-                    savedAt: Date.now(),
+                    lastUsedAt: Date.now(),
                 };
                 removedIds.push(...pruneMedia(draft.mediaByKey, key));
                 return draft;

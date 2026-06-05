@@ -105,7 +105,7 @@ export function listenToChats(cloud, uid, userChatPK, userPrivKey, onUpdate, onE
     let processedFirst = false;
     let latestChats = [];
     let latestMeta = {
-        cursor: null,
+        nextAfterChat: null,
         hasMore: false,
     };
     const optimisticChats = new Map();
@@ -142,7 +142,7 @@ export function listenToChats(cloud, uid, userChatPK, userPrivKey, onUpdate, onE
         optimisticChats.set(chat.id, chat);
         latestChats = mergedChats(latestChats);
         onUpdate(latestChats, latestChats.map((item) => item.peerChatPK).filter(Boolean), {
-            cursor: latestMeta.cursor,
+            nextAfterChat: latestMeta.nextAfterChat,
             hasMore: latestMeta.hasMore,
         });
     };
@@ -168,11 +168,11 @@ export function listenToChats(cloud, uid, userChatPK, userPrivKey, onUpdate, onE
                     const chats = page.chats;
                     latestChats = mergedChats(chats);
                     latestMeta = {
-                        cursor: snapshot.cursor,
+                        nextAfterChat: snapshot.nextAfterChat,
                         hasMore: snapshot.hasMore,
                     };
                     onUpdate(latestChats, latestChats.map((chat) => chat.peerChatPK).filter(Boolean), {
-                        cursor: snapshot.cursor,
+                        nextAfterChat: snapshot.nextAfterChat,
                         hasMore: snapshot.hasMore,
                     });
                     void pruneDuplicateUserChats(cloud, uid, page.staleEntryIds);
@@ -237,7 +237,7 @@ export function listenToChats(cloud, uid, userChatPK, userPrivKey, onUpdate, onE
             pending = {
                 version: ++snapshotVersion,
                 docs: entries,
-                cursor: meta.cursor ?? null,
+                nextAfterChat: meta.nextAfterChat ?? null,
                 hasMore: !!meta.hasMore,
             };
             schedule(processedFirst ? CHAT_LIST_SNAPSHOT_COALESCE_MS : 0);
@@ -268,25 +268,26 @@ export function listenToChats(cloud, uid, userChatPK, userPrivKey, onUpdate, onE
     };
 }
 
-export async function loadMoreChats(cloud, uid, userChatPK, userPrivKey, cursor, pageSize) {
-    if (!cloud || !uid || !userChatPK || !userPrivKey || !cursor) {
+export async function loadMoreChats(cloud, uid, userChatPK, userPrivKey, afterChat, pageSize) {
+    if (!cloud || !uid || !userChatPK || !userPrivKey || !afterChat) {
         return {
             chats: [],
             peers: [],
-            cursor: null,
+            nextAfterChat: null,
             hasMore: false,
         };
     }
 
     const count = positiveInt(pageSize, CHAT_LIST_PAGE_SIZE);
-    const page = await cloud.user.chats.list(uid, { count, cursor });
+    const page = await cloud.user.chats.list(uid, { count, afterChat });
     const entryPage = await readEntryPage(cloud, userChatPK, userPrivKey, page.records, new Map(), { prune: false });
     void pruneDuplicateUserChats(cloud, uid, entryPage.staleEntryIds);
+    const nextAfterChat = page.nextAfterChat ?? null;
     return {
         chats: entryPage.chats,
         peers: entryPage.chats.map((chat) => chat.peerChatPK).filter(Boolean),
-        cursor: page.cursor ?? cursor,
-        hasMore: !!page.hasMore,
+        nextAfterChat,
+        hasMore: !!page.hasMore && !!nextAfterChat,
     };
 }
 
@@ -298,19 +299,19 @@ export async function loadAllChats(cloud, uid, userChatPK, userPrivKey, pageSize
     const count = positiveInt(pageSize, CHAT_LIST_PAGE_SIZE);
     const cache = new Map();
     const chats = [];
-    let cursor = null;
+    let afterChat = null;
     let hasMore = true;
 
     while (hasMore) {
-        const page = await cloud.user.chats.list(uid, { count, cursor });
+        const page = await cloud.user.chats.list(uid, { count, afterChat });
         const records = Array.isArray(page?.records) ? page.records : [];
         if (!records.length) {
             break;
         }
         const pageChats = await readEntries(userChatPK, userPrivKey, records, cache, { prune: false });
         chats.push(...pageChats);
-        cursor = page?.cursor ?? null;
-        hasMore = !!page?.hasMore && !!cursor;
+        afterChat = page?.nextAfterChat ?? null;
+        hasMore = !!page?.hasMore && !!afterChat;
     }
 
     return canonicalChatVersions(chats);

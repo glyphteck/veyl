@@ -140,7 +140,7 @@ export function messageSeedFromBatch(msgBatch, chatPK, peerChatPK) {
             ready: true,
             exists: false,
             serverBatch: null,
-            oldest: null,
+            olderThan: null,
             olderLoaded: false,
         };
     }
@@ -159,7 +159,7 @@ export function messageSeedFromBatch(msgBatch, chatPK, peerChatPK) {
         ready: true,
         exists: true,
         serverBatch: live.length ? getMessagesBatch(live, expiredKeys, deletedKeys) : { empty: true, expiredKeys, deletedKeys },
-        oldest: msgBatch.before,
+        olderThan: msgBatch.olderThan,
         olderLoaded: false,
     };
 }
@@ -181,7 +181,7 @@ export function messageSeedFromView(seed) {
         ready: true,
         exists: !!seed.exists,
         serverBatch: live.length ? getMessagesBatch(live, expiredKeys, deletedKeys) : seed.serverBatch?.empty ? { empty: true, expiredKeys, deletedKeys } : null,
-        oldest: seed.oldest ?? null,
+        olderThan: seed.olderThan ?? null,
         olderLoaded: !!seed.olderLoaded,
     };
 }
@@ -198,7 +198,7 @@ export function makeMessageViewSeed(seed) {
         ready: true,
         exists: !!seed.exists,
         serverBatch: seed.serverBatch ?? null,
-        oldest: seed.oldest ?? null,
+        olderThan: seed.olderThan ?? null,
         olderLoaded: !!seed.olderLoaded,
     };
 }

@@ -81,7 +81,7 @@ export function useChatList({
     lastServerChatsRef,
     serverChatIdsRef,
     serverChatsReadyRef,
-    chatPageCursorRef,
+    chatPageAfterChatRef,
     chatPageLockedRef,
     chatHasMoreRef,
     chatLoadingMoreRef,
@@ -283,7 +283,7 @@ export function useChatList({
             chatPreviewOverridesRef.current = new Map();
             serverChatIdsRef.current = [];
             serverChatsReadyRef.current = false;
-            chatPageCursorRef.current = null;
+            chatPageAfterChatRef.current = null;
             chatPageLockedRef.current = false;
             chatHasMoreRef.current = false;
             chatLoadingMoreRef.current = false;
@@ -292,7 +292,7 @@ export function useChatList({
         [
             chatHasMoreRef,
             chatLoadingMoreRef,
-            chatPageCursorRef,
+            chatPageAfterChatRef,
             chatPageLockedRef,
             chatPreviewOverridesRef,
             chatLoadsRef,
@@ -430,7 +430,7 @@ export function useChatList({
                 const previousServerIds = serverChatIdsRef.current;
 
                 if (!chatPageLockedRef.current) {
-                    chatPageCursorRef.current = meta?.cursor ?? null;
+                    chatPageAfterChatRef.current = meta?.nextAfterChat ?? null;
                     chatHasMoreRef.current = !!meta?.hasMore;
                     setHasMoreChats((prev) => (prev === chatHasMoreRef.current ? prev : chatHasMoreRef.current));
                 }
@@ -490,7 +490,7 @@ export function useChatList({
         chatBanned,
         chatHasMoreRef,
         chatPK,
-        chatPageCursorRef,
+        chatPageAfterChatRef,
         chatPageLockedRef,
         chatPrivateKey,
         commitServerChats,
@@ -512,7 +512,7 @@ export function useChatList({
     ]);
 
     const loadMoreChats = useCallback(async () => {
-        if (chatBanned || !uid || !chatPK || !chatPrivateKey || chatLoadingMoreRef.current || !chatHasMoreRef.current || !chatPageCursorRef.current) {
+        if (chatBanned || !uid || !chatPK || !chatPrivateKey || chatLoadingMoreRef.current || !chatHasMoreRef.current || !chatPageAfterChatRef.current) {
             return false;
         }
 
@@ -520,7 +520,7 @@ export function useChatList({
         setLoadingMoreChats(true);
 
         try {
-            const page = await loadMoreChatEntries(cloud, uid, chatPK, chatPrivateKey, chatPageCursorRef.current, CHAT_LIST_PAGE_SIZE);
+            const page = await loadMoreChatEntries(cloud, uid, chatPK, chatPrivateKey, chatPageAfterChatRef.current, CHAT_LIST_PAGE_SIZE);
             const hiddenIds = pendingDeleteIdsRef.current;
             const pageChats = clearChatPreviewsByHiddenKeys(
                 trimExpiredChatPreviews(applyReadCache(Array.isArray(page?.chats) ? page.chats : [], chatPK, readCacheRef.current), { skipChatId: selectedChatIdRef.current }),
@@ -530,7 +530,7 @@ export function useChatList({
             commitServerChats(nextServerChats);
 
             chatPageLockedRef.current = true;
-            chatPageCursorRef.current = page?.cursor ?? chatPageCursorRef.current;
+            chatPageAfterChatRef.current = page?.nextAfterChat ?? null;
             chatHasMoreRef.current = !!page?.hasMore;
             setHasMoreChats((prev) => (prev === chatHasMoreRef.current ? prev : chatHasMoreRef.current));
 
@@ -548,7 +548,7 @@ export function useChatList({
         chatHasMoreRef,
         chatLoadingMoreRef,
         chatPK,
-        chatPageCursorRef,
+        chatPageAfterChatRef,
         chatPageLockedRef,
         chatPrivateKey,
         uid,

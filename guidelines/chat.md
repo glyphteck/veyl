@@ -10,7 +10,7 @@ For the end-to-end send, media, receive, load, and maintenance diagrams, read [c
 - The architecture principle is dumb server, smart client powered by cryptography. The server validates only auth, ban state, path ownership, and bounded document shapes. Clients derive link ids, decrypt owner entries, pin per-chat actor keys, verify signed actions, and ignore anything that fails cryptographic verification.
 - Link ids are derived from the X25519 pair secret plus the ordered chat public keys. Active chat ids live at `links/{linkId}.chat.id`; the backend can issue a fresh active chat id after whole-chat delete without changing the pair-derived link.
 - User chat entries live in owner-only encrypted entries at `users/{uid}/chats/{entryId}`. `entryId` is derived from the owner's chat private material plus the active `chatId`, so a recreated chat with the same peer gets a fresh owner entry.
-- Owner entry `ts` is a plaintext owner-visible list index for queries and pagination. It is not canonical message order; clients repair stale order after decrypting inbox pings and message actions.
+- Owner entry `ts` plus the owner entry id is the plaintext owner-visible list marker for queries and pagination. It is not canonical message order; clients repair stale order after decrypting inbox pings and message actions.
 - Message docs live at `chats/{chatId}/messages/{messageId}` and carry only `{ head, body, ts, ttl }`.
 - `head` carries only an opaque client id (`cid`). Sender identity, action type, action target, actor key, and proof are inside the encrypted body.
 - New unsaved display messages get a fixed 21-day Firestore TTL. Durable action docs use `ttl: null`. The backend TTL is deliberately dumb and must not be shortened because a read receipt arrived.
@@ -63,13 +63,15 @@ Delete is also chat-visible global state. Either participant may hard-delete any
 - Chat and shared media writes use short-lived signed upload URLs minted by the backend; Firebase Storage rules deny direct client creates for `chat-media/` and `shared/`.
 - Saved chat media is projected from the same TTL toggle to a Cloud Storage temporary hold on `chat-media/{chatId}/{messageKey}/main`. No hold document stores a user id.
 - Unsaving releases the message-level media hold after the message doc is temporary again. Storage lifecycle may then delete the media normally.
+- The vaulted local media cache keeps encrypted blobs by `lastUsedAt`, where writes and reads both count as use. It prunes least-recently-used media only when the hard local caps are exceeded.
 - A hard-deleted source doc removes the rendered message. The delete callables delete any client-marked chat media object by message key.
 - Whole-chat delete tags the chat deleted immediately, blocks new saves for that chat, and cleanup removes the chat media prefix `chat-media/{chatId}/`, so saved media never survives a chat hard-delete.
 - Sharing media uploads or reuses one expiring shared object under `shared/{sharedId}`. Destination messages reference the unguessable shared media id, not the source chat id. Shared media messages cannot be saved forever and explicit message delete does not delete the shared object.
 
 ## Query And Maintenance
 
-- Message lists target about 20 post-retention readable messages. Foreground latest and older queries may overfetch only adaptively when control, hidden, expired, or unavailable messages prevent enough readable messages from resolving, and the foreground query cap is 60 docs.
+- Message lists target about 20 post-retention readable messages. Foreground latest and older queries page with backend-neutral `{ ts, id }` markers named for product direction: message history uses `olderThan` / `nextOlderThan`, and chat-list pages use `afterChat` / `nextAfterChat`. Queries may overfetch only adaptively when control, hidden, expired, or unavailable messages prevent enough readable messages from resolving. The foreground query cap is 60 docs.
+- A mounted route keeps the loaded message range live from the earliest loaded server `{ ts, id }` marker after older history has loaded. That route-only range watch removes hard-deleted or TTL-removed source docs from already-rendered older history without persisting message lists or downloading attachment bytes.
 - Chat-list resolution decrypts owner entries, batch-checks their opaque `chatId`s through `checkChats`, and deletes the user's own owner entries for chats whose parent is marked deleted. Missing parent docs remain active because active chats normally have no parent app-state doc.
 - Warming is session-only provider state. It must not write message lists to durable cache and must not download attachment bytes.
 - Client maintenance runs only after decrypting the opaque stream. Opaque v1 does not rewrite shared message docs from user clients; message delete is the one direct physical message mutation, while TTL/maintenance handle routine cleanup later.

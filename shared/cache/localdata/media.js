@@ -40,12 +40,12 @@ export function pruneMedia(mediaByKey, keepKey = null) {
             key,
             id,
             size: Math.max(0, size),
-            savedAt: Number(entry?.savedAt) || 0,
+            lastUsedAt: Number(entry?.lastUsedAt) || 0,
         });
     }
 
     entries.sort((a, b) => {
-        const delta = a.savedAt - b.savedAt;
+        const delta = a.lastUsedAt - b.lastUsedAt;
         if (delta !== 0) return delta;
         return a.key.localeCompare(b.key);
     });

@@ -2,6 +2,13 @@
 
 Repo-level changes are listed newest first. Keep entries short and concrete. Broad pushes get grouped bullets, while narrow fixes can use one concise bugfix or cleanup bullet that still names the actual change.
 
+## 0.14.1 - 2026-06-05
+
+- Replaced chat-list and message-history pagination cursors with stable `{ ts, id }` markers and added a mounted message-window watch so hard-deleted or TTL-removed older messages disappear from already-rendered chat history.
+- Added bounded local cache eviction for vaulted chat media, cached chats, peer profiles, and web/iOS avatar blobs, while keeping remembered login avatars protected.
+- Moved the iOS native Firebase Storage upload adapter out of chat media and documented the local cache and pagination boundaries.
+- Cleaned active todos and repo remarks by removing completed pagination/native-storage/chat-media/opaque-cutover tasks, narrowing server-abuse follow-up to the message send cap tradeoff, adding wallet-transfer notification follow-up, and reordering repo remarks by concern level.
+
 ## 0.14.0 - 2026-06-05
 
 - Reset Veyl launch versioning back to the v0 line while preserving the current minor streams for repo and app packages.

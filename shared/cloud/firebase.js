@@ -1,4 +1,4 @@
-import { collection, deleteDoc, deleteField, doc, endBefore, getDoc, getDocFromServer, getDocs, getDocsFromServer, limit, limitToLast, onSnapshot, orderBy, query, serverTimestamp, setDoc, startAfter, Timestamp, updateDoc, where, writeBatch } from 'firebase/firestore';
+import { collection, deleteDoc, deleteField, doc, documentId, endBefore, getDoc, getDocFromServer, getDocs, getDocsFromServer, limit, limitToLast, onSnapshot, orderBy, query, serverTimestamp, setDoc, startAfter, startAt, Timestamp, updateDoc, where, writeBatch } from 'firebase/firestore';
 import { onAuthStateChanged, signInWithCustomToken, signOut } from 'firebase/auth';
 import { httpsCallable } from 'firebase/functions';
 import { deleteObject, getBytes, getDownloadURL, ref, uploadBytes } from 'firebase/storage';
@@ -9,6 +9,7 @@ import { toBytes } from '../crypto/core.js';
 import { getRole } from '../search/roles.js';
 import { defaultSettings, normalizeSettings } from '../settings.js';
 import { positiveInt } from '../utils/number.js';
+import { timestampMs } from '../utils/time.js';
 import { walletPKField } from '../wallet/keys.js';
 
 function requireUid(uid) {
@@ -59,32 +60,36 @@ export function createFirebaseCloud({ db, auth, getAuth, functions, getFunctions
         throw new Error('createFirebaseCloud requires db');
     }
 
-    let cursorSeq = 0;
-    const cursors = new Map();
-
-    function cursorForDoc(snap) {
-        if (!snap) return null;
-        const token = `fs:${++cursorSeq}`;
-        cursors.set(token, snap);
-        if (cursors.size > 200) {
-            cursors.delete(cursors.keys().next().value);
+    function pageTs(value) {
+        if (typeof value?.toMillis === 'function') {
+            return value;
         }
-        return token;
+        if (Number.isFinite(value?.seconds)) {
+            return new Timestamp(value.seconds, value.nanoseconds || 0);
+        }
+        const ms = timestampMs(value, null);
+        return Number.isFinite(ms) ? Timestamp.fromMillis(ms) : null;
     }
 
-    function cursorToken(cursor) {
-        if (!cursor) return null;
-        return typeof cursor === 'object' ? (cursor.token || cursor.pageToken || cursor.cursor || null) : cursor;
+    function pageMarker(value) {
+        const ts = pageTs(value?.ts);
+        return ts && typeof value?.id === 'string' && value.id ? { ts, id: value.id } : null;
     }
 
-    function cursorDoc(cursor) {
-        const token = cursorToken(cursor);
-        return token ? cursors.get(token) ?? null : null;
+    function pageMarkerFromDoc(snap) {
+        return snap?.exists?.() ? pageMarker({ id: snap.id, ts: snap.data()?.ts ?? null }) : null;
     }
 
-    function cursorMillis(cursor) {
-        if (Number.isFinite(cursor?.ms)) return cursor.ms;
-        return Number.isFinite(cursor) ? cursor : null;
+    function messageRecordKeys(record) {
+        const keys = [];
+        if (record?.id) {
+            keys.push(record.id);
+        }
+        const cid = record?.head?.cid;
+        if (typeof cid === 'string' && cid) {
+            keys.push(cid);
+        }
+        return keys;
     }
 
     function resolveFunctions() {
@@ -726,11 +731,11 @@ export function createFirebaseCloud({ db, auth, getAuth, functions, getFunctions
         },
     };
 
-    function userChatsQuery(uid, count, cursor) {
-        const clauses = [collection(db, 'users', uid, 'chats'), orderBy('ts', 'desc')];
-        const snap = cursorDoc(cursor);
-        if (snap) {
-            clauses.push(startAfter(snap));
+    function userChatsQuery(uid, count, afterChat) {
+        const clauses = [collection(db, 'users', uid, 'chats'), orderBy('ts', 'desc'), orderBy(documentId(), 'desc')];
+        const marker = pageMarker(afterChat);
+        if (marker) {
+            clauses.push(startAfter(marker.ts, marker.id));
         }
         clauses.push(limit(positiveInt(count, CHAT_LIST_PAGE_SIZE)));
         return query(...clauses);
@@ -739,7 +744,7 @@ export function createFirebaseCloud({ db, auth, getAuth, functions, getFunctions
     function userChatsPage(snap, count) {
         return {
             records: recordsFromSnapshot(snap),
-            cursor: cursorForDoc(snap.docs[snap.docs.length - 1] ?? null),
+            nextAfterChat: pageMarkerFromDoc(snap.docs[snap.docs.length - 1] ?? null),
             hasMore: snap.docs.length >= positiveInt(count, CHAT_LIST_PAGE_SIZE),
         };
     }
@@ -751,7 +756,6 @@ export function createFirebaseCloud({ db, auth, getAuth, functions, getFunctions
         return {
             ...snap.data(),
             id: snap.id,
-            pageToken: cursorForDoc(snap),
             pending: snap.metadata?.hasPendingWrites === true,
         };
     }
@@ -788,21 +792,16 @@ export function createFirebaseCloud({ db, auth, getAuth, functions, getFunctions
         const records = messageRecordsFromSnapshot(snap);
         return {
             records,
-            nextBefore: records[0]?.pageToken ? { id: records[0].id, token: records[0].pageToken } : null,
+            nextOlderThan: pageMarkerFromDoc(snap.docs[0] ?? null),
             hasMore: records.length >= positiveInt(count, CHAT_MESSAGE_BATCH_SIZE),
         };
     }
 
-    function chatMessagesQuery(chatId, count, cursor) {
-        const clauses = [chatMessagesCollection(chatId), orderBy('ts', 'asc')];
-        const snap = cursorDoc(cursor);
-        if (snap) {
-            clauses.push(endBefore(snap));
-        } else {
-            const ms = cursorMillis(cursor);
-            if (Number.isFinite(ms)) {
-                clauses.push(endBefore(Timestamp.fromMillis(ms)));
-            }
+    function chatMessagesQuery(chatId, count, olderThan) {
+        const clauses = [chatMessagesCollection(chatId), orderBy('ts', 'asc'), orderBy(documentId(), 'asc')];
+        const marker = pageMarker(olderThan);
+        if (marker) {
+            clauses.push(endBefore(marker.ts, marker.id));
         }
         clauses.push(limitToLast(positiveInt(count, CHAT_MESSAGE_BATCH_SIZE)));
         return query(...clauses);
@@ -811,13 +810,13 @@ export function createFirebaseCloud({ db, auth, getAuth, functions, getFunctions
     function watchChatMessages(chatId, options = {}, onUpdate, onError) {
         const count = positiveInt(options?.limitCount ?? options?.pageSize ?? options?.count, CHAT_MESSAGE_BATCH_SIZE);
         return onSnapshot(
-            query(chatMessagesCollection(chatId), orderBy('ts', 'asc'), limitToLast(count)),
+            query(chatMessagesCollection(chatId), orderBy('ts', 'asc'), orderBy(documentId(), 'asc'), limitToLast(count)),
             { includeMetadataChanges: true },
             (snap) => {
                 const records = messageRecordsFromSnapshot(snap);
                 onUpdate?.(records, {
                     changes: messageChangesFromSnapshot(snap),
-                    before: records[0]?.pageToken ? { id: records[0].id, token: records[0].pageToken } : null,
+                    olderThan: pageMarkerFromDoc(snap.docs[0] ?? null),
                     fromCache: snap.metadata?.fromCache === true,
                     pending: snap.metadata?.hasPendingWrites === true,
                 });
@@ -826,9 +825,46 @@ export function createFirebaseCloud({ db, auth, getAuth, functions, getFunctions
         );
     }
 
+    function watchChatMessageWindow(chatId, options = {}, onUpdate, onError) {
+        const marker = pageMarker(options?.from);
+        if (!marker) {
+            return () => {};
+        }
+        return onSnapshot(
+            query(chatMessagesCollection(chatId), orderBy('ts', 'asc'), orderBy(documentId(), 'asc'), startAt(marker.ts, marker.id)),
+            { includeMetadataChanges: true },
+            (snap) => {
+                if (snap.metadata?.fromCache) {
+                    return;
+                }
+                const keys = new Set();
+                const cidById = new Map();
+                for (const record of messageRecordsFromSnapshot(snap)) {
+                    if (record?.id) {
+                        cidById.set(record.id, typeof record?.head?.cid === 'string' ? record.head.cid : '');
+                    }
+                    for (const key of messageRecordKeys(record)) {
+                        keys.add(key);
+                    }
+                }
+                const removedKeys = new Set();
+                for (const change of snap.docChanges()) {
+                    if (change.type !== 'removed') {
+                        continue;
+                    }
+                    for (const key of messageRecordKeys(messageRecordFromDoc(change.doc))) {
+                        removedKeys.add(key);
+                    }
+                }
+                onUpdate?.({ keys, removedKeys, cidById });
+            },
+            onError
+        );
+    }
+
     async function listChatMessages(chatId, options = {}) {
         const count = positiveInt(options?.limitCount ?? options?.pageSize ?? options?.count, CHAT_MESSAGE_BATCH_SIZE);
-        const snap = await getDocsFromServer(chatMessagesQuery(chatId, count, options?.before));
+        const snap = await getDocsFromServer(chatMessagesQuery(chatId, count, options?.olderThan));
         return chatMessagesPage(snap, count);
     }
 
@@ -934,7 +970,7 @@ export function createFirebaseCloud({ db, auth, getAuth, functions, getFunctions
                 if (snap.metadata?.hasPendingWrites) return;
                 const page = userChatsPage(snap, count);
                 onUpdate?.(page.records, {
-                    cursor: page.cursor,
+                    nextAfterChat: page.nextAfterChat,
                     hasMore: page.hasMore,
                 });
             },
@@ -945,7 +981,7 @@ export function createFirebaseCloud({ db, auth, getAuth, functions, getFunctions
     async function listUserChats(uid, options = {}) {
         requireUid(uid);
         const count = positiveInt(options?.limitCount ?? options?.pageSize ?? options?.count, CHAT_LIST_PAGE_SIZE);
-        const snap = await getDocsFromServer(userChatsQuery(uid, count, options?.cursor));
+        const snap = await getDocsFromServer(userChatsQuery(uid, count, options?.afterChat));
         return userChatsPage(snap, count);
     }
 
@@ -1220,6 +1256,7 @@ export function createFirebaseCloud({ db, auth, getAuth, functions, getFunctions
             messages: {
                 id: newChatMessageId,
                 watch: watchChatMessages,
+                watchWindow: watchChatMessageWindow,
                 list: listChatMessages,
                 read: readChatMessage,
                 send: sendChatMessage,

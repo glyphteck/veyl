@@ -72,7 +72,7 @@ export function createChatProvider({ cloud, media = {}, useUser, useVault, readR
         const lastServerChatsRef = useRef([]);
         const serverChatIdsRef = useRef([]);
         const serverChatsReadyRef = useRef(false);
-        const chatPageCursorRef = useRef(null);
+        const chatPageAfterChatRef = useRef(null);
         const chatPageLockedRef = useRef(false);
         const chatHasMoreRef = useRef(false);
         const chatLoadingMoreRef = useRef(false);
@@ -253,7 +253,16 @@ export function createChatProvider({ cloud, media = {}, useUser, useVault, readR
         });
 
         const loadOlderMessages = useCallback(
-            (chatId, userChatPK, userPrivKey, peerChatPK, before, requestedPageSize, options) => loadOlderMessagesShared(cloud, chatId, userChatPK, userPrivKey, peerChatPK, before, requestedPageSize, options),
+            (chatId, userChatPK, userPrivKey, peerChatPK, olderThan, requestedPageSize, options) => loadOlderMessagesShared(cloud, chatId, userChatPK, userPrivKey, peerChatPK, olderThan, requestedPageSize, options),
+            [cloud]
+        );
+        const watchMessageWindow = useCallback(
+            (chatId, from, onUpdate, onError) => {
+                if (!chatId || !from || typeof cloud?.chat?.messages?.watchWindow !== 'function') {
+                    return () => {};
+                }
+                return cloud.chat.messages.watchWindow(chatId, { from }, onUpdate, onError);
+            },
             [cloud]
         );
         closeMessageBatchRef.current = closeMessageBatch;
@@ -316,7 +325,7 @@ export function createChatProvider({ cloud, media = {}, useUser, useVault, readR
             lastServerChatsRef,
             serverChatIdsRef,
             serverChatsReadyRef,
-            chatPageCursorRef,
+            chatPageAfterChatRef,
             chatPageLockedRef,
             chatHasMoreRef,
             chatLoadingMoreRef,
@@ -558,6 +567,7 @@ export function createChatProvider({ cloud, media = {}, useUser, useVault, readR
                 makeMessagePermanent,
                 makeMessageTemporary,
                 loadOlderMessages,
+                watchMessageWindow,
                 readMessageFile,
                 readMessagePreview,
                 writeMessagePreview,
@@ -618,6 +628,7 @@ export function createChatProvider({ cloud, media = {}, useUser, useVault, readR
                 makeMessagePermanent,
                 makeMessageTemporary,
                 loadOlderMessages,
+                watchMessageWindow,
                 readMessageFile,
                 readMessagePreview,
                 writeMessagePreview,
