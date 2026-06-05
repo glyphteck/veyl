@@ -727,7 +727,7 @@ Code: `setChatRetention`.
 Steps:
 
 - writes the sender owner chat entry with encrypted retention settings: 1 `FW`.
-- sends system message with `updateLastMsg: false`:
+- sends system message with `updatePreview: false`:
   - message doc write: 1 `FW`.
   - message create rules check the chat deletion gate: about 1 `RR`.
   - no inbox ping.

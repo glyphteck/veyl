@@ -3,9 +3,11 @@ import { onAuthStateChanged, signInWithCustomToken, signOut } from 'firebase/aut
 import { httpsCallable } from 'firebase/functions';
 import { deleteObject, getBytes, getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import { avatarUrlWithVersion } from '../avatar.js';
+import { getChatMediaFileRef } from '../chat/filepayload.js';
 import { COMMUNITY_RULES_DATE, COMMUNITY_RULES_VERSION, hasCurrentCommunityRules } from '../community.js';
 import { CHAT_INBOX_PING_PAGE_SIZE, CHAT_LIST_PAGE_SIZE, CHAT_MESSAGE_BATCH_SIZE, SEARCH_ROLE_LIMIT, SEARCH_USERNAME_LIMIT } from '../config.js';
 import { toBytes } from '../crypto/core.js';
+import { firebaseConfig } from '../firebaseconfig.js';
 import { getRole } from '../search/roles.js';
 import { defaultSettings, normalizeSettings } from '../settings.js';
 import { positiveInt } from '../utils/number.js';
@@ -201,6 +203,33 @@ export function createFirebaseCloud({ db, auth, getAuth, functions, getFunctions
         }
         const result = await httpsCallable(targetFunctions, name)(payload);
         return result?.data ?? null;
+    }
+
+    function httpFunctionUrl(name) {
+        const targetFunctions = resolveFunctions();
+        const app = targetFunctions?.app || resolveAuth()?.app || resolveStorage()?.app || null;
+        const projectId = app?.options?.projectId || firebaseConfig.projectId;
+        const region = targetFunctions?.region || targetFunctions?._region || 'us-central1';
+        if (!projectId) {
+            throw new Error('firebase project required');
+        }
+        return `https://${region}-${projectId}.cloudfunctions.net/${name}`;
+    }
+
+    async function callHttpFunction(name, payload) {
+        const response = await fetch(httpFunctionUrl(name), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload || {}),
+        });
+        const data = await response.json().catch(() => null);
+        if (!response.ok || data?.ok === false) {
+            const error = new Error(data?.message || `function request failed (${response.status || 0})`);
+            error.code = data?.code || '';
+            error.status = response.status || 0;
+            throw error;
+        }
+        return data || null;
     }
 
     async function finishAuth(name, payload) {
@@ -599,14 +628,8 @@ export function createFirebaseCloud({ db, auth, getAuth, functions, getFunctions
     async function uploadChatMedia(upload) {
         const path = upload?.path;
         if (!path) throw new Error('media path required');
-        const signed = await callFunction('reserveChatMediaUpload', {
-            chatId: upload?.chatId,
-            messageKey: upload?.messageKey,
-            path,
-            size: uploadByteSize(upload?.body),
-            contentType: upload?.metadata?.contentType || 'application/octet-stream',
-        });
-        await uploadSignedStorageFile(upload, signed?.upload);
+        getChatMediaFileRef(path);
+        await uploadStorageFile(path, upload?.body, upload?.metadata || {});
         return true;
     }
 
@@ -626,6 +649,34 @@ export function createFirebaseCloud({ db, auth, getAuth, functions, getFunctions
     async function readChatMedia(path) {
         if (!path) throw new Error('media path required');
         return readStorageFile(path);
+    }
+
+    function chatMediaDeletePath(chatId, path) {
+        if (!chatId) throw new Error('chat id required');
+        const mediaRef = getChatMediaFileRef(path);
+        if (mediaRef.chatId !== chatId) {
+            throw new Error('media chat mismatch');
+        }
+        return path;
+    }
+
+    async function deleteChatMedia(chatId, path) {
+        const targetStorage = requireStorage();
+        await deleteObject(ref(targetStorage, chatMediaDeletePath(chatId, path))).catch((error) => {
+            if (error?.code === 'storage/object-not-found') {
+                return;
+            }
+            throw error;
+        });
+        return true;
+    }
+
+    async function setChatMediaHold(chatId, path, hold) {
+        await callHttpFunction('setChatMediaHold', {
+            path: chatMediaDeletePath(chatId, path),
+            hold: hold === true,
+        });
+        return true;
     }
 
     function cleanChatDeleteTargets(value, options = {}) {
@@ -662,11 +713,14 @@ export function createFirebaseCloud({ db, auth, getAuth, functions, getFunctions
         return true;
     }
 
-    async function checkChats(chatIds = []) {
+    async function readChatStatuses(chatIds = []) {
         const ids = [...new Set((Array.isArray(chatIds) ? chatIds : [chatIds]).filter(Boolean))];
         if (!ids.length) return [];
-        const result = await callFunction('checkChats', { chats: ids });
-        return Array.isArray(result?.chats) ? result.chats : [];
+        const snaps = await Promise.all(ids.map((id) => getDocFromServer(doc(db, 'chats', id)).catch(() => null)));
+        return snaps.map((snap, index) => ({
+            chatId: ids[index],
+            active: !(snap?.data?.()?.deleted),
+        }));
     }
 
     async function openChatLink(linkId) {
@@ -928,11 +982,9 @@ export function createFirebaseCloud({ db, auth, getAuth, functions, getFunctions
     }
 
     async function deleteChatMessage(chatId, messageId, options = {}) {
-        await callFunction('deleteChatMessage', {
-            chatId,
-            messageId,
-            mediaKeys: Array.isArray(options?.mediaKeys) ? options.mediaKeys : [],
-        });
+        const mediaPaths = Array.isArray(options?.mediaPaths) ? options.mediaPaths : [];
+        await deleteDoc(chatMessageDoc(chatId, messageId));
+        await Promise.allSettled(mediaPaths.map((path) => deleteChatMedia(chatId, path)));
         return true;
     }
 
@@ -942,23 +994,65 @@ export function createFirebaseCloud({ db, auth, getAuth, functions, getFunctions
         if (!ids.length) {
             return 0;
         }
-        const result = await callFunction('deleteChatMessages', {
-            chatId,
-            messageIds: ids,
-            mediaKeys: Array.isArray(options?.mediaKeys) ? options.mediaKeys : [],
-        });
-        return result?.deleted || ids.length;
+        const mediaPaths = Array.isArray(options?.mediaPaths) ? options.mediaPaths : [];
+        for (let index = 0; index < ids.length; index += 400) {
+            const batch = writeBatch(db);
+            ids.slice(index, index + 400).forEach((id) => batch.delete(chatMessageDoc(chatId, id)));
+            await batch.commit();
+        }
+        await Promise.allSettled(mediaPaths.map((path) => deleteChatMedia(chatId, path)));
+        return ids.length;
     }
 
-    async function setChatMessageTtl(chatId, messages = [], options = {}) {
+    async function writeChatMessageTtl(chatId, messages = [], options = {}) {
         if (!chatId) throw new Error('chat id required');
-        const result = await callFunction('setChatMessageTtl', {
-            chatId,
-            messages: Array.isArray(messages) ? messages : [],
-            permanent: options?.permanent === true,
-            ttlMs: Number.isFinite(options?.ttlMs) ? options.ttlMs : null,
-        });
-        return result || {};
+        const items = Array.isArray(messages) ? messages.filter((item) => item?.id) : [];
+        if (!items.length) {
+            return { updated: 0 };
+        }
+
+        const mediaPaths = [...new Set(items.map((item) => (item?.mediaPath ? chatMediaDeletePath(chatId, item.mediaPath) : '')).filter(Boolean))];
+        const ttlMs = Number(options?.ttlMs);
+        if (options?.permanent !== true && !Number.isFinite(ttlMs)) {
+            throw new Error('message ttl required');
+        }
+        const ttl = options?.permanent === true ? null : Timestamp.fromMillis(ttlMs);
+        const updateItems = async (nextTtl = ttl, targetItems = items) => {
+            const updated = [];
+            for (const item of targetItems) {
+                await updateDoc(chatMessageDoc(chatId, item.id), { ttl: nextTtl });
+                updated.push(item);
+            }
+            return updated;
+        };
+
+        if (options?.permanent === true) {
+            const held = [];
+            try {
+                for (const path of mediaPaths) {
+                    await setChatMediaHold(chatId, path, true);
+                    held.push(path);
+                }
+                const updated = await updateItems();
+                return { updated: updated.length };
+            } catch (error) {
+                await Promise.allSettled(held.map((path) => setChatMediaHold(chatId, path, false)));
+                throw error;
+            }
+        }
+
+        let updated = [];
+        try {
+            updated = await updateItems();
+            for (const path of mediaPaths) {
+                await setChatMediaHold(chatId, path, false);
+            }
+            return { updated: updated.length };
+        } catch (error) {
+            await Promise.allSettled(updated.map((item) => updateDoc(chatMessageDoc(chatId, item.id), { ttl: null })));
+            await Promise.allSettled(mediaPaths.map((path) => setChatMediaHold(chatId, path, true)));
+            throw error;
+        }
     }
 
     function watchUserChats(uid, onUpdate, onError, options = {}) {
@@ -1248,7 +1342,7 @@ export function createFirebaseCloud({ db, auth, getAuth, functions, getFunctions
             },
         },
         chat: {
-            check: checkChats,
+            check: readChatStatuses,
             delete: deleteChat,
             links: {
                 open: openChatLink,
@@ -1263,7 +1357,7 @@ export function createFirebaseCloud({ db, auth, getAuth, functions, getFunctions
                 update: updateChatMessage,
                 delete: deleteChatMessage,
                 deleteMany: deleteManyChatMessages,
-                ttl: setChatMessageTtl,
+                ttl: writeChatMessageTtl,
             },
             media: {
                 upload: uploadChatMedia,

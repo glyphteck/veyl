@@ -23,14 +23,97 @@ import ReactionTray from './reactiontray';
 const PLAY_TAP_SCALE = 0.9;
 const PLAY_TAP_MAX_DURATION_MS = 240;
 const PLAY_TAP_MAX_DISTANCE = 18;
+const AUDIO_BUBBLE_WIDTH = 300;
+const AUDIO_REPLY_SCALE = 0.56;
 const PLAY_TAP_SPRING = {
     mass: 0.5,
     stiffness: 350,
     damping: 18,
 };
 
-export default function AudioMessage({ msg, peerChatPK, fromPeer = false, menuItems, menuId, reactions = [], reactionUsers, reactionPreviewInset = 0 }) {
+export function AudioBubble({ msg, fromPeer = false, loading = false, disabled = false, timeLabel, progress = 0, onSeek, blockExternalGestures, playGesture, pressPlay, playStyle, icon = Play, inactive = false, compact = false }) {
     const { theme } = useTheme();
+    const title = getAttachmentTitle(msg);
+    const caption = getAttachmentCaption(msg);
+    const duration = Number.isFinite(msg?.d) ? msg.d : 0;
+    const label = timeLabel || `${formatDuration(0, { hours: false })} / ${formatDuration(duration, { hours: false })}`;
+    const color = inactive ? theme.muted : theme.foreground;
+    const seekDisabled = disabled || inactive || typeof onSeek !== 'function';
+    const shownProgress = Math.max(0, Math.min(1, progress));
+    const width = compact ? Math.round(AUDIO_BUBBLE_WIDTH * AUDIO_REPLY_SCALE) : AUDIO_BUBBLE_WIDTH;
+    const controlSize = compact ? 32 : 44;
+    const iconSize = compact ? 21 : 28;
+    const gap = compact ? 9 : 12;
+    const titleSize = compact ? 14 : 16;
+    const timeSize = compact ? 11 : 13;
+    const captionSize = compact ? 13 : 15;
+    const barHeight = compact ? 22 : 28;
+    const paddingHorizontal = compact ? 11 : 14;
+    const paddingVertical = compact ? 9 : 12;
+    const playControl = (
+        <Animated.View
+            accessible={typeof pressPlay === 'function'}
+            accessibilityRole="button"
+            accessibilityState={{ disabled: disabled || inactive }}
+            onAccessibilityTap={pressPlay}
+            style={[
+                {
+                    width: controlSize,
+                    height: controlSize,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    opacity: disabled || inactive ? 0.45 : 1,
+                },
+                playStyle,
+            ]}
+        >
+            {loading ? <ActivityIndicator color={theme.foreground} size="small" /> : <Icon icon={icon} color={color} size={iconSize} fill={color} strokeWidth={0} />}
+        </Animated.View>
+    );
+
+    return (
+        <GlassView
+            glassEffectStyle="clear"
+            tintColor={bubbleTint(theme, fromPeer)}
+            style={{
+                width,
+                maxWidth: '100%',
+                borderRadius: 22,
+                paddingHorizontal,
+                paddingVertical,
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap,
+            }}
+        >
+            {playGesture ? <GestureDetector gesture={playGesture}>{playControl}</GestureDetector> : playControl}
+            <View style={{ flex: 1, minWidth: 0, alignSelf: 'stretch', justifyContent: 'center' }}>
+                <View style={{ minWidth: 0, flexDirection: 'row', alignItems: 'center', gap }}>
+                    <Text numberOfLines={1} style={{ flex: 1, minWidth: 0, color, fontSize: titleSize, fontWeight: '900' }}>
+                        {title}
+                    </Text>
+                    {compact ? null : (
+                        <Text numberOfLines={1} style={{ flexShrink: 0, color: theme.muted, fontSize: timeSize, fontWeight: '700', fontVariant: ['tabular-nums'] }}>
+                            {label}
+                        </Text>
+                    )}
+                </View>
+                {seekDisabled ? (
+                    <View style={{ height: barHeight, justifyContent: 'center', opacity: 0.45, marginTop: 3 }}>
+                        <View style={{ height: 4, borderRadius: 999, backgroundColor: theme.border, overflow: 'hidden' }}>
+                            <View style={{ width: `${shownProgress * 100}%`, height: '100%', backgroundColor: color }} />
+                        </View>
+                    </View>
+                ) : (
+                    <SeekBar progress={shownProgress} disabled={false} onSeek={onSeek} blockExternalGestures={blockExternalGestures} trackColor={theme.border} fillColor={color} height={barHeight} style={{ marginTop: 3 }} seekOnStart={false} />
+                )}
+                {caption ? <Text style={{ marginTop: compact ? 6 : 8, color, fontSize: captionSize, fontWeight: '500' }}>{caption}</Text> : null}
+            </View>
+        </GlassView>
+    );
+}
+
+export default function AudioMessage({ msg, peerChatPK, fromPeer = false, menuItems, menuId, reactions = [], reactionUsers, reactionPreviewInset = 0 }) {
     const { readMessageFile } = useChat();
     const { kind, key: audioKey, play, pause, seek } = useAudio();
     const { status: audioStatus } = useAudioState();
@@ -41,7 +124,6 @@ export default function AudioMessage({ msg, peerChatPK, fromPeer = false, menuIt
     const [loading, setLoading] = useState(() => msg?.t === 'mp3' && !initialUri && hasStoredFileRef(msg));
     const [error, setError] = useState('');
     const title = getAttachmentTitle(msg);
-    const caption = getAttachmentCaption(msg);
     const key = `${peerChatPK || ''}:${msg?.p || msg?.localUri || ''}:${msg?.k || ''}`;
     const active = kind === 'audio' && audioKey === key;
     const status = active ? audioStatus : null;
@@ -157,38 +239,7 @@ export default function AudioMessage({ msg, peerChatPK, fromPeer = false, menuIt
     return (
         <Menu id={menuId} items={menuItems} blockExternalGestures={blockExternalGestures} previewBottomInset={reactionPreviewInset}>
             <ReactionTray reactions={reactions} users={reactionUsers} fromPeer={fromPeer}>
-                <GlassView
-                    glassEffectStyle="clear"
-                    tintColor={bubbleTint(theme, fromPeer)}
-                    style={{
-                        width: 300,
-                        maxWidth: '100%',
-                        borderRadius: 22,
-                        paddingHorizontal: 14,
-                        paddingVertical: 12,
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        gap: 12,
-                    }}
-                >
-                    <GestureDetector gesture={playGesture}>
-                        <Animated.View accessible accessibilityRole="button" accessibilityState={{ disabled }} onAccessibilityTap={pressPlay} style={[{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center', opacity: disabled ? 0.45 : 1 }, playStyle]}>
-                            {loading ? <ActivityIndicator color={theme.foreground} size="small" /> : <Icon icon={icon} color={theme.foreground} size={28} fill={theme.foreground} strokeWidth={0} />}
-                        </Animated.View>
-                    </GestureDetector>
-                    <View style={{ flex: 1, minWidth: 0, alignSelf: 'stretch', justifyContent: 'center' }}>
-                        <View style={{ minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                            <Text numberOfLines={1} style={{ flex: 1, minWidth: 0, color: theme.foreground, fontSize: 16, fontWeight: '900' }}>
-                                {title}
-                            </Text>
-                            <Text numberOfLines={1} style={{ flexShrink: 0, color: theme.muted, fontSize: 13, fontWeight: '700', fontVariant: ['tabular-nums'] }}>
-                                {timeLabel}
-                            </Text>
-                        </View>
-                        <SeekBar progress={progress} disabled={disabled} onSeek={handleSeek} blockExternalGestures={blockExternalGestures} trackColor={theme.border} fillColor={theme.foreground} style={{ marginTop: 3 }} seekOnStart={false} />
-                        {caption ? <Text style={{ marginTop: 8, color: theme.foreground, fontSize: 15, fontWeight: '500' }}>{caption}</Text> : null}
-                    </View>
-                </GlassView>
+                <AudioBubble msg={msg} fromPeer={fromPeer} loading={loading} disabled={disabled} timeLabel={timeLabel} progress={progress} onSeek={handleSeek} blockExternalGestures={blockExternalGestures} playGesture={playGesture} pressPlay={pressPlay} playStyle={playStyle} icon={icon} />
             </ReactionTray>
         </Menu>
     );

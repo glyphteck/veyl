@@ -48,7 +48,7 @@
 - Use `shared/chat/ids.js` for peer chat key extraction from owner chat entries. Do not inspect or recreate legacy `participants` arrays.
 - Use `shared/chat/messagekeys.js` for message id/cid key sets instead of re-creating local key arrays in chat UI.
 - Use `storedFileKey` from `shared/chat/messages` for stored chat media cache keys instead of hand-building `peer:path:key` strings.
-- Chat previews belong in encrypted owner chat entries, not parent chat `lastMsg` documents.
+- Chat previews belong in encrypted owner chat entries, not parent chat `preview` documents.
 - Use `shared/utils/display.js` for address/label truncation, byte-size labels, emoji-only text sizing, and safe DOM/SVG id parts.
 - Keep web `src/lib/classes.js` limited to styling class composition such as `cn`; import generic helpers from `@veyl/shared/utils/*` and domain helpers from their feature folders.
 - Use `shared/avatar.js` for avatar version parsing, source keys, versioned avatar URLs, remembered-avatar metadata, remembered-avatar sorting, and remembered-avatar username cleanup.

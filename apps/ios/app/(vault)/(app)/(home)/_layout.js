@@ -1,5 +1,5 @@
 import { StatusBar } from 'expo-status-bar';
-import { useCallback, useRef } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import { useIsFocused, usePathname } from 'expo-router';
 import { readResumeRoute, writeResumeTarget } from '@veyl/shared/cache/localdata';
 import { useTheme } from '@/providers/themeprovider';
@@ -7,6 +7,10 @@ import { useVault } from '@/providers/vaultprovider';
 import { HomePager as HomeTabs } from '@/lib/navigation/homepager';
 import { HOME_TAB_NAMES, homeTabForResumeRoute, isHomeTabRootPath, targetForHomeTab, warmHomeTab } from '@/lib/navigation/hometabs';
 import MainMenu from '@/components/mainmenu';
+
+function renderMainMenu(props) {
+    return <MainMenu {...props} />;
+}
 
 export default function TabsLayout() {
     const { theme, isDark } = useTheme();
@@ -16,6 +20,12 @@ export default function TabsLayout() {
     const tabSwipeEnabled = focused && isHomeTabRootPath(pathname);
     const initialRouteNameRef = useRef(homeTabForResumeRoute(readResumeRoute(localCache)));
     const savedInitialRouteRef = useRef(false);
+    const screenOptions = useMemo(
+        () => ({
+            sceneStyle: { backgroundColor: theme?.background },
+        }),
+        [theme?.background]
+    );
     const saveHomeRoute = useCallback(
         (name) => {
             if (!savedInitialRouteRef.current) {
@@ -34,12 +44,10 @@ export default function TabsLayout() {
             <HomeTabs
                 initialRouteName={initialRouteNameRef.current}
                 swipeEnabled={tabSwipeEnabled}
-                tabBar={(props) => <MainMenu {...props} />}
+                tabBar={renderMainMenu}
                 onRouteChange={saveHomeRoute}
                 onWarmRoute={warmHomeTab}
-                screenOptions={{
-                    sceneStyle: { backgroundColor: theme?.background },
-                }}
+                screenOptions={screenOptions}
             >
                 {HOME_TAB_NAMES.map((name) => (
                     <HomeTabs.Screen key={name} name={name} />

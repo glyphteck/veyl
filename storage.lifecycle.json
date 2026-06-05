@@ -8,7 +8,7 @@
                 "condition": {
                     "age": 21,
                     "isLive": true,
-                    "matchesPrefix": ["chat-media/", "shared/"]
+                    "matchesPrefix": ["chats/", "shared/"]
                 }
             }
         ]

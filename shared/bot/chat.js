@@ -216,7 +216,7 @@ async function writeBotOwnerEntry(db, senderUid, senderChatPrivKey, pair, fields
         peerUid: fields.peerUid || existing?.peerUid,
         actors: existing?.actors || {},
         settings: existing?.settings,
-        lastMsg: fields.lastMsg || existing?.lastMsg,
+        preview: fields.preview || existing?.preview,
     });
     return {
         ref,
@@ -259,7 +259,7 @@ export async function sendBotMsg(db, FieldValue, senderChatPK, senderChatPrivKey
         throw new Error('bot chat keys required');
     }
 
-    const updateLastMsg = options?.updateLastMsg !== false;
+    const updatePreview = options?.updatePreview !== false;
     const msgId = cleanText(options?.msgId);
     const pair = await resolveBotPair(db, FieldValue, senderChatPK, senderChatPrivKey, receiverChatPK, options);
     const chatId = pair.chatId;
@@ -277,12 +277,12 @@ export async function sendBotMsg(db, FieldValue, senderChatPK, senderChatPrivKey
         ts,
         ttl: makeTtlDate(retention),
     };
-    const recipientProfile = await recipientForSend(db, receiverChatPK, options, updateLastMsg);
-    const ownerEntry = updateLastMsg
+    const recipientProfile = await recipientForSend(db, receiverChatPK, options, updatePreview);
+    const ownerEntry = updatePreview
         ? await writeBotOwnerEntry(db, options?.senderUid, senderChatPrivKey, pair, {
               peerUid: recipientProfile?.uid,
               ts: msgTs,
-              lastMsg: {
+              preview: {
                   ...withMessageRetention(message, retention),
                   s: senderChatPK,
                   from: senderChatPK,
@@ -295,7 +295,7 @@ export async function sendBotMsg(db, FieldValue, senderChatPK, senderChatPrivKey
               },
           })
         : null;
-    const ping = recipientProfile?.uid && updateLastMsg
+    const ping = recipientProfile?.uid && updatePreview
         ? await sealPing(senderChatPK, senderChatPrivKey, receiverChatPK, {
               kind: 'message',
               chatId,

@@ -1,9 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { usePathname, useRouter } from 'next/navigation';
+import { useCallback, useRef } from 'react';
+import { usePathname } from 'next/navigation';
 import Link from 'next/link';
-import { makeUserQr, qr } from '@veyl/shared/qr';
 import { useUser } from '@/components/providers/userprovider';
 import { useWallet } from '@/components/providers/walletprovider';
 import { useVault } from '@/components/providers/vaultprovider';
@@ -11,8 +10,8 @@ import { useTxData } from '@/components/providers/txdataprovider';
 import { useDialog } from '@/components/providers/dialogprovider';
 import { useCloak } from '@veyl/shared/providers/cloakprovider';
 import { useChat, useChatInput } from '@/components/providers/chatprovider';
-import { handleAppShortcut, shortcuts } from '@/lib/shortcuts';
-import { logout } from '@/lib/user/actions';
+import { useShortcuts } from '@/components/providers/shortcutprovider';
+import { shortcuts } from '@/lib/shortcuts';
 import { Button } from '@/components/button';
 import { Dot } from '@/components/dot';
 import RegtestTag from '@/components/regtesttag';
@@ -37,7 +36,6 @@ function visibleFocusable(element) {
 }
 
 export default function Navbar() {
-    const router = useRouter();
     const pathname = usePathname();
     const { openDialog } = useDialog();
     const user = useUser();
@@ -46,10 +44,9 @@ export default function Navbar() {
     const { hasTx } = useTxData();
     const { hasChats, chats } = useChat();
     const { focusChatInput, navbarRef } = useChatInput();
+    const { userMenuOpen, setUserMenuOpen } = useShortcuts();
     const navRef = useRef(null);
     const { cloaked, cloak } = useCloak();
-    const [userMenuOpen, setUserMenuOpen] = useState(false);
-    const username = user?.username;
     const isAdmin = !!user?.isAdmin;
     const hasUnseenChats = !!chats?.some((c) => c?.unseen);
     const showWalletDot = false;
@@ -61,18 +58,6 @@ export default function Navbar() {
         }
         openDialog('newchat');
     };
-    const openUserMenu = useCallback(() => {
-        setUserMenuOpen(true);
-    }, []);
-    const openUserQr = useCallback(() => {
-        const qrData = makeUserQr(username);
-        if (!qrData) return;
-        setUserMenuOpen(false);
-        openDialog('qrcode', {
-            type: qr.user,
-            value: qrData,
-        });
-    }, [openDialog, username]);
     const handleNavKeyDown = useCallback(
         (event) => {
             if (pathname !== '/chat' || event.key !== 'Tab' || event.shiftKey || event.metaKey || event.ctrlKey || event.altKey) {
@@ -90,27 +75,6 @@ export default function Navbar() {
         },
         [focusChatInput, pathname]
     );
-
-    // Keyboard shortcuts
-    useEffect(() => {
-        const handleKeyDown = (e) => {
-            handleAppShortcut(e, {
-                pathname,
-                openDialog,
-                push: router.push,
-                lock,
-                logout,
-                cloak,
-                openUserMenu,
-                openUserQr,
-                hasTx,
-                isAdmin,
-                chatBanned: user?.chatBanned,
-            });
-        };
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [cloak, hasTx, isAdmin, lock, openDialog, openUserMenu, openUserQr, pathname, router.push, user?.chatBanned]);
 
     return (
         <nav ref={navRef} className="py-2.25 w-full flex items-center z-30 sticky top-0" onKeyDown={handleNavKeyDown}>

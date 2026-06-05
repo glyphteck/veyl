@@ -13,10 +13,6 @@ const KNOWN = [...ALL, ...EXTRA];
 const CHAT_ROOT_COLLECTIONS = Object.freeze([
     'chats',
     'links',
-    'chatMedia',
-    'mediaStays',
-    'media_upload_reservations',
-    'shared_media_upload_reservations',
 ]);
 
 const USER_CHAT_SUBCOLLECTIONS = Object.freeze([
@@ -26,9 +22,8 @@ const USER_CHAT_SUBCOLLECTIONS = Object.freeze([
 ]);
 
 const CHAT_STORAGE_PREFIXES = Object.freeze([
-    'chat-media/',
+    'chats/',
     'shared/',
-    'media/',
 ]);
 
 function usage() {

@@ -17,9 +17,7 @@ export async function putBotAttachment(bucket, pair, cid, type, data, meta = {})
         throw new Error('storage bucket required');
     }
 
-    const upload = await makeChatFileUploadPayload(pair, cid, data, {
-        contentType: meta?.mimeType || 'application/octet-stream',
-    });
+    const upload = await makeChatFileUploadPayload(pair, cid, data);
 
     const file = bucket.file(upload.path);
     await file.save(Buffer.from(upload.body), {

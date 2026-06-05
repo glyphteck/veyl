@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Keyboard, Pressable, Text, TextInput, View } from 'react-native';
+import { Alert, Pressable, Text, TextInput, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import { ArrowDownLeft, ArrowUpRight } from 'lucide-react-native';
@@ -15,7 +15,6 @@ import { useTheme } from '@/providers/themeprovider';
 import { useUser } from '@/providers/userprovider';
 import { useWallet } from '@/providers/walletprovider';
 import { tap } from '@/lib/tap';
-import { yieldToUi } from '@veyl/shared/utils/async';
 import { makeReq } from '@veyl/shared/chat/messages';
 import { BTC_PRICE_FALLBACK, REQUEST_MONEY_MAX_SATS } from '@veyl/shared/config';
 import { textRouteParam } from '@veyl/shared/navigation/params';
@@ -186,11 +185,9 @@ export default function TransferScreen() {
         setMode((current) => (current === 'send' ? 'request' : 'send'));
     }, [chatBanned, forceSend, isSending]);
 
-    const closeRoute = useCallback(async () => {
-        inputRef.current?.blur?.();
-        Keyboard.dismiss();
-        await yieldToUi();
+    const closeRoute = useCallback(() => {
         if (!openRef.current) return;
+        openRef.current = false;
         router.dismiss();
     }, []);
 
@@ -208,8 +205,7 @@ export default function TransferScreen() {
             }
 
             busyRef.current = true;
-            setIsSending(true);
-            void closeRoute();
+            closeRoute();
 
             void sendMessage(peerChatPK, makeReq(transferSats.toString()))
                 .catch((err) => {
@@ -229,8 +225,7 @@ export default function TransferScreen() {
         }
 
         busyRef.current = true;
-        setIsSending(true);
-        void closeRoute();
+        closeRoute();
 
         void sendMoneyWithSpark(peerWalletPK, Number(transferSats))
             .catch((err) => {

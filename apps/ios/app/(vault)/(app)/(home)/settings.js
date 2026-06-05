@@ -684,7 +684,7 @@ export default function SettingsScreen() {
                     </View>
                 ) : null}
                 {!isSearching && appVersion ? (
-                    <View style={{ alignItems: 'center', paddingTop: 14, paddingBottom: 8 }}>
+                    <View style={{ alignItems: 'center', paddingTop: 8, paddingBottom: 14 }}>
                         <Text style={{ fontSize: 16, fontWeight: '900', color: theme.foreground }}>v{appVersion}</Text>
                     </View>
                 ) : null}

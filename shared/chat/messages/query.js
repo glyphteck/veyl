@@ -290,7 +290,6 @@ export function listenToLatestMsgs(cloud, chatId, userChatPK, userPrivKey, peerC
                 const runId = ++run;
                 const now = Date.now();
                 const changes = info.changes || [];
-                const changeTypeById = new Map(changes.map((change) => [change.record?.id, change.type]));
                 const expiredKeys = new Set();
                 const removedRecords = [];
                 for (const change of changes) {
@@ -301,16 +300,7 @@ export function listenToLatestMsgs(cloud, chatId, userChatPK, userPrivKey, peerC
                     }
                 }
                 const { activeRecords } = partitionExpiredMessageRecords(records, expiredKeys, decryptedCache, now);
-                const active = activeRecords.filter((record) => {
-                    if (!record.pending) {
-                        return true;
-                    }
-
-                    // Keep edited messages visible for the local sender while their
-                    // body update is pending. Brand-new pending docs stay owned by
-                    // localByChat until acked.
-                    return changeTypeById.get(record.id) === 'modified';
-                });
+                const active = activeRecords;
                 const allEntries = await decryptRecordEntries(active, userChatPK, userPrivKey, peerChatPK, decryptedCache, { actors: options?.actors, chatId });
                 if (runId !== run) {
                     return;

@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { Coins, Loader } from 'lucide-react';
 import Loading from '@/components/loading';
 import { useBitcoin } from '@/components/providers/bitcoinprovider';
+import { useChat } from '@/components/providers/chatprovider';
 import { useDialog } from '@/components/providers/dialogprovider';
 import { usePeer } from '@/components/providers/peerprovider';
 import { useUser } from '@/components/providers/userprovider';
@@ -21,8 +22,9 @@ export default function QRPage() {
     const router = useRouter();
     const handledRef = useRef(false);
     const { openDialog } = useDialog();
+    const { selectPeerChat } = useChat();
     const { addPeer } = usePeer();
-    const { settings, username, walletPK: ownWalletPK } = useUser();
+    const { chatBanned, chatPK, settings, username, walletPK: ownWalletPK } = useUser();
     const bitcoin = useBitcoin();
     const { sendMoneyWithSpark, network } = useWallet();
     const { cloaked } = useCloak();
@@ -37,8 +39,12 @@ export default function QRPage() {
             if (data?.kind === qr.user && data.username) {
                 if (data.username !== username) {
                     const peer = await addPeer({ username: data.username });
-                    if (peer) openDialog('payments', { peer, tab: 'send' });
-                    else toast.error('user not found');
+                    if (peer?.chatPK && !chatBanned && chatPK) {
+                        await selectPeerChat(peer.chatPK);
+                        router.replace('/chat');
+                        return;
+                    }
+                    toast.error('user not found');
                 }
                 router.replace('/wallet');
                 return;
@@ -96,7 +102,7 @@ export default function QRPage() {
             console.error('QR route failed:', error);
             router.replace('/wallet');
         });
-    }, [addPeer, bitcoin, cloaked, network, openDialog, ownWalletPK, router, sendMoneyWithSpark, settings, username]);
+    }, [addPeer, bitcoin, chatBanned, chatPK, cloaked, network, openDialog, ownWalletPK, router, selectPeerChat, sendMoneyWithSpark, settings, username]);
 
     return <Loading />;
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { WEB_CHAT_WARMING } from '@veyl/shared/chat/messages/session/config';
 import { createChatProvider } from '@veyl/shared/providers/chatprovider';
 import { cloud } from '@/lib/cloud';
@@ -50,6 +50,7 @@ function ChatInputProvider({ children }) {
     const peerHeaderRef = useRef(null);
     const selectedChatButtonRef = useRef(null);
     const navbarRef = useRef(null);
+    const [paymentPeer, setPaymentPeer] = useState(null);
 
     const focusElement = useCallback((element) => {
         if (!element?.focus) {
@@ -96,11 +97,13 @@ function ChatInputProvider({ children }) {
             peerHeaderRef,
             selectedChatButtonRef,
             navbarRef,
+            paymentPeer,
+            setPaymentPeer,
             focusChatInput,
             focusSelectedChat,
             focusNavbar,
         }),
-        [focusChatInput, focusNavbar, focusSelectedChat]
+        [focusChatInput, focusNavbar, focusSelectedChat, paymentPeer]
     );
 
     return <ChatInputContext.Provider value={value}>{children}</ChatInputContext.Provider>;

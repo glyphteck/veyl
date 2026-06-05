@@ -14,6 +14,7 @@ import { useChatSettings } from '../chat/actions/settings.js';
 import { useChatMessageSessions } from '../chat/messages/session/index.js';
 import { useChatList } from '../chat/usechatlist.js';
 import { processInbox } from '../chat/inbox.js';
+import { messageHasKey } from '../chat/messagekeys.js';
 import {
     loadOlderMsgs as loadOlderMessagesShared,
     MSG_BATCH_SIZE,
@@ -299,7 +300,8 @@ export function createChatProvider({ cloud, media = {}, useUser, useVault, readR
             applyBatchReadReceipt,
             resetChatList,
             ensureChat,
-            getChatLastMsgKey,
+            getChatPreviewKey,
+            syncChatPreview,
             getChatRetention,
             sendOptionsForPeer,
             hasChat,
@@ -381,11 +383,11 @@ export function createChatProvider({ cloud, media = {}, useUser, useVault, readR
                 void ensureChat(chatId);
                 ensureMessageBatch(chatId, {
                     source: 'route',
-                    chatLastMsgKey: getChatLastMsgKey(chatId),
+                    chatPreviewKey: getChatPreviewKey(chatId),
                 });
                 setSelectedChat(chatId);
             },
-            [chatBanned, ensureChat, ensureMessageBatch, getChatLastMsgKey, setSelectedChat]
+            [chatBanned, ensureChat, ensureMessageBatch, getChatPreviewKey, setSelectedChat]
         );
 
         const resolvePeerChatId = useCallback(
@@ -502,9 +504,18 @@ export function createChatProvider({ cloud, media = {}, useUser, useVault, readR
                 if (chatBanned) {
                     throw makeChatUnavailableError();
                 }
-                return updateMessageShared(cloud, chatId, msgId, chatPK, chatPrivateKey, peerChatPK, newMessage);
+                const previewKey = getChatPreviewKey(chatId);
+                const updatePreview = !!previewKey && messageHasKey(newMessage, new Set([previewKey]));
+                const sendOptions = updatePreview && peerChatPK ? sendOptionsForPeer(peerChatPK) : {};
+                return updateMessageShared(cloud, chatId, msgId, chatPK, chatPrivateKey, peerChatPK, newMessage, {
+                    senderUid: uid,
+                    updatePreview,
+                    receiverUid: sendOptions?.receiverUid,
+                    peerActorPK: sendOptions?.peerActorPK,
+                    ownEntry: sendOptions?.ownEntry,
+                });
             },
-            [cloud, chatBanned, chatPK, chatPrivateKey]
+            [cloud, chatBanned, chatPK, chatPrivateKey, getChatPreviewKey, sendOptionsForPeer, uid]
         );
         const getMessages = useCallback((chatId) => (isChatPendingDelete(chatId) ? [] : sortMessages(localByChat.get(chatId) ?? [])), [isChatPendingDelete, localByChat]);
         const deleteAllChats = useCallback(async () => {
@@ -585,7 +596,8 @@ export function createChatProvider({ cloud, media = {}, useUser, useVault, readR
                 updateMessageView,
                 retainMessageView,
                 releaseMessageView,
-                getChatLastMsgKey,
+                getChatPreviewKey,
+                syncChatPreview,
                 syncChatPreviewDrop: clearChatPreviewKeys,
             }),
             [
@@ -646,7 +658,8 @@ export function createChatProvider({ cloud, media = {}, useUser, useVault, readR
                 updateMessageView,
                 retainMessageView,
                 releaseMessageView,
-                getChatLastMsgKey,
+                getChatPreviewKey,
+                syncChatPreview,
                 clearChatPreviewKeys,
             ]
         );

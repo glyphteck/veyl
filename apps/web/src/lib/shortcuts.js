@@ -27,7 +27,7 @@ export function handleAppShortcut(event, options) {
     }
 
     const key = event.key.toLowerCase();
-    const { pathname, openDialog, push, lock, logout, cloak, openUserMenu, openUserQr, hasTx, isAdmin, chatBanned } = options;
+    const { pathname, openDialog, push, lock, logout, cloak, openUserMenu, openUserQr, getPaymentShortcutData, hasTx, isAdmin, chatBanned } = options;
 
     if (event.shiftKey && /^Digit[0-9]$/.test(event.code || '')) {
         return false;
@@ -126,13 +126,13 @@ export function handleAppShortcut(event, options) {
 
     if (key === 's') {
         event.preventDefault();
-        openDialog('payments', { tab: 'send' });
+        openDialog('payments', getPaymentShortcutData?.('send') || { tab: 'send' });
         return true;
     }
 
     if (key === 'd') {
         event.preventDefault();
-        openDialog('payments', { tab: 'request' });
+        openDialog('payments', getPaymentShortcutData?.('request') || { tab: 'request' });
         return true;
     }
 

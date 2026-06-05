@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
-import GlassView from '@/components/glass/glassview';
 import { MESSAGE_ROW_ANIMATION_MS, MESSAGE_ROW_EASING, positivePx } from '@/components/chat/rowmotion';
 
 export default function MsgDot({ show, failed, saved = false, side = 'right', bottomInset = 0, exitToken = 0, theme }) {
@@ -55,7 +54,6 @@ export default function MsgDot({ show, failed, saved = false, side = 'right', bo
         width: 8 * progress.value,
     }));
     const dotVisualStyle = useAnimatedStyle(() => ({
-        opacity: progress.value,
         transform: [{ scale: 0.01 + 0.99 * progress.value }],
     }));
 
@@ -84,13 +82,12 @@ export default function MsgDot({ show, failed, saved = false, side = 'right', bo
                         width: 8,
                         height: 8,
                         borderRadius: 4,
+                        backgroundColor: tintColor,
                         overflow: 'hidden',
                     },
                     dotVisualStyle,
                 ]}
-            >
-                <GlassView glassEffectStyle="regular" tintColor={tintColor} style={{ width: 8, height: 8, minWidth: 8, minHeight: 8, borderRadius: 4, overflow: 'hidden' }} />
-            </Animated.View>
+            />
         </Animated.View>
     );
 }

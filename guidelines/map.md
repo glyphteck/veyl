@@ -24,8 +24,8 @@ bun map
 | --- | --- | --- | --- |
 | auth/passkeys | `apps/web/src/lib/passkey.js`, `apps/ios/src/lib/passkeys.js`, `functions/passkey/*` | `shared/passkey.js`, `shared/passkeylabel.js`, `apps/web/src/lib/routeguards.js` | `guidelines/navigation.md`, `guidelines/security.md` |
 | vault/cache | `shared/vault.js`, `shared/cache/localdata.js` | `apps/web/src/lib/cache/*`, `apps/ios/src/lib/cache/*` | `guidelines/navigation.md`, `guidelines/security.md` |
-| chat | `shared/providers/chatprovider.js`, `shared/chat/*`, `shared/chat/messages/session/*` | `apps/web/src/components/chat/*`, `apps/ios/src/components/chat/*`, `apps/bot/src/runtime.js` | `guidelines/chat.md`, `guidelines/security.md`, `bots.md` |
-| chat media | `shared/chat/attachments.js`, `shared/chat/filepayload.js` | `apps/web/src/lib/chat/*cache.js`, `apps/ios/src/lib/chat/media.js`, `apps/ios/src/lib/chat/imagecache.js` | `guidelines/chat.md`, `guidelines/uistyling.md` |
+| chat | `shared/providers/chatprovider.js`, `shared/chat/*`, `shared/chat/messages/session/*` | `apps/web/src/components/chat/*`, `apps/ios/src/components/chat/*`, `apps/bot/src/runtime.js` | `guidelines/chat.md`, `lifecycle/`, `guidelines/security.md`, `bots.md` |
+| chat media | `shared/chat/attachments.js`, `shared/chat/filepayload.js` | `apps/web/src/lib/chat/*cache.js`, `apps/ios/src/lib/chat/media.js`, `apps/ios/src/lib/chat/imagecache.js` | `lifecycle/msg.md`, `guidelines/chat.md`, `guidelines/uistyling.md` |
 | wallet | `shared/wallet/provider.js`, `shared/wallet/*` | `apps/web/src/components/providers/walletprovider.js`, `apps/ios/src/providers/walletprovider.js` | `guidelines/navigation.md`, `guidelines/security.md` |
 | navigation/resume | `apps/web/src/lib/routeguards.js`, `shared/navigation/resume.js` | `apps/web/src/app/rootredirect.js`, `apps/ios/src/lib/navigation/*` | `guidelines/navigation.md` |
 | user/profile/search | `shared/profile.js`, `shared/avatar.js`, `shared/search/*` | `apps/web/src/lib/user/*`, `apps/ios/src/lib/user/*`, app search wrappers | `guidelines/navigation.md`, `guidelines/code.md` |
@@ -39,7 +39,7 @@ bun map
 - Route/search param normalization lives under `shared/navigation/*`.
 - Money helpers live in `shared/money.js`.
 - Avatar/profile helpers live in `shared/avatar.js` and `shared/profile.js`.
-- Chat ids, equality, message keys, last-message envelopes, and storage-file keys live under `shared/chat/*`.
+- Chat ids, equality, message keys, preview envelopes, and storage-file keys live under `shared/chat/*`.
 - Wallet tx and balance helpers live under `shared/wallet/*`.
 
 Do not recreate old catch-all files such as `shared/utils.js`, `shared/localdatacache.js`, `shared/vaultutils.js`, flat app-level chat media helpers, or shadcn `components.json` / `components/ui` scaffolding.
@@ -70,4 +70,3 @@ Use `bun check:paths` after moving files, renaming package paths, or touching im
 ## Validation Posture
 
 Lint is the default verification. Do not run builds, typechecks, tests, formatters, or broad verification commands unless the user asks. Backend deployable surfaces are complete only after deploying the changed target.
-

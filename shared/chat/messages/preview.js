@@ -19,24 +19,24 @@ export function getReplyPreview(msg) {
     return '';
 }
 
-export function getMsgPreview(lastMsg, chatPK, settings, btcPrice) {
-    if (!lastMsg) return '';
-    if (typeof lastMsg === 'string') return lastMsg;
-    if (!canShowMsg(lastMsg)) return '';
-    if (isSystemMsg(lastMsg)) return getSystemMsgText(lastMsg);
-    if (lastMsg.t === 'txt' && typeof lastMsg.c === 'string') return lastMsg.c;
-    if (isAttachmentMsgType(lastMsg?.t)) {
-        if (lastMsg.t === 'img') return 'sent an image';
-        if (lastMsg.t === 'mp3') return 'sent audio';
-        if (lastMsg.t === 'mp4') return 'sent a video';
+export function getMsgPreview(preview, chatPK, settings, btcPrice) {
+    if (!preview) return '';
+    if (typeof preview === 'string') return preview;
+    if (!canShowMsg(preview)) return '';
+    if (isSystemMsg(preview)) return getSystemMsgText(preview);
+    if (preview.t === 'txt' && typeof preview.c === 'string') return preview.c;
+    if (isAttachmentMsgType(preview?.t)) {
+        if (preview.t === 'img') return 'sent an image';
+        if (preview.t === 'mp3') return 'sent audio';
+        if (preview.t === 'mp4') return 'sent a video';
         return 'sent a file';
     }
-    if (lastMsg.t === 'req') {
-        const amount = Number(lastMsg.a || 0);
+    if (preview.t === 'req') {
+        const amount = Number(preview.a || 0);
         const formattedAmount = renderMoney(amount, settings?.moneyFormat || 'btc', btcPrice);
-        return lastMsg.tx ? `received ${formattedAmount}` : `requested ${formattedAmount}`;
+        return preview.tx ? `received ${formattedAmount}` : `requested ${formattedAmount}`;
     }
-    if (typeof lastMsg.c === 'string') return lastMsg.c;
-    if (typeof lastMsg.text === 'string') return lastMsg.text;
+    if (typeof preview.c === 'string') return preview.c;
+    if (typeof preview.text === 'string') return preview.text;
     return 'sent a message';
 }

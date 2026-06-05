@@ -3,17 +3,17 @@ import { isExpiredMsg } from '../../messages.js';
 import { getMessageKey } from '../../state.js';
 import { ttlMillis } from '../../ttl.js';
 
-export function getBatchLastMsgKey(messages) {
+export function getBatchPreviewKey(messages) {
     const last = messages?.length ? messages[messages.length - 1] : null;
     return getMessageKey(last);
 }
 
 export function isBatchFresh(entry) {
     return (
-        !entry?.chatLastMsgKey ||
-        entry.batchKeys?.has?.(entry.chatLastMsgKey) ||
-        entry.expiredKeys?.has?.(entry.chatLastMsgKey) ||
-        entry.deletedKeys?.has?.(entry.chatLastMsgKey) ||
+        !entry?.chatPreviewKey ||
+        entry.batchKeys?.has?.(entry.chatPreviewKey) ||
+        entry.expiredKeys?.has?.(entry.chatPreviewKey) ||
+        entry.deletedKeys?.has?.(entry.chatPreviewKey) ||
         (entry.ready && !entry.hasOlder && !entry.hasMore)
     );
 }
@@ -33,8 +33,8 @@ export function makeMessageSessionSnapshot(entry) {
         loading: !!entry.loading,
         exists: !!entry.exists,
         fromCache: false,
-        chatLastMsgKey: entry.chatLastMsgKey ?? null,
-        batchLastMsgKey: entry.batchLastMsgKey ?? null,
+        chatPreviewKey: entry.chatPreviewKey ?? null,
+        batchPreviewKey: entry.batchPreviewKey ?? null,
         expiredKeys: new Set(entry.expiredKeys || []),
         deletedKeys: new Set(entry.deletedKeys || []),
         generation: entry.generation,
@@ -67,7 +67,7 @@ export function trimExpiredEntry(entry, now = Date.now()) {
     entry.messages = messages;
     entry.expiredKeys = expiredKeys;
     entry.batchKeys = new Set(messages.map(getMessageKey).filter(Boolean));
-    entry.batchLastMsgKey = getBatchLastMsgKey(messages);
+    entry.batchPreviewKey = getBatchPreviewKey(messages);
     return expiredMessages;
 }
 
@@ -103,7 +103,7 @@ export function removeEntryMessages(entry, messages) {
     entry.messages = nextMessages;
     entry.expiredKeys = expiredKeys;
     entry.batchKeys = new Set(nextMessages.map(getMessageKey).filter(Boolean));
-    entry.batchLastMsgKey = getBatchLastMsgKey(nextMessages);
+    entry.batchPreviewKey = getBatchPreviewKey(nextMessages);
     return removedMessages;
 }
 

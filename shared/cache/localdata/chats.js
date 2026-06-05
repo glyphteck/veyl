@@ -58,7 +58,7 @@ function serializeChat(chat) {
         peerUid: chat.peerUid || null,
         actors: isObject(chat.actors) ? jsonClean(chat.actors) : undefined,
         settings: isObject(chat.settings) ? jsonClean(chat.settings) : undefined,
-        lastMsg: serializeMsg(chat.lastMsg),
+        preview: serializeMsg(chat.preview),
         readMs: timestampMs(chat.readMs, null, { positive: true }) || null,
         ts: timestampMs(chat.ts, null, { positive: true }) || 0,
         lastUsedAt: Date.now(),
@@ -71,7 +71,7 @@ function reviveChat(chat) {
         return null;
     }
 
-    const lastMsg = reviveMsg(chat.lastMsg);
+    const preview = reviveMsg(chat.preview);
     return {
         id: chat.id,
         linkId: chat.linkId || null,
@@ -80,7 +80,7 @@ function reviveChat(chat) {
         peerUid: chat.peerUid || null,
         actors: isObject(chat.actors) ? chat.actors : undefined,
         settings: isObject(chat.settings) ? chat.settings : undefined,
-        lastMsg,
+        preview,
         readMs: timestampMs(chat.readMs, null, { positive: true }),
         ts: timestampMs(chat.ts, null, { positive: true }) || 0,
         lastUsedAt: timestampMs(chat.lastUsedAt, null, { positive: true }) || 0,
@@ -119,8 +119,8 @@ function collectRemovedChatMediaIds(currentPayload, nextById) {
         return mediaIds;
     }
     for (const [chatId, chat] of Object.entries(chatsById)) {
-        if (!nextById?.[chatId] && chat?.lastMsg) {
-            mediaIds.push(...collectMediaIds(currentPayload, [chat.lastMsg]));
+        if (!nextById?.[chatId] && chat?.preview) {
+            mediaIds.push(...collectMediaIds(currentPayload, [chat.preview]));
         }
     }
     return mediaIds;
@@ -182,9 +182,9 @@ function dropCachedChats(cache, chatIds, currentPayload = null) {
     const mediaIds = [];
     const current = currentPayload || cache.read?.();
     for (const chatId of chatIds) {
-        const lastMsg = current?.chatsById?.[chatId]?.lastMsg;
-        if (lastMsg) {
-            mediaIds.push(...collectMediaIds(current, [lastMsg]));
+        const preview = current?.chatsById?.[chatId]?.preview;
+        if (preview) {
+            mediaIds.push(...collectMediaIds(current, [preview]));
         }
     }
 

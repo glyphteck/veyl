@@ -4,7 +4,7 @@ import { hasChatMediaFileRef, makeHiddenCheckpoint, makeReaction, makeReadReceip
 import { getCachedPair } from '../pairs.js';
 import { makeOwnChatEntry, openOwnChatEntry, ownChatEntryId, sealOwnChatEntry } from '../entry.js';
 import { sealPing } from '../ping.js';
-import { getMediaFileRef } from '../filepayload.js';
+import { getChatMediaFileRef, getMediaFileRef } from '../filepayload.js';
 import { CHAT_ACTION_OPS, actionOpForPayload } from './actions.js';
 import { makeCid } from '../state.js';
 import { cleanChatRetention, newMessageTtlMs, withMessageRetention } from '../ttl.js';
@@ -72,7 +72,7 @@ export async function setChatRead(cloud, uid, chatPrivKey, chatId, readMs) {
     return true;
 }
 
-export async function setChatPreview(cloud, uid, chatPrivKey, chatId, lastMsg = null) {
+export async function setChatPreview(cloud, uid, chatPrivKey, chatId, preview = null) {
     if (!cloud || !uid || !chatPrivKey || !chatId) {
         return false;
     }
@@ -82,16 +82,12 @@ export async function setChatPreview(cloud, uid, chatPrivKey, chatId, lastMsg = 
         return false;
     }
 
-    const previewMs = timestampMs(lastMsg?.ts, null, { positive: true });
     const record = {
         body: await sealOwnChatEntry(chatPrivKey, entryId, {
             ...entry,
-            lastMsg: lastMsg || null,
+            preview: preview || null,
         }),
     };
-    if (previewMs != null) {
-        record.tsMs = previewMs;
-    }
 
     await cloud.user.chats.write(uid, entryId, record);
     return true;
@@ -114,11 +110,11 @@ async function ownEntryWrite(cloud, uid, chatPrivKey, pair, fields = {}) {
         peerActorPK,
         actors,
         settings: fields.settings || existing?.settings,
-        lastMsg: fields.lastMsg || existing?.lastMsg,
+        preview: fields.preview || existing?.preview,
         saved: existing?.saved || null,
         readMs: existing?.readMs,
     });
-    const tsMs = timestampMs(fields.ts, null) ?? timestampMs(fields.lastMsg?.ts, null) ?? null;
+    const tsMs = timestampMs(fields.ts, null);
     return {
         uid,
         entryId,
@@ -129,7 +125,7 @@ async function ownEntryWrite(cloud, uid, chatPrivKey, pair, fields = {}) {
     };
 }
 
-function ownerLastMsg(senderPubkey, message, messageId, head, tsMs, ttlMs) {
+function ownerPreview(senderPubkey, message, messageId, head, tsMs, ttlMs) {
     const ttl = Number.isFinite(ttlMs) ? makeTimestamp(ttlMs) : null;
     return {
         ...(message || {}),
@@ -139,6 +135,16 @@ function ownerLastMsg(senderPubkey, message, messageId, head, tsMs, ttlMs) {
         id: messageId,
         ts: makeTimestamp(tsMs),
         ttl,
+        pending: false,
+        failed: false,
+    };
+}
+
+function ownerEditedPreview(senderPubkey, message) {
+    return {
+        ...(message || {}),
+        s: senderPubkey,
+        from: senderPubkey,
         pending: false,
         failed: false,
     };
@@ -181,7 +187,7 @@ export async function sendMsg(cloud, senderPubkey, senderPrivkey, receiverChatPK
     if (!senderPrivkey || !senderPubkey) {
         throw new Error('vault locked');
     }
-    const updateLastMsg = options?.updateLastMsg !== false;
+    const updatePreview = options?.updatePreview !== false;
     const chatId = cleanText(options?.chatId);
     if (!chatId) {
         throw new Error('chat id required');
@@ -203,21 +209,21 @@ export async function sendMsg(cloud, senderPubkey, senderPrivkey, receiverChatPK
         ttlMs,
     };
 
-    const recipientProfile = await recipientForSend(cloud, receiverChatPK, options, updateLastMsg || options?.ping === true);
-    const lastMsg = updateLastMsg ? ownerLastMsg(senderPubkey, messagePayload, messageId, head, tsMs, ttlMs) : null;
-    const ownerEntry = updateLastMsg
+    const recipientProfile = await recipientForSend(cloud, receiverChatPK, options, updatePreview || options?.ping === true);
+    const preview = updatePreview ? ownerPreview(senderPubkey, messagePayload, messageId, head, tsMs, ttlMs) : null;
+    const ownerEntry = updatePreview
         ? await ownEntryWrite(cloud, cleanText(options?.senderUid), senderPrivkey, pair, {
               peerUid: recipientProfile?.uid || cleanText(options?.receiverUid),
               peerActorPK: recipientProfile?.actorPK,
               entry: options?.ownEntry,
-              lastMsg,
+              preview,
               ts: tsMs,
           })
         : null;
     const ping =
-        recipientProfile?.uid && (updateLastMsg || options?.ping === true)
+        recipientProfile?.uid && (updatePreview || options?.ping === true)
             ? await sealPing(senderPubkey, senderPrivkey, receiverChatPK, {
-                  kind: updateLastMsg ? 'message' : 'ping',
+                  kind: updatePreview ? 'message' : 'ping',
                   chatId,
                   senderUid: cleanText(options?.senderUid),
                   messageId,
@@ -232,7 +238,7 @@ export async function sendMsg(cloud, senderPubkey, senderPrivkey, receiverChatPK
         ownerEntry,
         inbox: ping ? { recipientUid: recipientProfile?.uid, ping: callablePing(ping) } : null,
     });
-    return { chatId, msgId: messageId, cid: head.cid, lastMsg };
+    return { chatId, msgId: messageId, cid: head.cid, preview };
 }
 
 export async function sendReadReceipt(cloud, senderPubkey, senderPrivkey, receiverChatPK, target, options = {}) {
@@ -241,7 +247,7 @@ export async function sendReadReceipt(cloud, senderPubkey, senderPrivkey, receiv
         cid: makeCid(),
         s: senderPubkey,
     };
-    return sendMsg(cloud, senderPubkey, senderPrivkey, receiverChatPK, receipt, { updateLastMsg: false, ...options });
+    return sendMsg(cloud, senderPubkey, senderPrivkey, receiverChatPK, receipt, { updatePreview: false, ...options });
 }
 
 export async function sendReaction(cloud, senderPubkey, senderPrivkey, receiverChatPK, target, emoji, options = {}) {
@@ -250,7 +256,7 @@ export async function sendReaction(cloud, senderPubkey, senderPrivkey, receiverC
         cid: makeCid(),
         s: senderPubkey,
     };
-    return sendMsg(cloud, senderPubkey, senderPrivkey, receiverChatPK, reaction, { updateLastMsg: false, ...options });
+    return sendMsg(cloud, senderPubkey, senderPrivkey, receiverChatPK, reaction, { updatePreview: false, ...options });
 }
 
 export async function sendHiddenCheckpoint(cloud, senderPubkey, senderPrivkey, receiverChatPK, target, options = {}) {
@@ -259,7 +265,7 @@ export async function sendHiddenCheckpoint(cloud, senderPubkey, senderPrivkey, r
         cid: makeCid(),
         s: senderPubkey,
     };
-    return sendMsg(cloud, senderPubkey, senderPrivkey, receiverChatPK, checkpoint, { updateLastMsg: false, ...options });
+    return sendMsg(cloud, senderPubkey, senderPrivkey, receiverChatPK, checkpoint, { updatePreview: false, ...options });
 }
 
 function messageMutationItems(messages, { allowString = false, include = () => true } = {}) {
@@ -273,12 +279,12 @@ function messageMutationItems(messages, { allowString = false, include = () => t
             continue;
         }
         seen.add(id);
-        const messageKey = cleanText(message?.cid || message?.id);
+        const mediaRef = !stringMessage && hasChatMediaFileRef(message) ? getChatMediaFileRef(message.p) : null;
         items.push({
             id,
             cid: cleanText(message?.cid),
-            messageKey,
-            mediaKey: !stringMessage && hasChatMediaFileRef(message) ? messageKey : '',
+            mediaKey: mediaRef?.mediaId || '',
+            mediaPath: mediaRef ? cleanText(message.p) : '',
         });
     }
     return items;
@@ -342,7 +348,7 @@ export async function setChatRetention(cloud, chatId, senderPubkey, senderPrivke
     await sendMsg(cloud, senderPubkey, senderPrivkey, peerChatPK, systemMessage, {
         chatId,
         linkId: pair.linkId,
-        updateLastMsg: false,
+        updatePreview: false,
         retention: nextRetention,
         chatExists: true,
         senderUid: options?.senderUid,
@@ -419,7 +425,7 @@ export async function uploadAttachmentMsg(_cloud, senderPubkey, senderPrivkey, r
     }
 }
 
-export async function updateMsg(cloud, chatId, msgId, senderPubkey, senderPrivkey, receiverChatPK, newMessage) {
+export async function updateMsg(cloud, chatId, msgId, senderPubkey, senderPrivkey, receiverChatPK, newMessage, options = {}) {
     if (!senderPubkey || !senderPrivkey) throw new Error('vault locked');
     const pair = await getCachedPair(senderPubkey, senderPrivkey, receiverChatPK, { chatId });
     if (pair.chatId !== chatId) {
@@ -430,16 +436,43 @@ export async function updateMsg(cloud, chatId, msgId, senderPubkey, senderPrivke
         throw new Error('message target required');
     }
     const op = newMessage?.t === 'req' && cleanText(newMessage?.tx) ? CHAT_ACTION_OPS.PAY_CONFIRM : CHAT_ACTION_OPS.EDIT;
+    const tsMs = Date.now();
     const action = {
         ...(newMessage || {}),
         cid: makeCid(),
         s: senderPubkey,
     };
-    const { head, body } = await sealMsg(pair, action, { op, target });
-    return cloud.chat.messages.update(chatId, msgId, {
-        head,
-        body,
+    const { head, body } = await sealMsg(pair, action, { op, target, ts: tsMs });
+    const messageId = cleanText(options?.messageId) || await cloud.chat.messages.id(chatId);
+    const updatePreview = options?.updatePreview === true;
+    const preview = updatePreview ? ownerEditedPreview(senderPubkey, newMessage) : null;
+    const ownerEntry = updatePreview
+        ? await ownEntryWrite(cloud, cleanText(options?.senderUid), senderPrivkey, pair, {
+              peerUid: cleanText(options?.receiverUid),
+              peerActorPK: cleanText(options?.peerActorPK),
+              entry: options?.ownEntry,
+              preview,
+              ts: preview?.ts ?? tsMs,
+          })
+        : null;
+
+    await cloud.chat.messages.send({
+        chatId,
+        messageId,
+        message: {
+            head,
+            body,
+            ttlMs: null,
+        },
+        ownerEntry,
+        inbox: null,
     });
+    return {
+        chatId,
+        msgId: messageId,
+        cid: head.cid,
+        preview,
+    };
 }
 
 export async function deleteMsg(cloud, chatId, messageOrId, senderPubkey, senderPrivkey, peerChatPK, options = {}) {
@@ -456,7 +489,7 @@ export async function deleteMsg(cloud, chatId, messageOrId, senderPubkey, sender
         return false;
     }
     await cloud.chat.messages.delete(chatId, target, {
-        mediaKeys: item?.mediaKey ? [item.mediaKey] : [],
+        mediaPaths: item?.mediaPath ? [item.mediaPath] : [],
     });
     return true;
 }
@@ -478,8 +511,8 @@ export async function deleteMsgs(cloud, chatId, messages, senderPubkey, senderPr
     for (let index = 0; index < items.length; index += DELETE_WRITE_BATCH_SIZE) {
         const chunk = items.slice(index, index + DELETE_WRITE_BATCH_SIZE);
         const targets = chunk.map((item) => cleanText(item.id)).filter((target) => target && !target.startsWith('local:'));
-        const mediaKeys = chunk.map((item) => cleanText(item.mediaKey)).filter(Boolean);
-        deleted += await cloud.chat.messages.deleteMany(chatId, targets, { mediaKeys });
+        const mediaPaths = chunk.map((item) => cleanText(item.mediaPath)).filter(Boolean);
+        deleted += await cloud.chat.messages.deleteMany(chatId, targets, { mediaPaths });
     }
 
     return deleted;

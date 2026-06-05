@@ -14,6 +14,7 @@ import { getMessagePreviewCacheKey } from '@veyl/shared/chat/previews';
 import { useCloak } from '@veyl/shared/providers/cloakprovider';
 import { useMsgImage } from '@/lib/chat/useimage';
 import { getReadyPoster, getVideoCacheKey, loadVideoObjectUrl, loadVideoPoster } from '@/lib/chat/videocache';
+import { AudioBubble } from './audio';
 import { TextBubble } from './text';
 
 function ReplyButton({ onReplyPress, children }) {
@@ -189,6 +190,14 @@ function ReplyAttachment({ reply, replyFromPeer, onReplyPress }) {
     );
 }
 
+function ReplyAudio({ reply, replyFromPeer, onReplyPress }) {
+    return (
+        <ReplyButton onReplyPress={onReplyPress}>
+            <AudioBubble msg={reply} fromPeer={replyFromPeer} disabled inactive compact />
+        </ReplyButton>
+    );
+}
+
 function ReplyPreview({ reply, replyFromPeer, peerChatPK, peerDisplayName, onReplyPress }) {
     switch (reply?.t) {
         case UNAVAILABLE_REPLY_MSG_TYPE:
@@ -201,8 +210,9 @@ function ReplyPreview({ reply, replyFromPeer, peerChatPK, peerDisplayName, onRep
             return <ReplyImage reply={reply} peerChatPK={peerChatPK} onReplyPress={onReplyPress} />;
         case 'mp4':
             return <ReplyVideo reply={reply} peerChatPK={peerChatPK} onReplyPress={onReplyPress} />;
-        case 'file':
         case 'mp3':
+            return <ReplyAudio reply={reply} replyFromPeer={replyFromPeer} onReplyPress={onReplyPress} />;
+        case 'file':
             return <ReplyAttachment reply={reply} replyFromPeer={replyFromPeer} onReplyPress={onReplyPress} />;
         default:
             return null;

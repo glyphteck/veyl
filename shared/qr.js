@@ -3,6 +3,13 @@ import { getAppOrigin, resolveNetwork } from './network.js';
 import { getRouteParam } from './navigation/params.js';
 import { isUsername, normalizeUsername } from './username.js';
 import { cleanText, lowerText } from './utils/text.js';
+import { resolveVeylVariant } from './variant.js';
+
+const originByVariant = Object.freeze({
+    dev: origins.veylDev,
+    test: origins.veylTest,
+    prod: origins.veyl,
+});
 
 function getQrOrigin() {
     const origin = globalThis?.location?.origin;
@@ -14,7 +21,8 @@ function getQrOrigin() {
         return origin;
     }
 
-    return getAppOrigin(resolveNetwork(globalThis?.process?.env ?? {}));
+    const env = globalThis?.process?.env ?? {};
+    return originByVariant[resolveVeylVariant(env, '')] || getAppOrigin(resolveNetwork(env));
 }
 
 const tx = {
@@ -142,7 +150,7 @@ function makeLink(params) {
 
 function makeUserValue(value) {
     const user = makeUserQr(value);
-    return user ? `@${user.u}` : null;
+    return user ? makeLink({ u: user.u }) : null;
 }
 
 function makeBitcoinValue(value) {

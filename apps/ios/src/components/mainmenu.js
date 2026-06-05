@@ -51,7 +51,7 @@ function MenuItem({ progress, onPress, onPressIn, disabled = false, children }) 
             }),
         [progress]
     );
-    const pressFeedback = useTap({ onPress, disabled, hapticIn: 'light' });
+    const pressFeedback = useTap({ onPress, disabled, hapticIn: false, hapticOut: 'soft', scale: 1 });
     const pressProps = {
         ...pressFeedback.props,
         onPressIn: (event) => {
@@ -62,7 +62,7 @@ function MenuItem({ progress, onPress, onPressIn, disabled = false, children }) 
 
     return (
         <Pressable {...pressProps} style={ITEM_STYLE} disabled={disabled}>
-            <Animated.View style={{ opacity: disabled ? 0.45 : 1, transform: [{ scale: Animated.multiply(liveScale, pressFeedback.scale) }] }}>{children}</Animated.View>
+            <Animated.View style={{ opacity: disabled ? 0.45 : 1, transform: [{ scale: liveScale }] }}>{children}</Animated.View>
         </Pressable>
     );
 }

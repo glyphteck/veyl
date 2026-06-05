@@ -19,15 +19,22 @@ function sameChatShape(a, b) {
         a.ts === b.ts &&
         a.unseen === b.unseen &&
         a.settings?.retention === b.settings?.retention &&
-        a.lastMsg?.cid === b.lastMsg?.cid &&
-        a.lastMsg?.id === b.lastMsg?.id &&
-        a.lastMsg?.t === b.lastMsg?.t &&
-        a.lastMsg?.c === b.lastMsg?.c &&
-        a.lastMsg?.sys === b.lastMsg?.sys &&
-        a.lastMsg?.retention === b.lastMsg?.retention &&
-        timestampMs(a.lastMsg?.ttl) === timestampMs(b.lastMsg?.ttl) &&
-        a.lastMsg?.pending === b.lastMsg?.pending &&
-        a.lastMsg?.failed === b.lastMsg?.failed
+        a.preview?.cid === b.preview?.cid &&
+        a.preview?.id === b.preview?.id &&
+        a.preview?.s === b.preview?.s &&
+        a.preview?.from === b.preview?.from &&
+        a.preview?.t === b.preview?.t &&
+        a.preview?.c === b.preview?.c &&
+        a.preview?.a === b.preview?.a &&
+        a.preview?.tx === b.preview?.tx &&
+        a.preview?.paidBy === b.preview?.paidBy &&
+        a.preview?.sys === b.preview?.sys &&
+        a.preview?.retention === b.preview?.retention &&
+        timestampMs(a.preview?.ttl) === timestampMs(b.preview?.ttl) &&
+        timestampMs(a.preview?.editedAt) === timestampMs(b.preview?.editedAt) &&
+        timestampMs(a.preview?.paidAt) === timestampMs(b.preview?.paidAt) &&
+        a.preview?.pending === b.preview?.pending &&
+        a.preview?.failed === b.preview?.failed
     );
 }
 
@@ -42,7 +49,7 @@ export function sameChats(prev, next) {
 export function sameLastChat(prev, next) {
     if (!prev && !next) return true;
     if (!prev || !next) return false;
-    return prev.peerChatPK === next.peerChatPK && sameChatShape({ id: 0, ts: prev.ts || 0, unseen: false, lastMsg: prev.lastMsg }, { id: 0, ts: next.ts || 0, unseen: false, lastMsg: next.lastMsg });
+    return prev.peerChatPK === next.peerChatPK && sameChatShape({ id: 0, ts: prev.ts || 0, unseen: false, preview: prev.preview }, { id: 0, ts: next.ts || 0, unseen: false, preview: next.preview });
 }
 
 export function getLastChat(chats, chatPK) {
@@ -57,13 +64,13 @@ export function getLastChat(chats, chatPK) {
         return current;
     }, null);
 
-    if (!latest?.lastMsg) {
+    if (!latest?.preview) {
         return null;
     }
 
     const peerChatPK = getChatPeerPK(latest, chatPK);
     return {
-        lastMsg: latest.lastMsg,
+        preview: latest.preview,
         ts: latest.ts || 0,
         peerChatPK,
     };
@@ -74,7 +81,7 @@ export function getPeersFromChats(chats, chatPK) {
 }
 
 export function isChatUnseenForUser(chatData, userChatPK) {
-    const last = chatData?.lastMsg;
+    const last = chatData?.preview;
     if (!last?.ts || !canShowMsg(last)) return false;
     const from = last?.from || last?.s;
     if (from && from === userChatPK) return false;
@@ -133,7 +140,7 @@ export function isCurrentUserChatEntry(chat) {
 }
 
 function hasPendingPreview(chat) {
-    return chat?.lastMsg?.pending === true && chat?.lastMsg?.failed !== true;
+    return chat?.preview?.pending === true && chat?.preview?.failed !== true;
 }
 
 function hasUsableEntry(chat) {
@@ -238,11 +245,18 @@ function samePreviewMsg(a, b) {
     return (
         a.cid === b.cid &&
         a.id === b.id &&
+        a.s === b.s &&
+        a.from === b.from &&
         a.t === b.t &&
         a.c === b.c &&
+        a.a === b.a &&
+        a.tx === b.tx &&
+        a.paidBy === b.paidBy &&
         a.sys === b.sys &&
         a.retention === b.retention &&
         timestampMs(a.ttl) === timestampMs(b.ttl) &&
+        timestampMs(a.editedAt) === timestampMs(b.editedAt) &&
+        timestampMs(a.paidAt) === timestampMs(b.paidAt) &&
         a.pending === b.pending &&
         a.failed === b.failed
     );
@@ -252,16 +266,16 @@ function cleanPreviewReplacement(replacement, keys) {
     return replacement && canShowMsg(replacement) && !messageHasKey(replacement, keys) ? replacement : null;
 }
 
-function previewUnseen(chatId, lastMsg, chatPK, readCache) {
-    if (!lastMsg || !canShowMsg(lastMsg)) {
+function previewUnseen(chatId, preview, chatPK, readCache) {
+    if (!preview || !canShowMsg(preview)) {
         return false;
     }
-    const from = lastMsg?.from || lastMsg?.s || lastMsg?.head?.from;
+    const from = preview?.from || preview?.s || preview?.head?.from;
     if (!from || from === chatPK) {
         return false;
     }
     const readMs = readCache instanceof Map ? readCache.get(chatId) : null;
-    const lastMs = timestampMs(lastMsg.ts);
+    const lastMs = timestampMs(preview.ts);
     return readMs == null || lastMs == null || readMs < lastMs;
 }
 
@@ -284,13 +298,13 @@ export function mergeChatPreviewDrop(overridesByChat, chatId, keys, replacement)
         }
     }
 
-    const lastMsg = cleanPreviewReplacement(replacement, mergedKeys);
-    const lastMsgChanged = !samePreviewMsg(current?.lastMsg ?? null, lastMsg);
-    if (!keysChanged && !lastMsgChanged) {
+    const preview = cleanPreviewReplacement(replacement, mergedKeys);
+    const previewChanged = !samePreviewMsg(current?.preview ?? null, preview);
+    if (!keysChanged && !previewChanged) {
         return false;
     }
 
-    overridesByChat.set(chatId, { keys: mergedKeys, lastMsg });
+    overridesByChat.set(chatId, { keys: mergedKeys, preview });
     return true;
 }
 
@@ -306,26 +320,51 @@ export function applyChatPreviewOverrides(chats, overridesByChat, chatPK, readCa
             return chat;
         }
 
-        const lastMsg = cleanPreviewReplacement(override.lastMsg, override.keys);
-        if (chat?.lastMsg && !messageHasKey(chat.lastMsg, override.keys)) {
-            if (samePreviewMsg(chat.lastMsg, lastMsg)) {
+        const preview = cleanPreviewReplacement(override.preview, override.keys);
+        if (chat?.preview && !messageHasKey(chat.preview, override.keys)) {
+            if (samePreviewMsg(chat.preview, preview)) {
                 return chat;
             }
             overridesByChat.delete(chat.id);
             return chat;
         }
 
-        const unseen = previewUnseen(chat.id, lastMsg, chatPK, readCache);
-        if (samePreviewMsg(chat?.lastMsg ?? null, lastMsg) && chat?.unseen === unseen) {
+        const unseen = previewUnseen(chat.id, preview, chatPK, readCache);
+        if (samePreviewMsg(chat?.preview ?? null, preview) && chat?.unseen === unseen) {
             return chat;
         }
 
         changed = true;
-        const lastMs = timestampMs(lastMsg?.ts, null);
         return {
             ...chat,
-            ts: lastMs ?? chat.ts,
-            lastMsg,
+            preview,
+            unseen,
+        };
+    });
+
+    return changed ? sortChats(next) : chats;
+}
+
+export function replaceChatPreview(chats, chatId, replacement, chatPK, readCache) {
+    if (!chatId) {
+        return chats;
+    }
+    const preview = replacement && canShowMsg(replacement) ? replacement : null;
+    let changed = false;
+    const next = (chats || []).map((chat) => {
+        if (chat?.id !== chatId) {
+            return chat;
+        }
+        const unseen = previewUnseen(chat.id, preview, chatPK, readCache);
+        const ts = timestampMs(preview?.ts, null) ?? chat.ts;
+        if (samePreviewMsg(chat?.preview ?? null, preview) && chat?.unseen === unseen && chat?.ts === ts) {
+            return chat;
+        }
+        changed = true;
+        return {
+            ...chat,
+            preview,
+            ts,
             unseen,
         };
     });
@@ -337,13 +376,13 @@ export function trimExpiredChatPreviews(chats, options = {}) {
     const skip = skipChatSet(options);
     let changed = false;
     const next = (chats || []).map((chat) => {
-        if (!chat?.lastMsg || skip?.has(chat.id) || canShowMsg(chat.lastMsg)) {
+        if (!chat?.preview || skip?.has(chat.id) || canShowMsg(chat.preview)) {
             return chat;
         }
         changed = true;
         return {
             ...chat,
-            lastMsg: null,
+            preview: null,
             unseen: false,
         };
     });
@@ -361,16 +400,16 @@ export function clearChatPreviewsByKeys(chats, chatId, keys) {
 
     let changed = false;
     const next = (chats || []).map((chat) => {
-        if (chat?.id !== chatId || !chat.lastMsg) {
+        if (chat?.id !== chatId || !chat.preview) {
             return chat;
         }
-        if (!messageHasKey(chat.lastMsg, nextKeys)) {
+        if (!messageHasKey(chat.preview, nextKeys)) {
             return chat;
         }
         changed = true;
         return {
             ...chat,
-            lastMsg: null,
+            preview: null,
             unseen: false,
         };
     });
@@ -390,13 +429,13 @@ export function clearChatPreviewsByHiddenKeys(chats, hiddenKeysByChat) {
     let changed = false;
     const next = (chats || []).map((chat) => {
         const keys = hiddenKeysByChat.get(chat?.id);
-        if (!chat?.lastMsg || !messageHasKey(chat.lastMsg, keys)) {
+        if (!chat?.preview || !messageHasKey(chat.preview, keys)) {
             return chat;
         }
         changed = true;
         return {
             ...chat,
-            lastMsg: null,
+            preview: null,
             unseen: false,
         };
     });
@@ -408,10 +447,10 @@ export function nextChatPreviewExpiryMs(chats, now = Date.now(), options = {}) {
     const skip = skipChatSet(options);
     let next = Infinity;
     for (const chat of chats || []) {
-        if (!chat?.lastMsg || skip?.has(chat.id) || !canShowMsg(chat.lastMsg)) {
+        if (!chat?.preview || skip?.has(chat.id) || !canShowMsg(chat.preview)) {
             continue;
         }
-        const ms = ttlMillis(chat.lastMsg.ttl);
+        const ms = ttlMillis(chat.preview.ttl);
         if (ms != null && ms > now && ms < next) {
             next = ms;
         }
@@ -426,8 +465,8 @@ export function applyReadCache(chats, chatPK, readCache) {
 
     return (chats || []).map((chat) => {
         const readMs = readCache.get(chat?.id);
-        const lastMs = timestampMs(chat?.lastMsg?.ts);
-        const from = chat?.lastMsg?.from || chat?.lastMsg?.s || null;
+        const lastMs = timestampMs(chat?.preview?.ts);
+        const from = chat?.preview?.from || chat?.preview?.s || null;
         if (readMs == null || lastMs == null || readMs < lastMs || !from || from === chatPK) {
             return chat;
         }
@@ -448,20 +487,20 @@ export function setLocalChats(chats, localByChat) {
     const indexById = new Map(next.map((chat, index) => [chat.id, index]));
 
     for (const [chatId, locals] of localByChat.entries()) {
-        const lastMsg = locals?.[locals.length - 1];
-        if (!lastMsg) {
+        const preview = locals?.[locals.length - 1];
+        if (!preview) {
             continue;
         }
 
-        const ts = timestampMs(lastMsg.ts, 0);
+        const ts = timestampMs(preview.ts, 0);
         const currentIndex = indexById.get(chatId);
         const current = currentIndex != null ? next[currentIndex] : null;
         const chat = {
             id: chatId,
             ...(current || {}),
-            linkId: current?.linkId || lastMsg?.linkId || null,
-            peerChatPK: current?.peerChatPK || lastMsg?.peerChatPK || null,
-            lastMsg,
+            linkId: current?.linkId || preview?.linkId || null,
+            peerChatPK: current?.peerChatPK || preview?.peerChatPK || null,
+            preview,
             ts,
             unseen: false,
         };

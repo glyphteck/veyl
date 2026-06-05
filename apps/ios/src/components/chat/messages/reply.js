@@ -16,6 +16,7 @@ import { useMessageGestureBlockers } from '@/components/chat/messagegestureconte
 import GlassView from '@/components/glass/glassview';
 import Menu from '@/components/menu';
 import ReactionTray from './reactiontray';
+import { AudioBubble } from './audio';
 import { TextBubble } from './text';
 
 function ReplyPressable({ blockExternalGestures, onReplyPress, children }) {
@@ -183,6 +184,14 @@ function ReplyAttachment({ blockExternalGestures, reply, replyFromPeer, onReplyP
     );
 }
 
+function ReplyAudio({ blockExternalGestures, reply, replyFromPeer, onReplyPress }) {
+    return (
+        <ReplyPressable blockExternalGestures={blockExternalGestures} onReplyPress={onReplyPress}>
+            <AudioBubble msg={reply} fromPeer={replyFromPeer} disabled inactive compact />
+        </ReplyPressable>
+    );
+}
+
 function ReplyPreview({ blockExternalGestures, reply, replyFromPeer, peerChatPK, peerDisplayName, onReplyPress }) {
     switch (reply?.t) {
         case UNAVAILABLE_REPLY_MSG_TYPE:
@@ -193,8 +202,9 @@ function ReplyPreview({ blockExternalGestures, reply, replyFromPeer, peerChatPK,
             return <ReplyRequest blockExternalGestures={blockExternalGestures} reply={reply} replyFromPeer={replyFromPeer} peerDisplayName={peerDisplayName} onReplyPress={onReplyPress} />;
         case 'img':
             return <ReplyImage blockExternalGestures={blockExternalGestures} reply={reply} peerChatPK={peerChatPK} onReplyPress={onReplyPress} />;
-        case 'file':
         case 'mp3':
+            return <ReplyAudio blockExternalGestures={blockExternalGestures} reply={reply} replyFromPeer={replyFromPeer} onReplyPress={onReplyPress} />;
+        case 'file':
         case 'mp4':
             return <ReplyAttachment blockExternalGestures={blockExternalGestures} reply={reply} replyFromPeer={replyFromPeer} onReplyPress={onReplyPress} />;
         default:

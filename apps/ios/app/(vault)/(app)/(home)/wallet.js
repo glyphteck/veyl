@@ -34,9 +34,8 @@ const ACTION_COLLAPSE_OFFSET = (ACTION_ICON_SIZE + ACTION_GAP) / 2;
 const PEER_SELECTOR_LOCK_MS = 520;
 const TX_ROW_HEIGHT = 71;
 const TX_LOADER_HEIGHT = 84;
-const TX_ROW_APPEAR_MS = 320;
+const TX_ROW_APPEAR_MS = 160;
 const TX_ROW_APPEAR_FROM = 0.98;
-const MAX_TX_ANIMATED_INSERTS = 8;
 const TX_INITIAL_RENDER_COUNT = 64;
 const TX_RENDER_BATCH_SIZE = 64;
 const TX_LOADER_ITEM = Object.freeze({ id: '__tx_loader__', kind: 'loader' });
@@ -54,6 +53,15 @@ function easeOutCubic(value) {
 
 function getTxIds(txs) {
     return (txs || []).map((tx) => tx?.id).filter(Boolean);
+}
+
+function getHeadInsertBatch(previousIds, nextIds) {
+    const insertBatch = getInsertedRowBatch(previousIds, nextIds);
+    const headId = nextIds?.[0];
+    if (!insertBatch || !headId || !insertBatch.ids.includes(headId)) {
+        return null;
+    }
+    return { ids: [headId] };
 }
 
 function sameTxRow(a, b) {
@@ -168,8 +176,8 @@ function useAnimatedRecentTxs(recentTxs) {
                 return;
             }
 
-            const insertBatch = getInsertedRowBatch(previousIds, nextIds);
-            if (insertBatch && insertBatch.ids.length <= MAX_TX_ANIMATED_INSERTS) {
+            const insertBatch = getHeadInsertBatch(previousIds, nextIds);
+            if (insertBatch) {
                 startInsert(nextTxs, insertBatch);
                 return;
             }

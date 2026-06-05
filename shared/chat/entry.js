@@ -71,7 +71,7 @@ export function makeOwnChatEntry(pair, fields = {}) {
             ...(fields.peerActorPK ? { [pair.peerChatPK]: fields.peerActorPK } : {}),
         },
         settings: normalizeChatSettings(fields.settings),
-        lastMsg: fields.lastMsg || null,
+        preview: fields.preview || null,
         saved: fields.saved || null,
         readMs: Number.isFinite(fields.readMs) ? fields.readMs : null,
     };

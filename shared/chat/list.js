@@ -13,7 +13,7 @@ function chatDocDataEqual(a, b) {
     return !!a && !!b && timestampKey(a.ts ?? null) === timestampKey(b.ts ?? null) && a.body === b.body;
 }
 
-function normalizeChatLastMsg(msgData, message) {
+function normalizeChatPreview(msgData, message) {
     if (!message || typeof message !== 'object') {
         return null;
     }
@@ -341,9 +341,9 @@ export async function getChat(cloud, uid, chatId, userChatPK, userPrivKey) {
 async function decryptChatEntry(entryRecord, userChatPK, userPrivKey) {
     const data = entryRecord;
     const entry = await openOwnChatEntry(userPrivKey, entryRecord.id, data?.body);
-    const lastMsg = normalizeChatLastMsg({ ts: data?.ts ?? null, ttl: entry?.lastMsg?.ttl ?? null }, entry?.lastMsg);
-    const visibleLastMsg = lastMsg && canShowMsg(lastMsg) && !isControlMsg(lastMsg) ? lastMsg : null;
-    const ts = timestampMs(data?.ts, null) ?? timestampMs(visibleLastMsg?.ts, null) ?? 0;
+    const preview = normalizeChatPreview({ ts: data?.ts ?? null, ttl: entry?.preview?.ttl ?? null }, entry?.preview);
+    const visiblePreview = preview && canShowMsg(preview) && !isControlMsg(preview) ? preview : null;
+    const ts = timestampMs(data?.ts, null) ?? 0;
     const readMs = timestampMs(entry.readMs, null);
     if (!ts) {
         return null;
@@ -358,9 +358,9 @@ async function decryptChatEntry(entryRecord, userChatPK, userPrivKey) {
         settings: entry.settings,
         saved: entry.saved || null,
         readMs,
-        lastMsg: visibleLastMsg,
+        preview: visiblePreview,
         ts,
-        unseen: visibleLastMsg ? isChatUnseenForUser({ lastMsg: visibleLastMsg, readMs }, userChatPK) : false,
+        unseen: visiblePreview ? isChatUnseenForUser({ preview: visiblePreview, readMs }, userChatPK) : false,
     };
 }
 

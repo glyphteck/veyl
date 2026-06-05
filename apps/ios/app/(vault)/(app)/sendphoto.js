@@ -75,9 +75,11 @@ export default function SendPhotoScreen() {
 
     const filteredPeers = useMemo(() => {
         const list = Array.isArray(peers) ? peers : [];
-        const recent = Array.isArray(recentPeers?.chat) ? recentPeers.chat : [];
         const requireChat = (peer) => !!peer?.chatPK;
-        if (!search.trim()) return recent.filter((p) => p.uid !== uid && p.chatPK);
+        if (!search.trim()) {
+            const recent = [...(recentPeers?.chat || []), ...(recentPeers?.wallet || [])];
+            return Array.from(new Map(recent.filter((peer) => peer?.uid && peer.uid !== uid && peer.chatPK).map((peer) => [peer.uid, peer])).values());
+        }
         if (!query) return [];
         return mergeProfiles({
             local: list,
@@ -86,7 +88,7 @@ export default function SendPhotoScreen() {
             excludeUid: uid,
             extraFilter: requireChat,
         });
-    }, [peers, query, recentPeers?.chat, results, search, uid]);
+    }, [peers, query, recentPeers, results, search, uid]);
 
     const handleSend = useCallback(async () => {
         if (!photoUri || !selected.length || sending || busyRef.current || chatBanned) return;
@@ -145,7 +147,6 @@ export default function SendPhotoScreen() {
             peers={filteredPeers}
             theme={theme}
             onPeerPress={togglePeer}
-            peerHapticIn="selection"
             isPeerSelected={(peer) => selectedUids.has(peer.uid)}
             isPeerDisabled={(peer) => !peer?.chatPK}
             footerOpen={hasSelection}

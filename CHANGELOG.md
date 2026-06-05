@@ -2,6 +2,14 @@
 
 Repo-level changes are listed newest first. Keep entries short and concrete. Broad pushes get grouped bullets, while narrow fixes can use one concise bugfix or cleanup bullet that still names the actual change.
 
+## 0.14.2 - 2026-06-05
+
+- Moved chat media uploads to direct client Storage writes at opaque `chats/{chatId}/{mediaId}` paths, with encrypted message payloads carrying the random media id and direct client delete/save/unsave retention handling.
+- Removed chat-scoped media upload and message-delete/check callables, added path-only chat media hold handling, and kept whole-chat deletion aligned with the new Storage prefix.
+- Tightened chat message, preview, edit, receipt, and pending-state handling so live chat rows and chat-list previews update from the current encrypted message state.
+- Fixed web shortcut ownership, iOS avatar cache settling, chat audio row rendering, and repeated chat/transaction list row stability issues.
+- Moved user, message, chat, and session lifecycle documentation into the root `lifecycle/` folder and trimmed duplicate lifecycle text from chat and security guides.
+
 ## 0.14.1 - 2026-06-05
 
 - Replaced chat-list and message-history pagination cursors with stable `{ ts, id }` markers and added a mounted message-window watch so hard-deleted or TTL-removed older messages disappear from already-rendered chat history.

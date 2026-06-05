@@ -421,7 +421,7 @@ async function main() {
                     '--wait',
                     ...iosArgs,
                 ],
-                { cwd: iosDir, env: { ...process.env, VEYL_IOS_VARIANT: 'prod', EXPO_PUBLIC_NETWORK: 'MAINNET' } }
+                { cwd: iosDir, env: { ...process.env, VEYL_IOS_VARIANT: 'prod', EXPO_PUBLIC_VEYL_VARIANT: 'prod', EXPO_PUBLIC_NETWORK: 'MAINNET' } }
             );
             return;
         }
@@ -430,6 +430,7 @@ async function main() {
         const env = {
             ...process.env,
             VEYL_IOS_VARIANT: variant,
+            EXPO_PUBLIC_VEYL_VARIANT: variant,
             VEYL_LOCAL_IOS_BUILD: '1',
             ...(settings.associatedDomainsMode ? { VEYL_ASSOCIATED_DOMAINS_MODE: settings.associatedDomainsMode } : {}),
             EXPO_PUBLIC_NETWORK: settings.network,

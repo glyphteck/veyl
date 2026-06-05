@@ -241,7 +241,7 @@ export default function UserDetails({ data, close }) {
             confirmIcon: <Trash2 className="size-4" />,
             onCancel: () => openDialog('userdetails', { user }),
             onConfirm: () => {
-                void Promise.resolve(deleteChat?.(chatId, { keepSelected: true }))
+                void Promise.resolve(deleteChat?.(chatId))
                     .catch((error) => {
                         restoreDeletedChat?.(chatId);
                         console.error('delete chat failed', error);

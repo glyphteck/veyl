@@ -66,7 +66,7 @@ Message handling:
 - text messages: decrypted and mirrored back
 - attachments: decrypted, re-encrypted under the bot's keys, uploaded as a fresh copy, and sent back
 - payment requests: paid if the bot has sufficient balance, original request patched with the tx id, then a mirrored request sent back for the same amount
-- read receipts: appended as encrypted `t: 'rr'` control messages before mirrored replies and sent without updating `lastMsg`
+- read receipts: appended as encrypted `t: 'rr'` control messages before mirrored replies and sent without updating the chat preview
 - hidden checkpoints: appended as encrypted `t: 'hid'` control messages with the bot read receipt, because the headless runtime has no chat UI to keep those messages visible
 - reactions and incoming hidden checkpoints: encrypted control messages; skipped by the bot runtime instead of mirrored
 - incoming transfers: accepted passively — Spark claims them automatically and the runtime refreshes the balance snapshot

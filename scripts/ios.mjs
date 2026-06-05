@@ -54,7 +54,7 @@ for (const arg of args) {
     extra.push(arg);
 }
 
-const env = { ...process.env, VEYL_IOS_VARIANT: 'dev', EXPO_PUBLIC_NETWORK: 'REGTEST' };
+const env = { ...process.env, VEYL_IOS_VARIANT: 'dev', EXPO_PUBLIC_VEYL_VARIANT: 'dev', EXPO_PUBLIC_NETWORK: 'REGTEST' };
 if (network === 'mainnet') {
     env.EXPO_PUBLIC_NETWORK = 'MAINNET';
 } else if (network === 'regtest') {

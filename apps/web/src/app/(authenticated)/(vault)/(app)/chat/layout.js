@@ -7,7 +7,7 @@ import { useBitcoin } from '@/components/providers/bitcoinprovider';
 import { useCloak } from '@veyl/shared/providers/cloakprovider';
 import { formatUserDisplay } from '@veyl/shared/profile';
 import { getChatPeerPK } from '@veyl/shared/chat/ids';
-import { getMsgPreview as displayLastMsg } from '@veyl/shared/chat/messages';
+import { getMsgPreview as displayPreview } from '@veyl/shared/chat/messages';
 import { useEffect } from 'react';
 
 export default function ChatTitleLayout({ children }) {
@@ -35,7 +35,7 @@ export default function ChatTitleLayout({ children }) {
             username: profile?.username,
             chatPK: peerChatPK,
         });
-        const preview = displayLastMsg(selectedChat.lastMsg, chatPK, settings, bitcoin.price);
+        const preview = displayPreview(selectedChat.preview, chatPK, settings, bitcoin.price);
         document.title = `${displayName}: ${preview}`;
     }, [chats, selectedChatId, isChatDataReady, chatPK, peerByChatPK, settings.moneyFormat, bitcoin.price, cloaked]);
 

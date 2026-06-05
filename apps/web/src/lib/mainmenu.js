@@ -2,7 +2,7 @@ import { lowerText } from '@veyl/shared/utils/text';
 import { compareProfilesByName } from '@veyl/shared/search/sort';
 import { mergeProfiles } from '@veyl/shared/search/merge';
 import { completeCommandPrefix, getTypingUsername, matchCommands, parseCommand } from '@veyl/shared/commands';
-import { getMsgPreview as displayLastMsg } from '@veyl/shared/chat/messages';
+import { getMsgPreview as displayPreview } from '@veyl/shared/chat/messages';
 import { hasAvailableBalance } from '@veyl/shared/wallet/balance';
 import { formatUserDisplay } from '@veyl/shared/profile';
 import { renderMoney } from '@veyl/shared/money';
@@ -275,7 +275,7 @@ function chatPreview({ lastChat, peerByChatPK, chatPK, settings, bitcoin }) {
         },
         true
     );
-    const lastMessage = displayLastMsg(lastChat.lastMsg, chatPK, settings, bitcoin?.price);
+    const lastMessage = displayPreview(lastChat.preview, chatPK, settings, bitcoin?.price);
     const truncatedMessage = lastMessage.length > 24 ? `${lastMessage.slice(0, 24)}...` : lastMessage;
     return `${displayName}: ${truncatedMessage}`;
 }

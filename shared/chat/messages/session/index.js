@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { readCachedMedia, writeCachedMedia } from '../../../cache/localdata.js';
 import { saveMedia } from '../../attachments.js';
-import { filterChatMessages, getChatPeerPK, getChatLastMsgKey } from '../../ids.js';
+import { filterChatMessages, getChatPeerPK, getChatPreviewKey } from '../../ids.js';
 import { collectMessageKeys } from '../../messagekeys.js';
 import { canShowMsg, getDisplayMessages, getHiddenDisplayMessages, isControlMsg } from '../../messages.js';
 import { runMessageAutoDelete } from '../autodelete.js';
@@ -15,7 +15,7 @@ import { getMessageKey } from '../../state.js';
 import { MESSAGE_VIEW_CACHE_SIZE, normalizeChatWarming } from './config.js';
 import { nonNegativeNumber, positiveNumber } from '../../../utils/number.js';
 import { getMediaTasks, waitForMediaIdle } from './media.js';
-import { getBatchLastMsgKey, isBatchFresh, makeMessageSessionSnapshot, nextTrimMs, removeEntryMessages, trimExpiredEntry } from './state.js';
+import { getBatchPreviewKey, isBatchFresh, makeMessageSessionSnapshot, nextTrimMs, removeEntryMessages, trimExpiredEntry } from './state.js';
 import { createMessageViewCache } from './viewcache.js';
 import { warmCandidates, warmTaskKey } from './warm.js';
 import { markDiag, markDone, markError } from '../../../utils/diagnostics.js';
@@ -380,8 +380,8 @@ export function useChatMessageSessions({ cloud, media = {}, chatPK, chatPrivateK
             const chatItem = listRef.current?.find?.((item) => item?.id === chatId) || null;
             const peerChatPK = options.peerChatPK || getChatPeerPK(chatItem, chatPK);
             const actors = options.actors || chatItem?.actors || null;
-            const hasChatLastMsgKey = Object.prototype.hasOwnProperty.call(options, 'chatLastMsgKey');
-            const chatLastMsgKey = hasChatLastMsgKey ? (options.chatLastMsgKey ?? null) : undefined;
+            const hasChatPreviewKey = Object.prototype.hasOwnProperty.call(options, 'chatPreviewKey');
+            const chatPreviewKey = hasChatPreviewKey ? (options.chatPreviewKey ?? null) : undefined;
             const generation = generationRef.current;
 
             if (chatBanned || !isActive || !chatId || !chatPK || !chatPrivateKey || !peerChatPK || pendingDeleteIdsRef.current.has(chatId)) {
@@ -392,14 +392,14 @@ export function useChatMessageSessions({ cloud, media = {}, chatPK, chatPrivateK
             let route = source === 'route';
             let warm = source === 'warm';
             let subscribers = new Set();
-            let nextChatLastMsgKey = chatLastMsgKey ?? null;
+            let nextChatPreviewKey = chatPreviewKey ?? null;
             if (existing && existing.generation === generation) {
                 const existingPageSize = Number(existing.pageSize) || 0;
                 if (pageSize <= existingPageSize) {
                     existing.route = existing.route || route;
                     existing.warm = existing.warm || warm;
-                    if (hasChatLastMsgKey) {
-                        existing.chatLastMsgKey = chatLastMsgKey ?? null;
+                    if (hasChatPreviewKey) {
+                        existing.chatPreviewKey = chatPreviewKey ?? null;
                     }
                     if (!existing.route) {
                         const expiredMessages = trimExpiredEntry(existing);
@@ -420,7 +420,7 @@ export function useChatMessageSessions({ cloud, media = {}, chatPK, chatPrivateK
                 route = existing.route || route;
                 warm = existing.warm || warm;
                 subscribers = new Set(existing.subscribers || []);
-                nextChatLastMsgKey = hasChatLastMsgKey ? chatLastMsgKey ?? null : existing.chatLastMsgKey ?? null;
+                nextChatPreviewKey = hasChatPreviewKey ? chatPreviewKey ?? null : existing.chatPreviewKey ?? null;
                 try {
                     existing.unsub?.();
                 } catch {}
@@ -446,8 +446,8 @@ export function useChatMessageSessions({ cloud, media = {}, chatPK, chatPrivateK
                 unsub: null,
                 startedAt: Date.now(),
                 updatedAt: 0,
-                chatLastMsgKey: nextChatLastMsgKey,
-                batchLastMsgKey: null,
+                chatPreviewKey: nextChatPreviewKey,
+                batchPreviewKey: null,
                 batchKeys: new Set(),
                 expiredKeys: new Set(),
                 deletedKeys: new Set(),
@@ -482,7 +482,7 @@ export function useChatMessageSessions({ cloud, media = {}, chatPK, chatPrivateK
                     entry.exists = true;
                     entry.updatedAt = Date.now();
                     entry.batchKeys = new Set(chatMessages.map(getMessageKey).filter(Boolean));
-                    entry.batchLastMsgKey = getBatchLastMsgKey(chatMessages);
+                    entry.batchPreviewKey = getBatchPreviewKey(chatMessages);
                     entry.expiredKeys = new Set(entry.expiredKeys || []);
                     entry.deletedKeys = new Set(deletedKeys || []);
                     const droppedKeys = new Set(entry.deletedKeys);
@@ -522,7 +522,7 @@ export function useChatMessageSessions({ cloud, media = {}, chatPK, chatPrivateK
                     entry.exists = false;
                     entry.updatedAt = Date.now();
                     entry.batchKeys = new Set();
-                    entry.batchLastMsgKey = null;
+                    entry.batchPreviewKey = null;
                     entry.expiredKeys = new Set();
                     entry.deletedKeys = new Set();
                     if (isDenied(error)) {
@@ -649,7 +649,7 @@ export function useChatMessageSessions({ cloud, media = {}, chatPK, chatPrivateK
                 const snapshot = ensureMessageBatch(task.chatId, {
                     source: 'warm',
                     peerChatPK: task.peerChatPK,
-                    chatLastMsgKey: task.chatLastMsgKey,
+                    chatPreviewKey: task.chatPreviewKey,
                     pageSize: task.pageSize,
                 });
                 if (!snapshot || snapshot.ready || snapshot.exists === false) {
@@ -763,7 +763,7 @@ export function useChatMessageSessions({ cloud, media = {}, chatPK, chatPrivateK
                     kind: 'latest',
                     chatId: chatItem.id,
                     peerChatPK,
-                    chatLastMsgKey: getChatLastMsgKey(chatItem),
+                    chatPreviewKey: getChatPreviewKey(chatItem),
                     pageSize: warming.pageSize,
                 };
                 const key = warmTaskKey(task);

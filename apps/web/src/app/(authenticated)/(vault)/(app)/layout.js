@@ -7,6 +7,7 @@ import Navbar from '@/components/navbar';
 import { useChatInput } from '@/components/providers/chatprovider';
 import { AppDialogHost, useDialogState } from '@/components/providers/dialogprovider';
 import { PeerProvider } from '@/components/providers/peerprovider';
+import { ShortcutProvider } from '@/components/providers/shortcutprovider';
 import { TxDataProvider } from '@/components/providers/txdataprovider';
 import { useUser } from '@/components/providers/userprovider';
 import { useVault } from '@/components/providers/vaultprovider';
@@ -121,7 +122,9 @@ export default function AppLayout({ children }) {
             <TxDataProvider>
                 <PeerProvider>
                     <AppDialogHost>
-                        <AppShell>{children}</AppShell>
+                        <ShortcutProvider>
+                            <AppShell>{children}</AppShell>
+                        </ShortcutProvider>
                     </AppDialogHost>
                 </PeerProvider>
             </TxDataProvider>

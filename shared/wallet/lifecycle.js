@@ -5,12 +5,9 @@ import {
     WALLET_BALANCE_EVENT_COALESCE_MS,
     WALLET_INCOMING_UPDATE_COALESCE_MS,
     WALLET_TRANSFER_POLL_MS,
-    WALLET_UPDATE_RATE_LIMIT_MS,
 } from '../config.js';
-import { sleep } from '../utils/async.js';
 import { markDiag, markDone } from '../utils/diagnostics.js';
 
-const RATE_LIMIT = WALLET_UPDATE_RATE_LIMIT_MS;
 const POLL_TXS_RATE = WALLET_TRANSFER_POLL_MS;
 const ACTIVE_CLAIM_RATE = WALLET_ACTIVE_CLAIM_POLL_MS;
 const BALANCE_EVENT_COALESCE_MS = WALLET_BALANCE_EVENT_COALESCE_MS;
@@ -54,7 +51,6 @@ function mergeWalletUpdateRequest(current, next) {
 }
 
 export function useWalletData({ wallet, getBalance, getRecentTxs, diag }) {
-    const lastFetchTime = useRef(0);
     const updatePromiseRef = useRef(null);
     const queuedRequestRef = useRef(null);
 
@@ -86,20 +82,6 @@ export function useWalletData({ wallet, getBalance, getRecentTxs, diag }) {
                 let currentRequest = request;
 
                 while (currentRequest) {
-                    const now = Date.now();
-                    const ageMs = now - lastFetchTime.current;
-                    if (!currentRequest.force && ageMs > 0 && ageMs < RATE_LIMIT) {
-                        const waitMs = RATE_LIMIT - ageMs;
-                        markDiag(diag, 'wallet.update.delay', {
-                            force: currentRequest.force,
-                            reason: currentRequest.reason,
-                            waitMs,
-                            balance: currentRequest.balance,
-                            transfers: currentRequest.transfers,
-                        });
-                        await sleep(waitMs);
-                    }
-
                     const startedAt = Date.now();
                     markDiag(diag, 'wallet.update.start', {
                         force: currentRequest.force,
@@ -107,7 +89,6 @@ export function useWalletData({ wallet, getBalance, getRecentTxs, diag }) {
                         balance: currentRequest.balance,
                         transfers: currentRequest.transfers,
                     });
-                    lastFetchTime.current = startedAt;
                     const tasks = [];
                     if (currentRequest.balance) {
                         tasks.push(getBalance());

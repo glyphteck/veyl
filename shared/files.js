@@ -2,9 +2,9 @@
 
 import { decodeFileKey, openFileForPath } from './crypto/file.js';
 import { randomBytes, toHex } from './crypto/core.js';
-import { CHAT_SLOT, getMediaFileRef, makeChatFileUploadPayload, makeSharedFileUploadPayload, mediaFilePath, sharedMediaFilePath } from './chat/filepayload.js';
+import { getMediaFileRef, makeChatFileUploadPayload, makeSharedFileUploadPayload, makeChatMediaId, mediaFilePath, sharedMediaFilePath } from './chat/filepayload.js';
 
-export { getMediaFileRef, mediaFilePath, sharedMediaFilePath };
+export { getMediaFileRef, makeChatMediaId, mediaFilePath, sharedMediaFilePath };
 
 export function makeFileId(size = 8) {
     return toHex(randomBytes(size));
@@ -19,11 +19,9 @@ function setErrorStage(error, stage, extra = {}) {
     return error;
 }
 
-export async function makeChatFileUpload(pair, cid, data, { slot = CHAT_SLOT, contentType = 'application/octet-stream', cacheControl = 'private, max-age=0, no-transform' } = {}) {
+export async function makeChatFileUpload(pair, cid, data, { cacheControl = 'private, max-age=0, no-transform' } = {}) {
     try {
         return await makeChatFileUploadPayload(pair, cid, data, {
-            slot,
-            contentType,
             cacheControl,
         });
     } catch (error) {

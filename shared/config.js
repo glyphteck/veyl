@@ -47,6 +47,7 @@ export const CHAT_SEEN_TTL_MS = DAY_MS;
 export const CHAT_MEDIA_TTL_DAYS = CHAT_UNSAVED_TTL_DAYS;
 export const CHAT_MEDIA_TTL_MS = CHAT_MEDIA_TTL_DAYS * DAY_MS;
 export const CHAT_MAX_UPLOAD_FILES = 5;
+export const CHAT_UPLOAD_MAX_BYTES = 64 * MIB_BYTES;
 export const CHAT_IMAGE_MAX_EDGE = 1600;
 export const CHAT_IMAGE_COMPRESS = 0.82;
 
@@ -125,8 +126,7 @@ export const BAN_REFRESH_GRACE_MS = 50;
 // Wallet product and validation knobs.
 export const REQUEST_MONEY_MAX_SATS = SATS_PER_BITCOIN * 100_000n;
 
-// Wallet network/API cost knobs. These trade freshness against Spark calls and pagination work.
-export const WALLET_UPDATE_RATE_LIMIT_MS = 5 * MS_PER_SECOND;
+// Wallet network/API knobs. These tune fallback polling, event coalescing, and pagination work.
 export const WALLET_TRANSFER_POLL_MS = 10 * MS_PER_SECOND;
 export const WALLET_ACTIVE_CLAIM_POLL_MS = 20 * MS_PER_SECOND;
 export const WALLET_BALANCE_EVENT_COALESCE_MS = 250;

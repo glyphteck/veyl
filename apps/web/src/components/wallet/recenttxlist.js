@@ -194,20 +194,24 @@ export function RecentTxList() {
     const user = useUser();
     const { settings } = user;
     const moneyFormat = settings.moneyFormat;
-    const { sortedTransactions } = useTxData();
+    const { getHistoryTxsInRange, sortedTransactions, txServerHistoryComplete } = useTxData();
     const { peerByWalletPK } = usePeer();
     const { cloaked } = useCloak();
     const scrollRef = useRef(null);
     const rowRefs = useRef(new Map());
     const loadingMoreRef = useRef(false);
-    const txs = sortedTransactions || [];
+    const publishedTxs = sortedTransactions || [];
+    const historyTxs = useMemo(() => (txServerHistoryComplete === true ? getHistoryTxsInRange?.('all-time') || [] : []), [getHistoryTxsInRange, txServerHistoryComplete]);
+    const useHistoryTxs = txServerHistoryComplete === true && historyTxs.length >= publishedTxs.length;
+    const txs = useHistoryTxs ? historyTxs : publishedTxs;
     const { displayTxs, insertingIds } = useRecentTxAnimation(txs);
     const [visibleLimit, setVisibleLimit] = useState(0);
 
     const visibleTxs = useMemo(() => displayTxs.slice(0, Math.min(visibleLimit, displayTxs.length)), [displayTxs, visibleLimit]);
     const visibleTxIds = useMemo(() => visibleTxs.map((tx) => tx.id), [visibleTxs]);
     const hasHiddenRenderedTxs = visibleLimit < displayTxs.length;
-    const hasLoader = hasHiddenRenderedTxs || hasMoreTxs || isTxLoading;
+    const hasMoreAvailableTxs = useHistoryTxs ? false : hasMoreTxs;
+    const hasLoader = hasHiddenRenderedTxs || hasMoreAvailableTxs || isTxLoading;
     const itemCount = visibleTxs.length;
     const openTx = useCallback((tx) => openDialog('txdetails', { tx }), [openDialog]);
 
@@ -281,13 +285,13 @@ export function RecentTxList() {
             setVisibleLimit((current) => Math.min(displayTxs.length, Math.max(current, TX_INITIAL_RENDER_LIMIT) + TX_RENDER_BATCH_SIZE));
             return;
         }
-        if (!hasMoreTxs || isTxLoading || loadingMoreRef.current) return;
+        if (!hasMoreAvailableTxs || isTxLoading || loadingMoreRef.current) return;
         loadingMoreRef.current = true;
         const request = loadMoreTxs?.();
         Promise.resolve(request).finally(() => {
             loadingMoreRef.current = false;
         });
-    }, [displayTxs.length, hasHiddenRenderedTxs, hasMoreTxs, isTxLoading, loadMoreTxs]);
+    }, [displayTxs.length, hasHiddenRenderedTxs, hasMoreAvailableTxs, isTxLoading, loadMoreTxs]);
 
     const handleScroll = useCallback(
         (event) => {
@@ -301,11 +305,11 @@ export function RecentTxList() {
 
     useEffect(() => {
         const node = scrollRef.current;
-        if (!node || !txReady || (!hasHiddenRenderedTxs && !hasMoreTxs) || isTxLoading) return;
+        if (!node || !txReady || (!hasHiddenRenderedTxs && !hasMoreAvailableTxs) || isTxLoading) return;
         if (node.scrollHeight <= node.clientHeight + 4) {
             loadMore();
         }
-    }, [hasHiddenRenderedTxs, hasMoreTxs, isTxLoading, loadMore, txReady, visibleTxs.length]);
+    }, [hasHiddenRenderedTxs, hasMoreAvailableTxs, isTxLoading, loadMore, txReady, visibleTxs.length]);
 
     if (!txReady || displayTxs.length === 0) {
         return (

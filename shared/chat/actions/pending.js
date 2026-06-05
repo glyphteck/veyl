@@ -47,8 +47,8 @@ export function usePendingSendQueue() {
             runningRef.current = true;
             sentAtRef.current = [...sentAtRef.current, Date.now()].slice(-CHAT_SEND_QUEUE_RATE_LIMIT_COUNT);
             try {
-                const updateLastMsg = job.lastMsgRequired || !queueRef.current.some((item) => item.lastMsgKey && item.lastMsgKey === job.lastMsgKey);
-                const result = await job.run({ updateLastMsg });
+                const updatePreview = job.previewRequired || !queueRef.current.some((item) => item.previewKey && item.previewKey === job.previewKey);
+                const result = await job.run({ updatePreview });
                 job.onSuccess?.();
                 job.resolve?.(result);
             } catch (error) {

@@ -47,6 +47,13 @@ service firebase.storage {
         && request.resource.size > 0;
     }
 
+    function isEncryptedChatBlob() {
+      return request.resource != null
+        && request.resource.size > 0
+        && request.resource.size <= 64 * 1024 * 1024
+        && request.resource.contentType == 'application/octet-stream';
+    }
+
     function isReportEvidenceId(value) {
       return value is string && value.matches('^[A-Za-z0-9_-]{8,80}$');
     }
@@ -83,11 +90,15 @@ service firebase.storage {
       );
     }
 
-    match /chat-media/{chatId}/{messageKey}/{slot} {
+    match /chats/{chatId}/{mediaId} {
       allow get: if signedIn() && !chatDeleted(chatId);
       allow list: if false;
-      allow create: if false;
-      allow update, delete: if false;
+      allow create: if signedIn()
+        && !chatDeleted(chatId)
+        && mediaId.matches('^[0-9a-fA-F]{32}$')
+        && isEncryptedChatBlob();
+      allow update: if false;
+      allow delete: if signedIn() && !chatDeleted(chatId);
     }
 
     match /shared/{sharedId} {

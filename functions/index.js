@@ -15,10 +15,10 @@ export { setPush, dropPush } from './user/actions/push.js';
 export { reserveReportEvidenceUpload, submitReport } from './user/actions/report.js';
 
 // chat functions
-export { reserveChatMediaUpload, reserveSharedMediaUpload } from './chat/media.js';
+export { reserveSharedMediaUpload, setChatMediaHold } from './chat/media.js';
 export { openChatLink } from './chat/links.js';
 export { push } from './chat/push.js';
-export { checkChats, cleanupDeletedChats, deleteChat, deleteChatMessage, deleteChatMessages, setChatMessageTtl } from './chat/deletechat.js';
+export { cleanupDeletedChats, deleteChat } from './chat/deletechat.js';
 
 // bot functions
 export { setBotPower } from './admin/setbotpower.js';

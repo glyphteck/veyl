@@ -20,7 +20,7 @@ export function clearReadWrites(pendingRead) {
     pendingRead?.clear?.();
 }
 
-export function scheduleReadReceiptWrite({ pendingRead, chatId, message, lastMsgMs, delay, write, onError }) {
+export function scheduleReadReceiptWrite({ pendingRead, chatId, message, previewMs, delay, write, onError }) {
     if (!pendingRead || !chatId || !message) {
         return;
     }
@@ -46,7 +46,7 @@ export function scheduleReadReceiptWrite({ pendingRead, chatId, message, lastMsg
         timeoutId,
         target: getMessageKey(message),
         peerChatPK: message.from || message.s,
-        lastMsgMs,
+        previewMs,
     });
 }
 
@@ -61,33 +61,33 @@ export function readCandidate({ chatId, chatPK, chatPrivateKey, message, readCac
         return null;
     }
 
-    const lastMsgMs = timestampMs(message.ts, null);
-    if (lastMsgMs == null) {
+    const previewMs = timestampMs(message.ts, null);
+    if (previewMs == null) {
         return null;
     }
 
     const guardedUpToMs = readCache?.get?.(chatId);
-    if (guardedUpToMs != null && guardedUpToMs >= lastMsgMs) {
+    if (guardedUpToMs != null && guardedUpToMs >= previewMs) {
         return null;
     }
 
     return {
-        lastMsg: message,
-        lastMsgMs,
+        preview: message,
+        previewMs,
     };
 }
 
-export function markChatsRead(chats, chatId, lastMsg) {
+export function markChatsRead(chats, chatId, preview) {
     return chats.map((chatItem) => {
         if (chatItem.id !== chatId) {
             return chatItem;
         }
 
-        const isLastMsg = chatItem.lastMsg?.cid && chatItem.lastMsg.cid === lastMsg.cid;
+        const isPreview = chatItem.preview?.cid && chatItem.preview.cid === preview.cid;
         return {
             ...chatItem,
             unseen: false,
-            lastMsg: isLastMsg ? { ...(chatItem.lastMsg || {}) } : chatItem.lastMsg,
+            preview: isPreview ? { ...(chatItem.preview || {}) } : chatItem.preview,
         };
     });
 }

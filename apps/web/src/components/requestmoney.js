@@ -279,7 +279,7 @@ export default function RequestMoney({ peer, amount = '', inputUnit, onPeerChang
                 <Button
                     type="submit"
                     form="request-money-form"
-                    className="button-outline shrinker flex-1"
+                    className="button-fill shrinker flex-1"
                     disabled={
                         isSubmitting ||
                         !form.watch('sender') ||

@@ -10,9 +10,60 @@ import { getAttachmentCaption, getAttachmentTitle, hasStoredFileRef, isExpiredAt
 import { useCloak } from '@veyl/shared/providers/cloakprovider';
 import { formatDuration } from '@veyl/shared/utils/time';
 
+const AUDIO_BUBBLE_WIDTH = 320;
+const AUDIO_REPLY_SCALE = 0.56;
+
+export function AudioBubble({ msg, fromPeer = false, loading = false, playing = false, disabled = false, inactive = false, compact = false, time = 0, duration: durationProp, timeLabel, onToggle, onSeek }) {
+    const { cloaked } = useCloak();
+    const title = getAttachmentTitle(msg);
+    const caption = getAttachmentCaption(msg);
+    const duration = Number.isFinite(durationProp) ? durationProp : Number.isFinite(msg?.d) ? msg.d : 0;
+    const currentTime = Number.isFinite(time) ? time : 0;
+    const max = duration > 0 ? duration : 0;
+    const value = Math.min(currentTime, max || 0);
+    const label = timeLabel || `${formatDuration(currentTime, { hours: false })} / ${formatDuration(duration, { hours: false })}`;
+    const compactWidth = Math.round(Math.min(160, AUDIO_BUBBLE_WIDTH * AUDIO_REPLY_SCALE));
+    const canSeek = typeof onSeek === 'function' && !inactive;
+    const buttonDisabled = disabled || inactive || typeof onToggle !== 'function';
+    const controlClassName = `${compact ? 'h-8 w-6' : 'h-10 w-8 transition-transform hover:scale-120 active:scale-85 disabled:hover:scale-100'} flex shrink-0 items-center justify-center ${inactive ? 'opacity-50' : 'disabled:cursor-default disabled:opacity-50'}`;
+    const controlIcon = loading ? <Loader className={`${compact ? 'size-4' : 'size-5'} animate-spin`} /> : playing ? <Pause className={`${compact ? 'size-5' : 'size-6'} fill-current stroke-0`} /> : <Play className={`${compact ? 'size-5' : 'size-6'} fill-current stroke-0`} />;
+
+    return (
+        <div
+            className={`flex min-w-0 max-w-full items-center ${compact ? 'gap-2 rounded-[20px] px-2.5 py-2 opacity-65' : 'w-xs gap-3 rounded-round py-3 pl-4 pr-4'} ${bubbleBg(fromPeer)} shadow-sm`}
+            style={compact ? { width: compactWidth, maxWidth: '100%' } : undefined}
+        >
+            {inactive ? (
+                <span className={controlClassName} aria-hidden="true">
+                    {controlIcon}
+                </span>
+            ) : (
+                <button type="button" className={controlClassName} onClick={onToggle} disabled={buttonDisabled} title={playing ? 'pause audio' : 'play audio'}>
+                    {controlIcon}
+                </button>
+            )}
+            <div className="min-w-0 flex-1">
+                <div className={`flex min-w-0 items-center ${compact ? 'gap-2' : 'gap-3'}`}>
+                    <p className={`min-w-0 flex-1 truncate font-black ${compact ? 'text-sm' : ''} ${cloaked ? 'cloaked' : ''}`}>{title}</p>
+                    {compact ? null : <p className="shrink-0 text-sm tabular-nums text-muted">{label}</p>}
+                </div>
+                {canSeek ? (
+                    <input type="range" min="0" max={max || 1} step="0.01" value={value} onChange={onSeek} disabled={disabled} className={`${compact ? 'mt-1' : 'mt-2'} block w-full accent-foreground`} />
+                ) : (
+                    <div className={`${compact ? 'mt-1 h-3' : 'mt-2 h-4'} flex w-full items-center opacity-50`}>
+                        <div className="h-1 w-full overflow-hidden rounded-full bg-foreground/15">
+                            <div className="h-full bg-foreground" style={{ width: max > 0 ? `${Math.max(0, Math.min(1, value / max)) * 100}%` : '0%' }} />
+                        </div>
+                    </div>
+                )}
+                {caption ? <p className={`${compact ? 'mt-1.5 truncate text-xs' : 'mt-2 wrap-break-word whitespace-pre-wrap text-sm'} ${cloaked ? 'cloaked' : ''}`}>{caption}</p> : null}
+            </div>
+        </div>
+    );
+}
+
 export default function AudioMessage({ msg, peerChatPK, fromPeer = false }) {
     const { readMessageFile } = useChat();
-    const { cloaked } = useCloak();
     const audioRef = useRef(null);
     const [src, setSrc] = useState(() => (!isExpiredAttachmentMsg(msg) && typeof msg?.localUri === 'string' && msg.localUri ? msg.localUri : ''));
     const [loading, setLoading] = useState(() => msg?.t === 'mp3' && !msg?.localUri && hasStoredFileRef(msg));
@@ -21,7 +72,6 @@ export default function AudioMessage({ msg, peerChatPK, fromPeer = false }) {
     const [time, setTime] = useState(0);
     const [duration, setDuration] = useState(Number.isFinite(msg?.d) ? msg.d : 0);
     const title = getAttachmentTitle(msg);
-    const caption = getAttachmentCaption(msg);
 
     useEffect(
         () => () => {
@@ -143,28 +193,11 @@ export default function AudioMessage({ msg, peerChatPK, fromPeer = false }) {
     }, []);
 
     const disabled = loading || !!error || !src;
-    const max = duration > 0 ? duration : 0;
     const timeLabel = loading ? 'loading...' : error || `${formatDuration(time, { hours: false })} / ${formatDuration(duration, { hours: false })}`;
 
     return (
-        <div className={`flex min-w-0 w-xs max-w-full items-center gap-3 rounded-round ${bubbleBg(fromPeer)} pl-4 pr-4 py-3 shadow-sm`}>
-            <button
-                type="button"
-                className="flex h-10 w-8 shrink-0 items-center justify-center transition-transform hover:scale-120 active:scale-85 disabled:cursor-default disabled:opacity-50 disabled:hover:scale-100"
-                onClick={toggle}
-                disabled={disabled}
-                title={playing ? 'pause audio' : 'play audio'}
-            >
-                {loading ? <Loader className="size-5 animate-spin" /> : playing ? <Pause className="size-6 fill-current stroke-0" /> : <Play className="size-6 fill-current stroke-0" />}
-            </button>
-            <div className="min-w-0 flex-1">
-                <div className="flex min-w-0 items-center gap-3">
-                    <p className={`min-w-0 flex-1 truncate font-black ${cloaked ? 'cloaked' : ''}`}>{title}</p>
-                    <p className="shrink-0 text-sm tabular-nums text-muted">{timeLabel}</p>
-                </div>
-                <input type="range" min="0" max={max || 1} step="0.01" value={Math.min(time, max || 0)} onChange={seek} disabled={!src} className="mt-2 block w-full accent-foreground" />
-                {caption ? <p className={`mt-2 wrap-break-word whitespace-pre-wrap text-sm ${cloaked ? 'cloaked' : ''}`}>{caption}</p> : null}
-            </div>
+        <>
+            <AudioBubble msg={msg} fromPeer={fromPeer} loading={loading} playing={playing} disabled={disabled} time={time} duration={duration} timeLabel={timeLabel} onToggle={toggle} onSeek={seek} />
             <audio
                 ref={audioRef}
                 src={src || undefined}
@@ -185,6 +218,6 @@ export default function AudioMessage({ msg, peerChatPK, fromPeer = false }) {
                 }}
                 onError={(event) => setError(event.currentTarget.error?.message || 'audio unavailable')}
             />
-        </div>
+        </>
     );
 }

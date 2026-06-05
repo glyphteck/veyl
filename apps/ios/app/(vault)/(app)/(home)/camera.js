@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Animated as RNAnimated, DeviceEventEmitter, Linking, StyleSheet, Text, View } from 'react-native';
 import * as MediaLibrary from 'expo-media-library';
-import { router, useIsFocused } from 'expo-router';
+import { router, useIsFocused, usePathname } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CommonResolutions, useCameraPermission, useOrientation, usePhotoOutput, useVideoOutput } from 'react-native-vision-camera';
 import GlassHeader from '@/components/glass/glassheader';
@@ -51,6 +51,7 @@ function CameraContent({ cameraActive, pageOpen, warming }) {
     const { selectPeerChat } = useChat();
     const insets = useSafeAreaInsets();
     const { hasPermission, requestPermission } = useCameraPermission();
+    const pathname = usePathname();
     const captureOrientation = useOrientation('device');
     const photoOutput = usePhotoOutput({ targetResolution: CAMERA_PHOTO_RESOLUTION, qualityPrioritization: 'speed' });
     const videoOutput = useVideoOutput({ targetResolution: CAMERA_VIDEO_RESOLUTION, fileType: 'mp4', enablePersistentRecorder: true });
@@ -69,7 +70,7 @@ function CameraContent({ cameraActive, pageOpen, warming }) {
     const [routeState, setRouteState] = useState(INITIAL_ROUTE_STATE);
     const { taking, stagedMedia } = routeState;
     const active = cameraActive && !stagedMedia;
-    const scanOpen = pageOpen && active;
+    const scanOpen = pageOpen && pathname === '/camera';
     const previewOpacity = useSharedValue(0);
     const shutterScale = useRef(new RNAnimated.Value(1)).current;
 
@@ -510,7 +511,7 @@ function CameraContent({ cameraActive, pageOpen, warming }) {
         settings,
     });
 
-    const cameraOutputs = useMemo(() => (scanOpen ? [photoOutput, videoOutput, scan.output] : [photoOutput, videoOutput]), [photoOutput, scan.output, scanOpen, videoOutput]);
+    const cameraOutputs = useMemo(() => [photoOutput, videoOutput, scan.output], [photoOutput, scan.output, videoOutput]);
     useEffect(() => {
         mark('camera.state', {
             pageOpen,

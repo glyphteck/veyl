@@ -9,7 +9,7 @@ import { canSendOnScan } from '@veyl/shared/settings';
 
 const SCAN_INTERVAL = 200;
 
-export function useScan({ addPeer, bitcoin, capture, cloaked, network, openDialog, recording, sendMoneyWithSpark, settings, username, walletPK, webcamRef }) {
+export function useScan({ addPeer, bitcoin, capture, cloaked, network, onUser, openDialog, recording, sendMoneyWithSpark, settings, username, walletPK, webcamRef }) {
     const detectorRef = useRef(null);
     const scanTimer = useRef(null);
     const busyRef = useRef(false);
@@ -23,6 +23,10 @@ export function useScan({ addPeer, bitcoin, capture, cloaked, network, openDialo
 
                 if (qrData?.kind === qr.user && qrData.username) {
                     if (qrData.username === username) return;
+                    if (onUser) {
+                        await onUser(qrData.username);
+                        return;
+                    }
                     const peer = await addPeer({ username: qrData.username });
                     if (!peer) {
                         toast.error('user not found');
@@ -82,7 +86,7 @@ export function useScan({ addPeer, bitcoin, capture, cloaked, network, openDialo
                 }, 1000);
             }
         },
-        [addPeer, bitcoin, cloaked, network, openDialog, sendMoneyWithSpark, settings, username, walletPK]
+        [addPeer, bitcoin, cloaked, network, onUser, openDialog, sendMoneyWithSpark, settings, username, walletPK]
     );
 
     useEffect(() => {

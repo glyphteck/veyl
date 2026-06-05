@@ -14,11 +14,18 @@ function pickTab(tab, canSend) {
     return requested === 'send' && canSend ? 'send' : 'request';
 }
 
+function hasOwn(source, key) {
+    return !!source && Object.prototype.hasOwnProperty.call(source, key);
+}
+
 export default function Payments({ data, close }) {
     const bitcoin = useBitcoin();
     const { balance } = useWallet();
     const { settings, walletPK: currentUserWalletPK } = useUser();
     const canSend = hasAvailableBalance(balance);
+    const hasPeer = hasOwn(data, 'peer');
+    const hasAmount = hasOwn(data, 'amount');
+    const hasContext = hasPeer || hasAmount;
     const peer = useMemo(() => (data?.peer?.walletPK === currentUserWalletPK ? null : data?.peer || null), [currentUserWalletPK, data?.peer]);
     const amount = useMemo(() => {
         if (data?.amount == null || data.amount === '') return '';
@@ -34,10 +41,19 @@ export default function Payments({ data, close }) {
     }, [data?.tab, canSend]);
 
     useEffect(() => {
-        setDraftPeer(peer);
-        setDraftAmount(amount);
+        if (!data) {
+            setDraftPeer(null);
+            setDraftAmount('');
+            setDraftUnit(settings.moneyFormat);
+            return;
+        }
+        if (!hasContext) {
+            return;
+        }
+        setDraftPeer(hasPeer ? peer : null);
+        setDraftAmount(hasAmount ? amount : '');
         setDraftUnit(settings.moneyFormat);
-    }, [amount, peer, settings.moneyFormat]);
+    }, [amount, data, hasAmount, hasContext, hasPeer, peer, settings.moneyFormat]);
 
     return (
         <div className="w-md flex max-w-full flex-col gap-2">

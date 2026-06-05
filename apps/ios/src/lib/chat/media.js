@@ -4,7 +4,7 @@ import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import { CHAT_IMAGE_COMPRESS, CHAT_MEDIA_TTL_MS, assertChatUploadByteSize, fitChatImageSize } from '@veyl/shared/chat/filepayload';
 import { filenameWithExtension } from '@veyl/shared/utils/filename';
 import { fileExtension, fileMime, isImageFile, isPngFile, isVideoFile } from '@veyl/shared/utils/filetype';
-import { getMediaFileRef, mediaFilePath } from '@veyl/shared/files';
+import { getMediaFileRef, makeChatMediaId, mediaFilePath } from '@veyl/shared/files';
 import { createFileKey, decodeFileKey, encodeFileKey, FILE_IV_BYTES, FILE_TAG_BYTES, getFileAadForPath } from '@veyl/shared/crypto/file';
 import { cleanBytes, randomBytes, toBytes } from '@veyl/shared/crypto/core';
 import { packRawData, unpackBodyData } from '@veyl/shared/crypto/pack';
@@ -91,18 +91,19 @@ async function openChatFileNative(key, body, path) {
 }
 
 async function makeChatFileUploadNative(pair, cid, data, meta = {}) {
-    const path = mediaFilePath(pair?.chatId, cid);
+    const mediaId = makeChatMediaId();
+    const path = mediaFilePath(pair?.chatId, mediaId);
     const key = createFileKey();
     try {
         const uploadBytes = toBytes(data, 'upload bytes');
         assertChatUploadByteSize(uploadBytes);
         return {
             chatId: pair.chatId,
-            messageKey: cleanText(cid),
+            mediaId,
             path,
             body: await sealChatFileNative(key, uploadBytes, path),
             metadata: {
-                contentType: meta?.contentType || 'application/octet-stream',
+                contentType: 'application/octet-stream',
                 cacheControl: meta?.cacheControl || 'private, max-age=0, no-transform',
             },
             file: {

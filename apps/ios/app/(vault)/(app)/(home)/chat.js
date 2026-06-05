@@ -23,7 +23,7 @@ import { KeyboardChatScrollView } from '@/components/keyboardscroll';
 import { useRouteLock } from '@/lib/navigation/routelock';
 import { useTap } from '@/lib/tap';
 import { formatUserDisplay } from '@veyl/shared/profile';
-import { formatFullDateTime } from '@veyl/shared/utils/time';
+import { formatFullDateTime, timestampMs } from '@veyl/shared/utils/time';
 import { getChatPeerPK } from '@veyl/shared/chat/ids';
 import { getMovedRowBatch, sameListIds } from '@veyl/shared/chat/listanimation';
 import { getMsgPreview } from '@veyl/shared/chat/messages';
@@ -275,10 +275,18 @@ function samePreviewMsg(a, b) {
     return (
         a.cid === b.cid &&
         a.id === b.id &&
+        a.s === b.s &&
+        a.from === b.from &&
         a.t === b.t &&
         a.c === b.c &&
+        a.a === b.a &&
+        a.tx === b.tx &&
+        a.paidBy === b.paidBy &&
         a.sys === b.sys &&
         a.retention === b.retention &&
+        timestampMs(a.ttl) === timestampMs(b.ttl) &&
+        timestampMs(a.editedAt) === timestampMs(b.editedAt) &&
+        timestampMs(a.paidAt) === timestampMs(b.paidAt) &&
         a.pending === b.pending &&
         a.failed === b.failed
     );
@@ -292,7 +300,7 @@ function sameChatRow(prevChat, nextChat) {
         prevChat.ts === nextChat.ts &&
         prevChat.unseen === nextChat.unseen &&
         prevChat.settings?.retention === nextChat.settings?.retention &&
-        samePreviewMsg(prevChat.lastMsg, nextChat.lastMsg)
+        samePreviewMsg(prevChat.preview, nextChat.preview)
     );
 }
 
@@ -317,7 +325,7 @@ const ChatListChatRow = memo(function ChatListChatRow({ animationKey = '', chat,
     const peerChatPK = getChatPeerPK(chat, chatPK);
     const profile = peerChatPK ? peerByChatPK?.get(peerChatPK) : null;
     const title = formatUserDisplay({ username: profile?.username, chatPK: peerChatPK });
-    const subtitle = getMsgPreview(chat?.lastMsg, chatPK, null, null);
+    const subtitle = getMsgPreview(chat?.preview, chatPK, null, null);
     const lastMs = chat?.ts || null;
     const rightLabel = lastMs ? formatFullDateTime(lastMs) : '';
 
@@ -385,7 +393,7 @@ export default function ChatList() {
             const title = lowerText(formatUserDisplay({ username: profile?.username, chatPK: peerChatPK }));
             const username = lowerText(profile?.username);
             const atUsername = username ? `@${username}` : '';
-            const preview = lowerText(getMsgPreview(chat?.lastMsg, chatPK, null, null));
+            const preview = lowerText(getMsgPreview(chat?.preview, chatPK, null, null));
             const peerKey = lowerText(peerChatPK);
 
             return title.includes(chatQuery) || username.includes(chatQuery) || atUsername.includes(chatQuery) || preview.includes(chatQuery) || peerKey.includes(chatQuery);

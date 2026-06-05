@@ -36,13 +36,12 @@ export function samePeer(a, b) {
     return false;
 }
 
-const PeerCell = memo(function PeerCell({ item, onSelect, theme, selected, disabled, hapticIn }) {
+const PeerCell = memo(function PeerCell({ item, onSelect, theme, selected, disabled }) {
     const scale = useSharedValue(1);
     const pressFeedback = tap({
         value: scale,
         disabled,
         onPress: () => !disabled && onSelect?.(item),
-        hapticIn,
     });
 
     const scaleStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
@@ -70,7 +69,6 @@ function arePeerCellsEqual(prev, next) {
         prev.item?.bot === next.item?.bot &&
         prev.selected === next.selected &&
         prev.disabled === next.disabled &&
-        prev.hapticIn === next.hapticIn &&
         prev.onSelect === next.onSelect &&
         prev.theme?.foreground === next.theme?.foreground
     );
@@ -91,7 +89,6 @@ export default function PeerPicker({
     onPeerPress,
     onSearchChange,
     peers,
-    peerHapticIn = false,
     search,
     searching,
     searchInputRef,
@@ -245,10 +242,9 @@ export default function PeerPicker({
                 theme={theme}
                 selected={isPeerSelected?.(item)}
                 disabled={isPeerDisabled?.(item)}
-                hapticIn={peerHapticIn}
             />
         ),
-        [isPeerDisabled, isPeerSelected, onPeerPress, peerHapticIn, theme]
+        [isPeerDisabled, isPeerSelected, onPeerPress, theme]
     );
 
     const keyExtractor = useCallback((item, index) => peerKey(item, `${index}`), []);

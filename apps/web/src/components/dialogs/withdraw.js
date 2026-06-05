@@ -289,7 +289,7 @@ export default function Withdraw({ data, close }) {
             <Button
                 type="submit"
                 form="withdraw-funds-form"
-                className={`${buttonFeedback ? 'button-destructive' : 'button-outline'} shrinker`}
+                className={`${buttonFeedback ? 'button-destructive' : 'button-fill'} shrinker`}
                 disabled={
                     isSubmitting ||
                     !watchedAddress ||

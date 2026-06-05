@@ -41,7 +41,7 @@ function focusControl(element) {
 
 export function Chatbox() {
     const { chats, selectedChatId, sendMessage, sendAttachment, updateMessage } = useChat();
-    const { attachmentButtonRef, chatInputRef, focusChatInput, focusSelectedChat, moneyButtonRef, peerHeaderRef } = useChatInput();
+    const { attachmentButtonRef, chatInputRef, focusChatInput, focusSelectedChat, moneyButtonRef, peerHeaderRef, setPaymentPeer } = useChatInput();
     const { chatPK, chatBanned, settings } = useUser();
     const bitcoin = useBitcoin();
     const { sendMoneyWithSpark } = useWallet();
@@ -80,6 +80,12 @@ export function Chatbox() {
     useEffect(() => {
         setDraft(null);
     }, [selectedChatId]);
+
+    useEffect(() => {
+        setPaymentPeer(selectedChatId && peerProfile?.walletPK ? peerProfile : null);
+    }, [peerProfile, selectedChatId, setPaymentPeer]);
+
+    useEffect(() => () => setPaymentPeer(null), [setPaymentPeer]);
 
     const handleSendMessage = async (messageContent, draftState) => {
         try {

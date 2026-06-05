@@ -268,7 +268,7 @@ export default function SendMoney({ peer, amount = '', inputUnit, onPeerChange, 
                 <Button
                     type="submit"
                     form="sendMoney"
-                    className="button-outline shrinker flex-1"
+                    className="button-fill shrinker flex-1"
                     disabled={
                         isSubmitting ||
                         !form.watch('receiver') ||

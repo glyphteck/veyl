@@ -1,7 +1,7 @@
 import { cn } from '@/lib/classes';
 
 export function ChartTooltip({ tip }) {
-    if (!tip?.label || !tip?.value) {
+    if (!tip?.label || tip.value == null || tip.value === '') {
         return null;
     }
 

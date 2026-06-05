@@ -3,6 +3,7 @@
 import { createFileKey, encodeFileKey, sealFile } from '../crypto/file.js';
 import {
     CHAT_MAX_UPLOAD_FILES,
+    CHAT_UPLOAD_MAX_BYTES,
     CHAT_IMAGE_COMPRESS as CONFIG_CHAT_IMAGE_COMPRESS,
     CHAT_IMAGE_MAX_EDGE,
     CHAT_MEDIA_TTL_DAYS as CONFIG_CHAT_MEDIA_TTL_DAYS,
@@ -10,18 +11,18 @@ import {
 } from '../config.js';
 import { cleanBytes, randomBytes, toBytes, toHex } from '../crypto/core.js';
 
-export const CHAT_MEDIA_ROOT = 'chat-media';
+export const CHAT_MEDIA_ROOT = 'chats';
 export const SHARED_MEDIA_ROOT = 'shared';
-export const CHAT_SLOT = 'main';
 export const CHAT_MEDIA_TTL_DAYS = CONFIG_CHAT_MEDIA_TTL_DAYS;
 export const CHAT_MEDIA_TTL_MS = CONFIG_CHAT_MEDIA_TTL_MS;
 export const MAX_CHAT_UPLOAD_FILES = CHAT_MAX_UPLOAD_FILES;
+export const MAX_CHAT_UPLOAD_BYTES = CHAT_UPLOAD_MAX_BYTES;
 export const MAX_CHAT_IMAGE_EDGE = CHAT_IMAGE_MAX_EDGE;
 export const CHAT_IMAGE_COMPRESS = CONFIG_CHAT_IMAGE_COMPRESS;
 const CHAT_ID_PATTERN = '[0-9a-fA-F]{64}';
 const SHARED_MEDIA_ID_PATTERN = '[0-9a-fA-F]{32}';
-const MESSAGE_KEY_PATTERN = '[A-Za-z0-9_-]{8,128}';
-const CHAT_MEDIA_FILE_PATTERN = new RegExp(`^${CHAT_MEDIA_ROOT}/(${CHAT_ID_PATTERN})/(${MESSAGE_KEY_PATTERN})/${CHAT_SLOT}$`);
+const MEDIA_ID_PATTERN = '[0-9a-fA-F]{32}';
+const CHAT_MEDIA_FILE_PATTERN = new RegExp(`^${CHAT_MEDIA_ROOT}/(${CHAT_ID_PATTERN})/(${MEDIA_ID_PATTERN})$`);
 const SHARED_MEDIA_FILE_PATTERN = new RegExp(`^${SHARED_MEDIA_ROOT}/(${SHARED_MEDIA_ID_PATTERN})$`);
 
 export function cleanMediaChatId(value) {
@@ -32,12 +33,12 @@ export function cleanMediaChatId(value) {
     return chatId.toLowerCase();
 }
 
-export function cleanMediaMessageKey(value) {
-    const messageKey = String(value || '').trim();
-    if (!new RegExp(`^${MESSAGE_KEY_PATTERN}$`).test(messageKey)) {
-        throw new Error('invalid media message key');
+export function cleanMediaId(value) {
+    const mediaId = String(value || '').trim();
+    if (!new RegExp(`^${MEDIA_ID_PATTERN}$`).test(mediaId)) {
+        throw new Error('invalid media id');
     }
-    return messageKey;
+    return mediaId.toLowerCase();
 }
 
 export function cleanSharedMediaId(value) {
@@ -48,13 +49,14 @@ export function cleanSharedMediaId(value) {
     return sharedId.toLowerCase();
 }
 
-export function mediaFilePath(chatId, messageKey, slot = CHAT_SLOT) {
+export function makeChatMediaId() {
+    return toHex(randomBytes(16));
+}
+
+export function mediaFilePath(chatId, mediaId) {
     const nextChatId = cleanMediaChatId(chatId);
-    const nextMessageKey = cleanMediaMessageKey(messageKey);
-    if (!slot) {
-        throw new Error('media file path parts required');
-    }
-    return `${CHAT_MEDIA_ROOT}/${nextChatId}/${nextMessageKey}/${slot}`;
+    const nextMediaId = cleanMediaId(mediaId);
+    return `${CHAT_MEDIA_ROOT}/${nextChatId}/${nextMediaId}`;
 }
 
 export function sharedMediaFilePath(sharedId) {
@@ -73,8 +75,7 @@ export function getMediaFileRef(path) {
         return {
             type: 'chat',
             chatId: chatMatch[1].toLowerCase(),
-            messageKey: chatMatch[2],
-            slot: CHAT_SLOT,
+            mediaId: chatMatch[2].toLowerCase(),
         };
     }
 
@@ -116,6 +117,13 @@ export function makeTooManyChatFilesError(count) {
 export function assertChatUploadByteSize(bytes) {
     if (!Number.isFinite(bytes?.byteLength)) {
         throw new Error('upload bytes required');
+    }
+    if (bytes.byteLength <= 0 || bytes.byteLength > MAX_CHAT_UPLOAD_BYTES) {
+        const error = new Error('upload too large');
+        error.code = 'upload-too-large';
+        error.maxBytes = MAX_CHAT_UPLOAD_BYTES;
+        error.bytes = bytes.byteLength;
+        throw error;
     }
     return bytes.byteLength;
 }
@@ -170,10 +178,10 @@ async function toUploadBytes(data) {
     return toBytes(data, 'upload bytes');
 }
 
-export async function makeChatFileUploadPayload(pair, cid, data, { slot = CHAT_SLOT, contentType = 'application/octet-stream', cacheControl = 'private, max-age=0, no-transform' } = {}) {
+export async function makeChatFileUploadPayload(pair, cid, data, { cacheControl = 'private, max-age=0, no-transform' } = {}) {
     const chatId = cleanMediaChatId(pair?.chatId);
-    const messageKey = cleanMediaMessageKey(cid);
-    const path = mediaFilePath(chatId, messageKey, slot);
+    const mediaId = makeChatMediaId();
+    const path = mediaFilePath(chatId, mediaId);
     const expiresAt = Date.now() + CHAT_MEDIA_TTL_MS;
     const key = createFileKey();
     try {
@@ -181,11 +189,11 @@ export async function makeChatFileUploadPayload(pair, cid, data, { slot = CHAT_S
         assertChatUploadByteSize(uploadBytes);
         return {
             chatId,
-            messageKey,
+            mediaId,
             path,
             body: await sealFile(pair, key, uploadBytes, path),
             metadata: {
-                contentType,
+                contentType: 'application/octet-stream',
                 cacheControl,
             },
             file: {

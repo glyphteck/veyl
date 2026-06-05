@@ -1,14 +1,15 @@
-import { onCall, HttpsError } from 'firebase-functions/v2/https';
+import { onCall, onRequest, HttpsError } from 'firebase-functions/v2/https';
 import admin, { db } from '../lib/admin.js';
-import { limitCallable, uidLimitKey } from '../lib/ratelimit.js';
-import { CHAT_MEDIA_CONTENT_TYPE, CHAT_MEDIA_UPLOAD_URL_TTL_MS, chatMediaUploadLimitRules } from '../lib/abuseconfig.js';
+import { HOUR_MS, MINUTE_MS, ipLimitKey, limitCallable, uidLimitKey } from '../lib/ratelimit.js';
+import { MEDIA_CONTENT_TYPE, MEDIA_UPLOAD_URL_TTL_MS, mediaUploadLimitRules } from '../lib/abuseconfig.js';
 import { assertQuotaRoom, cleanQuotaAmount, writeQuotaReservation } from '../lib/usagequota.js';
 import { makeAccountUploadQuota } from '../lib/uploadquota.js';
 import { loggedCall } from '../lib/actionlog.js';
 
 const CHAT_ID_RE = /^[0-9a-f]{64}$/i;
-const MESSAGE_KEY_RE = /^[A-Za-z0-9_-]{8,128}$/;
+const CHAT_MEDIA_ID_RE = /^[0-9a-f]{32}$/i;
 const SHARED_MEDIA_ID_RE = /^[0-9a-f]{32}$/i;
+const CHAT_MEDIA_PATH_RE = /^chats\/([0-9a-f]{64})\/([0-9a-f]{32})$/i;
 
 export function cleanChatMediaChatId(value) {
     const chatId = typeof value === 'string' ? value.trim() : '';
@@ -18,12 +19,12 @@ export function cleanChatMediaChatId(value) {
     return chatId.toLowerCase();
 }
 
-export function cleanChatMediaMessageKey(value) {
-    const messageKey = typeof value === 'string' ? value.trim() : '';
-    if (!MESSAGE_KEY_RE.test(messageKey)) {
-        throw new HttpsError('invalid-argument', 'bad media message');
+export function cleanChatMediaId(value) {
+    const mediaId = typeof value === 'string' ? value.trim() : '';
+    if (!CHAT_MEDIA_ID_RE.test(mediaId)) {
+        throw new HttpsError('invalid-argument', 'bad chat media');
     }
-    return messageKey;
+    return mediaId.toLowerCase();
 }
 
 function cleanSharedMediaId(value) {
@@ -34,21 +35,26 @@ function cleanSharedMediaId(value) {
     return sharedId.toLowerCase();
 }
 
-export function chatMediaPath(chatId, messageKey) {
-    return `chat-media/${cleanChatMediaChatId(chatId)}/${cleanChatMediaMessageKey(messageKey)}/main`;
+export function chatMediaPath(chatId, mediaId) {
+    return `chats/${cleanChatMediaChatId(chatId)}/${cleanChatMediaId(mediaId)}`;
+}
+
+function cleanChatMediaPath(value) {
+    const path = typeof value === 'string' ? value.trim() : '';
+    const match = path.match(CHAT_MEDIA_PATH_RE);
+    if (!match?.[1] || !match?.[2]) {
+        throw new HttpsError('invalid-argument', 'bad chat media path');
+    }
+    return chatMediaPath(match[1], match[2]);
 }
 
 export function sharedMediaPath(sharedId) {
     return `shared/${cleanSharedMediaId(sharedId)}`;
 }
 
-function chatDocRef(chatId) {
-    return db.collection('chats').doc(chatId);
-}
-
 function cleanMediaContentType(value) {
-    const contentType = typeof value === 'string' ? value.trim().toLowerCase() : CHAT_MEDIA_CONTENT_TYPE;
-    if (contentType !== CHAT_MEDIA_CONTENT_TYPE) {
+    const contentType = typeof value === 'string' ? value.trim().toLowerCase() : MEDIA_CONTENT_TYPE;
+    if (contentType !== MEDIA_CONTENT_TYPE) {
         throw new HttpsError('invalid-argument', 'invalid media content type');
     }
     return contentType;
@@ -71,6 +77,57 @@ export async function setTemporaryHold(path, hold, { ignoreMissing = false } = {
     });
 }
 
+function httpErrorStatus(error) {
+    switch (error?.code) {
+        case 'invalid-argument':
+            return 400;
+        case 'not-found':
+            return 404;
+        case 'resource-exhausted':
+            return 429;
+        case 'failed-precondition':
+            return 412;
+        default:
+            return 500;
+    }
+}
+
+function httpErrorBody(error) {
+    return {
+        ok: false,
+        code: error?.code || 'internal',
+        message: error?.message || 'error',
+    };
+}
+
+export const setChatMediaHold = onRequest({ cors: true }, async (req, res) => {
+    try {
+        if (req.method === 'OPTIONS') {
+            res.status(204).send('');
+            return;
+        }
+        if (req.method !== 'POST') {
+            res.status(405).json({ ok: false, code: 'method-not-allowed' });
+            return;
+        }
+
+        await limitCallable({ rawRequest: req }, [
+            { name: 'chat-hold-ip-minute', key: ipLimitKey({ rawRequest: req }, 'chat-hold'), limit: 180, windowMs: MINUTE_MS },
+            { name: 'chat-hold-ip-hour', key: ipLimitKey({ rawRequest: req }, 'chat-hold'), limit: 1800, windowMs: HOUR_MS },
+        ]);
+
+        const path = cleanChatMediaPath(req.body?.path);
+        if (req.body?.hold !== true && req.body?.hold !== false) {
+            throw new HttpsError('invalid-argument', 'bad hold');
+        }
+
+        await setTemporaryHold(path, req.body.hold, { ignoreMissing: req.body.hold !== true });
+        res.json({ ok: true });
+    } catch (error) {
+        res.status(httpErrorStatus(error)).json(httpErrorBody(error));
+    }
+});
+
 async function signUpload(path, contentType, expiresAtMs) {
     const [url] = await admin.storage().bucket().file(path).getSignedUrl({
         version: 'v4',
@@ -88,57 +145,13 @@ async function signUpload(path, contentType, expiresAtMs) {
     };
 }
 
-export const reserveChatMediaUpload = onCall(loggedCall('reserveChatMediaUpload', async (context) => {
-    const { auth, data } = context;
-    if (!auth?.uid) {
-        throw new HttpsError('unauthenticated', 'auth');
-    }
-
-    await limitCallable(context, chatMediaUploadLimitRules(uidLimitKey(auth.uid, 'chat-media-upload')));
-
-    const chatId = cleanChatMediaChatId(data?.chatId);
-    const messageKey = cleanChatMediaMessageKey(data?.messageKey);
-    const path = chatMediaPath(chatId, messageKey);
-    if (data?.path !== path) {
-        throw new HttpsError('invalid-argument', 'invalid media path');
-    }
-
-    const size = cleanMediaUploadSize(data?.size);
-    const contentType = cleanMediaContentType(data?.contentType);
-    const nowMs = Date.now();
-    const { quota, dailyLimit, newAccount } = await makeAccountUploadQuota(auth.uid, nowMs);
-    const expiresAtMs = nowMs + CHAT_MEDIA_UPLOAD_URL_TTL_MS;
-
-    await db.runTransaction(async (tx) => {
-        const [quotaSnap, chatSnap] = await Promise.all([tx.get(quota.ref), tx.get(chatDocRef(chatId))]);
-        if (chatSnap.data()?.deleted) {
-            throw new HttpsError('failed-precondition', 'chat deleted');
-        }
-        assertQuotaRoom(quota, quotaSnap, size, nowMs);
-        writeQuotaReservation(tx, quota, quotaSnap, size, nowMs);
-    });
-
-    const upload = await signUpload(path, contentType, expiresAtMs);
-    return {
-        path,
-        chatId,
-        messageKey,
-        size,
-        contentType,
-        upload,
-        expiresAt: upload.expiresAt,
-        dailyLimit,
-        newAccount,
-    };
-}));
-
 export const reserveSharedMediaUpload = onCall(loggedCall('reserveSharedMediaUpload', async (context) => {
     const { auth, data } = context;
     if (!auth?.uid) {
         throw new HttpsError('unauthenticated', 'auth');
     }
 
-    await limitCallable(context, chatMediaUploadLimitRules(uidLimitKey(auth.uid, 'shared-media-upload')));
+    await limitCallable(context, mediaUploadLimitRules(uidLimitKey(auth.uid, 'shared-media-upload')));
 
     const sharedId = cleanSharedMediaId(data?.sharedId);
     const path = sharedMediaPath(sharedId);
@@ -150,7 +163,7 @@ export const reserveSharedMediaUpload = onCall(loggedCall('reserveSharedMediaUpl
     const contentType = cleanMediaContentType(data?.contentType);
     const nowMs = Date.now();
     const { quota, dailyLimit, newAccount } = await makeAccountUploadQuota(auth.uid, nowMs);
-    const expiresAtMs = nowMs + CHAT_MEDIA_UPLOAD_URL_TTL_MS;
+    const expiresAtMs = nowMs + MEDIA_UPLOAD_URL_TTL_MS;
 
     await db.runTransaction(async (tx) => {
         const quotaSnap = await tx.get(quota.ref);

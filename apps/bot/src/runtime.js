@@ -1253,7 +1253,7 @@ export class BotRuntime {
                 peerUid: peerUid || existing?.peerUid,
                 actors,
                 settings: existing?.settings,
-                lastMsg: existing?.lastMsg,
+                preview: existing?.preview,
             });
             await entryRef.set(
                 {
@@ -1792,7 +1792,7 @@ export class BotRuntime {
                 cid: makeCid(),
                 s: session.chatPK,
             },
-            { updateLastMsg: false, retention, senderUid: session.uid, ...(context.chatId ? { chatId: context.chatId } : {}), ...(msgId ? { msgId } : {}) }
+            { updatePreview: false, retention, senderUid: session.uid, ...(context.chatId ? { chatId: context.chatId } : {}), ...(msgId ? { msgId } : {}) }
         );
     }
 
@@ -1809,7 +1809,7 @@ export class BotRuntime {
                 cid: makeCid(),
                 s: session.chatPK,
             },
-            { updateLastMsg: false, retention, senderUid: session.uid, ...(context.chatId ? { chatId: context.chatId } : {}), ...(msgId ? { msgId } : {}) }
+            { updatePreview: false, retention, senderUid: session.uid, ...(context.chatId ? { chatId: context.chatId } : {}), ...(msgId ? { msgId } : {}) }
         );
     }
 }

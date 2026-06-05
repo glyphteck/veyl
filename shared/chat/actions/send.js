@@ -91,7 +91,7 @@ export function updateLastChatWithLocal(current, peerChatPK, local, ms) {
     if (currentMs > ms) {
         return current;
     }
-    return { lastMsg: local, ts: ms, peerChatPK };
+    return { preview: local, ts: ms, peerChatPK };
 }
 
 export function patchLocalMessageMap(localByChat, chatId, cid, patch) {
@@ -115,18 +115,18 @@ export function patchChatLastMessage(chats, chatId, cid, patch) {
         }
         return {
             ...chatItem,
-            lastMsg: patchCid(chatItem.lastMsg, cid, patch),
+            preview: patchCid(chatItem.preview, cid, patch),
         };
     });
 }
 
 export function patchLastChatMessage(current, cid, patch) {
-    if (!current?.lastMsg) {
+    if (!current?.preview) {
         return current;
     }
     return {
         ...current,
-        lastMsg: patchCid(current.lastMsg, cid, patch),
+        preview: patchCid(current.preview, cid, patch),
     };
 }
 
@@ -371,29 +371,29 @@ export function useChatSend({ cloud, media = {}, uid, chatBanned, chatPK, chatPr
                     if (chatItem.id !== chatId) {
                         return chatItem;
                     }
-                    const lastMsg = clearPending(chatItem.lastMsg);
-                    if (lastMsg === chatItem.lastMsg) {
+                    const preview = clearPending(chatItem.preview);
+                    if (preview === chatItem.preview) {
                         return chatItem;
                     }
                     changed = true;
                     return {
                         ...chatItem,
-                        lastMsg,
+                        preview,
                     };
                 });
                 return changed ? next : prev;
             });
             setLastChat((current) => {
-                if (!current?.lastMsg?.cid || !acked.has(current.lastMsg.cid)) {
+                if (!current?.preview?.cid || !acked.has(current.preview.cid)) {
                     return current;
                 }
-                const lastMsg = clearPending(current.lastMsg);
-                if (lastMsg === current.lastMsg) {
+                const preview = clearPending(current.preview);
+                if (preview === current.preview) {
                     return current;
                 }
                 return {
                     ...current,
-                    lastMsg,
+                    preview,
                 };
             });
         },
@@ -508,13 +508,13 @@ export function useChatSend({ cloud, media = {}, uid, chatBanned, chatPK, chatPr
     );
 
     const queueSend = useCallback(
-        async (peerChatPK, message, run, { lastMsgRequired = false } = {}) => {
+        async (peerChatPK, message, run, { previewRequired = false } = {}) => {
             const local = await showLocalMessage(peerChatPK, message, sendOptionsForPeer(peerChatPK));
 
             return new Promise((resolve, reject) => {
                 const job = {
-                    lastMsgKey: local.chatId,
-                    lastMsgRequired,
+                    previewKey: local.chatId,
+                    previewRequired,
                     resolve,
                     reject,
                     onSuccess: () => {
@@ -531,7 +531,7 @@ export function useChatSend({ cloud, media = {}, uid, chatBanned, chatPK, chatPr
         [enqueueSendJob, markLocalStatus, sendOptionsForPeer, showLocalMessage]
     );
 
-    const sendOptionsForQueuedWrite = useCallback((baseOptions, local, updateLastMsg) => {
+    const sendOptionsForQueuedWrite = useCallback((baseOptions, local, updatePreview) => {
         const chatId = local?.chatId;
         const chatExists = baseOptions?.chatExists === true || sentChatIdsRef.current.has(chatId);
         return {
@@ -541,7 +541,7 @@ export function useChatSend({ cloud, media = {}, uid, chatBanned, chatPK, chatPr
             linkVersion: local?.version || baseOptions?.linkVersion,
             senderUid: uid,
             chatExists,
-            updateLastMsg: !chatExists || updateLastMsg !== false,
+            updatePreview: !chatExists || updatePreview !== false,
         };
     }, [uid]);
 
@@ -560,19 +560,19 @@ export function useChatSend({ cloud, media = {}, uid, chatBanned, chatPK, chatPr
                 const attachment = makeTxtFileAttachment(nextMessage);
                 const localMessage = makeLongTxtLocalMessage(chatPK, cid, attachment, nextMessage);
 
-                return queueSend(peerChatPK, localMessage, async ({ local, updateLastMsg }) => {
-                    const writeOptions = sendOptionsForQueuedWrite(sendOptions, local, updateLastMsg);
+                return queueSend(peerChatPK, localMessage, async ({ local, updatePreview }) => {
+                    const writeOptions = sendOptionsForQueuedWrite(sendOptions, local, updatePreview);
                     const uploaded = await uploadMessageAttachment(cloud, media, chatPK, chatPrivateKey, peerChatPK, { cid, ...attachment, chatId: local.chatId, meta: { ...attachment, chatId: local.chatId } });
                     saveMedia(localCache, uploaded, attachment.data, attachment);
                     rememberCachedLocalMedia(local.chatId, cid, uploaded);
                     return sendMsg(cloud, chatPK, chatPrivateKey, peerChatPK, makeSentLongTxtMessage(chatPK, cid, uploaded, nextMessage), writeOptions);
-                }, { lastMsgRequired: sendOptions.chatExists !== true });
+                }, { previewRequired: sendOptions.chatExists !== true });
             }
 
             const queued = makeSendMessage(chatPK, nextMessage);
-            return queueSend(peerChatPK, queued.message, async ({ local, updateLastMsg }) => {
-                return sendMsg(cloud, chatPK, chatPrivateKey, peerChatPK, queued.message, sendOptionsForQueuedWrite(sendOptions, local, updateLastMsg));
-            }, { lastMsgRequired: sendOptions.chatExists !== true });
+            return queueSend(peerChatPK, queued.message, async ({ local, updatePreview }) => {
+                return sendMsg(cloud, chatPK, chatPrivateKey, peerChatPK, queued.message, sendOptionsForQueuedWrite(sendOptions, local, updatePreview));
+            }, { previewRequired: sendOptions.chatExists !== true });
         },
         [cloud, media, chatBanned, chatPK, chatPrivateKey, localCache, queueSend, rememberCachedLocalMedia, sendOptionsForPeer, sendOptionsForQueuedWrite]
     );
@@ -664,13 +664,13 @@ export function useChatSend({ cloud, media = {}, uid, chatBanned, chatPK, chatPr
             const sendOptions = sendOptionsForPeer(peerChatPK);
             const localPayload = withMessageRetention(localMessage, sendOptions.retention);
 
-            return queueSend(peerChatPK, localPayload, async ({ local, updateLastMsg }) => {
-                const writeOptions = sendOptionsForQueuedWrite(sendOptions, local, updateLastMsg);
+            return queueSend(peerChatPK, localPayload, async ({ local, updatePreview }) => {
+                const writeOptions = sendOptionsForQueuedWrite(sendOptions, local, updatePreview);
                 const uploaded = await uploadMessageAttachment(cloud, media, chatPK, chatPrivateKey, peerChatPK, { ...nextAttachment, chatId: local.chatId, meta: { ...(nextAttachment.meta || {}), chatId: local.chatId } });
                 saveMedia(localCache, uploaded, attachment?.data, attachment);
                 rememberCachedLocalMedia(local.chatId, cid, uploaded);
                 return sendMsg(cloud, chatPK, chatPrivateKey, peerChatPK, withMessageRetention({ ...uploaded, cid, s: chatPK }, sendOptions.retention), writeOptions);
-            }, { lastMsgRequired: sendOptions.chatExists !== true });
+            }, { previewRequired: sendOptions.chatExists !== true });
         },
         [cloud, media, chatBanned, chatPK, chatPrivateKey, localCache, queueSend, rememberCachedLocalMedia, sendOptionsForPeer, sendOptionsForQueuedWrite]
     );
@@ -797,14 +797,14 @@ export function useChatSend({ cloud, media = {}, uid, chatBanned, chatPK, chatPr
             const sendOptions = sendOptionsForPeer(peerChatPK);
             const cid = makeCid();
             const message = withMessageRetention({ ...sharedMessage, cid, s: chatPK }, sendOptions.retention);
-            return queueSend(peerChatPK, message, async ({ local, updateLastMsg }) => {
-                const writeOptions = sendOptionsForQueuedWrite(sendOptions, local, updateLastMsg);
+            return queueSend(peerChatPK, message, async ({ local, updatePreview }) => {
+                const writeOptions = sendOptionsForQueuedWrite(sendOptions, local, updatePreview);
                 if (sharedMessage?.localData != null) {
                     saveMedia(localCache, message, sharedMessage.localData, message);
                     rememberCachedLocalMedia(local.chatId, cid, message);
                 }
                 return sendMsg(cloud, chatPK, chatPrivateKey, peerChatPK, sendableMessage(message), writeOptions);
-            }, { lastMsgRequired: sendOptions.chatExists !== true });
+            }, { previewRequired: sendOptions.chatExists !== true });
         },
         [chatPK, chatPrivateKey, cloud, localCache, queueSend, rememberCachedLocalMedia, sendOptionsForPeer, sendOptionsForQueuedWrite]
     );

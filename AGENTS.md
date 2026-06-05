@@ -66,7 +66,8 @@ Detailed workflow rules live in [guidelines/workflow.md](guidelines/workflow.md)
 - [guidelines/packages.md](guidelines/packages.md): package installs, upgrades, lockfiles, Expo SDK bumps, and native rebuild rules
 - [guidelines/commands.md](guidelines/commands.md): install, run, build, bot, and local host commands
 - [guidelines/code.md](guidelines/code.md): naming, code structure, refactors, shared-vs-client rules
-- [guidelines/chat.md](guidelines/chat.md): encrypted chat lifecycle, retention, deletion, compaction, media, and module ownership
+- [guidelines/chat.md](guidelines/chat.md): encrypted chat contract, payloads, invariants, and module ownership
+- [lifecycle/](lifecycle/): user, chat, message, and session lifecycle diagrams and sequencing
 - [guidelines/navigation.md](guidelines/navigation.md): fast paths into auth, vault, wallet, chat, search, bots, and backend
 - [guidelines/uistyling.md](guidelines/uistyling.md): web and iOS UI styling rules
 - [guidelines/validation.md](guidelines/validation.md): validation policy and files to avoid
@@ -78,7 +79,7 @@ Use the smallest relevant guideline set after reading the product context:
 
 - Repo workflow, planning, branch, todo, worktree, map, or tooling work: read `guidelines/map.md`, `guidelines/workflow.md`, `guidelines/todo.md`, `guidelines/repo.md`, `guidelines/code.md`, `guidelines/commands.md`, and `guidelines/validation.md`.
 - Package, dependency, framework, Expo SDK, or lockfile work: read `guidelines/packages.md`, `guidelines/commands.md`, and `guidelines/validation.md`.
-- Chat work: read `chat.md`, `repo.md`, `code.md`, `navigation.md`, and `security.md`.
+- Chat work: read `chat.md`, the relevant root `lifecycle/` file, `repo.md`, `code.md`, `navigation.md`, and `security.md`.
 - UI or styling work: read `code.md` and `uistyling.md`.
 - Bot work: read `guidelines/bots.md` and the root [bots.md](bots.md).
 - Local run or build work: read `commands.md` and `validation.md`.

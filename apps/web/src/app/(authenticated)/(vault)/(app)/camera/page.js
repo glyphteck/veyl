@@ -1,10 +1,12 @@
 'use client';
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { CameraActions } from '@/components/camera/actions';
 import { CameraShutter } from '@/components/camera/shutter';
 import { CameraStage } from '@/components/camera/stage';
 import { useBitcoin } from '@/components/providers/bitcoinprovider';
+import { useChat } from '@/components/providers/chatprovider';
 import { useDialog } from '@/components/providers/dialogprovider';
 import { usePeer } from '@/components/providers/peerprovider';
 import { useUser } from '@/components/providers/userprovider';
@@ -13,6 +15,7 @@ import { useRecord } from '@/lib/camera/record';
 import { useScan } from '@/lib/camera/scan';
 import { downloadCapture, stagePhotoCapture } from '@/lib/camera/staging';
 import { useCloak } from '@veyl/shared/providers/cloakprovider';
+import { toast } from 'sonner';
 
 const NAV_FOCUSABLE_SELECTOR = 'nav button:not(:disabled), nav [href], nav input:not(:disabled), nav select:not(:disabled), nav textarea:not(:disabled), nav [tabindex]:not([tabindex="-1"])';
 
@@ -26,13 +29,15 @@ function focusFirstNavbarItem() {
 }
 
 export default function CameraPage() {
+    const router = useRouter();
     const webcamRef = useRef(null);
     const shutterRef = useRef(null);
     const actionRefs = useRef([]);
     const captureRef = useRef(null);
     const { openDialog } = useDialog();
+    const { selectPeerChat } = useChat();
     const { addPeer } = usePeer();
-    const { settings, username, walletPK } = useUser();
+    const { chatBanned, chatPK, settings, username, walletPK } = useUser();
     const bitcoin = useBitcoin();
     const { sendMoneyWithSpark, network } = useWallet();
     const { cloaked } = useCloak();
@@ -48,6 +53,20 @@ export default function CameraPage() {
         if (!actions.length) return;
         actions[((index % actions.length) + actions.length) % actions.length]?.focus({ preventScroll: true });
     }, []);
+
+    const openUserQrChat = useCallback(
+        async (nextUsername) => {
+            if (!nextUsername || nextUsername === username) return;
+            const peer = await addPeer({ username: nextUsername });
+            if (!peer?.chatPK || chatBanned || !chatPK) {
+                toast.error('user not found');
+                return;
+            }
+            await selectPeerChat(peer.chatPK);
+            router.push('/chat');
+        },
+        [addPeer, chatBanned, chatPK, router, selectPeerChat, username]
+    );
 
     useEffect(() => {
         captureRef.current = capture;
@@ -100,6 +119,7 @@ export default function CameraPage() {
         capture,
         cloaked,
         network,
+        onUser: openUserQrChat,
         openDialog,
         recording,
         sendMoneyWithSpark,

@@ -24,10 +24,10 @@ export function getChatPeerPK(chatItem, chatPK) {
     return chatItem?.peerChatPK || null;
 }
 
-export function getChatLastMsgKey(chatItem) {
-    const lastMsg = chatItem?.lastMsg;
-    if (!lastMsg || lastMsg.pending || lastMsg.failed || String(lastMsg?.id || '').startsWith('local:')) {
+export function getChatPreviewKey(chatItem) {
+    const preview = chatItem?.preview;
+    if (!preview || preview.pending || preview.failed || String(preview?.id || '').startsWith('local:')) {
         return null;
     }
-    return getMessageKey(lastMsg);
+    return getMessageKey(preview);
 }

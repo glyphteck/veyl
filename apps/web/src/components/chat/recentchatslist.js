@@ -5,8 +5,8 @@ import { Avatar, AvatarImage, AvatarFallback } from '@/components/avatar';
 import { Button } from '@/components/button';
 import { Card } from '@/components/card';
 import { formatUserDisplay } from '@veyl/shared/profile';
-import { formatFullDateTime } from '@veyl/shared/utils/time';
-import { getMsgPreview as displayLastMsg } from '@veyl/shared/chat/messages';
+import { formatFullDateTime, timestampMs } from '@veyl/shared/utils/time';
+import { getMsgPreview as displayPreview } from '@veyl/shared/chat/messages';
 import { getChatPeerPK } from '@veyl/shared/chat/ids';
 import { getMovedRowBatch, sameListIds } from '@veyl/shared/chat/listanimation';
 import { useBitcoin } from '@/components/providers/bitcoinprovider';
@@ -53,10 +53,18 @@ function samePreviewMsg(a, b) {
     return (
         a.cid === b.cid &&
         a.id === b.id &&
+        a.s === b.s &&
+        a.from === b.from &&
         a.t === b.t &&
         a.c === b.c &&
+        a.a === b.a &&
+        a.tx === b.tx &&
+        a.paidBy === b.paidBy &&
         a.sys === b.sys &&
         a.retention === b.retention &&
+        timestampMs(a.ttl) === timestampMs(b.ttl) &&
+        timestampMs(a.editedAt) === timestampMs(b.editedAt) &&
+        timestampMs(a.paidAt) === timestampMs(b.paidAt) &&
         a.pending === b.pending &&
         a.failed === b.failed
     );
@@ -70,7 +78,7 @@ function sameChatRow(prevChat, nextChat) {
         prevChat.ts === nextChat.ts &&
         prevChat.unseen === nextChat.unseen &&
         prevChat.settings?.retention === nextChat.settings?.retention &&
-        samePreviewMsg(prevChat.lastMsg, nextChat.lastMsg)
+        samePreviewMsg(prevChat.preview, nextChat.preview)
     );
 }
 
@@ -159,7 +167,7 @@ const RecentChatRow = memo(function RecentChatRow({
                                 <span className="shrink-0 whitespace-nowrap text-sm leading-4 font-black text-muted">{chat.ts ? formatFullDateTime(chat.ts) : ''}</span>
                             </div>
                             <div className={`mt-0.5 truncate text-sm leading-4 ${chat.unseen ? 'text-foreground' : 'text-muted'} ${cloaked ? 'cloaked' : ''}`}>
-                                {displayLastMsg(chat.lastMsg, chatPK, settings, bitcoinPrice)}
+                                {displayPreview(chat.preview, chatPK, settings, bitcoinPrice)}
                             </div>
                         </div>
                     </div>

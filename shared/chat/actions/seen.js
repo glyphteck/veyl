@@ -7,12 +7,12 @@ import { markChatsRead, readCandidate, scheduleReadReceiptWrite } from '../read.
 
 export function useChatSeen({ cloud, uid, chatBanned, chatPK, chatPrivateKey, localCache, pendingReadRef, readCacheRef, readReceiptWriteDelay, getChatRetention, setChats }) {
     const scheduleReadReceipt = useCallback(
-        (chatId, message, lastMsgMs) => {
+        (chatId, message, previewMs) => {
             scheduleReadReceiptWrite({
                 pendingRead: pendingReadRef.current,
                 chatId,
                 message,
-                lastMsgMs,
+                previewMs,
                 delay: readReceiptWriteDelay,
                 write: (pending) => sendReadReceipt(cloud, chatPK, chatPrivateKey, pending.peerChatPK, pending.target, { chatId, retention: getChatRetention(chatId), senderUid: uid }),
                 onError: () => {
@@ -41,17 +41,17 @@ export function useChatSeen({ cloud, uid, chatBanned, chatPK, chatPrivateKey, lo
             }
 
             setChats((prevChats) => {
-                const nextChats = markChatsRead(prevChats, chatId, read.lastMsg);
+                const nextChats = markChatsRead(prevChats, chatId, read.preview);
                 writeCachedChats(localCache, nextChats);
                 return nextChats;
             });
 
-            readCacheRef.current.set(chatId, read.lastMsgMs);
-            void setChatRead(cloud, uid, chatPrivateKey, chatId, read.lastMsgMs).catch((error) => {
+            readCacheRef.current.set(chatId, read.previewMs);
+            void setChatRead(cloud, uid, chatPrivateKey, chatId, read.previewMs).catch((error) => {
                 console.warn('chat read state write failed', error);
             });
             if (sendReceipt) {
-                scheduleReadReceipt(chatId, read.lastMsg, read.lastMsgMs);
+                scheduleReadReceipt(chatId, read.preview, read.previewMs);
             }
         },
         [cloud, uid, chatPK, chatPrivateKey, localCache, readCacheRef, scheduleReadReceipt, setChats]

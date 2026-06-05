@@ -50,7 +50,12 @@ function useCachedAvatarSource(sourceKey) {
         if (isRemoteAvatarSource(sourceKey) && !nextCachedSource) {
             void loadAvatarImageCache(sourceKey).then((uri) => {
                 if (!cancelled && uri) {
-                    setCachedSource((current) => (current === uri ? current : uri));
+                    setCachedSource((current) => {
+                        if (current === uri || loadedSourceKeys.has(sourceKey)) {
+                            return current;
+                        }
+                        return uri;
+                    });
                 }
             });
         }
