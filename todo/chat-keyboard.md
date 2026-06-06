@@ -3,8 +3,8 @@
 status: active
 branch: main
 worktree: current
-base: main@7a56ce638bfa
-repo version: 0.14.0
+base: main@6f32fc37d913
+repo version: 0.14.3
 
 ## Scope
 
@@ -14,12 +14,12 @@ Keep iOS current-chat keyboard handling responsive while avoiding `KeyboardGestu
 
 - `apps/ios/app/(vault)/(app)/chat/[peerchatpk]/index.js`
 - `apps/ios/app/(vault)/(app)/(home)/chat.js`
-- `apps/ios/src/components/chat/messagelist.js`
+- `apps/ios/src/components/chat/messages/list.js`
 - any existing iOS keyboard primitive needed for this path
 
 ## Collision Notes
 
-The primary checkout has an existing dirty change in `apps/ios/app/(vault)/(app)/(home)/chat.js`, which is inside this task's write boundary. Treat that file as current chat-keyboard work unless the author confirms otherwise. The other dirty iOS peer-picker/share/send files are outside this task's write boundary; do not fold them into keyboard follow-up edits.
+Keep this focused on iOS chat navigation, current-chat keyboard motion, and composer/list spacing. Shared message-session changes can affect first-open readiness, but do not fold unrelated chat provider refactors into this task unless they directly change route loading behavior.
 
 ## Remaining
 
@@ -29,4 +29,4 @@ The primary checkout has an existing dirty change in `apps/ios/app/(vault)/(app)
 
 ## Handoff
 
-Current diff removes the pre-route `selectChat()` call from the iOS chat list, defers route-side `selectChat()` until after the first frame in the peer-chat route, delays peer-avatar refresh/prefetch, and moves the chat list back to a manual `useReanimatedKeyboardAnimation()` reserve instead of `KeyboardChatScrollView`.
+Current repo state already defers route-side `selectChat()` until after the first frame in the peer-chat route. The iOS home chat list still uses `KeyboardChatScrollView`, while the current-chat message list uses `KeyboardStickyView` for composer placement.

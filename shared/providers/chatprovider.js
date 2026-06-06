@@ -11,7 +11,7 @@ import { useChatSave } from '../chat/actions/save.js';
 import { useChatSeen } from '../chat/actions/seen.js';
 import { useChatSend } from '../chat/actions/send.js';
 import { useChatSettings } from '../chat/actions/settings.js';
-import { useChatMessageSessions } from '../chat/messages/session/index.js';
+import { useChatMessageBatches } from '../chat/messages/batches/usebatches.js';
 import { useChatList } from '../chat/usechatlist.js';
 import { processInbox } from '../chat/inbox.js';
 import { messageHasKey } from '../chat/messagekeys.js';
@@ -233,7 +233,7 @@ export function createChatProvider({ cloud, media = {}, useUser, useVault, readR
             retainMessageView,
             releaseMessageView,
             warm: warmChats,
-        } = useChatMessageSessions({
+        } = useChatMessageBatches({
             cloud,
             media,
             chatPK,
@@ -537,6 +537,49 @@ export function createChatProvider({ cloud, media = {}, useUser, useVault, readR
             return deleted;
         }, [cloud, uid, chatPK, chatPrivateKey, deleteChat]);
 
+        const messageBatches = useMemo(
+            () => ({
+                loadOlderMessages,
+                watchMessageWindow,
+                adoptConfirmedMessages,
+                ackMessages,
+                ensureMessageBatch,
+                expireMessageBatch,
+                releaseMessageBatch,
+                subscribeMessageBatch,
+                queueMessagePreload,
+                getMessageBatch,
+                getMessageView,
+                rememberMessageView,
+                updateMessageView,
+                retainMessageView,
+                releaseMessageView,
+                getChatPreviewKey,
+                syncChatPreview,
+                syncChatPreviewDrop: clearChatPreviewKeys,
+            }),
+            [
+                loadOlderMessages,
+                watchMessageWindow,
+                adoptConfirmedMessages,
+                ackMessages,
+                ensureMessageBatch,
+                expireMessageBatch,
+                releaseMessageBatch,
+                subscribeMessageBatch,
+                queueMessagePreload,
+                getMessageBatch,
+                getMessageView,
+                rememberMessageView,
+                updateMessageView,
+                retainMessageView,
+                releaseMessageView,
+                getChatPreviewKey,
+                syncChatPreview,
+                clearChatPreviewKeys,
+            ]
+        );
+
         const value = useMemo(
             () => ({
                 chats,
@@ -577,28 +620,11 @@ export function createChatProvider({ cloud, media = {}, useUser, useVault, readR
                 setChatTtl,
                 makeMessagePermanent,
                 makeMessageTemporary,
-                loadOlderMessages,
-                watchMessageWindow,
                 readMessageFile,
                 readMessagePreview,
                 writeMessagePreview,
-                adoptConfirmedMessages,
-                ackMessages,
                 lastChat,
-                ensureMessageBatch,
-                expireMessageBatch,
-                releaseMessageBatch,
-                subscribeMessageBatch,
-                queueMessagePreload,
-                getMessageBatch,
-                getMessageView,
-                rememberMessageView,
-                updateMessageView,
-                retainMessageView,
-                releaseMessageView,
-                getChatPreviewKey,
-                syncChatPreview,
-                syncChatPreviewDrop: clearChatPreviewKeys,
+                messageBatches,
             }),
             [
                 chats,
@@ -639,28 +665,11 @@ export function createChatProvider({ cloud, media = {}, useUser, useVault, readR
                 setChatTtl,
                 makeMessagePermanent,
                 makeMessageTemporary,
-                loadOlderMessages,
-                watchMessageWindow,
                 readMessageFile,
                 readMessagePreview,
                 writeMessagePreview,
-                adoptConfirmedMessages,
-                ackMessages,
                 lastChat,
-                ensureMessageBatch,
-                expireMessageBatch,
-                releaseMessageBatch,
-                subscribeMessageBatch,
-                queueMessagePreload,
-                getMessageBatch,
-                getMessageView,
-                rememberMessageView,
-                updateMessageView,
-                retainMessageView,
-                releaseMessageView,
-                getChatPreviewKey,
-                syncChatPreview,
-                clearChatPreviewKeys,
+                messageBatches,
             ]
         );
 

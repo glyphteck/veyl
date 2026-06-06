@@ -9,6 +9,7 @@
 - Keep object keys short when the shape is local and obvious. Prefer `{ kind, key }` over longer labels unless the extra words prevent real ambiguity.
 - Generic UI belongs at the closest generic component level. If a control is not message-specific, do not keep it under `messages/`.
 - Keep file names lowercase.
+- Reserve `index.js` for true app, route, package, function, or tiny public barrel entrypoints. Use named files for normal implementation modules, hooks, providers, and components so imports, editor tabs, stack traces, and search results carry ownership context.
 - Short does not mean vague. Tiny names like `x`, `data`, `item`, and `value` are fine for very local transforms, but exported APIs and cross-file shapes need enough domain signal to read safely.
 - Avoid scaffolding words like `manager`, `controller`, `coordinator`, `processor`, and `handler` unless the code really owns that broad role.
 - Prefer product nouns over technical plumbing nouns. Use names like `chat`, `wallet`, `audio`, `vault`, `seed`, `profile`, and `bot` when those are the actual concepts.

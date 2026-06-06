@@ -9,7 +9,7 @@ import { useMediaViewer } from '@/providers/mediaviewerprovider';
 import { useUser } from '@/providers/userprovider';
 import GlassIcon from '@/components/glass/glassicon';
 import { KeyboardStickyView } from '@/components/keyboardscroll';
-import { ChatMessageType } from '@/components/chat/messages';
+import { ChatMessageType } from '@/components/chat/messages/type';
 import ReceiptMark, { RECEIPT_MARK_RESERVE } from '@/components/chat/receiptmark';
 import { REACTION_SPACE } from '@/components/chat/messages/reactiontray';
 import Dot from './dot';

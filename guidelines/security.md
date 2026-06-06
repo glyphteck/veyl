@@ -28,7 +28,7 @@
 
 - Chat is custom encrypted 1:1 messaging over Firestore.
 - Message payload shape is cross-platform and backend-sensitive.
-- Detailed chat, message, session, and user lifecycle diagrams live in [lifecycle/chat.md](../lifecycle/chat.md), [lifecycle/msg.md](../lifecycle/msg.md), [lifecycle/session.md](../lifecycle/session.md), and [lifecycle/user.md](../lifecycle/user.md). Keep this section focused on security invariants.
+- Detailed chat, message, message batch, and user lifecycle diagrams live in [lifecycle/chat.md](../lifecycle/chat.md), [lifecycle/msg.md](../lifecycle/msg.md), [lifecycle/batches.md](../lifecycle/batches.md), and [lifecycle/user.md](../lifecycle/user.md). Keep this section focused on security invariants.
 - Link IDs are derived from the X25519 pair secret plus ordered chat public keys. Active chat ids are backend-issued at `links/{linkId}.chat.id`. Neither id may reveal participant keys or be sorted public-key strings.
 - The chat security model is dumb server, smart client powered by cryptography. The server checks owner paths, auth, sender bans and recipient blocks for inbox ping delivery, rate limits, and bounded shapes; clients derive link ids, decrypt owner entries and inbox pings, pin per-chat actor keys, verify action signatures, and ignore invalid records.
 - Messages are encrypted before storage.

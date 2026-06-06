@@ -3,8 +3,8 @@
 status: active
 branch: current
 worktree: current
-base: main@7a56ce638bfa
-repo version: 0.14.0
+base: main@6f32fc37d913
+repo version: 0.14.3
 
 ## Scope
 
@@ -105,7 +105,7 @@ Website repo:
 
 ## Collision Notes
 
-The current Veyl checkout has unrelated dirty iOS chat, peer-picker, send-photo, and share-media files outside this task's scope. Keep NIP-05 implementation isolated from that work, and re-check the Website checkout before editing root-domain trust routes.
+Current Veyl repo state has no NIP-05 implementation; only this task and the changelog mention Nostr. Keep NIP-05 implementation isolated from chat, wallet, and bot work, and re-check the Website checkout before editing root-domain trust routes.
 
 ## Deferred
 

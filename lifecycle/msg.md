@@ -1,6 +1,6 @@
 # Message Lifecycle
 
-Use this guide when changing message send, media upload, edits, reactions, receipts, save/unsave, explicit message delete, shared media, or message TTL behavior. Chat instance lifecycle lives in [chat.md](chat.md), route/session behavior lives in [session.md](session.md), and user/account cleanup lives in [user.md](user.md).
+Use this guide when changing message send, media upload, edits, reactions, receipts, save/unsave, explicit message delete, shared media, or message TTL behavior. Chat instance lifecycle lives in [chat.md](chat.md), route batch behavior lives in [batches.md](batches.md), and user/account cleanup lives in [user.md](user.md).
 
 ## Send
 

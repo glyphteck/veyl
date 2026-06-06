@@ -2,7 +2,7 @@
 
 Use this guide for any change to encrypted chat, chat entries, message payloads, retention, reactions, read receipts, media messages, warming, compaction, push routing, or bot chat behavior.
 
-For lifecycle diagrams and ownership, read [lifecycle/msg.md](../lifecycle/msg.md), [lifecycle/chat.md](../lifecycle/chat.md), [lifecycle/session.md](../lifecycle/session.md), and [lifecycle/user.md](../lifecycle/user.md). [chat-message-flow.md](chat-message-flow.md) is only a compatibility pointer.
+For lifecycle diagrams and ownership, read [lifecycle/msg.md](../lifecycle/msg.md), [lifecycle/chat.md](../lifecycle/chat.md), [lifecycle/batches.md](../lifecycle/batches.md), and [lifecycle/user.md](../lifecycle/user.md). [chat-message-flow.md](chat-message-flow.md) is only a compatibility pointer.
 
 ## Contract
 
@@ -41,7 +41,7 @@ Delete is also chat-visible global state. Either participant may hard-delete any
 
 - Message send, media upload, save/unsave, explicit message delete, and shared media: [lifecycle/msg.md](../lifecycle/msg.md).
 - Active chat ids, owner entries, parent delete markers, whole-chat delete, and recreation: [lifecycle/chat.md](../lifecycle/chat.md).
-- Latest batches, warming, mounted route behavior, read receipts, hidden checkpoints, and maintenance: [lifecycle/session.md](../lifecycle/session.md).
+- Latest batches, warming, mounted route behavior, read receipts, hidden checkpoints, and maintenance: [lifecycle/batches.md](../lifecycle/batches.md).
 - Account/vault state, owner-private records, push routing, and account deletion: [lifecycle/user.md](../lifecycle/user.md).
 
 Keep this file focused on the chat contract, payload model, ownership map, and invariants. Put lifecycle diagrams and step-by-step sequencing in root `lifecycle/`.
@@ -53,7 +53,7 @@ Keep this file focused on the chat contract, payload model, ownership map, and i
 - Message query/decrypt/windowing: `shared/chat/messages/query.js`, `shared/chat/usemessages.js`, `shared/chat/messages/window.js`.
 - Owner entries and inbox pings: `shared/chat/entry.js` and `shared/chat/ping.js`.
 - Signed action envelopes: `shared/chat/messages/actions.js`.
-- Message session warming: `shared/chat/messages/session/`.
+- Message batch warming: `shared/chat/messages/batches/`.
 - Lifecycle diagrams: `lifecycle/`.
 - Shared chat limits and timing knobs: `shared/config.js`.
 - Payload/control helpers: `shared/chat/messages/*`.

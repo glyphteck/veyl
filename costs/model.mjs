@@ -28,6 +28,7 @@ export const DEFAULT_ASSUMPTIONS = Object.freeze({
     messageSendFirestoreReadsPerMessage: 6,
     messageSendFirestoreWritesPerMessage: 4,
     messageSendFunctionInvocationsPerMessage: 1,
+    mediaStorageRulesReadsPerMessage: 1,
     readReceiptFirestoreReadsPerMessage: 1,
     readReceiptFirestoreWritesPerMessage: 1,
     reactionFirestoreReadsPerReaction: 1,
@@ -84,11 +85,15 @@ function savedMessageDocsPerActiveUserDay(assumptions) {
 }
 
 function saveTextOpsCost(rates) {
-    return 4 * rates.firestoreRead + 3 * rates.firestoreWrite + rates.functionInvocation;
+    return rates.firestoreRead + rates.firestoreWrite;
+}
+
+function chatMediaHoldOpsCost(rates) {
+    return 2 * rates.firestoreRead + 2 * rates.firestoreWrite + rates.functionInvocation + rates.storageClassA;
 }
 
 function saveMediaOpsCost(rates) {
-    return saveTextOpsCost(rates) + rates.storageClassA;
+    return saveTextOpsCost(rates) + chatMediaHoldOpsCost(rates);
 }
 
 function saveOpsPerActiveUserDay(assumptions, rates) {
@@ -104,6 +109,7 @@ function activeOpsPerActiveUserDay(assumptions) {
         firestoreReads:
             assumptions.fixedReadsPerActiveUserDay +
             visibleMessages * assumptions.messageSendFirestoreReadsPerMessage +
+            assumptions.mediaMessagesPerActiveUserDay * assumptions.mediaStorageRulesReadsPerMessage +
             assumptions.readReceiptsPerActiveUserDay * assumptions.readReceiptFirestoreReadsPerMessage +
             assumptions.reactionsPerActiveUserDay * assumptions.reactionFirestoreReadsPerReaction,
         firestoreWrites:
@@ -378,6 +384,7 @@ function cliOptions() {
             messageSendFirestoreReadsPerMessage: readNumberEnv('MESSAGE_SEND_READS', DEFAULT_ASSUMPTIONS.messageSendFirestoreReadsPerMessage),
             messageSendFirestoreWritesPerMessage: readNumberEnv('MESSAGE_SEND_WRITES', DEFAULT_ASSUMPTIONS.messageSendFirestoreWritesPerMessage),
             messageSendFunctionInvocationsPerMessage: readNumberEnv('MESSAGE_SEND_FUNCTIONS', DEFAULT_ASSUMPTIONS.messageSendFunctionInvocationsPerMessage),
+            mediaStorageRulesReadsPerMessage: readNumberEnv('MEDIA_STORAGE_RULE_READS', DEFAULT_ASSUMPTIONS.mediaStorageRulesReadsPerMessage),
             readReceiptFirestoreReadsPerMessage: readNumberEnv('READ_RECEIPT_READS', DEFAULT_ASSUMPTIONS.readReceiptFirestoreReadsPerMessage),
             readReceiptFirestoreWritesPerMessage: readNumberEnv('READ_RECEIPT_WRITES', DEFAULT_ASSUMPTIONS.readReceiptFirestoreWritesPerMessage),
         },

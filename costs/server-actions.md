@@ -38,15 +38,11 @@ Admin SDK reads and writes bypass Firestore and Storage Security Rules. Client S
 | `dropPush` | callable | push token removal |
 | `submitReport` | callable | user/message reporting |
 | `reserveReportEvidenceUpload` | callable | report evidence upload reservation |
-| `reserveChatMediaUpload` | callable | chat media signed upload and quota |
 | `reserveSharedMediaUpload` | callable | shared media signed upload and quota |
-| `setChatMessageTtl` | callable | saved/temporary message TTL and media hold toggle |
-| `checkChats` | callable | batch deleted-chat status check for owner chat entries |
+| `setChatMediaHold` | HTTP | path-only chat media temporary-hold toggle |
 | `openChatLink` | callable | link-scoped active chat id creation/reuse |
 | `push` | callable | block-enforced recipient inbox ping delivery and generic push |
 | `deleteChat` | callable | rare opaque chat subtree delete, single or batch |
-| `deleteChatMessage` | callable | hard delete one message and related media state |
-| `deleteChatMessages` | callable | hard delete a batch of messages and related media state |
 | `cleanupDeletedChats` | scheduled | chunked cleanup for chats tagged deleted |
 | `setBotPower` | callable | admin bot enable/disable |
 
@@ -67,11 +63,10 @@ Planning estimates:
 | --- | ---: |
 | Owner presence update on `profiles/{uid}.active` | 0 `RR` |
 | Owner avatar update to non-null | about 1 `RR` on `moderation/{uid}` |
-| Parent chat get/update | denied |
+| Parent chat get | 0 extra `RR`; the get itself is the billed read |
 | Message get/list/create | about 1 `RR` on `chats/{chatId}` so deleted chats are denied server-side |
-| Message update | denied |
-| Message delete | no client rules path; hard deletes go through callables |
-| Message save/unsave TTL toggle | no client rules path; `setChatMessageTtl` checks deleted chats in Functions |
+| Message TTL update | about 1 `RR` on `chats/{chatId}`; rules allow only `ttl` changes |
+| Message delete | about 1 `RR` on `chats/{chatId}` |
 | Owner chat entry writes | 0 extra `RR` |
 | User settings/community/seed/block writes | 0 extra `RR` |
 
@@ -83,7 +78,7 @@ Rules can short-circuit and cache repeated dependent docs inside a request. Trea
 
 - Avatar write/delete by owner calls `isAvatarBanned(uid)`, which checks `moderation/{uid}`.
 - Admin avatar delete checks `admins/{request.auth.uid}`.
-- Chat media writes use signed upload URLs minted by `reserveChatMediaUpload`, so they do not run Storage rules.
+- Chat media writes go directly through Firebase Storage rules under `chats/{chatId}/{mediaId}`.
 - Shared media writes use signed upload URLs minted by `reserveSharedMediaUpload`, so they do not run Storage rules.
 - Chat media reads check `chats/{chatId}` so deleted chats cannot read media.
 - Report evidence upload checks the matching report upload reservation doc.
@@ -94,7 +89,7 @@ Planning estimates:
 | --- | ---: |
 | Avatar owner upload/delete | about 1 `RR` on moderation |
 | Avatar read | 0 `RR` |
-| Chat media upload | 0 `RR`; signed upload URL bypasses Storage rules after callable checks |
+| Chat media upload | about 1 `RR` on the chat deletion gate |
 | Chat media read | about 1 `RR` on chat deletion gate |
 | Shared media upload | 0 `RR`; signed upload URL bypasses Storage rules after callable checks |
 | Shared media read | 0 `RR` |
@@ -454,10 +449,10 @@ Code:
 
 When unlocked and chat list is active:
 
-- cached chat-list hydrate also runs the same `checkChats` pass before rendering a saved snapshot; if the live server snapshot arrives first, the cached result is ignored.
+- cached chat-list hydrate also runs the same parent chat status read before rendering a saved snapshot; if the live server snapshot arrives first, the cached result is ignored.
 - query listener `users/{uid}/chats orderBy ts desc limit 15`.
 - initial cost: `max(1, C15)` `FR`.
-- after decrypting owner entries, calls `checkChats` once per resolved page/list snapshot: 1 `FN`, plus up to one parent `chats/{chatId}` `FR` per unique owner entry in the page. Parent-doc absence means active; parent `deleted` means stale owner entry cleanup.
+- after decrypting owner entries, reads each unique parent `chats/{chatId}` status doc through the client SDK: up to one `FR` per unique owner entry in the page. Parent-doc absence means active; parent `deleted` means stale owner entry cleanup.
 - inbox ping listener `users/{uid}/inbox orderBy ts desc limit 25`.
 - ping processing reads at most one pointed message per touched chat per batch, not one message per ping.
 - future owner chat entry and inbox ping updates delivered to listeners cost additional `FR`.
@@ -465,18 +460,18 @@ When unlocked and chat list is active:
 `loadMoreChats`:
 
 - reads next page of 20 owner chat entries.
-- cost: up to 20 owner-entry `FR`, minimum 1, plus one `checkChats` `FN` and up to 20 parent chat `FR`.
+- cost: up to 20 owner-entry `FR`, minimum 1, plus up to 20 parent chat status `FR`.
 
 `ensureChat`:
 
-- if selected chat is not in list, reads the deterministic owner chat entry, then checks the parent deleted marker through `checkChats`.
+- if selected chat is not in list, reads the deterministic owner chat entry, then reads the parent deleted marker through the client SDK.
 
 ### Message warming
 
 Code:
 
-- `shared/chat/messages/session/config.js`.
-- `shared/chat/messages/session/index.js`.
+- `shared/chat/messages/batches/config.js`.
+- `shared/chat/messages/batches/usebatches.js`.
 - `shared/chat/messages/query.js`.
 
 Current constants:
@@ -630,7 +625,7 @@ Code:
 
 Long text is converted to file attachment:
 
-- reserves and uploads an encrypted Storage blob under the chat media path.
+- uploads an encrypted Storage blob directly under the chat media path.
 - then send attachment message using the visible-message path.
 
 ### Image/audio/video/file
@@ -643,12 +638,9 @@ Code:
 
 Send:
 
-- calls `reserveChatMediaUpload` to sign the upload: 1 `FN`.
-- upload signer rate-limits three windows: 3 `FR`, 3 `FW`.
-- upload signer reads usage quota and `chats/{chatId}` deletion gate: 2 `FR`.
-- upload signer writes usage quota: 1 `FW`.
-- uploads encrypted Storage object `chat-media/{chatId}/{messageKey}/main` through the signed URL: 1 `SA`.
-- signed upload bypasses Storage rules, so upload rules add 0 `RR`.
+- uploads encrypted Storage object `chats/{chatId}/{mediaId}` directly through Firebase Storage rules: 1 `SA`.
+- upload rules check the chat deletion gate: about 1 `RR`.
+- no chat media upload callable runs; there is no per-chat media upload quota counter.
 - solo/latest visible send path:
   - writes message doc and sender owner entry before calling `push`.
   - planning reads are about 6 read-equivalent operations when the receiver has one active push route, and about 5 when no active route exists.
@@ -683,7 +675,7 @@ Media:
 
 Formula for direct chat-media upload to `N` established targets:
 
-- `N` signed upload calls: `N * about 5` `FR`, `N * 4` `FW`, `N` `FN`, `N` `SA`.
+- `N` direct chat-media Storage uploads: `N` `SA` plus about `N` `RR` on chat deletion gates.
 - `N` visible message sends: `N * about 6` read-equivalent operations on active OS-notification paths, or `N * about 5` when no active route exists, `N * 4` `FW`, `N` `FN`.
 
 Formula for one shared upload to `N` established targets:
@@ -786,65 +778,65 @@ Payment request confirmation:
 Code:
 
 - save hooks.
-- `setChatMessageTtl`.
+- `shared/cloud/firebase.js` direct message `ttl` update.
+- `functions/chat/media.js` `setChatMediaHold` only for chat media holds.
 
 Text/request:
 
-- calls `setChatMessageTtl`: 1 `FN`.
-- rate limit transaction reads/writes two `rate_limits` buckets: 2 `FR`, 2 `FW`.
-- reads `chats/{chatId}` to reject deleted chats: 1 `FR`.
-- reads the target message doc: 1 `FR`.
-- save updates the shared message doc `ttl` to `null`: 1 `FW`.
-- unsave updates the shared message doc to a fresh normal server TTL: 1 `FW`.
+- directly updates the shared message doc `ttl` to `null`: 1 `FW`.
+- message update rules check the parent chat deletion gate: about 1 `RR`.
+- unsave directly updates the shared message doc to a fresh normal server TTL: 1 `FW` plus about 1 `RR`.
 
 Attachment:
 
 - same message TTL update path.
-- save sets the chat media object's Storage `temporaryHold = true`: 1 `SA` metadata update.
-- unsave sets `temporaryHold = false` after the message doc is temporary again: 1 `SA` metadata update.
+- save calls path-only `setChatMediaHold` with `hold=true`.
+- unsave calls path-only `setChatMediaHold` with `hold=false` after the message doc is temporary again.
+- `setChatMediaHold` rate-limits two IP windows: about 2 `FR`, 2 `FW`, and 1 `FN`.
+- setting Storage `temporaryHold` is one Storage Class A metadata operation: 1 `SA`.
 
-### `setChatMessageTtl(permanent: true)`
+### Direct message TTL save
 
-Code: `functions/chat/deletechat.js`.
+Code: `shared/cloud/firebase.js#writeChatMessageTtl(permanent: true)`.
 
 Work:
 
-- rate limit transaction reads/writes two `rate_limits` buckets: 2 `FR`, 2 `FW`.
-- reads `chats/{chatId}` to reject deleted chats: 1 `FR`.
-- reads each target message doc: 1 `FR` per message.
-- sets Storage `temporaryHold = true` for each target chat media object before making the message permanent: 1 `SA` per media object.
 - updates each temporary message doc to `ttl: null`: 1 `FW` per updated message.
+- message update rules check the parent chat deletion gate: about 1 `RR` per updated message.
+- sets Storage `temporaryHold = true` for each target chat media object before making the message permanent through `setChatMediaHold`: about 2 `FR`, 2 `FW`, 1 `FN`, and 1 `SA` per media object.
 
 Total one text save:
 
-- 1 `FN`.
-- 4 `FR`.
-- 3 `FW`.
+- about 1 `RR`.
+- 1 `FW`.
 
 Total one media save adds:
 
+- 1 `FN`.
+- about 2 `FR`.
+- 2 `FW`.
 - 1 `SA`.
 
-### `setChatMessageTtl(permanent: false)`
+### Direct message TTL unsave
 
-Code: `functions/chat/deletechat.js`.
+Code: `shared/cloud/firebase.js#writeChatMessageTtl(permanent: false)`.
 
 Work:
 
-- rate limit transaction reads/writes two `rate_limits` buckets: 2 `FR`, 2 `FW`.
-- reads `chats/{chatId}` to reject deleted chats: 1 `FR`.
-- reads each target message doc: 1 `FR` per message.
 - updates each permanent message doc to a fresh normal server TTL: 1 `FW` per updated message.
-- clears Storage `temporaryHold` for each target chat media object after the message doc is temporary: 1 `SA` per media object.
+- message update rules check the parent chat deletion gate: about 1 `RR` per updated message.
+- clears Storage `temporaryHold` for each target chat media object after the message doc is temporary through `setChatMediaHold`: about 2 `FR`, 2 `FW`, 1 `FN`, and 1 `SA` per media object.
 
 Total one text unsave:
 
-- 1 `FN`.
-- 4 `FR`.
-- 3 `FW`.
+- about 1 `RR`.
+- 1 `FW`.
 
 Total one media unsave adds:
 
+- 1 `FN`.
+- about 2 `FR`.
+- 2 `FW`.
 - 1 `SA`.
 
 ### Delete message
@@ -853,10 +845,9 @@ Code: `deleteMsg`.
 
 Steps:
 
-- calls `deleteChatMessage`: 1 `FN`.
-- callable rate-limits two windows: 2 `FR`, 2 `FW`.
-- callable clears Storage temporary hold and deletes the media object when the client marks the message as media: 1 `SA` metadata update plus free delete.
-- callable deletes the source message doc: 1 `FD`.
+- directly deletes the source message doc: 1 `FD`.
+- message delete rules check the parent chat deletion gate: about 1 `RR`.
+- when the client marks the message as media, it also deletes the media object directly from Storage: free Storage delete plus about 1 Storage-rules `RR` on the chat deletion gate.
 - active listeners treat the removed source doc as the delete signal and clear local memory/cache.
 
 ### TTL changes
@@ -872,7 +863,7 @@ Shape:
 - new message docs carry their initial `ttl`.
 - sealed inbox pings carry a fixed 21-day `ttl`.
 - saving sets the shared message doc `ttl` to `null`; unsaving sets a fresh normal server TTL.
-- routine physical cleanup is handled by Firestore TTL and encrypted hidden-message maintenance callables, not client plaintext TTL shortening.
+- routine physical cleanup is handled by Firestore TTL and encrypted hidden-message maintenance deletes, not client plaintext TTL shortening.
 
 Active clients keep backend TTL dumb:
 
@@ -889,7 +880,7 @@ Expired message cleanup:
 Smart hidden-message cleanup:
 
 - clients append encrypted `hid` checkpoint control messages after their UI has released read-hidden messages.
-- if both participants' hidden checkpoints cover an unsaved received display message, the recipient client may batch delete that message doc through `deleteChatMessages`.
+- if both participants' hidden checkpoints cover an unsaved received display message, the recipient client may batch delete that message doc directly through Firestore.
 - warmed latest batches may delete only from hidden checkpoints already present in the stream; they must not create new hidden checkpoints.
 
 Control-message compaction:
@@ -917,7 +908,7 @@ Steps:
 - function overwrites then deletes each caller owner chat entry when `entryId` is provided: 1 `FW`, 1 `FD` per entry.
 - normal manual chat delete runs best-effort physical cleanup after the read gates are written. Account-delete chat batches pass `cleanup: false` so account deletion waits only for every known chat to be marked deleted.
 - scheduled `cleanupDeletedChats` runs once per day as a backstop to drain deleted chats and retry unfinished work.
-- cleanup drains message docs and Storage objects under `chat-media/{chatId}/` in chunks.
+- cleanup drains message docs and Storage objects under `chats/{chatId}/` in chunks.
 - each cleanup pass queries up to 300 message docs and lists up to 100 Storage objects.
 - each Storage object cleanup sets `temporaryHold = false` before free deletion, so media-heavy chats pay one Storage metadata update per object.
 - the schedule runs daily and reads up to 100 pending deleted chat docs; when no deletes are pending, the planning cost is one scheduled function invocation and one empty-query read per day.

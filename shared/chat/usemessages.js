@@ -9,7 +9,7 @@ import { getMessageKey, getMessageOrderMs, mergeMessages } from './state.js';
 import { getLatestOwnReadReceiptTarget, getLatestReadReceiptTarget, getSeenHiddenMessages } from './messages.js';
 import { getPreviewDropSync, getPreviewUpdateSync } from './messages/preview.js';
 import { resolveRenderableMessages } from './resolve.js';
-import { VISITED_CHAT_PREFETCH_OLDER_BATCHES } from './messages/session/config.js';
+import { VISITED_CHAT_PREFETCH_OLDER_BATCHES } from './messages/batches/config.js';
 import { timestampMs } from '../utils/time.js';
 
 function isDenied(error) {
@@ -25,13 +25,17 @@ export function createUseChatMessages({ useChat, useUser, useVault, appState, pa
         const {
             chats,
             getMessages,
-            ackMessages,
             hasChat,
             markChatRead,
             markChatReadReceipt,
             wasChatDeletedLocally,
             ackDeletedChat,
             isChatDataReady,
+            readMessageFile,
+            messageBatches = {},
+        } = useChat();
+        const {
+            ackMessages,
             ensureMessageBatch,
             releaseMessageBatch,
             expireMessageBatch,
@@ -47,10 +51,9 @@ export function createUseChatMessages({ useChat, useUser, useVault, appState, pa
             syncChatPreviewDrop,
             queueMessagePreload,
             adoptConfirmedMessages,
-            readMessageFile,
             loadOlderMessages,
             watchMessageWindow,
-        } = useChat();
+        } = messageBatches;
         const { chatPK } = useUser();
         const { chatPrivateKey, localCache } = useVault();
 

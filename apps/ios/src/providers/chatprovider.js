@@ -1,5 +1,5 @@
 import { AppState } from 'react-native';
-import { IOS_CHAT_WARMING } from '@veyl/shared/chat/messages/session/config';
+import { IOS_CHAT_WARMING } from '@veyl/shared/chat/messages/batches/config';
 import { createChatProvider } from '@veyl/shared/providers/chatprovider';
 import { cloud } from '@/lib/cloud';
 import { readMessageFileNative, uploadAttachmentMsgNative } from '@/lib/chat/media';

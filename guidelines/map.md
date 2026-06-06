@@ -24,7 +24,7 @@ bun map
 | --- | --- | --- | --- |
 | auth/passkeys | `apps/web/src/lib/passkey.js`, `apps/ios/src/lib/passkeys.js`, `functions/passkey/*` | `shared/passkey.js`, `shared/passkeylabel.js`, `apps/web/src/lib/routeguards.js` | `guidelines/navigation.md`, `guidelines/security.md` |
 | vault/cache | `shared/vault.js`, `shared/cache/localdata.js` | `apps/web/src/lib/cache/*`, `apps/ios/src/lib/cache/*` | `guidelines/navigation.md`, `guidelines/security.md` |
-| chat | `shared/providers/chatprovider.js`, `shared/chat/*`, `shared/chat/messages/session/*` | `apps/web/src/components/chat/*`, `apps/ios/src/components/chat/*`, `apps/bot/src/runtime.js` | `guidelines/chat.md`, `lifecycle/`, `guidelines/security.md`, `bots.md` |
+| chat | `shared/providers/chatprovider.js`, `shared/chat/*`, `shared/chat/messages/batches/*` | `apps/web/src/components/chat/*`, `apps/ios/src/components/chat/*`, `apps/bot/src/runtime.js` | `guidelines/chat.md`, `lifecycle/`, `guidelines/security.md`, `bots.md` |
 | chat media | `shared/chat/attachments.js`, `shared/chat/filepayload.js` | `apps/web/src/lib/chat/*cache.js`, `apps/ios/src/lib/chat/media.js`, `apps/ios/src/lib/chat/imagecache.js` | `lifecycle/msg.md`, `guidelines/chat.md`, `guidelines/uistyling.md` |
 | wallet | `shared/wallet/provider.js`, `shared/wallet/*` | `apps/web/src/components/providers/walletprovider.js`, `apps/ios/src/providers/walletprovider.js` | `guidelines/navigation.md`, `guidelines/security.md` |
 | navigation/resume | `apps/web/src/lib/routeguards.js`, `shared/navigation/resume.js` | `apps/web/src/app/rootredirect.js`, `apps/ios/src/lib/navigation/*` | `guidelines/navigation.md` |

@@ -2,6 +2,13 @@
 
 Repo-level changes are listed newest first. Keep entries short and concrete. Broad pushes get grouped bullets, while narrow fixes can use one concise bugfix or cleanup bullet that still names the actual change.
 
+## 0.14.4 - 2026-06-06
+
+- Renamed provider-owned latest-message session code and lifecycle docs around message batches, with shared batch runtime ownership under `shared/chat/messages/batches/`.
+- Grouped message batch controls behind `messageBatches`, split batch cleanup into its own helper, and kept route message loading in `usemessages`.
+- Reserved `index.js` for true entrypoints, renamed chat message type renderers and the batch hook to named implementation files, and documented the convention.
+- Refreshed chat media cost and active follow-up notes around direct Storage writes, direct message TTL/delete paths, and remaining server-abuse, keyboard, NIP-05, and wallet-fee work.
+
 ## 0.14.3 - 2026-06-05
 
 - Split web and iOS chat message lists into message-local row, action, scroll, dot, and gesture modules, while keeping save and download actions named distinctly.

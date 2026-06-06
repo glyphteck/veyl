@@ -7,10 +7,10 @@ Source of truth: [model.mjs](model.mjs). Defaults: 30-day month, 360 retained sa
 | Question | Default answer |
 | --- | ---: |
 | New signup event | ~$0.000033 |
-| One active user, one day | ~$0.00047 in immediate Firebase ops |
-| 100k DAU monthly run-rate | ~$1,990/month |
-| 100k DAU all-in daily user cost | ~$0.00067 per active user/day |
-| 1M DAU monthly run-rate | ~$19,925/month |
+| One active user, one day | ~$0.00046 in immediate Firebase ops |
+| 100k DAU monthly run-rate | ~$1,950/month |
+| 100k DAU all-in daily user cost | ~$0.00065 per active user/day |
+| 1M DAU monthly run-rate | ~$19,523/month |
 | 1M DAU default throughput | ~289 visible messages/s and ~1.2 wallet tx/s |
 
 The default active-user bundle assumes 25 visible sends per active user/day, based on broad messaging-app and SMS benchmarks. Wallet tx/s is expected Spark/network throughput; Spark vendor cost stays in the zero-dollar extras until real rates are known.
@@ -21,11 +21,11 @@ This is the default planning case the app should be able to scan quickly.
 
 | Component | Monthly cost |
 | --- | ---: |
-| Base Firebase ops | ~$1,340 |
-| Save ops + media/message storage at 360 retained days | ~$651 |
-| **Total** | **~$1,990/month** |
+| Base Firebase ops | ~$1,341 |
+| Save ops + media/message storage at 360 retained days | ~$609 |
+| **Total** | **~$1,950/month** |
 
-At 100k DAU, the all-in run-rate is about `$1,990 / 100,000 / 30 = $0.00066` per active user/day.
+At 100k DAU, the all-in run-rate is about `$1,950 / 100,000 / 30 = $0.00065` per active user/day.
 
 ## 100k DAU cost buildup
 
@@ -33,15 +33,15 @@ Saved media and saved message docs grow with active users and the retained saved
 
 | Retained saved history | Monthly run-rate |
 | ---: | ---: |
-| 0 days | ~$1,608 |
-| 30 days | ~$1,639 |
-| 90 days | ~$1,703 |
-| 180 days | ~$1,799 |
-| 1 year | ~$1,990 |
-| 2 years | ~$2,373 |
-| 3 years | ~$2,755 |
-| 4 years | ~$3,137 |
-| 5 years | ~$3,520 |
+| 0 days | ~$1,567 |
+| 30 days | ~$1,599 |
+| 90 days | ~$1,663 |
+| 180 days | ~$1,759 |
+| 1 year | ~$1,950 |
+| 2 years | ~$2,332 |
+| 3 years | ~$2,715 |
+| 4 years | ~$3,097 |
+| 5 years | ~$3,480 |
 
 ## Signup cost
 

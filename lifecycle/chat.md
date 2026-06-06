@@ -1,6 +1,6 @@
 # Chat Lifecycle
 
-Use this guide when changing chat creation, link state, owner entries, delete markers, whole-chat delete, chat recreation, or chat-list availability checks. Message behavior lives in [msg.md](msg.md), session loading lives in [session.md](session.md), and account cleanup lives in [user.md](user.md).
+Use this guide when changing chat creation, link state, owner entries, delete markers, whole-chat delete, chat recreation, or chat-list availability checks. Message behavior lives in [msg.md](msg.md), message batch loading lives in [batches.md](batches.md), and account cleanup lives in [user.md](user.md).
 
 ## Instance Creation
 

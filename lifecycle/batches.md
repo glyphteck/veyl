@@ -1,20 +1,20 @@
-# Session Lifecycle
+# Message Batch Lifecycle
 
 Use this guide when changing chat-list warming, latest-message batches, route message loading, media preloading, retention application, read receipts, hidden checkpoints, or compaction. Message write/delete/save behavior lives in [msg.md](msg.md), chat instance behavior lives in [chat.md](chat.md), and account cleanup lives in [user.md](user.md).
 
 ## Latest Batch And Route Open
 
-Opening or warming a chat uses the same provider-owned session batch. The route consumes the session and owns only route-specific older paging and visible-message holds.
+Opening or warming a chat uses the same provider-owned message batch. The route consumes the batch and owns only route-specific older paging and visible-message holds.
 
 ```mermaid
 flowchart TD
     A["Chat list or inbox ping resolves chat entry"] --> B["shared/providers/chatprovider.js"]
-    B --> C["useChatMessageSessions ensureMessageBatch"]
+    B --> C["useChatMessageBatches ensureMessageBatch"]
     C --> D["listenToLatestMsgs"]
     D --> E["Query latest message docs with adaptive overfetch"]
     E --> F["Decrypt records with cached bodies"]
     F --> G["Apply actions and retention timeline"]
-    G --> H["Session snapshot"]
+    G --> H["Message batch snapshot"]
     H --> I["Warm subscribers and media preloader"]
     H --> J["useChatMessages route subscriber"]
     J --> K["Resolve renderable media"]
@@ -23,23 +23,23 @@ flowchart TD
     L --> N["Debounced read receipt write"]
 ```
 
-Session state is memory-only after unlock. Do not persist message lists to durable local cache, and do not use Firebase offline persistence as a substitute for vaulted cache.
+Message batch state is memory-only after unlock. Do not persist message lists to durable local cache, and do not use Firebase offline persistence as a substitute for vaulted cache.
 
 ## Warming
 
-Warming is a session optimization, not durable state.
+Warming is a message batch optimization, not durable state.
 
 ```mermaid
 flowchart TD
     A["Provider has recent chat list"] --> B["Select warm candidates"]
-    B --> C["Ensure latest message session"]
+    B --> C["Ensure latest message batch"]
     C --> D["Decrypt latest batch"]
     D --> E["Remember provider-owned snapshot"]
     D --> F["Optional media preloader"]
     F --> G["Only warm allowed media types and byte caps"]
 ```
 
-Warm sessions may decrypt message docs and run safe maintenance, but they must not:
+Warm batches may decrypt message docs and run safe maintenance, but they must not:
 
 - write this client's hidden checkpoint
 - infer route visibility
@@ -58,7 +58,7 @@ flowchart TD
     B --> E["Route unmount or batch release"]
     E --> F["Hide eligible seen temporary messages locally"]
     F --> G["Write own hidden checkpoint when needed"]
-    G --> H["Session maintenance can delete covered temporary docs"]
+    G --> H["Batch maintenance can delete covered temporary docs"]
 ```
 
 `on seen` hides after route release. `24h after seen` hides after the first covering receipt is 24 hours old. Saved messages are protected by `ttl: null`, not by route holds.
@@ -69,7 +69,7 @@ Maintenance is client-owned because only clients can decrypt the stream and unde
 
 ```mermaid
 flowchart TD
-    A["Latest batch decrypted"] --> B["Session maintenance"]
+    A["Latest batch decrypted"] --> B["Batch maintenance"]
     B --> C["Compact duplicate or covered control docs"]
     C --> D["Direct delete redundant control docs"]
     B --> E["Check hidden checkpoints"]
@@ -93,7 +93,7 @@ Rules:
 
 ## Ownership
 
-- Provider/session owner: `shared/providers/chatprovider.js`, `shared/chat/messages/session/`.
+- Provider batch owner: `shared/providers/chatprovider.js`, `shared/chat/messages/batches/`.
 - Latest query/decrypt projection: `shared/chat/messages/query.js`.
 - Route subscriber/windowing/older pages: `shared/chat/usemessages.js`, `shared/chat/messages/window.js`.
 - Retention and hidden/read action helpers: `shared/chat/messages/control.js`, `shared/chat/read.js`, `shared/chat/ttl.js`.

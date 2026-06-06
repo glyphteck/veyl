@@ -7,7 +7,7 @@ import { canReplyToMsg, canShareAttachmentMsg, getSystemMsgText, isSystemMsg } f
 import { formatFullDateTime } from '@veyl/shared/utils/time';
 import { bubbleBg, canDownloadMsgFile } from '@/lib/chat/messages';
 import { cn } from '@/lib/classes';
-import { ChatMessageType } from './index';
+import { ChatMessageType } from './type';
 import Dot from './dot';
 import {
     MESSAGE_ROW_ANIMATION_MS,

@@ -1,6 +1,6 @@
 # User Lifecycle
 
-Use this guide when changing account creation, onboarding, vault unlock/lock, local cache lifetime, user-private chat state, push routing, blocking, or account deletion. Chat instance behavior lives in [chat.md](chat.md), message behavior lives in [msg.md](msg.md), and session behavior lives in [session.md](session.md).
+Use this guide when changing account creation, onboarding, vault unlock/lock, local cache lifetime, user-private chat state, push routing, blocking, or account deletion. Chat instance behavior lives in [chat.md](chat.md), message behavior lives in [msg.md](msg.md), and message batch behavior lives in [batches.md](batches.md).
 
 ## Account And Vault
 

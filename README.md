@@ -56,7 +56,7 @@ This README is only the human overview. Detailed mechanics live in focused docs:
 - Code and naming rules: [guidelines/code.md](guidelines/code.md)
 - Navigation and feature entrypoints: [guidelines/navigation.md](guidelines/navigation.md)
 - Chat system: [guidelines/chat.md](guidelines/chat.md)
-- Chat lifecycle diagrams: [message](lifecycle/msg.md), [chat](lifecycle/chat.md), [session](lifecycle/session.md), and [user](lifecycle/user.md)
+- Chat lifecycle diagrams: [message](lifecycle/msg.md), [chat](lifecycle/chat.md), [batches](lifecycle/batches.md), and [user](lifecycle/user.md)
 - Security model: [guidelines/security.md](guidelines/security.md)
 - Package and native dependency rules: [guidelines/packages.md](guidelines/packages.md)
 - Bot model: [bots.md](bots.md) and [guidelines/bots.md](guidelines/bots.md)

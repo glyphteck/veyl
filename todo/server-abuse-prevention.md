@@ -1,10 +1,10 @@
 # Server Abuse Prevention
 
-status: active
+status: parked decision
 branch: current
 worktree: current
-base: main@7a56ce638bfa
-repo version: 0.14.0
+base: main@6f32fc37d913
+repo version: 0.14.3
 
 ## Scope
 

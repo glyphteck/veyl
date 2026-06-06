@@ -18,7 +18,7 @@ export function isBatchFresh(entry) {
     );
 }
 
-export function makeMessageSessionSnapshot(entry) {
+export function makeMessageBatchSnapshot(entry) {
     if (!entry) {
         return null;
     }

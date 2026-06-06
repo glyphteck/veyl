@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { WEB_CHAT_WARMING } from '@veyl/shared/chat/messages/session/config';
+import { WEB_CHAT_WARMING } from '@veyl/shared/chat/messages/batches/config';
 import { createChatProvider } from '@veyl/shared/providers/chatprovider';
 import { cloud } from '@/lib/cloud';
 import { useUser } from '@/components/providers/userprovider';

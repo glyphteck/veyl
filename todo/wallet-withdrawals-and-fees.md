@@ -3,8 +3,8 @@
 status: active
 branch: main
 worktree: current
-base: main@7a56ce638bfa
-repo version: 0.14.0
+base: main@6f32fc37d913
+repo version: 0.14.3
 
 ## Scope
 
@@ -13,7 +13,7 @@ repo version: 0.14.0
 
 ## Remaining Work
 
-- Add explicit withdrawal-fee preview and confirmation UI on web and iOS.
+- Replace the current static withdrawal-fee estimate with an explicit Spark quote review and confirmation UI on web and iOS.
 - Decide how the review step should mask or explain temporary balance churn from Spark leaf restructuring during `getWithdrawalFeeQuote()`.
 - Decide whether Lightning belongs in a separate dialog before exposing the shared Lightning primitives to UI.
 - Revisit unilateral exit support and decide what warning copy and fallback behavior are appropriate.
@@ -23,4 +23,5 @@ repo version: 0.14.0
 - Spark docs say `withdraw()` should use `feeQuoteId` and `feeAmountSats`; the older `feeQuote` param is deprecated.
 - `getWithdrawalFeeQuote()` may restructure leaves while quoting, so UI should call it from explicit preview/confirm actions rather than on every keystroke.
 - Shared wallet code exposes `prepareWithdrawal()` for the first press and `confirmWithdrawal()` for the reviewed second press. The current web and iOS withdrawal UI is not wired to those yet.
+- The current web and iOS UI shows an estimated network/export fee from static fee assumptions, then still calls `withdrawFunds()` directly on submit.
 - Funding sender L1 mining fees are paid by the external wallet. Keep funding UI in plain-language estimate territory unless the product needs a more exact transaction-size model.
