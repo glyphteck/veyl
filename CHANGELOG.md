@@ -2,6 +2,12 @@
 
 Repo-level changes are listed newest first. Keep entries short and concrete. Broad pushes get grouped bullets, while narrow fixes can use one concise bugfix or cleanup bullet that still names the actual change.
 
+## 0.14.6 - 2026-06-07
+
+- Fixed chat-list preview and timestamp handling so deleted latest messages drop previews, preserve confirmed chat ordering, and keep cross-client chat deletions live across the full local chat window.
+- Capped camera media fanout to five recipients across web and iOS send-photo flows.
+- Tightened the web settings dialog tab layout while keeping the profile save action anchored outside the profile card.
+
 ## 0.14.5 - 2026-06-07
 
 - Simplified iOS avatar rendering to a single masked SVG image-or-glyph branch, removed the brittle avatar image cache renderer, and kept current-user avatars on versioned remote URLs while refreshing local cache in the background.

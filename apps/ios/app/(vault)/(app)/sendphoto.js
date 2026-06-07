@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { DeviceEventEmitter } from 'react-native';
+import { Alert, DeviceEventEmitter } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { MessageCircle, Search } from 'lucide-react-native';
 import { mergeProfiles } from '@veyl/shared/search/merge';
@@ -8,6 +8,7 @@ import { formatUserDisplay } from '@veyl/shared/profile';
 import { truncateLabel } from '@veyl/shared/utils/display';
 import { cleanText } from '@veyl/shared/utils/text';
 import { waitForIdle } from '@veyl/shared/utils/async';
+import { CAMERA_MEDIA_RECIPIENT_MAX } from '@veyl/shared/config';
 
 import { useTheme } from '@/providers/themeprovider';
 import { usePeer } from '@/providers/peerprovider';
@@ -53,6 +54,10 @@ export default function SendPhotoScreen() {
     const togglePeer = useCallback(
         (peer) => {
             const exists = selected.some((p) => p.uid === peer.uid);
+            if (!exists && selected.length >= CAMERA_MEDIA_RECIPIENT_MAX) {
+                Alert.alert('Too many people', `Pick up to ${CAMERA_MEDIA_RECIPIENT_MAX} people at once.`);
+                return;
+            }
             const next = exists ? selected.filter((p) => p.uid !== peer.uid) : [...selected, peer];
             setSelected(next);
             setLastSelectedPeer(exists ? next.at(-1) || null : peer);
@@ -92,6 +97,7 @@ export default function SendPhotoScreen() {
 
     const handleSend = useCallback(async () => {
         if (!photoUri || !selected.length || sending || busyRef.current || chatBanned) return;
+        const recipients = selected.slice(0, CAMERA_MEDIA_RECIPIENT_MAX);
         busyRef.current = true;
         setSending(true);
 
@@ -110,14 +116,14 @@ export default function SendPhotoScreen() {
                 })
             )
             .then(async (prepared) => {
-                const targets = selected.map((peer) => peer.chatPK);
+                const targets = recipients.map((peer) => peer.chatPK);
                 const results = mediaType === 'video' ? await sendAttachmentMany(targets, prepared) : await sendImageMany(targets, prepared);
                 const resultByChatPK = new Map(results.map((result) => [result.peerChatPK, result]));
 
-                for (const peer of selected) {
+                for (const peer of recipients) {
                     const result = resultByChatPK.get(peer.chatPK);
                     if (result?.ok) {
-                        if (selected.length === 1) {
+                        if (recipients.length === 1) {
                             await selectPeerChat?.(peer.chatPK);
                         }
                     } else {

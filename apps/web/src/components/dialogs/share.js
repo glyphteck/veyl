@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Loader, Search } from 'lucide-react';
+import { toast } from 'sonner';
 import { Card } from '@/components/card';
 import { Button } from '@/components/button';
 import { Input } from '@/components/input';
@@ -10,13 +11,18 @@ import { useSearch } from '@/lib/search/usesearch';
 import { formatUserDisplay } from '@veyl/shared/profile';
 import { mergeProfiles } from '@veyl/shared/search/merge';
 
+function cleanMaxPeers(value) {
+    const max = Number(value);
+    return Number.isInteger(max) && max > 0 ? max : Infinity;
+}
+
 function defaultSubmitLabel(peers) {
     if (peers.length > 1) return `send to ${peers.length} people`;
     if (peers.length === 1) return `send to ${formatUserDisplay(peers[0], true)}`;
     return 'send';
 }
 
-export default function Share({ onShare, disabled = false, busy = false, label }) {
+export default function Share({ onShare, disabled = false, busy = false, label, maxPeers }) {
     const { uid } = useUser();
     const { peers, recentPeers } = usePeer();
     const { searching, results, query, search, clearSearch } = useSearch('profiles');
@@ -24,6 +30,7 @@ export default function Share({ onShare, disabled = false, busy = false, label }
     const [selected, setSelected] = useState([]);
     const inputRef = useRef(null);
     const lastSelectedRef = useRef([]);
+    const selectedMax = cleanMaxPeers(maxPeers);
 
     useEffect(() => clearSearch, [clearSearch]);
 
@@ -64,16 +71,21 @@ export default function Share({ onShare, disabled = false, busy = false, label }
         [clearSearch, search]
     );
 
-    const togglePeer = useCallback((peer) => {
-        setSelected((prev) => {
-            const exists = prev.find((item) => item.uid === peer.uid);
-            return exists ? prev.filter((item) => item.uid !== peer.uid) : [...prev, peer];
-        });
-    }, []);
+    const togglePeer = useCallback(
+        (peer) => {
+            const exists = selected.some((item) => item.uid === peer.uid);
+            if (!exists && selected.length >= selectedMax) {
+                toast.error(`pick up to ${selectedMax} people at once`);
+                return;
+            }
+            setSelected(exists ? selected.filter((item) => item.uid !== peer.uid) : [...selected, peer]);
+        },
+        [selected, selectedMax]
+    );
 
     const handleShare = useCallback(() => {
-        onShare?.(selected);
-    }, [onShare, selected]);
+        onShare?.(selected.slice(0, selectedMax));
+    }, [onShare, selected, selectedMax]);
 
     return (
         <div className="flex flex-col gap-3 w-lg">

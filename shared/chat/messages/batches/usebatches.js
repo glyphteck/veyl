@@ -5,7 +5,7 @@ import { readCachedMedia, writeCachedMedia } from '../../../cache/localdata.js';
 import { saveMedia } from '../../attachments.js';
 import { filterChatMessages, getChatPeerPK, getChatPreviewKey } from '../../ids.js';
 import { collectMessageKeys } from '../../messagekeys.js';
-import { canShowMsg, getDisplayMessages, getHiddenDisplayMessages, isControlMsg } from '../../messages.js';
+import { getHiddenDisplayMessages } from '../../messages.js';
 import { listenToLatestMsgs } from '../query.js';
 import { readMsgMedia } from '../write.js';
 import { makeMessagePreviewMedia, MESSAGE_PREVIEW_MIME } from '../../previews.js';
@@ -19,26 +19,12 @@ import { createMessageViewCache } from './viewcache.js';
 import { warmCandidates, warmTaskKey } from './warm.js';
 import { markDiag, markDone, markError } from '../../../utils/diagnostics.js';
 
-function latestVisiblePreviewMessage(messages) {
-    for (let index = (messages?.length || 0) - 1; index >= 0; index -= 1) {
-        const message = messages[index];
-        if (canShowMsg(message) && !isControlMsg(message)) {
-            return message;
-        }
-    }
-    return null;
-}
-
-function previewVisibleMessages(messages, chatPK, peerChatPK) {
-    return getDisplayMessages(messages, chatPK, peerChatPK);
-}
-
-function notifyPreviewDrop(onDrop, chatId, keys, messages, chatPK, peerChatPK) {
+function notifyPreviewDrop(onDrop, chatId, keys) {
     const dropped = collectMessageKeys(keys instanceof Set ? [...keys] : keys);
     if (!dropped.size) {
         return;
     }
-    onDrop?.(chatId, dropped, latestVisiblePreviewMessage(previewVisibleMessages(messages, chatPK, peerChatPK)));
+    onDrop?.(chatId, dropped, null);
 }
 
 function notifyRetentionPreviewDrop(onDrop, chatId, messages, chatPK, peerChatPK) {
@@ -46,7 +32,7 @@ function notifyRetentionPreviewDrop(onDrop, chatId, messages, chatPK, peerChatPK
     if (!hidden.length) {
         return;
     }
-    onDrop?.(chatId, collectMessageKeys(hidden), latestVisiblePreviewMessage(previewVisibleMessages(messages, chatPK, peerChatPK)));
+    onDrop?.(chatId, collectMessageKeys(hidden), null);
 }
 
 function warmKeyStore(ref) {

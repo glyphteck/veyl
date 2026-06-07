@@ -17,6 +17,7 @@ import {
     getPeersFromChats,
     mergeChatPreviewDrop,
     nextChatPreviewExpiryMs,
+    preserveChatTimestamps,
     replaceChatPreview,
     sameChats,
     sameLastChat,
@@ -123,13 +124,14 @@ export function useChatList({
                 chatPK,
                 readCacheRef.current
             );
-            const shownChats = sortedChats(setLocalChats(filterPendingDeleteChats(filteredChats, pendingDeleteIdsRef.current), localByChatRef.current));
+            const shownChats = preserveChatTimestamps(sortedChats(setLocalChats(filterPendingDeleteChats(filteredChats, pendingDeleteIdsRef.current), localByChatRef.current)), chatsRef.current);
+            chatsRef.current = shownChats;
             setChats((prev) => (sameChats(prev, shownChats) ? prev : shownChats));
             const nextLastChat = getLastChat(shownChats, chatPK);
             setLastChat((prev) => (sameLastChat(prev, nextLastChat) ? prev : nextLastChat));
             return shownChats;
         },
-        [chatPK, chatPreviewOverridesRef, hiddenChatPreviewKeysRef, localByChatRef, pendingDeleteIdsRef, readCacheRef, selectedChatIdRef]
+        [chatPK, chatPreviewOverridesRef, chatsRef, hiddenChatPreviewKeysRef, localByChatRef, pendingDeleteIdsRef, readCacheRef, selectedChatIdRef]
     );
 
     const flushChatCacheWrite = useCallback(() => {
@@ -201,8 +203,10 @@ export function useChatList({
 
     const clearChatPreviewKeys = useCallback(
         (chatId, keys, replacement = null) => {
+            const currentChat = lastServerChatsRef.current.find((chatItem) => chatItem?.id === chatId) || chatsRef.current.find((chatItem) => chatItem?.id === chatId);
+            const dropCutoffMs = timestampMs(currentChat?.preview?.ts, null) ?? timestampMs(currentChat?.ts, null);
             const remembered = rememberHiddenChatPreviewKeys(chatId, keys);
-            const replaced = mergeChatPreviewDrop(chatPreviewOverridesRef.current, chatId, keys, replacement);
+            const replaced = mergeChatPreviewDrop(chatPreviewOverridesRef.current, chatId, keys, replacement, { dropCutoffMs });
             if (remembered || replaced) {
                 persistChatPreview(chatId, chatPreviewOverridesRef.current.get(chatId)?.preview || null);
             }
@@ -214,7 +218,7 @@ export function useChatList({
             queueChatCacheWrite(nextServerChats);
             updateRenderedChats(nextServerChats);
         },
-        [chatPK, chatPreviewOverridesRef, hiddenChatPreviewKeysRef, lastServerChatsRef, persistChatPreview, queueChatCacheWrite, readCacheRef, rememberHiddenChatPreviewKeys, updateRenderedChats]
+        [chatPK, chatPreviewOverridesRef, chatsRef, hiddenChatPreviewKeysRef, lastServerChatsRef, persistChatPreview, queueChatCacheWrite, readCacheRef, rememberHiddenChatPreviewKeys, updateRenderedChats]
     );
 
     const syncChatPreview = useCallback(
@@ -262,7 +266,7 @@ export function useChatList({
 
     const commitServerChats = useCallback(
         (nextChats, options = {}) => {
-            const sorted = sortedChats(nextChats);
+            const sorted = preserveChatTimestamps(sortedChats(nextChats), lastServerChatsRef.current);
             hydrateReadCache(sorted, readCacheRef.current);
             const nextServerChats = applyChatPreviewOverrides(sorted, chatPreviewOverridesRef.current, chatPK, readCacheRef.current);
             lastServerChatsRef.current = nextServerChats;

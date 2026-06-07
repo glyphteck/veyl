@@ -50,6 +50,7 @@ export const CHAT_MAX_UPLOAD_FILES = 5;
 export const CHAT_UPLOAD_MAX_BYTES = 64 * MIB_BYTES;
 export const CHAT_IMAGE_MAX_EDGE = 1600;
 export const CHAT_IMAGE_COMPRESS = 0.82;
+export const CAMERA_MEDIA_RECIPIENT_MAX = 5;
 
 // Chat Firestore read/delete/write cost knobs. Tune these first when message queries or cleanup are expensive.
 export const CHAT_MESSAGE_BATCH_SIZE = 20;
@@ -60,8 +61,8 @@ export const CHAT_DELETE_SCAN_BATCH_SIZE = 200;
 export const CHAT_TTL_WRITE_BATCH_SIZE = 1;
 export const CHAT_DELETE_WRITE_BATCH_SIZE = 400;
 
-// Chat list Firestore read cost knobs.
-export const CHAT_LIST_LIVE_COUNT = 15;
+// Chat list Firestore read cost knobs. Keep the live window aligned with the local chat window so cross-client deletes do not leave stale paged rows.
+export const CHAT_LIST_LIVE_COUNT = LOCAL_CHAT_CACHE_MAX_ITEMS;
 export const CHAT_LIST_PAGE_SIZE = 20;
 export const CHAT_INBOX_PING_PAGE_SIZE = 25;
 export const CHAT_LIST_CACHE_WRITE_DELAY_MS = 1500;

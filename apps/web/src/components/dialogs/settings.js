@@ -140,7 +140,7 @@ export default function Settings({ data, close }) {
     }, [saveSettings, uid]);
 
     return (
-        <div className="flex w-xl flex-col gap-2">
+        <div className="flex min-h-80 w-xl flex-col gap-2">
             <Tabs defaultValue="preferences">
                 <TabsList>
                     <TabsTrigger value="preferences">
@@ -157,29 +157,27 @@ export default function Settings({ data, close }) {
 
                 {!avatarBanned ? (
                     <TabsContent value="profile">
-                        <div className="flex flex-col gap-2">
-                            <Card>
-                                <div className="p-4 flex flex-col gap-4">
-                                    <div className="flex items-center justify-between">
-                                        <div className="pl-[5px] flex items-center gap-2 text-lg font-black leading-none select-none">
-                                            <CircleUserRound />
-                                            <span className="hidden sm:inline">avatar</span>
-                                        </div>
-                                        <UpdateAvatar
-                                            className="size-12"
-                                            currentAvatar={avatarHidden ? null : avatar}
-                                            disabled={avatarBusy}
-                                            onImageSelect={handleAvatarSelect}
-                                            onImageUpload={handleAvatarUpload}
-                                            onRemove={handleAvatarDelete}
-                                            removeDisabled={avatarBusy}
-                                            selectedImage={selectedAvatar}
-                                            showRemove={!!(selectedAvatar || (!avatarHidden && avatar)) && !avatarBusy}
-                                        />
+                        <Card>
+                            <div className="flex flex-col gap-4 p-4">
+                                <div className="flex items-center justify-between">
+                                    <div className="pl-[5px] flex items-center gap-2 text-lg font-black leading-none select-none">
+                                        <CircleUserRound />
+                                        <span className="hidden sm:inline">avatar</span>
                                     </div>
+                                    <UpdateAvatar
+                                        className="size-12"
+                                        currentAvatar={avatarHidden ? null : avatar}
+                                        disabled={avatarBusy}
+                                        onImageSelect={handleAvatarSelect}
+                                        onImageUpload={handleAvatarUpload}
+                                        onRemove={handleAvatarDelete}
+                                        removeDisabled={avatarBusy}
+                                        selectedImage={selectedAvatar}
+                                        showRemove={!!(selectedAvatar || (!avatarHidden && avatar)) && !avatarBusy}
+                                    />
                                 </div>
-                            </Card>
-                        </div>
+                            </div>
+                        </Card>
                     </TabsContent>
                 ) : null}
 
@@ -313,7 +311,6 @@ export default function Settings({ data, close }) {
                     </Card>
                 </TabsContent>
             </Tabs>
-
             <Button
                 onClick={async () => {
                     isManualSaveRef.current = true;

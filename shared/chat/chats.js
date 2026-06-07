@@ -143,6 +143,10 @@ function hasPendingPreview(chat) {
     return chat?.preview?.pending === true && chat?.preview?.failed !== true;
 }
 
+function hasLocalPreviewTimestamp(chat) {
+    return chat?.preview?.pending === true || chat?.preview?.failed === true;
+}
+
 function hasUsableEntry(chat) {
     return !!cleanText(chat?.entryId);
 }
@@ -193,6 +197,42 @@ export function canonicalChatVersions(chats) {
     }
 
     return sortChats([...byVersion.values(), ...unkeyed]);
+}
+
+export function preserveChatTimestamps(chats, currentChats) {
+    if (!Array.isArray(chats) || !chats.length || !Array.isArray(currentChats) || !currentChats.length) {
+        return chats;
+    }
+
+    const currentById = new Map();
+    for (const chat of currentChats) {
+        if (!chat?.id) {
+            continue;
+        }
+        const current = currentById.get(chat.id);
+        const chatTs = timestampMs(chat.ts, null);
+        const currentTs = timestampMs(current?.ts, null);
+        if (chatTs != null && (currentTs == null || chatTs > currentTs)) {
+            currentById.set(chat.id, chat);
+        }
+    }
+
+    let changed = false;
+    const next = (chats || []).map((chat) => {
+        const current = currentById.get(chat?.id);
+        const currentTs = timestampMs(current?.ts, null);
+        const nextTs = timestampMs(chat?.ts, null);
+        if (currentTs == null || nextTs == null || nextTs >= currentTs || hasLocalPreviewTimestamp(current)) {
+            return chat;
+        }
+        changed = true;
+        return {
+            ...chat,
+            ts: currentTs,
+        };
+    });
+
+    return changed ? sortChats(next) : chats;
 }
 
 export function duplicateChatEntryIds(chats) {
@@ -266,6 +306,18 @@ function cleanPreviewReplacement(replacement, keys) {
     return replacement && canShowMsg(replacement) && !messageHasKey(replacement, keys) ? replacement : null;
 }
 
+function shouldClearPreviewForDrop(chat, override) {
+    if (!chat?.preview) {
+        return false;
+    }
+    const cutoffMs = timestampMs(override?.dropCutoffMs, null);
+    if (cutoffMs == null) {
+        return false;
+    }
+    const previewMs = timestampMs(chat.preview.ts, null);
+    return previewMs == null || previewMs <= cutoffMs;
+}
+
 function previewUnseen(chatId, preview, chatPK, readCache) {
     if (!preview || !canShowMsg(preview)) {
         return false;
@@ -279,7 +331,7 @@ function previewUnseen(chatId, preview, chatPK, readCache) {
     return readMs == null || lastMs == null || readMs < lastMs;
 }
 
-export function mergeChatPreviewDrop(overridesByChat, chatId, keys, replacement) {
+export function mergeChatPreviewDrop(overridesByChat, chatId, keys, replacement, options = {}) {
     if (!(overridesByChat instanceof Map) || !chatId) {
         return false;
     }
@@ -290,6 +342,8 @@ export function mergeChatPreviewDrop(overridesByChat, chatId, keys, replacement)
 
     const current = overridesByChat.get(chatId);
     const mergedKeys = new Set(current?.keys || []);
+    const currentCutoffMs = timestampMs(current?.dropCutoffMs, null);
+    const dropCutoffMs = timestampMs(options?.dropCutoffMs, null) ?? currentCutoffMs;
     let keysChanged = false;
     for (const key of nextKeys) {
         if (!mergedKeys.has(key)) {
@@ -300,11 +354,16 @@ export function mergeChatPreviewDrop(overridesByChat, chatId, keys, replacement)
 
     const preview = cleanPreviewReplacement(replacement, mergedKeys);
     const previewChanged = !samePreviewMsg(current?.preview ?? null, preview);
-    if (!keysChanged && !previewChanged) {
+    const cutoffChanged = dropCutoffMs !== currentCutoffMs;
+    if (!keysChanged && !previewChanged && !cutoffChanged) {
         return false;
     }
 
-    overridesByChat.set(chatId, { keys: mergedKeys, preview });
+    overridesByChat.set(chatId, {
+        keys: mergedKeys,
+        preview,
+        ...(dropCutoffMs != null ? { dropCutoffMs } : {}),
+    });
     return true;
 }
 
@@ -322,6 +381,18 @@ export function applyChatPreviewOverrides(chats, overridesByChat, chatPK, readCa
 
         const preview = cleanPreviewReplacement(override.preview, override.keys);
         if (chat?.preview && !messageHasKey(chat.preview, override.keys)) {
+            if (shouldClearPreviewForDrop(chat, override)) {
+                const unseen = previewUnseen(chat.id, preview, chatPK, readCache);
+                if (samePreviewMsg(chat.preview, preview) && chat.unseen === unseen) {
+                    return chat;
+                }
+                changed = true;
+                return {
+                    ...chat,
+                    preview,
+                    unseen,
+                };
+            }
             if (samePreviewMsg(chat.preview, preview)) {
                 return chat;
             }
@@ -356,15 +427,13 @@ export function replaceChatPreview(chats, chatId, replacement, chatPK, readCache
             return chat;
         }
         const unseen = previewUnseen(chat.id, preview, chatPK, readCache);
-        const ts = timestampMs(preview?.ts, null) ?? chat.ts;
-        if (samePreviewMsg(chat?.preview ?? null, preview) && chat?.unseen === unseen && chat?.ts === ts) {
+        if (samePreviewMsg(chat?.preview ?? null, preview) && chat?.unseen === unseen) {
             return chat;
         }
         changed = true;
         return {
             ...chat,
             preview,
-            ts,
             unseen,
         };
     });

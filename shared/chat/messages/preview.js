@@ -100,12 +100,10 @@ export function getPreviewDropSync({ chatId, chatPreviewKey, messages, serverBat
     }
 
     nextDroppedKeys.add(chatPreviewKey);
-    const replacement = latestPreviewMessage(messages);
-    const replacementKey = getMessageKey(replacement) || '';
     return {
         droppedKeys: nextDroppedKeys,
-        replacement,
-        syncKey: `${chatId}:${chatPreviewKey}:${[...nextDroppedKeys].sort().join('|')}:${replacementKey}`,
+        replacement: null,
+        syncKey: `${chatId}:${chatPreviewKey}:${[...nextDroppedKeys].sort().join('|')}:`,
     };
 }
 
