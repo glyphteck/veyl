@@ -3,8 +3,8 @@
 status: active
 branch: current
 worktree: current
-base: main@6f32fc37d913
-repo version: 0.14.3
+base: main@004b67abe2e1
+repo version: 0.14.4
 
 ## Scope
 
@@ -73,29 +73,25 @@ Website repo:
    - If the profile already has the same `nostrPK`, no-op.
    - If the profile already has a different `nostrPK`, reject. Import/external-signer support is a separate future key-source feature, not a fallback here.
 
-3. Tighten username permanence before publishing public DNS identity.
-   - The product does not expose username changes after onboarding today, but `functions/user/onboarding/setusername.js` should still explicitly reject a second different username at the callable/API layer before NIP-05 depends on usernames as public handles.
-   - If username changes are ever supported later, they need one deliberate callable that atomically moves the username doc and lets the old NIP-05 handle go invalid.
-
-4. Add first-unlock publication.
+3. Add first-unlock publication.
    - Web and iOS should derive `nostrSeed` in the existing unlock derivation phase beside wallet, chat, and cache keys.
    - `shared/vault.js#bootNostr` should publish `nostrPK` through `setNostrPK` only when `user.nostrPK` is missing.
    - Subsequent unlocks should only compare the derived key to `user.nostrPK` and fail on mismatch.
    - Do not fetch relays, publish kind `0` metadata, or do any Nostr network sync during unlock.
 
-5. Add a Veyl-owned resolver surface.
+4. Add a Veyl-owned resolver surface.
    - The resolver receives `name`, normalizes it with the same username rules, reads `usernames/{name}.uid`, reads that profile, and returns the profile `nostrPK` only when the profile username still matches.
    - Missing, invalid, or not-yet-unlocked names should return `200` with `{ "names": {} }`.
    - Include `relays` only after choosing intentional default relays.
    - Use conservative cache headers so repeated lookups do not hammer Firestore, but avoid long stale windows after account deletion or future username movement.
 
-6. Expose the root-domain well-known route from the Website repo.
+5. Expose the root-domain well-known route from the Website repo.
    - Implement a direct JSON route for `/.well-known/nostr.json`, not a redirect to a Firebase Function.
    - The route should call the Veyl resolver server-side and return the final JSON itself.
    - It must set `Content-Type: application/json`, `Access-Control-Allow-Origin: *`, and a cache policy.
    - Keep Firebase/Admin credentials out of the Website repo; use a public resolver URL or deployment-managed server env only.
 
-7. Validate narrowly.
+6. Validate narrowly.
    - Veyl: targeted lint for touched shared/functions files; deploy Functions with `bun make fns` if backend functions changed.
    - Website: targeted lint for the route handler.
    - Manual HTTP checks:
@@ -105,7 +101,7 @@ Website repo:
 
 ## Collision Notes
 
-Current Veyl repo state has no NIP-05 implementation; only this task and the changelog mention Nostr. Keep NIP-05 implementation isolated from chat, wallet, and bot work, and re-check the Website checkout before editing root-domain trust routes.
+Current Veyl repo state has no NIP-05 implementation; only this task and the changelog mention Nostr. `functions/user/onboarding/setusername.js` already rejects a second different username, so the public-handle permanence prerequisite is done. Keep NIP-05 implementation isolated from chat, wallet, and bot work, and re-check the Website checkout before editing root-domain trust routes.
 
 ## Deferred
 

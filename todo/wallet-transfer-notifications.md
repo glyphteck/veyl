@@ -3,6 +3,8 @@
 status: active
 branch: current
 worktree: current
+base: main@004b67abe2e1
+repo version: 0.14.4
 
 ## Scope
 
@@ -11,6 +13,8 @@ Notify a user when a Veyl-to-Veyl transfer to them is confirmed without adding w
 ## Open Item
 
 - Send a generic push/inbox signal when a transfer to a user is confirmed so the recipient client can notice the wallet event without waiting on foreground polling.
+
+Current source can remember locally claimed transfer ids from Spark wallet events, but there is still no backend recipient notification path for Veyl-to-Veyl transfers.
 
 ## Constraints
 

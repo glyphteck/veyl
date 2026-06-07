@@ -5,9 +5,11 @@ import { resolveNetwork } from '@veyl/shared/network';
 import { useVault } from '@/providers/vaultprovider';
 import { useUser } from '@/providers/userprovider';
 import { mark } from '@/lib/diagnostics';
+import { WALLET_TRANSFER_CLAIM_POLL_MS } from '@veyl/shared/config';
 
 const CLAIM_BATCH_SIZE = 3;
 const CLAIM_BATCH_DELAY_MS = 120;
+const TRANSFER_CLAIMED_EVENT = 'transfer:claimed';
 const CLAIMABLE_STATUS_CODES = new Set([2, 3, 4, 9, 10]);
 const CLAIMABLE_STATUS_NAMES = new Set([
     'TRANSFER_STATUS_SENDER_KEY_TWEAKED',
@@ -62,6 +64,14 @@ function shouldLogClaimBatch(batchIndex, batchCount) {
     return batchIndex === 0 || batchIndex === batchCount - 1 || (batchIndex + 1) % 5 === 0;
 }
 
+function emitTransferClaimed(wallet, transferId) {
+    if (!transferId || typeof wallet?.emit !== 'function') {
+        return;
+    }
+
+    wallet.emit(TRANSFER_CLAIMED_EVENT, transferId, null);
+}
+
 async function claimTransfersInBatches(wallet, types, emit, activeRef) {
     const queryPendingTransfers = wallet?.transferService?.queryPendingTransfers;
     const claimTransfer = wallet?.claimTransfer;
@@ -84,8 +94,13 @@ async function claimTransfersInBatches(wallet, types, emit, activeRef) {
         const results = await Promise.allSettled(
             batch.map((transfer) =>
                 claimTransfer
-                    .call(wallet, { transfer, emit })
-                    .then(() => transfer.id)
+                    .call(wallet, { transfer, emit: false })
+                    .then(() => {
+                        if (emit !== false) {
+                            emitTransferClaimed(wallet, transfer.id);
+                        }
+                        return transfer.id;
+                    })
                     .catch(() => null)
             )
         );
@@ -109,8 +124,9 @@ function WalletRuntime({ children }) {
     const { wallet } = useWallet();
     const activeRef = useRef(AppState.currentState === 'active');
     const claimPromiseRef = useRef(null);
+    const claimIntervalRef = useRef(null);
 
-    const pauseInternalClaims = useCallback(() => {
+    const stopSdkClaims = useCallback(() => {
         if (!wallet?.claimTransfersInterval) {
             return;
         }
@@ -119,16 +135,40 @@ function WalletRuntime({ children }) {
         wallet.claimTransfersInterval = null;
     }, [wallet]);
 
-    const resumeInternalClaims = useCallback(() => {
-        if (typeof wallet?.startPeriodicClaimTransfers !== 'function' || !activeRef.current) {
+    const stopClaimLoop = useCallback(() => {
+        if (!claimIntervalRef.current) {
             return;
         }
 
-        try {
-            const promise = wallet.startPeriodicClaimTransfers();
-            promise?.catch?.(() => {});
-        } catch {}
-    }, [wallet]);
+        clearInterval(claimIntervalRef.current);
+        claimIntervalRef.current = null;
+        mark('wallet.claim.loop.stop', {});
+    }, []);
+
+    const runClaim = useCallback(() => {
+        if (!activeRef.current || !wallet) {
+            return;
+        }
+
+        stopSdkClaims();
+        void wallet.claimTransfers?.(undefined, true);
+    }, [wallet, stopSdkClaims]);
+
+    const startClaimLoop = useCallback(() => {
+        if (!wallet || !activeRef.current) {
+            stopClaimLoop();
+            return;
+        }
+
+        stopSdkClaims();
+        if (claimIntervalRef.current) {
+            return;
+        }
+
+        mark('wallet.claim.loop.start', { intervalMs: WALLET_TRANSFER_CLAIM_POLL_MS });
+        claimIntervalRef.current = setInterval(runClaim, WALLET_TRANSFER_CLAIM_POLL_MS);
+        runClaim();
+    }, [wallet, runClaim, stopClaimLoop, stopSdkClaims]);
 
     useEffect(() => {
         activeRef.current = AppState.currentState === 'active';
@@ -140,7 +180,7 @@ function WalletRuntime({ children }) {
         }
 
         const original = wallet.claimTransfers.bind(wallet);
-        const wrapped = async (types, emit) => {
+        const wrapped = async (types, emit = true) => {
             if (!activeRef.current) {
                 return [];
             }
@@ -164,19 +204,20 @@ function WalletRuntime({ children }) {
         wallet.claimTransfers = wrapped;
 
         if (activeRef.current) {
-            resumeInternalClaims();
-            void wrapped();
+            startClaimLoop();
         } else {
-            pauseInternalClaims();
+            stopClaimLoop();
+            stopSdkClaims();
         }
 
         return () => {
-            pauseInternalClaims();
+            stopClaimLoop();
+            stopSdkClaims();
             if (wallet.claimTransfers === wrapped) {
                 wallet.claimTransfers = original;
             }
         };
-    }, [wallet, pauseInternalClaims, resumeInternalClaims]);
+    }, [wallet, startClaimLoop, stopClaimLoop, stopSdkClaims]);
 
     useEffect(() => {
         if (!wallet) {
@@ -187,30 +228,31 @@ function WalletRuntime({ children }) {
             activeRef.current = nextState === 'active';
 
             if (activeRef.current) {
-                resumeInternalClaims();
-                void wallet.claimTransfers?.();
+                startClaimLoop();
                 return;
             }
 
-            pauseInternalClaims();
+            stopClaimLoop();
+            stopSdkClaims();
         });
 
         return () => sub?.remove?.();
-    }, [wallet, pauseInternalClaims, resumeInternalClaims]);
+    }, [wallet, startClaimLoop, stopClaimLoop, stopSdkClaims]);
 
     useEffect(() => {
         if (!wallet) {
+            stopClaimLoop();
             return;
         }
 
         if (activeRef.current) {
-            resumeInternalClaims();
-            void wallet.claimTransfers?.();
+            startClaimLoop();
             return;
         }
 
-        pauseInternalClaims();
-    }, [wallet, pauseInternalClaims, resumeInternalClaims]);
+        stopClaimLoop();
+        stopSdkClaims();
+    }, [wallet, startClaimLoop, stopClaimLoop, stopSdkClaims]);
 
     return children;
 }

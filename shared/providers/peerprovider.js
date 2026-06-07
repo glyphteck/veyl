@@ -113,7 +113,6 @@ export function createPeerProvider({ useChat, useUser, useTxData, useVault, peer
             }
 
             let cancelled = false;
-            setProfilesReady((prev) => (prev ? false : prev));
 
             loadProfiles(newWalletPKs, newChatPKs)
                 .then(() => {
@@ -121,6 +120,7 @@ export function createPeerProvider({ useChat, useUser, useTxData, useVault, peer
                     newWalletPKs.forEach((key) => seenWalletPKs.add(key));
                     newChatPKs.forEach((key) => seenChatPKs.add(key));
                     setProfilesReady(true);
+                    setPeerRefreshTick((tick) => tick + 1);
                 })
                 .catch((error) => {
                     if (!cancelled) {

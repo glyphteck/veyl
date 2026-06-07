@@ -3,13 +3,13 @@ import { readAvatarVersion } from './avatar.js';
 import { hasPeerKeys, isFullProfile, normalizeProfile } from './profile.js';
 import { normalizeWalletNetwork, resolveWalletPK } from './wallet/keys.js';
 
-export function createPeersApi({ cloud, network }) {
+export function createPeersApi({ cloud, network, avatarCache = null }) {
     if (!cloud) {
         throw new Error('createPeersApi requires cloud');
     }
 
     const walletNetwork = normalizeWalletNetwork(network);
-    const avatarCache = new Map();
+    const avatarUrlCache = new Map();
     const profileCache = new Map();
     const walletToUid = new Map();
     const chatToUid = new Map();
@@ -37,21 +37,67 @@ export function createPeersApi({ cloud, network }) {
         return createProfileFromData(record?.uid, record);
     }
 
+    function isLocalAvatarSource(value) {
+        return /^(file|blob):/i.test(String(value || ''));
+    }
+
+    async function readCachedAvatar(uid, expectedVersion) {
+        if (!uid || expectedVersion == null || typeof avatarCache?.read !== 'function') return null;
+        try {
+            const cached = await avatarCache.read(uid);
+            const version = readAvatarVersion(cached?.version);
+            const url = typeof cached?.url === 'string' && cached.url ? cached.url : typeof cached?.source === 'string' && cached.source ? cached.source : null;
+            return version === expectedVersion && url ? url : null;
+        } catch {
+            return null;
+        }
+    }
+
+    async function writeCachedAvatar(uid, version, bytes) {
+        if (!uid || version == null || !bytes || typeof avatarCache?.write !== 'function') return null;
+        try {
+            const cached = await avatarCache.write(uid, { version, bytes });
+            return typeof cached === 'string' && cached ? cached : typeof cached?.url === 'string' && cached.url ? cached.url : typeof cached?.source === 'string' && cached.source ? cached.source : null;
+        } catch {
+            return null;
+        }
+    }
+
+    async function readAvatarSource(uid, version) {
+        const avatarVersion = readAvatarVersion(version);
+        const cachedAvatar = await readCachedAvatar(uid, avatarVersion);
+        if (cachedAvatar) {
+            return cachedAvatar;
+        }
+
+        if (avatarVersion != null && typeof cloud.peer.avatar.read === 'function') {
+            try {
+                const bytes = await cloud.peer.avatar.read(uid);
+                const cachedSource = await writeCachedAvatar(uid, avatarVersion, bytes);
+                if (cachedSource) {
+                    return cachedSource;
+                }
+            } catch {}
+        }
+
+        return await cloud.peer.avatar.url(uid, { version: avatarVersion });
+    }
+
     async function getAvatarUrl(uid, version) {
         if (!uid) return null;
         const key = version == null ? 'unknown' : String(version);
-        const cached = avatarCache.get(uid);
+        const cached = avatarUrlCache.get(uid);
         if (cached?.key === key) {
             return cached.promise;
         }
 
-        const promise = cloud.peer.avatar.url(uid, { version }).catch(() => null);
-        avatarCache.set(uid, { key, promise });
+        const promise = readAvatarSource(uid, version).catch(() => null);
+        avatarUrlCache.set(uid, { key, promise });
         return promise;
     }
 
     function clearAvatarUrl(uid) {
-        if (uid) avatarCache.delete(uid);
+        if (uid) avatarUrlCache.delete(uid);
     }
 
     function avatarStateChanged(existing, profile) {
@@ -110,21 +156,57 @@ export function createPeersApi({ cloud, network }) {
         }
 
         const changedAvatarState = avatarStateChanged(existing, profile);
-        const currentAvatar = changedAvatarState ? null : profile.avatar ?? existing?.avatar ?? null;
-        if (currentAvatar) {
-            return currentAvatar;
+        const currentAvatar = profile.avatar ?? existing?.avatar ?? null;
+        let reusableAvatar = changedAvatarState ? null : currentAvatar;
+        if (!changedAvatarState && currentAvatar) {
+            if (isLocalAvatarSource(currentAvatar) && typeof avatarCache?.read === 'function') {
+                const cachedAvatar = await readCachedAvatar(profile.uid, profile.avatarVersion);
+                if (cachedAvatar) {
+                    return cachedAvatar;
+                }
+                reusableAvatar = null;
+            } else {
+                return currentAvatar;
+            }
         }
 
         const avatarUrl = await getAvatarUrl(profile.uid, profile.avatarVersion);
-        return avatarUrl || null;
+        return avatarUrl || reusableAvatar || null;
     }
 
     function hydrateProfiles(profiles) {
         let count = 0;
         for (const profile of profiles || []) {
-            if (cachePeer(profile)) {
-                count += 1;
+            if (!profile?.uid || !hasPeerKeys(profile)) {
+                continue;
             }
+
+            const existing = profileCache.get(profile.uid);
+            const hydrated = existing
+                ? {
+                      ...profile,
+                      ...existing,
+                      walletPK: existing.walletPK || profile.walletPK || null,
+                      chatPK: existing.chatPK || profile.chatPK || null,
+                      username: existing.username || profile.username || null,
+                      avatarVersion: existing.avatarVersion ?? profile.avatarVersion ?? null,
+                      avatar: existing.avatar || profile.avatar || null,
+                      active: existing.active ?? profile.active ?? false,
+                      bot: existing.bot || profile.bot || null,
+                  }
+                : {
+                      username: profile.username || null,
+                      avatar: profile.avatar || null,
+                      walletPK: profile.walletPK || null,
+                      chatPK: profile.chatPK || null,
+                      active: profile.active ?? false,
+                      bot: profile.bot || null,
+                      avatarVersion: readAvatarVersion(profile.avatarVersion),
+                      uid: profile.uid,
+                  };
+
+            storeProfile(hydrated);
+            count += 1;
         }
         return count;
     }
@@ -139,25 +221,23 @@ export function createPeersApi({ cloud, network }) {
         return uid ? profileCache.get(uid) : null;
     }
 
-    async function buildPeer(profile, stats) {
+    async function buildPeer(profile, stats, existing = profileCache.get(profile?.uid)) {
         if (!profile?.uid || !hasPeerKeys(profile)) return null;
 
-        const avatar = await resolveProfileAvatar(profile, profileCache.get(profile.uid));
-        if ((profile.avatar ?? null) !== avatar) {
-            profile.avatar = avatar;
-            storeProfile(profile);
-        }
+        const avatar = await resolveProfileAvatar(profile, existing);
+        const resolvedProfile = (profile.avatar ?? null) === avatar ? profile : storeProfile({ ...profile, avatar });
 
-        const peer = { ...profile };
+        const peer = { ...resolvedProfile };
         if (stats) peer.stats = stats;
         return peer;
     }
 
     async function addPeerToCache(profile, stats) {
         if (!profile?.uid || !hasPeerKeys(profile)) return null;
+        const existing = profileCache.get(profile.uid);
         const cachedProfile = cachePeer(profile);
         if (!cachedProfile) return null;
-        return await buildPeer(cachedProfile, stats);
+        return await buildPeer(cachedProfile, stats, existing);
     }
 
     async function fetchProfileByUid(uid) {
@@ -266,9 +346,10 @@ export function createPeersApi({ cloud, network }) {
         }
 
         if (!fullProfile.uid || !hasPeerKeys(fullProfile)) return null;
+        const existing = profileCache.get(fullProfile.uid);
         const cachedProfile = cachePeer(fullProfile);
         if (!cachedProfile) return null;
-        return await buildPeer(cachedProfile, stats);
+        return await buildPeer(cachedProfile, stats, existing);
     }
 
     async function findPeerByWalletPK(walletPK) {
@@ -291,27 +372,49 @@ export function createPeersApi({ cloud, network }) {
         return uniqueValues(keys);
     }
 
+    function needsAvatarResolve(profile) {
+        return !!profile?.uid && profile.avatarVersion != null && !profile.avatar;
+    }
+
+    function queueCachedAvatarResolve(profiles, key, type) {
+        const profile = getProfileFromPK(key, type);
+        if (!needsAvatarResolve(profile) || profiles.has(profile.uid)) {
+            return;
+        }
+        profiles.set(profile.uid, { existing: profile, profile });
+    }
+
     async function loadProfiles(walletPKs, chatPKs) {
-        const uncachedWalletPKs = uniqueLookupKeys(walletPKs).filter((key) => !walletToUid.has(key));
-        const uncachedChatPKs = uniqueLookupKeys(chatPKs).filter((key) => !chatToUid.has(key));
-
-        if (uncachedWalletPKs.length === 0 && uncachedChatPKs.length === 0) return;
-
-        const [walletRecords, chatRecords] = await Promise.all([
-            cloud.search.peer.byWalletPKs(uncachedWalletPKs, { network: walletNetwork }),
-            cloud.search.peer.byChatPKs(uncachedChatPKs),
-        ]);
+        const walletKeys = uniqueLookupKeys(walletPKs);
+        const chatKeys = uniqueLookupKeys(chatPKs);
+        const uncachedWalletPKs = walletKeys.filter((key) => !walletToUid.has(key));
+        const uncachedChatPKs = chatKeys.filter((key) => !chatToUid.has(key));
         const uniqueProfiles = new Map();
+
+        for (const key of walletKeys) {
+            queueCachedAvatarResolve(uniqueProfiles, key, 'wallet');
+        }
+        for (const key of chatKeys) {
+            queueCachedAvatarResolve(uniqueProfiles, key, 'chat');
+        }
+
+        if (uncachedWalletPKs.length === 0 && uncachedChatPKs.length === 0 && uniqueProfiles.size === 0) return;
+
+        const [walletRecords, chatRecords] =
+            uncachedWalletPKs.length || uncachedChatPKs.length
+                ? await Promise.all([cloud.search.peer.byWalletPKs(uncachedWalletPKs, { network: walletNetwork }), cloud.search.peer.byChatPKs(uncachedChatPKs)])
+                : [[], []];
 
         for (const record of [...walletRecords, ...chatRecords]) {
             const nextProfile = createProfileFromRecord(record);
             if (!hasPeerKeys(nextProfile)) continue;
+            const existing = profileCache.get(nextProfile.uid);
             const profile = cachePeer(nextProfile);
             if (!profile) continue;
-            uniqueProfiles.set(profile.uid, profile);
+            uniqueProfiles.set(profile.uid, { existing, profile });
         }
 
-        await Promise.all(Array.from(uniqueProfiles.values()).map(async (profile) => buildPeer(profile)));
+        await Promise.all(Array.from(uniqueProfiles.values()).map(async ({ existing, profile }) => buildPeer(profile, null, existing)));
     }
 
     function assemblePeers(walletPeers, chatPeers, extraUids = []) {

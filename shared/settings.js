@@ -1,6 +1,7 @@
 import { AUTOLOCK_MAX_MINUTES, AUTOLOCK_MIN_MINUTES } from './config.js';
 
 export const SEND_ON_SCAN_ENABLED = false;
+export const PAYMENT_BEHAVIOR_SETTINGS_VISIBLE = false;
 
 export const defaultSettings = {
     glass: true,

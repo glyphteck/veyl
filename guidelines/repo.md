@@ -55,6 +55,7 @@ After a feature branch is merged, delete the merged branch and any abandoned pre
 - iOS routes live in `apps/ios/app`; iOS UI lives in `apps/ios/src/components`; provider wiring lives in `apps/ios/src/providers`; iOS-only logic lives in `apps/ios/src/lib`.
 - iOS `src/lib` is feature-folded into `cache`, `camera`, `chat`, `crypto`, `navigation`, `search`, and `user`, with small root platform helpers.
 - Shared cross-platform product logic lives in `shared` as `@veyl/shared`. Generic helpers are under `shared/utils/*`; feature logic is under owner folders such as `shared/chat`, `shared/wallet`, `shared/search`, `shared/cache`, `shared/navigation`, and `shared/bot`.
+- `shared/cloud/firebase.js` is intentionally centralized as the current Firebase adapter. Keep Firebase-specific reads, writes, Storage, Functions, and paging details contained there until the backend provider boundary is replaced.
 - Web UI no longer uses shadcn-generated primitive files. Keep Veyl-owned primitives under `apps/web/src/components`.
 - Firebase Functions feature entrypoints live under `functions/passkey`, `functions/user`, `functions/chat`, `functions/wallet`, `functions/btc`, and `functions/admin`; deploy-local helpers live under `functions/lib`.
 - Repo tooling lives under `scripts`, with admin command helpers in `scripts/admin`.
@@ -108,7 +109,7 @@ Main Firestore collections:
 - `users/{uid}`: private user data and settings
 - `profiles/{uid}`: public profile data, wallet/chat public keys, presence
 - `seeds/{uid}`: encrypted master seed
-- `usernames/{username}`: username reservation
+- `usernames/{username}`: username reservation. Usernames are currently one-time onboarding handles; `setUsername` rejects a second different username, and any future username change needs one deliberate callable that moves the reservation atomically.
 - `links/{linkId}`: opaque pair link state with `links.chat.id`, `links.chat.version`, and `links.chat.ts` pointing at the current active chat instance.
 - `chats/{chatId}/messages/{messageId}`: opaque active-chat action log. Parent chat docs are not app state except the delete cleanup tag; message docs carry encrypted signed actions with dumb TTL metadata. `ttl: null` means the shared message is saved/permanent. Owner chat entries live under `users/{uid}/chats/{entryId}`, and sealed inbox pings live under `users/{uid}/inbox/{pingId}`.
 - `bitcoin/current`: public cached BTC price, block height, and compact fee-rate tiers watched by the app-level Bitcoin provider

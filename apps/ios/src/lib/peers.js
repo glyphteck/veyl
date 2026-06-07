@@ -2,10 +2,12 @@ import { createPeersApi } from '@veyl/shared/peers';
 import { createProfileQueries } from '@veyl/shared/search/remote';
 import { resolveNetwork } from '@veyl/shared/network';
 import { cloud } from '@/lib/cloud';
+import { userAvatarCache } from '@/lib/user/avatarcache';
 
 const peerApi = createPeersApi({
     cloud,
     network: resolveNetwork(globalThis?.process?.env ?? {}),
+    avatarCache: userAvatarCache,
 });
 
 export const profileQueries = createProfileQueries({

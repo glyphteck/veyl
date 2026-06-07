@@ -63,6 +63,7 @@ const BOT_READS = 'reads';
 const RUNTIME_HEARTBEAT_MS = 15000;
 const RUNTIME_ACTIONS_SUPPORTED = Object.freeze([BOT_ACTION_TYPE_TRAFFIC_MSG, BOT_ACTION_TYPE_TRAFFIC_FUND, BOT_ACTION_TYPE_TRAFFIC_TX]);
 const TRAFFIC_READ_RECEIPT_SCAN_LIMIT = 100;
+const BOT_TRAFFIC_MESSAGE_CONCURRENCY = 32;
 const TRANSIENT_CONNECTION_CODES = new Set([
     4,
     14,
@@ -927,9 +928,44 @@ export class BotRuntime {
         const sentChats = new Map();
         const messages = [];
         const errors = [];
+        const jobs = new Set();
         let sent = 0;
         let requests = 0;
         let cancelled = false;
+
+        const sendTrafficMessage = (session, message, chatId) => {
+            const job = (async () => {
+                try {
+                    const result = await queueMapJob(session.chatJobs, chatId, async () => {
+                        if (session.closing || this.stopped) {
+                            throw new Error('bot session closed');
+                        }
+                        const result = await this.sendPayload(session, target.chatPK, message.payload, { receiverUid: target.uid });
+                        sentChats.set(session.uid, result?.chatId || chatId);
+                        return result;
+                    });
+
+                    incrementSender(senders, session);
+                    messages.push({
+                        uid: session.uid,
+                        username: session.username || null,
+                        chatId: result?.chatId || chatId,
+                        msgId: result?.msgId || null,
+                        request: message.request,
+                    });
+                    sent++;
+                    if (message.request) {
+                        requests++;
+                    }
+                } catch (error) {
+                    errors.push({ uid: session.uid, username: session.username || null, error: statusMessage(error) });
+                    console.warn(`bot traffic message failed for @${session.username}`, error);
+                }
+            })().finally(() => {
+                jobs.delete(job);
+            });
+            jobs.add(job);
+        };
 
         for (let index = 0; index < count; index++) {
             if (this.stopped || await this.isActionCancelRequested(action)) {
@@ -941,42 +977,24 @@ export class BotRuntime {
             if (!sessions.length) {
                 throw new Error('no active bot sessions');
             }
-            const session = soloSession || pickRandom(sessions);
+            const availableSessions = soloSession
+                ? sessions
+                : sessions.filter((session) => !session.chatJobs.has(`${session.uid}:${target.chatPK}`));
+            const session = soloSession || pickRandom(availableSessions.length ? availableSessions : sessions);
 
             const message = randomTrafficPayload();
             const chatId = `${session.uid}:${target.chatPK}`;
-
-            try {
-                const result = await queueMapJob(session.chatJobs, chatId, async () => {
-                    if (session.closing || this.stopped) {
-                        throw new Error('bot session closed');
-                    }
-                    const result = await this.sendPayload(session, target.chatPK, message.payload, { receiverUid: target.uid });
-                    sentChats.set(session.uid, result?.chatId || chatId);
-                    return result;
-                });
-
-                incrementSender(senders, session);
-                messages.push({
-                    uid: session.uid,
-                    username: session.username || null,
-                    chatId: result?.chatId || chatId,
-                    msgId: result?.msgId || null,
-                    request: message.request,
-                });
-                sent++;
-                if (message.request) {
-                    requests++;
-                }
-            } catch (error) {
-                errors.push({ uid: session.uid, username: session.username || null, error: statusMessage(error) });
-                console.warn(`bot traffic message failed for @${session.username}`, error);
-            }
+            sendTrafficMessage(session, message, chatId);
 
             if (index + 1 < count) {
                 await sleep(delayMs);
             }
+            while (jobs.size >= BOT_TRAFFIC_MESSAGE_CONCURRENCY) {
+                await Promise.race(jobs);
+            }
         }
+
+        await Promise.allSettled(jobs);
 
         const receiptResult = cancelled ? { sent: 0, errors: [] } : await this.sendTrafficReadReceipts(action, target, sentChats);
 

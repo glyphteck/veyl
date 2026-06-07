@@ -21,7 +21,7 @@ import { logout } from '@/lib/user/actions';
 import { useTheme } from '@/providers/themeprovider';
 import { useUser } from '@/providers/userprovider';
 import { useVault } from '@/providers/vaultprovider';
-import { defaultSettings, SEND_ON_SCAN_ENABLED } from '@veyl/shared/settings';
+import { defaultSettings, PAYMENT_BEHAVIOR_SETTINGS_VISIBLE, SEND_ON_SCAN_ENABLED } from '@veyl/shared/settings';
 import { lowerText } from '@veyl/shared/utils/text';
 import { formatCacheSize } from '@veyl/shared/utils/display';
 import Constants from 'expo-constants';
@@ -261,12 +261,13 @@ function AccountBlock({ disabled = false }) {
                 setLocalAvatar(asset.uri);
                 setIsUploading(true);
 
-                await uploadAvatar({
+                const uploaded = await uploadAvatar({
                     uid: effectiveUid,
                     uri: asset.uri,
                     mimeType: asset.mimeType,
                 });
-                await refetchAvatar({ optimistic: true });
+                await refetchAvatar({ version: uploaded?.version });
+                setLocalAvatar(null);
             } catch (err) {
                 console.warn('avatar upload failed', err);
                 setLocalAvatar(null);
@@ -544,7 +545,7 @@ export default function SettingsScreen() {
     );
     const match = (...terms) => !search || terms.some((term) => lowerText(term).includes(search));
     const showMoney = match('display currency', 'money format', 'btc sats usd');
-    const showAutoSend = SEND_ON_SCAN_ENABLED && match('auto send on scan', 'qr payment behaviour', 'send immediately');
+    const showAutoSend = PAYMENT_BEHAVIOR_SETTINGS_VISIBLE && SEND_ON_SCAN_ENABLED && match('auto send on scan', 'qr payment behaviour', 'send immediately');
     const showLockTimer = match('lock timeout', 'autolock timer');
     const showLockBackground = match('lock on app background', 'background lock');
     const showFaceID = match('use face id', 'biometric unlock');

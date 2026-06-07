@@ -1,5 +1,6 @@
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import * as FileSystem from 'expo-file-system/legacy';
+import { Buffer } from 'buffer';
 import { cloud } from '@/lib/cloud';
 
 function readAvatarGeneration(value) {
@@ -14,7 +15,7 @@ async function updateProfileAvatar(uid, avatar) {
     await cloud.user.profile.avatar.write(uid, avatar);
 }
 
-async function prepareAvatarBlob(uri) {
+async function prepareAvatarBytes(uri) {
     let context = null;
     let source = null;
     let rendered = null;
@@ -32,8 +33,10 @@ async function prepareAvatarBlob(uri) {
             format: SaveFormat.WEBP,
         });
         savedUri = saved?.uri || '';
-        const response = await fetch(savedUri);
-        return response.blob();
+        const base64 = await FileSystem.readAsStringAsync(savedUri, {
+            encoding: FileSystem.EncodingType.Base64,
+        });
+        return new Uint8Array(Buffer.from(base64, 'base64'));
     } finally {
         await FileSystem.deleteAsync(savedUri, { idempotent: true }).catch(() => {});
         rendered?.release?.();
@@ -47,10 +50,11 @@ export async function uploadAvatar({ uid, uri }) {
         throw new Error('uid is required');
     }
 
-    const blob = await prepareAvatarBlob(uri);
-    const result = await cloud.user.profile.avatar.upload(uid, blob, { contentType: 'image/webp' });
-    await updateProfileAvatar(uid, readAvatarGeneration(result?.generation));
-    return result?.url || null;
+    const bytes = await prepareAvatarBytes(uri);
+    const result = await cloud.user.profile.avatar.upload(uid, bytes, { contentType: 'image/webp' });
+    const version = readAvatarGeneration(result?.generation);
+    await updateProfileAvatar(uid, version);
+    return { url: result?.url || null, version };
 }
 
 export async function skipAvatar({ uid }) {

@@ -126,7 +126,7 @@ export function useWalletData({ wallet, getBalance, getRecentTxs, diag }) {
     );
 }
 
-export function useWalletEvents({ wallet, updateWalletData, setBalance, setTokenBalances, setSatsBalanceResult, diag }) {
+export function useWalletEvents({ wallet, updateWalletData, rememberTransfer, setBalance, setTokenBalances, setSatsBalanceResult, diag }) {
     const balanceEventRef = useRef({ timer: null, value: null });
     const incomingEventRef = useRef({ timer: null, balance: null });
 
@@ -175,7 +175,7 @@ export function useWalletEvents({ wallet, updateWalletData, setBalance, setToken
             }
         };
 
-        const handleIncomingFunds = (_id, updatedBalance) => {
+        const handleIncomingBalance = (updatedBalance) => {
             if (updatedBalance != null) {
                 incomingEventRef.current.balance = updatedBalance;
             }
@@ -184,16 +184,28 @@ export function useWalletEvents({ wallet, updateWalletData, setBalance, setToken
             }
         };
 
+        const handleTransferClaimed = (transferId, updatedBalance) => {
+            if (updatedBalance != null) {
+                setBalance(updatedBalance);
+            }
+            markDiag(diag, 'wallet.events.transfer.claimed', { hasTransferId: !!transferId });
+            void rememberTransfer?.(transferId);
+        };
+
+        const handleDepositConfirmed = (_id, updatedBalance) => {
+            handleIncomingBalance(updatedBalance);
+        };
+
         wallet.on(WALLET_EVENTS.balance, handleBalanceUpdate);
         wallet.on(WALLET_EVENTS.tokenBalance, handleTokenBalanceUpdate);
-        wallet.on(WALLET_EVENTS.depositConfirmed, handleIncomingFunds);
-        wallet.on(WALLET_EVENTS.transferClaimed, handleIncomingFunds);
+        wallet.on(WALLET_EVENTS.depositConfirmed, handleDepositConfirmed);
+        wallet.on(WALLET_EVENTS.transferClaimed, handleTransferClaimed);
 
         return () => {
             wallet.off(WALLET_EVENTS.balance, handleBalanceUpdate);
             wallet.off(WALLET_EVENTS.tokenBalance, handleTokenBalanceUpdate);
-            wallet.off(WALLET_EVENTS.depositConfirmed, handleIncomingFunds);
-            wallet.off(WALLET_EVENTS.transferClaimed, handleIncomingFunds);
+            wallet.off(WALLET_EVENTS.depositConfirmed, handleDepositConfirmed);
+            wallet.off(WALLET_EVENTS.transferClaimed, handleTransferClaimed);
             if (balanceEventRef.current.timer) {
                 clearTimeout(balanceEventRef.current.timer);
                 balanceEventRef.current.timer = null;
@@ -203,7 +215,7 @@ export function useWalletEvents({ wallet, updateWalletData, setBalance, setToken
                 incomingEventRef.current.timer = null;
             }
         };
-    }, [diag, wallet, updateWalletData, setBalance, setTokenBalances, setSatsBalanceResult]);
+    }, [diag, wallet, updateWalletData, rememberTransfer, setBalance, setTokenBalances, setSatsBalanceResult]);
 }
 
 export function useWalletPolling({ wallet, appState, hasPendingTxs, updateWalletData, refreshWallet, refreshClaims }) {

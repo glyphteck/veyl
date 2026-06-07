@@ -1,5 +1,11 @@
 # Traffic Client Load Follow-Up
 
+status: active
+branch: current
+worktree: current
+base: main@004b67abe2e1
+repo version: 0.14.4
+
 ## Goal
 
 Finish verification and any remaining optimization for web and iOS clients under high-volume incoming messages and transfers.
@@ -11,6 +17,7 @@ Finish verification and any remaining optimization for web and iOS clients under
 - Human must keep web and iOS unlocked on the target account before client observations are meaningful.
 - Use `bun dev -v` so web, iOS, and bot logs expose the receive path.
 - Stop queued/running traffic with `bun bot traffic stop` before changing traffic shape or restarting runtimes.
+- Current source includes wallet history ownership gates, background history coverage for web dashboard ranges, smaller iOS transfer-list render batches, and concurrent bot message traffic. The remaining task is observation on unlocked clients, not another blind optimization pass.
 
 ## Remaining Work
 

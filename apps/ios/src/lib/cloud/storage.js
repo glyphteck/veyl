@@ -91,8 +91,9 @@ async function uploadStorageBody(uploadUrl, body, contentType) {
         error.responseText = await response.text().catch(() => '');
         throw error;
     }
+    const metadata = await response.json().catch(() => null);
     mark('cloud.storage.uploadBytes.body.done', { status: response.status || 0 });
-    return response;
+    return metadata;
 }
 
 export async function uploadStorageBytesNative(storage, path, data, metadata = {}) {
@@ -108,9 +109,9 @@ export async function uploadStorageBytesNative(storage, path, data, metadata = {
     mark('cloud.storage.uploadBytes.start', { path, bytes: body.byteLength || 0, contentType: metadata?.contentType || '' });
     const uploadUrl = await startStorageUploadSession(storage, path, body, metadata);
     mark('cloud.storage.uploadBytes.body.start', { path, bytes: body.byteLength || 0 });
-    await uploadStorageBody(uploadUrl, body, metadata?.contentType);
+    const result = await uploadStorageBody(uploadUrl, body, metadata?.contentType);
     mark('cloud.storage.uploadBytes.done', { path });
-    return path;
+    return result || { name: path };
 }
 
 export async function uploadSignedStorageBytesNative(url, data, options = {}) {

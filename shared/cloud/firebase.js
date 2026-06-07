@@ -347,12 +347,17 @@ export function createFirebaseCloud({ db, auth, getAuth, functions, getFunctions
     async function uploadProfileAvatar(uid, data, { contentType = 'image/webp' } = {}) {
         const targetStorage = requireStorage();
         const path = avatarPath(uid);
-        const payload = typeof Blob !== 'undefined' && data instanceof Blob ? data : toBytes(data, 'upload bytes');
-        const result = await uploadBytes(ref(targetStorage, path), payload, { contentType });
+        const result = typeof uploadStorageBytes === 'function'
+            ? await uploadStorageBytes(targetStorage, path, data, { contentType })
+            : await uploadBytes(
+                ref(targetStorage, path),
+                typeof Blob !== 'undefined' && data instanceof Blob ? data : toBytes(data, 'upload bytes'),
+                { contentType }
+            );
         const url = await getDownloadURL(ref(targetStorage, path));
         return {
             url,
-            generation: result?.metadata?.generation ?? null,
+            generation: result?.metadata?.generation ?? result?.generation ?? null,
         };
     }
 

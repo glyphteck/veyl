@@ -127,10 +127,11 @@ export const BAN_REFRESH_GRACE_MS = 50;
 export const REQUEST_MONEY_MAX_SATS = SATS_PER_BITCOIN * 100_000n;
 
 // Wallet network/API knobs. These tune fallback polling, event coalescing, and pagination work.
-export const WALLET_TRANSFER_POLL_MS = 10 * MS_PER_SECOND;
+export const WALLET_TRANSFER_POLL_MS = MS_PER_SECOND;
 export const WALLET_ACTIVE_CLAIM_POLL_MS = 20 * MS_PER_SECOND;
+export const WALLET_TRANSFER_CLAIM_POLL_MS = MS_PER_SECOND;
 export const WALLET_BALANCE_EVENT_COALESCE_MS = 250;
-export const WALLET_INCOMING_UPDATE_COALESCE_MS = 1500;
+export const WALLET_INCOMING_UPDATE_COALESCE_MS = 250;
 export const WALLET_MIN_BOOT_TX_COVERAGE_MS = DAY_MS;
 export const WALLET_AUTO_CLAIM_MAX_FEE_SATS = 5000;
 export const WALLET_CLAIM_PAGE_SIZE = 100;

@@ -1,5 +1,11 @@
 # Security And Crypto Audit
 
+status: active
+branch: current
+worktree: current
+base: main@004b67abe2e1
+repo version: 0.14.4
+
 - Hard review wallet export behavior across web, iOS, shared, and functions.
 - Hard review account creation and the one-master-seed source of truth.
 - Decide whether the current seed model can support future wallet imports, multi-wallets, and account evolution without breaking launched wallets.

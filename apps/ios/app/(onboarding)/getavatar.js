@@ -142,12 +142,12 @@ export default function NewUserAvatar() {
 
         try {
             setPendingAction('upload');
-            await uploadAvatar({
+            const uploaded = await uploadAvatar({
                 uid: effectiveUid,
                 uri: selectedAsset.uri,
                 mimeType: selectedAsset.mimeType,
             });
-            await refetchAvatar?.({ optimistic: true });
+            await refetchAvatar?.({ version: uploaded?.version });
             if (!isOnboarding) {
                 if (!lockRoute()) {
                     setPendingAction(null);

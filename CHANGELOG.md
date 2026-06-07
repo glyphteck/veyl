@@ -2,6 +2,12 @@
 
 Repo-level changes are listed newest first. Keep entries short and concrete. Broad pushes get grouped bullets, while narrow fixes can use one concise bugfix or cleanup bullet that still names the actual change.
 
+## 0.14.5 - 2026-06-07
+
+- Simplified iOS avatar rendering to a single masked SVG image-or-glyph branch, removed the brittle avatar image cache renderer, and kept current-user avatars on versioned remote URLs while refreshing local cache in the background.
+- Updated peer avatar resolution and profile hydration so cached peer records with avatar versions resolve their image source consistently across repeated iOS list instances.
+- Tightened wallet, chat, bot-runtime, and settings flows around list hydration, action placement, transfer lifecycle state, and current launch follow-up notes.
+
 ## 0.14.4 - 2026-06-06
 
 - Renamed provider-owned latest-message session code and lifecycle docs around message batches, with shared batch runtime ownership under `shared/chat/messages/batches/`.

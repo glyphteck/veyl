@@ -3,6 +3,8 @@
 status: paused
 branch: current
 worktree: current
+base: main@004b67abe2e1
+repo version: 0.14.4
 
 ## Decision
 
@@ -68,6 +70,8 @@ Optimize the client-owned deposit path instead:
 4. Keep a bounded foreground claim retry while unlocked, but avoid aggressive always-on polling.
 5. Surface a quiet in-app pending/claiming state when a claim check is running.
 6. Do not rely on iOS background execution for correctness; use it only as a best-effort warmup if added later.
+
+Current source keeps this client-owned: `shared/wallet/claims.js` claims while unlocked, prefers Spark identity UTXO reads when available, and falls back to funding-address UTXO reads. It does not add a backend static-address watcher or BTC deposit push path.
 
 ## Open Questions
 

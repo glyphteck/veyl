@@ -293,7 +293,7 @@ export function useActions({ chatPK, messages, patchMessage, peerChatPK, peerPro
         (id, msg) => {
             const keys = messageKeys(msg);
             const timeout = setTimeout(() => {
-                removeMessage(id);
+                removeMessage(msg);
                 clearDeletingMessage(msg);
             }, MESSAGE_ROW_LEAVE_MS + 80);
 

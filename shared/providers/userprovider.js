@@ -162,21 +162,16 @@ export function createUserProvider({ cloud, network, avatarCache = null, diag = 
                 markDiag(diag, 'user.avatar.fetch.start', { force: !!force, persist: !!persist, hasVersion: avatarVersion != null });
                 try {
                     const promise = (async () => {
-                        const cachedAvatar = avatarVersion == null ? null : await readCachedAvatar(uid, avatarVersion);
-                        if (cachedAvatar) {
-                            markDiag(diag, 'user.avatar.cache.hit', { elapsedMs: Date.now() - startedAt });
-                            return cachedAvatar.url;
-                        }
+                        const nextAvatar = await cloud.peer.avatar.url(uid, { version: avatarVersion });
 
                         if (persist && avatarVersion != null) {
-                            const bytes = await cloud.peer.avatar.read(uid);
-                            const cachedSource = await writeCachedAvatar(uid, { version: avatarVersion, bytes });
-                            if (cachedSource) {
-                                return cachedSource;
-                            }
+                            void cloud.peer.avatar
+                                .read(uid)
+                                .then((bytes) => writeCachedAvatar(uid, { version: avatarVersion, bytes }))
+                                .catch(() => {});
                         }
 
-                        return await cloud.peer.avatar.url(uid, { version: avatarVersion });
+                        return nextAvatar;
                     })().then((nextAvatar) => {
                         markDone(diag, 'user.avatar.fetch', startedAt, { found: !!nextAvatar, hasVersion: avatarVersion != null });
                         if (!nextAvatar) {
@@ -536,9 +531,11 @@ export function createUserProvider({ cloud, network, avatarCache = null, diag = 
         );
 
         const refetchAvatar = useCallback((options = {}) => {
+            const requestedVersion = readAvatarVersion(options?.version);
             const optimistic = options?.optimistic === true;
-            const nextVersion = optimistic && user.avatarVersion != null ? user.avatarVersion + 1 : user.avatarVersion;
-            return fetchAvatar(user.uid, { force: true, persist: !optimistic, version: nextVersion });
+            const nextVersion = requestedVersion ?? (optimistic && user.avatarVersion != null ? user.avatarVersion + 1 : user.avatarVersion);
+            const persist = options?.persist ?? !(optimistic && requestedVersion == null);
+            return fetchAvatar(user.uid, { force: true, persist, version: nextVersion });
         }, [fetchAvatar, user.avatarVersion, user.uid]);
 
         const value = useMemo(

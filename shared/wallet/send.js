@@ -2,7 +2,7 @@ import { useCallback } from 'react';
 
 import { walletPKtoSparkAddress } from './spark.js';
 
-export function useSparkSend({ wallet, network, updateWalletData }) {
+export function useSparkSend({ wallet, network, updateWalletData, rememberTransfer }) {
     return useCallback(
         async (receiverWalletPK, amountSats) => {
             if (!wallet) {
@@ -15,6 +15,7 @@ export function useSparkSend({ wallet, network, updateWalletData }) {
                     receiverSparkAddress,
                     amountSats: parseInt(amountSats, 10),
                 });
+                await rememberTransfer?.(tx?.id);
                 await updateWalletData({ reason: 'send' });
                 return tx?.id;
             } catch (error) {
@@ -22,6 +23,6 @@ export function useSparkSend({ wallet, network, updateWalletData }) {
                 throw new Error(`failed to send money: ${message}`, { cause: error });
             }
         },
-        [wallet, network, updateWalletData]
+        [wallet, network, updateWalletData, rememberTransfer]
     );
 }

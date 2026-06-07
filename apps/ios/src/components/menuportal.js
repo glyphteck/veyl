@@ -101,7 +101,7 @@ function MenuRow({ item, theme, onPress }) {
         <View>
             <Pressable {...press.props} disabled={!!item?.disabled} style={{ paddingLeft: 16, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                 <RNAnimated.View style={{ transform: [{ scale: press.scale }] }}>
-                    <Icon icon={item.icon} color={color} />
+                    <Icon icon={item.icon} color={color} fill={item?.filled ? color : 'none'} />
                 </RNAnimated.View>
                 <Text style={{ flex: 1, color, fontSize: 18, fontWeight: '900' }}>{item.title}</Text>
             </Pressable>

@@ -112,7 +112,7 @@ function makeActions({
                   key: 'save-forever',
                   title: savedForever ? 'unsave' : 'save forever',
                   icon: savingForever ? Loader : Bookmark,
-                  iconClassName: savingForever ? 'animate-spin' : '',
+                  iconClassName: cn(savingForever && 'animate-spin', savedForever && !savingForever && 'fill-current'),
                   onClick: onSaveForever,
                   disabled: savingForever,
               }

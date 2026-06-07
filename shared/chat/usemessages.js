@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { filterChatMessages, getChatPeerPK } from './ids.js';
-import { keySet, addMessageKeys, messageHasKey } from './messagekeys.js';
+import { keySet, addMessageKeys, messageHasKey, messageKeys } from './messagekeys.js';
 import { MSG_BATCH_SIZE } from './messages/query.js';
 import { deriveRouteMessages, dropDeletedMessageWindow, dropMessageMedia, expireMessageView, firstMessageWindowMarker, getMessagesBatch, holdCurrentLiveMessages, isMissingFromBatch, makeMessageViewSeed, messageSeedFromBatch, messageSeedFromView, messageWindowMarkerKey, removeMessagesByKeys, selectRouteMessageState, trimExpiredMessages } from './messages/window.js';
 import { getMessageKey, getMessageOrderMs, mergeMessages } from './state.js';
@@ -573,16 +573,42 @@ export function createUseChatMessages({ useChat, useUser, useVault, appState, pa
             setLive((prev) => applyPatch(prev));
         }, []);
 
-        const removeMessage = useCallback((id) => {
-            if (!id) {
+        const removeMessage = useCallback((target) => {
+            if (!target) {
                 return;
+            }
+
+            const deleteKeys = new Set(messageKeys(target));
+            for (const messages of [olderRef.current, liveRef.current, localsRef.current]) {
+                for (const message of messages || []) {
+                    if (messageHasKey(message, deleteKeys)) {
+                        addMessageKeys(deleteKeys, message);
+                    }
+                }
+            }
+            if (!deleteKeys.size) {
+                return;
+            }
+
+            const nextDeletedKeys = keySet(deletedMessageKeysRef.current);
+            let deletedKeysChanged = false;
+            for (const key of deleteKeys) {
+                if (!nextDeletedKeys.has(key)) {
+                    nextDeletedKeys.add(key);
+                    deletedKeysChanged = true;
+                }
+            }
+            if (deletedKeysChanged) {
+                deletedMessageKeysRef.current = nextDeletedKeys;
+                ackMessages(chatId, [...nextDeletedKeys]);
+                setServerBatch((prev) => ({ ...(prev || {}), deletedKeys: nextDeletedKeys }));
             }
 
             const drop = (messages) => {
                 let changed = false;
                 const next = [];
                 for (const message of messages || []) {
-                    if (message.id === id) {
+                    if (messageHasKey(message, deleteKeys)) {
                         changed = true;
                         dropMessageMedia(localCache, message);
                     } else {
@@ -591,9 +617,17 @@ export function createUseChatMessages({ useChat, useUser, useVault, appState, pa
                 }
                 return changed ? next : messages;
             };
-            setOlder((prev) => drop(prev));
-            setLive((prev) => drop(prev));
-        }, [localCache]);
+            const nextOlder = drop(olderRef.current);
+            const nextLive = drop(liveRef.current);
+            if (nextOlder !== olderRef.current) {
+                olderRef.current = nextOlder;
+                setOlder(nextOlder);
+            }
+            if (nextLive !== liveRef.current) {
+                liveRef.current = nextLive;
+                setLive(nextLive);
+            }
+        }, [ackMessages, chatId, localCache]);
 
         const activeState = selectRouteMessageState({
             stateScope,

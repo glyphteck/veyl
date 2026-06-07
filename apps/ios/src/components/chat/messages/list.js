@@ -23,6 +23,7 @@ import { useChatMessages } from '@/lib/chat/usemessages';
 import { getMediaViewerKey, isMediaViewerMsg } from '@/lib/chat/viewer';
 import { cancelPendingMsgFileLoads } from '@/lib/chat/imagecache';
 import { canReplyToMsg, canShowMsg, collapseSystemMessages, getLatestReadOutgoingReceipt, isPeerMsg, isSavedForeverMsg, isSystemMsg } from '@veyl/shared/chat/messages';
+import { messageKeys } from '@veyl/shared/chat/messagekeys';
 import { formatTimeHHMM } from '@veyl/shared/utils/time';
 import { getMessageKey, getMessageOrderMs } from '@veyl/shared/chat/state';
 
@@ -77,7 +78,7 @@ export default function Messages({
     );
     const {
         canLikeMessage,
-        deletingMessageIds,
+        deletingMessageKeys,
         getMenuItems,
         getOptimisticReactions,
         handleLike,
@@ -99,7 +100,10 @@ export default function Messages({
         peerWalletPK,
         removeMessage,
     });
-    const activeMessagesAsc = useMemo(() => (messagesAsc || []).filter((msg) => !msg?.id || !deletingMessageIds.has(msg.id)), [deletingMessageIds, messagesAsc]);
+    const activeMessagesAsc = useMemo(
+        () => (messagesAsc || []).filter((msg) => !messageKeys(msg).some((key) => deletingMessageKeys.has(key))),
+        [deletingMessageKeys, messagesAsc]
+    );
     const visibleMessagesAsc = useMemo(() => collapseSystemMessages(activeMessagesAsc.filter(canShowMsg)), [activeMessagesAsc]);
     const messages = useMemo(() => [...visibleMessagesAsc].reverse(), [visibleMessagesAsc]);
     const displayRows = useAnimatedRows(messages, chatId || '', ready);

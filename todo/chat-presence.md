@@ -3,6 +3,8 @@
 status: planned
 branch: current
 worktree: current
+base: main@004b67abe2e1
+repo version: 0.14.4
 
 ## Goal
 

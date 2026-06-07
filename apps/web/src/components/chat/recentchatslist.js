@@ -8,7 +8,7 @@ import { formatUserDisplay } from '@veyl/shared/profile';
 import { formatFullDateTime, timestampMs } from '@veyl/shared/utils/time';
 import { getMsgPreview as displayPreview } from '@veyl/shared/chat/messages';
 import { getChatPeerPK } from '@veyl/shared/chat/ids';
-import { getMovedRowBatch, sameListIds } from '@veyl/shared/chat/listanimation';
+import { getInsertedRowBatch, getMovedRowBatch, sameListIds } from '@veyl/shared/chat/listanimation';
 import { useBitcoin } from '@/components/providers/bitcoinprovider';
 import { useUser } from '@/components/providers/userprovider';
 import { useChat, useChatInput } from '@/components/providers/chatprovider';
@@ -21,6 +21,7 @@ import rowMotion from '@/components/listrowmotion.module.css';
 const CHAT_ROW_APPEAR_MS = 640;
 const CHAT_ROW_PHASE_MS = CHAT_ROW_APPEAR_MS / 2;
 const CHAT_ROW_APPEAR_EASE = 'cubic-bezier(0.2, 0, 0, 1)';
+const MAX_CHAT_ANIMATED_INSERTS = 8;
 
 function getChatIds(chats) {
     return (chats || []).map((chat) => chat?.id).filter(Boolean);
@@ -286,14 +287,27 @@ export function RecentChatsList() {
     }, [focusChatAtIndex, isChatDataReady, selectedChatId, visibleChats.length]);
 
     const createRowMove = useCallback((previousRows, nextRows) => {
-        const batch = getMovedRowBatch(getChatIds(previousRows), getChatIds(nextRows));
+        const previousIds = getChatIds(previousRows);
+        const nextIds = getChatIds(nextRows);
+        const batch = getMovedRowBatch(previousIds, nextIds);
         if (!batch) {
-            return null;
+            const insertBatch = getInsertedRowBatch(previousIds, nextIds);
+            if (!insertBatch || insertBatch.ids.length > MAX_CHAT_ANIMATED_INSERTS) {
+                return null;
+            }
+            rowMoveKeyRef.current += 1;
+            return {
+                ...insertBatch,
+                key: `${rowMoveKeyRef.current}:insert:${insertBatch.ids.join(',')}`,
+                phase: 'entering',
+                previousRows,
+                nextRows,
+            };
         }
         rowMoveKeyRef.current += 1;
         return {
             ...batch,
-            key: `${rowMoveKeyRef.current}:${batch.ids.join(',')}`,
+            key: `${rowMoveKeyRef.current}:move:${batch.ids.join(',')}`,
             phase: 'leaving',
             previousRows,
             nextRows,

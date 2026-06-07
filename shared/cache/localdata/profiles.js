@@ -11,6 +11,20 @@ function isUsableProfile(profile, now = Date.now()) {
     return lastUsedAt > 0 && now - lastUsedAt <= LOCAL_PROFILE_CACHE_MAX_AGE_MS;
 }
 
+function cachedAvatarValue(value) {
+    if (typeof value !== 'string' || !value) {
+        return null;
+    }
+    return /^(file|blob):/i.test(value) ? null : value;
+}
+
+function cachedProfile(profile) {
+    return {
+        ...profile,
+        avatar: cachedAvatarValue(profile?.avatar),
+    };
+}
+
 function pruneProfiles(profilesByUid, now = Date.now()) {
     if (!isObject(profilesByUid)) {
         return { profiles: [], next: {}, changed: false };
@@ -18,6 +32,7 @@ function pruneProfiles(profilesByUid, now = Date.now()) {
 
     const profiles = Object.values(profilesByUid)
         .filter((profile) => isUsableProfile(profile, now))
+        .map(cachedProfile)
         .sort((a, b) => {
             const delta = (Number(b.lastUsedAt) || 0) - (Number(a.lastUsedAt) || 0);
             if (delta !== 0) return delta;
@@ -60,11 +75,13 @@ export function writeCachedProfiles(cache, profiles) {
                 continue;
             }
             const previous = payload.profilesByUid[profile.uid] || {};
-            payload.profilesByUid[profile.uid] = jsonClean({
+            const nextProfile = {
                 ...previous,
                 ...profile,
                 lastUsedAt: now,
-            });
+            };
+            nextProfile.avatar = cachedAvatarValue(nextProfile.avatar);
+            payload.profilesByUid[profile.uid] = jsonClean(nextProfile);
         }
         payload.profilesByUid = pruneProfiles(payload.profilesByUid, now).next;
         return payload;

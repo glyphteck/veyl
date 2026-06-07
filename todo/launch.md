@@ -1,5 +1,11 @@
 # Launch
 
+status: active
+branch: current
+worktree: current
+base: main@004b67abe2e1
+repo version: 0.14.4
+
 - Complete App Store Connect submission notes, reviewer access, support contact, and final review-bot readiness.
 - Do a final release-readiness pass across safety, security, legal copy, Apple review support, wallet guardrails, account deletion, and export flows.
 - Before public release, confirm old deterministic chat data and bot chat cursor state do not exist in the target backend, or wipe them only with explicit operator approval.

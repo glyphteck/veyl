@@ -194,24 +194,21 @@ export function RecentTxList() {
     const user = useUser();
     const { settings } = user;
     const moneyFormat = settings.moneyFormat;
-    const { getHistoryTxsInRange, sortedTransactions, txServerHistoryComplete } = useTxData();
+    const { getHistoryTxsInRange, sortedTransactions } = useTxData();
     const { peerByWalletPK } = usePeer();
     const { cloaked } = useCloak();
     const scrollRef = useRef(null);
     const rowRefs = useRef(new Map());
     const loadingMoreRef = useRef(false);
     const publishedTxs = sortedTransactions || [];
-    const historyTxs = useMemo(() => (txServerHistoryComplete === true ? getHistoryTxsInRange?.('all-time') || [] : []), [getHistoryTxsInRange, txServerHistoryComplete]);
-    const useHistoryTxs = txServerHistoryComplete === true && historyTxs.length >= publishedTxs.length;
-    const txs = useHistoryTxs ? historyTxs : publishedTxs;
+    const historyTxs = useMemo(() => getHistoryTxsInRange?.('all-time') || [], [getHistoryTxsInRange]);
+    const txs = historyTxs.length >= publishedTxs.length ? historyTxs : publishedTxs;
     const { displayTxs, insertingIds } = useRecentTxAnimation(txs);
     const [visibleLimit, setVisibleLimit] = useState(0);
 
     const visibleTxs = useMemo(() => displayTxs.slice(0, Math.min(visibleLimit, displayTxs.length)), [displayTxs, visibleLimit]);
     const visibleTxIds = useMemo(() => visibleTxs.map((tx) => tx.id), [visibleTxs]);
     const hasHiddenRenderedTxs = visibleLimit < displayTxs.length;
-    const hasMoreAvailableTxs = useHistoryTxs ? false : hasMoreTxs;
-    const hasLoader = hasHiddenRenderedTxs || hasMoreAvailableTxs || isTxLoading;
     const itemCount = visibleTxs.length;
     const openTx = useCallback((tx) => openDialog('txdetails', { tx }), [openDialog]);
 
@@ -285,13 +282,13 @@ export function RecentTxList() {
             setVisibleLimit((current) => Math.min(displayTxs.length, Math.max(current, TX_INITIAL_RENDER_LIMIT) + TX_RENDER_BATCH_SIZE));
             return;
         }
-        if (!hasMoreAvailableTxs || isTxLoading || loadingMoreRef.current) return;
+        if (!hasMoreTxs || isTxLoading || loadingMoreRef.current) return;
         loadingMoreRef.current = true;
         const request = loadMoreTxs?.();
         Promise.resolve(request).finally(() => {
             loadingMoreRef.current = false;
         });
-    }, [displayTxs.length, hasHiddenRenderedTxs, hasMoreAvailableTxs, isTxLoading, loadMoreTxs]);
+    }, [displayTxs.length, hasHiddenRenderedTxs, hasMoreTxs, isTxLoading, loadMoreTxs]);
 
     const handleScroll = useCallback(
         (event) => {
@@ -305,11 +302,11 @@ export function RecentTxList() {
 
     useEffect(() => {
         const node = scrollRef.current;
-        if (!node || !txReady || (!hasHiddenRenderedTxs && !hasMoreAvailableTxs) || isTxLoading) return;
+        if (!node || !txReady || (!hasHiddenRenderedTxs && !hasMoreTxs) || isTxLoading) return;
         if (node.scrollHeight <= node.clientHeight + 4) {
             loadMore();
         }
-    }, [hasHiddenRenderedTxs, hasMoreAvailableTxs, isTxLoading, loadMore, txReady, visibleTxs.length]);
+    }, [hasHiddenRenderedTxs, hasMoreTxs, isTxLoading, loadMore, txReady, visibleTxs.length]);
 
     if (!txReady || displayTxs.length === 0) {
         return (
@@ -333,7 +330,7 @@ export function RecentTxList() {
                                         bitcoinPrice={bitcoin.price}
                                         cloaked={cloaked}
                                         isFirst={index === 0}
-                                        isLast={!hasLoader && index === visibleTxs.length - 1}
+                                        isLast={index === visibleTxs.length - 1}
                                         moneyFormat={moneyFormat}
                                         onOpenTx={openTx}
                                         profile={peerByWalletPK.get(tx.peerPK)}
@@ -345,11 +342,6 @@ export function RecentTxList() {
                             </div>
                         );
                     })}
-                    {hasLoader ? (
-                        <div className="flex h-12 items-center justify-center text-sm font-bold text-muted">
-                            {isTxLoading || hasHiddenRenderedTxs ? 'loading...' : ''}
-                        </div>
-                    ) : null}
                 </div>
             </div>
         </Card>

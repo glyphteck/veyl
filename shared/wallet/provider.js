@@ -82,6 +82,7 @@ export function createWalletProvider({
         useWalletEvents({
             wallet,
             updateWalletData,
+            rememberTransfer: transferState.rememberTransfer,
             setBalance: balanceState.setBalance,
             setTokenBalances: balanceState.setTokenBalances,
             setSatsBalanceResult: balanceState.setSatsBalanceResult,
@@ -123,7 +124,7 @@ export function createWalletProvider({
             diag,
         });
 
-        const sendMoneyWithSpark = useSparkSend({ wallet, network, updateWalletData });
+        const sendMoneyWithSpark = useSparkSend({ wallet, network, updateWalletData, rememberTransfer: transferState.rememberTransfer });
         const lightning = useLightning({ wallet, updateWalletData });
         const withdrawal = useWithdrawal({ wallet, network, updateWalletData });
 
@@ -211,6 +212,7 @@ export function createWalletProvider({
                 transferState.serverHistoryComplete,
                 transferState.historyTransferCount,
                 transferState.hasMoreTxs,
+                transferState.rememberTransfer,
                 claimState.refreshWallet,
                 claimState.claimDeposits,
                 fundingState.getFundingAddress,

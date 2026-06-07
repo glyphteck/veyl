@@ -22,6 +22,8 @@
 - Prefer removing, collapsing, or replacing code over layering more logic on top of a messy path.
 - Even when enhancing a feature, a smaller reimplementation is often better than preserving a bloated old approach.
 - Favor less code when possible. It is easier to review, understand, and change.
+- Split by ownership, not by line count. A large cohesive lifecycle module is better than several thin helpers that only pass refs, callbacks, and timing state around.
+- Do not extract a helper just to make a file shorter. Extract when the new file has a stable domain name, can be understood mostly on its own, removes duplicated behavior, reduces a public surface, or isolates a real side effect.
 - Before launch, prefer clean cutovers over backward-compatible shims, aliases, wrappers, or duplicate export paths.
 - When refactoring structure, update imports across the repo and delete the old path instead of leaving compatibility code behind.
 - Keep React hooks before any early return. Derive booleans first, define hooks and callbacks, then return `null` or fallback UI.
@@ -37,6 +39,7 @@
 - Prefer existing patterns over new architecture.
 - If web and shared already solve a problem, do not invent a third approach.
 - If a change belongs in `shared`, put it there instead of duplicating the same logic in web and iOS.
+- Keep intentionally replaceable adapters contained. `shared/cloud/firebase.js` is centralized on purpose while Firebase remains the current backend provider; do not split Firebase implementation details across domain files unless the provider boundary itself is being replaced.
 
 ## Shared Helper Boundaries
 

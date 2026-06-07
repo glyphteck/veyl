@@ -25,7 +25,7 @@ import { useTap } from '@/lib/tap';
 import { formatUserDisplay } from '@veyl/shared/profile';
 import { formatFullDateTime, timestampMs } from '@veyl/shared/utils/time';
 import { getChatPeerPK } from '@veyl/shared/chat/ids';
-import { getMovedRowBatch, sameListIds } from '@veyl/shared/chat/listanimation';
+import { getInsertedRowBatch, getMovedRowBatch, sameListIds } from '@veyl/shared/chat/listanimation';
 import { getMsgPreview } from '@veyl/shared/chat/messages';
 import { lowerText } from '@veyl/shared/utils/text';
 
@@ -39,6 +39,7 @@ const DELETE_ICON_DELAY = 20;
 const CHAT_ROW_APPEAR_MS = 640;
 const CHAT_ROW_PHASE_MS = CHAT_ROW_APPEAR_MS / 2;
 const CHAT_ROW_APPEAR_FROM = 0.98;
+const MAX_CHAT_ANIMATED_INSERTS = 8;
 const DELETE_SPRING = {
     mass: 0.16,
     stiffness: 200,
@@ -320,6 +321,11 @@ function samePeerProfile(prevProps, nextProps) {
     );
 }
 
+function profileSignature(profile) {
+    if (!profile) return '';
+    return [profile.uid || '', profile.username || '', profile.avatar || '', profile.active ? '1' : '0', profile.bot || '', profile.chatPK || ''].join(':');
+}
+
 const ChatListChatRow = memo(function ChatListChatRow({ animationKey = '', chat, chatPK, handleDeleteChat, isLast, mode = null, openChat, peerByChatPK }) {
     const { contentStyle, slotStyle } = useRowMoveStyles(animationKey, mode);
     const peerChatPK = getChatPeerPK(chat, chatPK);
@@ -421,16 +427,40 @@ export default function ChatList() {
 
     const chatItems = useMemo(() => filteredChats.map((chat) => ({ id: chat.id, chat, type: 'chat' })), [filteredChats]);
     const items = useMemo(() => [...chatItems, ...searchPeers], [chatItems, searchPeers]);
+    const peerListSignature = useMemo(
+        () =>
+            items
+                .map((item) => {
+                    if (item.type === 'peer') return `${item.id}:${profileSignature(item.peer)}`;
+                    const peerChatPK = getChatPeerPK(item.chat, chatPK);
+                    return `${item.id}:${profileSignature(peerChatPK ? peerByChatPK?.get(peerChatPK) : null)}`;
+                })
+                .join('|'),
+        [chatPK, items, peerByChatPK]
+    );
 
     const createRowMove = useCallback((previousItems, nextItems) => {
-        const batch = getMovedRowBatch(getItemIds(previousItems), getItemIds(nextItems));
+        const previousIds = getItemIds(previousItems);
+        const nextIds = getItemIds(nextItems);
+        const batch = getMovedRowBatch(previousIds, nextIds);
         if (!batch) {
-            return null;
+            const insertBatch = getInsertedRowBatch(previousIds, nextIds);
+            if (!insertBatch || insertBatch.ids.length > MAX_CHAT_ANIMATED_INSERTS) {
+                return null;
+            }
+            rowMoveKeyRef.current += 1;
+            return {
+                ...insertBatch,
+                key: `${rowMoveKeyRef.current}:insert:${insertBatch.ids.join(',')}`,
+                phase: 'entering',
+                previousItems,
+                nextItems,
+            };
         }
         rowMoveKeyRef.current += 1;
         return {
             ...batch,
-            key: `${rowMoveKeyRef.current}:${batch.ids.join(',')}`,
+            key: `${rowMoveKeyRef.current}:move:${batch.ids.join(',')}`,
             phase: 'leaving',
             previousItems,
             nextItems,
@@ -673,6 +703,7 @@ export default function ChatList() {
                 keyboardShouldPersistTaps="handled"
                 contentContainerStyle={{ flexGrow: 1, paddingTop: headerHeight, paddingBottom: mainMenuHeight }}
                 renderItem={renderItem}
+                extraData={peerListSignature}
                 getItemLayout={getItemLayout}
                 initialNumToRender={16}
                 maxToRenderPerBatch={12}

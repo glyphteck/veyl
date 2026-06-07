@@ -12,7 +12,7 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/togglegroup';
 import { useUser } from '@/components/providers/userprovider';
 import UpdateAvatar from '@/components/updateavatar';
 import { deleteAvatar, uploadAvatar } from '@/lib/user/actions';
-import { SEND_ON_SCAN_ENABLED } from '@veyl/shared/settings';
+import { PAYMENT_BEHAVIOR_SETTINGS_VISIBLE, SEND_ON_SCAN_ENABLED } from '@veyl/shared/settings';
 
 const settingsSchema = z.object({
     moneyFormat: z.enum(['btc', 'usd', 'sats']),
@@ -211,39 +211,41 @@ export default function Settings({ data, close }) {
                                 )}
                             />
 
-                            <div className="flex items-center justify-between gap-4 py-4">
-                                <div className="pl-0.75 flex items-center gap-2 text-lg leading-none select-none">
-                                    <ArrowUpRight className="size-6" />
-                                    <span>payment behaviour</span>
-                                </div>
-                                <ToggleGroup
-                                    type="multiple"
-                                    value={(() => {
-                                        const values = [];
-                                        if (SEND_ON_SCAN_ENABLED && form.watch('sendOnScan')) values.push('sendOnScan');
-                                        if (form.watch('confirmSend')) values.push('confirmSend');
-                                        return values;
-                                    })()}
-                                    onValueChange={(vals) => {
-                                        form.setValue('sendOnScan', SEND_ON_SCAN_ENABLED && vals.includes('sendOnScan'));
-                                        form.setValue('confirmSend', vals.includes('confirmSend'));
-                                    }}
-                                >
-                                    {SEND_ON_SCAN_ENABLED ? (
-                                        <ToggleGroupItem
-                                            value="sendOnScan"
-                                            className="data-[state=on]:bg-destructive data-[state=on]:text-background"
-                                            onMouseEnter={() => setTooltip('send immediately when the qr already includes an amount')}
-                                            onMouseLeave={() => setTooltip('save')}
-                                        >
-                                            <ScanQrCode />
+                            {PAYMENT_BEHAVIOR_SETTINGS_VISIBLE ? (
+                                <div className="flex items-center justify-between gap-4 py-4">
+                                    <div className="pl-0.75 flex items-center gap-2 text-lg leading-none select-none">
+                                        <ArrowUpRight className="size-6" />
+                                        <span>payment behaviour</span>
+                                    </div>
+                                    <ToggleGroup
+                                        type="multiple"
+                                        value={(() => {
+                                            const values = [];
+                                            if (SEND_ON_SCAN_ENABLED && form.watch('sendOnScan')) values.push('sendOnScan');
+                                            if (form.watch('confirmSend')) values.push('confirmSend');
+                                            return values;
+                                        })()}
+                                        onValueChange={(vals) => {
+                                            form.setValue('sendOnScan', SEND_ON_SCAN_ENABLED && vals.includes('sendOnScan'));
+                                            form.setValue('confirmSend', vals.includes('confirmSend'));
+                                        }}
+                                    >
+                                        {SEND_ON_SCAN_ENABLED ? (
+                                            <ToggleGroupItem
+                                                value="sendOnScan"
+                                                className="data-[state=on]:bg-destructive data-[state=on]:text-background"
+                                                onMouseEnter={() => setTooltip('send immediately when the qr already includes an amount')}
+                                                onMouseLeave={() => setTooltip('save')}
+                                            >
+                                                <ScanQrCode />
+                                            </ToggleGroupItem>
+                                        ) : null}
+                                        <ToggleGroupItem value="confirmSend" onMouseEnter={() => setTooltip('confirm before sending money')} onMouseLeave={() => setTooltip('save')}>
+                                            <ShieldCheck />
                                         </ToggleGroupItem>
-                                    ) : null}
-                                    <ToggleGroupItem value="confirmSend" onMouseEnter={() => setTooltip('confirm before sending money')} onMouseLeave={() => setTooltip('save')}>
-                                        <ShieldCheck />
-                                    </ToggleGroupItem>
-                                </ToggleGroup>
-                            </div>
+                                    </ToggleGroup>
+                                </div>
+                            ) : null}
 
                             <div className="bg-border h-px w-full shrink-0 rounded-full" aria-hidden />
 

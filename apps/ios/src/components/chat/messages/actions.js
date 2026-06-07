@@ -43,7 +43,7 @@ export function useActions({
     const [payingMessages, setPayingMessages] = useState(new Set());
     const [savingForeverMessages, setSavingForeverMessages] = useState(new Map());
     const [reportedMessageKeys, setReportedMessageKeys] = useState(new Set());
-    const [deletingMessageIds, setDeletingMessageIds] = useState(new Set());
+    const [deletingMessageKeys, setDeletingMessageKeys] = useState(new Set());
     const {
         getReactions: getOptimisticReactions,
         toggleReaction: toggleOptimisticReaction,
@@ -163,38 +163,49 @@ export function useActions({
                 return;
             }
 
-            setDeletingMessageIds((prev) => {
-                if (prev.has(msg.id)) {
+            const keys = messageKeys(msg);
+            if (!keys.length) {
+                return;
+            }
+
+            setDeletingMessageKeys((prev) => {
+                if (keys.every((key) => prev.has(key))) {
                     return prev;
                 }
                 const next = new Set(prev);
-                next.add(msg.id);
+                for (const key of keys) {
+                    next.add(key);
+                }
                 return next;
             });
 
             try {
                 await deleteMessage(chatId, msg);
-                removeMessage(msg.id);
+                removeMessage(msg);
             } catch (error) {
                 console.warn('delete message failed', error);
-                setDeletingMessageIds((prev) => {
-                    if (!prev.has(msg.id)) {
+                setDeletingMessageKeys((prev) => {
+                    if (!keys.some((key) => prev.has(key))) {
                         return prev;
                     }
                     const next = new Set(prev);
-                    next.delete(msg.id);
+                    for (const key of keys) {
+                        next.delete(key);
+                    }
                     return next;
                 });
                 Alert.alert('Delete failed', error?.message || 'Could not delete this message.');
                 return;
             }
 
-            setDeletingMessageIds((prev) => {
-                if (!prev.has(msg.id)) {
+            setDeletingMessageKeys((prev) => {
+                if (!keys.some((key) => prev.has(key))) {
                     return prev;
                 }
                 const next = new Set(prev);
-                next.delete(msg.id);
+                for (const key of keys) {
+                    next.delete(key);
+                }
                 return next;
             });
         },
@@ -267,7 +278,7 @@ export function useActions({
             }
 
             if (canSaveForever) {
-                items.push({ id: 'save-forever', title: savedForever ? 'Unsave' : 'Save', icon: Bookmark, disabled: savingForever, run: () => toggleSaveForeverMessage(msg) });
+                items.push({ id: 'save-forever', title: savedForever ? 'Unsave' : 'Save', icon: Bookmark, filled: savedForever, disabled: savingForever, run: () => toggleSaveForeverMessage(msg) });
             }
 
             switch (msg?.t) {
@@ -401,7 +412,7 @@ export function useActions({
 
     return {
         canLikeMessage,
-        deletingMessageIds,
+        deletingMessageKeys,
         getMenuItems,
         getOptimisticReactions,
         handleLike,

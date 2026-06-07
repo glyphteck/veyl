@@ -2,7 +2,7 @@
 
 Scope: readability, small-logic optimization, naming, duplicate structure, and future-agent crawl speed.
 
-This file is for observations that look worth addressing but are too broad, product-sensitive, UX-sensitive, or risky to change during a narrow cleanup pass. Remarks are ordered by concern level, not file size. Treat them as scoped prompts, not a broad refactor invitation.
+This file is for observations that look worth addressing but are too broad, product-sensitive, UX-sensitive, or risky to change during a narrow cleanup pass. Remarks are ordered by concern level, not file size. Treat them as scoped prompts, not a broad refactor invitation. Do not split a file only because it is long; split only when the extracted owner is understandable without shuttling a pile of parent refs through it.
 
 ## High Concern
 
@@ -11,7 +11,8 @@ This file is for observations that look worth addressing but are too broad, prod
 - `shared/providers/chatprovider.js` is the cross-platform chat command center: chat list state, selected-chat memory, message actions, local cache, deletion, retention, and saved media all converge there. Split only after the lower-level chat action modules are stable.
 - `shared/chat/actions/delete.js`, `shared/chat/messages/write.js`, and `shared/chat/usereactions.js` each carry multiple chat lifecycle responsibilities. Split only in focused chat passes because mistakes there affect encrypted retention, receipts, reactions, and parent chat state.
 - `shared/chat/messages/control.js` carries read receipts, hidden checkpoints, reaction grouping, message retention timelines, and seen/hidden filtering. Those are strongly coupled to encrypted chat semantics; split by lifecycle only when changing retention or read-state behavior with focused chat verification.
-- `shared/chat/usemessages.js` and `shared/chat/messages/batches/usebatches.js` are central and large even after the helper split. The next safe compartmentalization would be route subscription/window state and preview-drop notifications behind smaller helpers with the same public hook boundary.
+- `shared/chat/usemessages.js` and `shared/chat/messages/batches/usebatches.js` are central and large, but much of that size is real route/batch lifecycle ordering. Do not split route subscription, preview sync, read receipts, or older paging just for line count; split only when a behavior change exposes a stable side-effect owner.
+- `shared/cloud/firebase.js` is intentionally a contained Firebase adapter while the backend provider may eventually change. Its size is acceptable if Firebase-specific assumptions stay in that one boundary instead of leaking across feature modules.
 - `shared/wallet/fees.js` is large because unilateral-exit package math, fee-rate labels, and on-chain preview formatting live together. Keep fee formulas local to the wallet fee domain unless a wallet-fee test pass is added; avoid hiding protocol-ish math inside generic number helpers.
 - `functions/passkey/login.js`, `functions/passkey/register.js`, and report/action helpers still repeat small request parsing and uid cleanup. Fold that into `functions/lib/passkey.js` or a functions-local request helper during an explicit backend deploy pass.
 

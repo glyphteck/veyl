@@ -27,17 +27,15 @@ export default function TransactionsPage() {
     const user = useUser();
     const { settings } = user;
     const moneyFormat = settings.moneyFormat;
-    const { getHistoryTxsInRange, sortedTransactions, txServerHistoryComplete } = useTxData();
+    const { getHistoryTxsInRange, sortedTransactions } = useTxData();
     const { peerByWalletPK } = usePeer();
     const { cloaked } = useCloak();
     const scrollRef = useRef(null);
     const rowRefs = useRef(new Map());
     const pendingFocusRef = useRef(null);
     const publishedTxs = sortedTransactions || [];
-    const historyTxs = useMemo(() => (txServerHistoryComplete === true ? getHistoryTxsInRange?.('all-time') || [] : []), [getHistoryTxsInRange, txServerHistoryComplete]);
-    const useHistoryTxs = txServerHistoryComplete === true && historyTxs.length >= publishedTxs.length;
-    const sorted = useHistoryTxs ? historyTxs : publishedTxs;
-    const hasMoreAvailableTxs = useHistoryTxs ? false : hasMoreTxs;
+    const historyTxs = useMemo(() => getHistoryTxsInRange?.('all-time') || [], [getHistoryTxsInRange]);
+    const sorted = historyTxs.length >= publishedTxs.length ? historyTxs : publishedTxs;
     const [scrollTop, setScrollTop] = useState(0);
     const [viewportHeight, setViewportHeight] = useState(0);
     const visibleWindow = useMemo(() => {
@@ -114,9 +112,9 @@ export default function TransactionsPage() {
     }, []);
 
     useEffect(() => {
-        if (!hasMoreAvailableTxs || isTxLoading || sorted.length - visibleWindow.end > TX_FETCH_REMAINING) return;
+        if (!hasMoreTxs || isTxLoading || sorted.length - visibleWindow.end > TX_FETCH_REMAINING) return;
         void loadMoreTxs?.();
-    }, [hasMoreAvailableTxs, isTxLoading, loadMoreTxs, sorted.length, visibleWindow.end]);
+    }, [hasMoreTxs, isTxLoading, loadMoreTxs, sorted.length, visibleWindow.end]);
 
     useEffect(() => {
         const index = pendingFocusRef.current;
