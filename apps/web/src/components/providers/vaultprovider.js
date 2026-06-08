@@ -12,6 +12,7 @@ import { useUser } from '@/components/providers/userprovider';
 import { toast } from 'sonner';
 import { Lock } from 'lucide-react';
 import { cloud } from '@/lib/cloud';
+import { mark } from '@/lib/diagnostics';
 
 export const VaultCtx = createContext(null);
 
@@ -135,10 +136,24 @@ export function VaultProvider({ children }) {
     const unlock = useCallback(
         async (password, options = {}) => {
             //decrypt seed
-            if (UNLOCK_STATES.has(lockState)) throw new Error('unlock in progress');
+            const startedAt = Date.now();
+            const source = options.source || 'password';
+            if (UNLOCK_STATES.has(lockState)) {
+                mark('vault.unlock.error', { elapsedMs: Date.now() - startedAt, source, reason: 'already-unlocking' });
+                throw new Error('unlock in progress');
+            }
             const unlockUid = user.uid || cloud.auth.user?.uid || null;
-            if (!unlockUid) throw new Error('account not ready');
+            if (!unlockUid) {
+                mark('vault.unlock.error', { elapsedMs: Date.now() - startedAt, source, reason: 'missing-account' });
+                throw new Error('account not ready');
+            }
             const isCurrentUnlock = () => vaultUidRef.current === unlockUid && cloud.auth.user?.uid === unlockUid;
+            mark('vault.unlock.start', {
+                source,
+                hasVault: !!vaultRef.current,
+                hasWalletPK: !!user.walletPK,
+                hasChatPK: !!user.chatPK,
+            });
             setLockState('decrypting');
             let w = null;
             let chatPrivKey = null;
@@ -151,16 +166,43 @@ export function VaultProvider({ children }) {
                 if (!isCurrentUnlock()) {
                     throw new Error('account changed during unlock');
                 }
+                const unpackStartedAt = Date.now();
                 const { salt, iv, ct, kdf } = unpackSeedData(vault);
+                mark('vault.unlock.unpack.done', { elapsedMs: Date.now() - unpackStartedAt, source });
+                const decryptStartedAt = Date.now();
+                mark('vault.unlock.decrypt.start', { source });
                 masterSeed = await decryptSeed(ct, salt, iv, normalizePassword(password), kdf);
+                mark('vault.unlock.decrypt.done', { elapsedMs: Date.now() - decryptStartedAt, source });
                 setLockState('seed-decrypted');
-                const seedDecrypted = options.onSeedDecrypted?.();
+                const animationStartedAt = Date.now();
+                let animationMarked = false;
+                const markAnimationDone = () => {
+                    if (animationMarked) return;
+                    animationMarked = true;
+                    mark('vault.unlock.seedAnimation.done', { elapsedMs: Date.now() - animationStartedAt, source });
+                };
+                const markAnimationError = (error) => {
+                    mark('vault.unlock.seedAnimation.error', { elapsedMs: Date.now() - animationStartedAt, source, code: error?.code || '', message: error?.message || String(error) });
+                    markAnimationDone();
+                };
+                try {
+                    const seedAnimation = options.onSeedDecrypted?.();
+                    if (seedAnimation && typeof seedAnimation.then === 'function') {
+                        seedAnimation.then(markAnimationDone, markAnimationError);
+                    } else {
+                        markAnimationDone();
+                    }
+                } catch (error) {
+                    markAnimationError(error);
+                }
 
                 // Derive feature-specific seeds
                 setLockState('deriving');
+                const deriveStartedAt = Date.now();
                 const walletMnemonic = deriveWalletMnemonic(masterSeed);
                 chatSeed = deriveSeed(masterSeed, 'chat');
                 cacheKey = deriveSeed(masterSeed, LOCAL_DATA_CACHE_LABEL);
+                mark('vault.unlock.derive.done', { elapsedMs: Date.now() - deriveStartedAt, source });
 
                 // Zero the master seed from memory
                 masterSeed.fill(0);
@@ -172,18 +214,27 @@ export function VaultProvider({ children }) {
 
                 //boot wallet
                 setLockState('wallet');
+                const walletStartedAt = Date.now();
+                mark('vault.unlock.wallet.start', { source });
                 w = await bootWallet(walletMnemonic, user);
+                mark('vault.unlock.wallet.done', { elapsedMs: Date.now() - walletStartedAt, source });
                 if (!isCurrentUnlock()) {
                     throw new Error('account changed during unlock');
                 }
                 // boot chat
                 setLockState('chat');
+                const chatStartedAt = Date.now();
+                mark('vault.unlock.chat.start', { source });
                 chatPrivKey = await bootChat(chatSeed, user);
+                mark('vault.unlock.chat.done', { elapsedMs: Date.now() - chatStartedAt, source });
                 chatSeed = null;
                 if (!isCurrentUnlock()) {
                     throw new Error('account changed during unlock');
                 }
+                const cacheStartedAt = Date.now();
+                mark('vault.unlock.localCache.start', { source });
                 nextCache = await openLocalDataCache(cacheKey, { uid: unlockUid });
+                mark('vault.unlock.localCache.done', { elapsedMs: Date.now() - cacheStartedAt, source, hasCache: !!nextCache });
 
                 // Zero derived seeds from memory
                 cacheKey.fill(0);
@@ -199,7 +250,6 @@ export function VaultProvider({ children }) {
                 setWallet(w);
                 setChatPrivateKey(chatPrivKey);
                 setLocalCache(nextCache);
-                await seedDecrypted;
                 if (!isCurrentUnlock()) {
                     throw new Error('account changed during unlock');
                 }
@@ -211,10 +261,12 @@ export function VaultProvider({ children }) {
                     throw new Error('account changed during unlock');
                 }
                 setLockState('unlocked');
+                mark('vault.unlock.done', { elapsedMs: Date.now() - startedAt, source });
 
                 // mark active (best-effort)
                 cloud.user.active.write(unlockUid, true).catch(() => {});
             } catch (error) {
+                mark('vault.unlock.error', { elapsedMs: Date.now() - startedAt, source, code: error?.code || '', message: error?.message || String(error) });
                 try {
                     masterSeed?.fill?.(0);
                     chatSeed?.fill?.(0);

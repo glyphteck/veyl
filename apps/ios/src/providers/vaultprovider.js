@@ -302,8 +302,26 @@ export function VaultProvider({ children }) {
 
                 setLockState('seed-decrypted');
                 const animationStartedAt = Date.now();
-                await options.onSeedDecrypted?.();
-                mark('vault.unlock.seedAnimation.done', { elapsedMs: Date.now() - animationStartedAt, source });
+                let animationMarked = false;
+                const markAnimationDone = () => {
+                    if (animationMarked) return;
+                    animationMarked = true;
+                    mark('vault.unlock.seedAnimation.done', { elapsedMs: Date.now() - animationStartedAt, source });
+                };
+                const markAnimationError = (error) => {
+                    mark('vault.unlock.seedAnimation.error', { elapsedMs: Date.now() - animationStartedAt, source, code: error?.code || '', message: error?.message || String(error) });
+                    markAnimationDone();
+                };
+                try {
+                    const seedAnimation = options.onSeedDecrypted?.();
+                    if (seedAnimation && typeof seedAnimation.then === 'function') {
+                        seedAnimation.then(markAnimationDone, markAnimationError);
+                    } else {
+                        markAnimationDone();
+                    }
+                } catch (error) {
+                    markAnimationError(error);
+                }
 
                 const faceIdStartedAt = Date.now();
                 const shouldStagePassword = options.stageFaceId !== false && (await shouldStageFaceIdPassword(unlockUid, user.settings?.faceID));

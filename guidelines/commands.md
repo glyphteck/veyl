@@ -154,6 +154,7 @@ bun make lifecycle
 - `bun dev web mem` starts web with V8 heap snapshots near the heap limit; combine with `trace` for Turbopack trace output or `inspect` for Chrome DevTools memory profiling.
 - `bun dev ios clear` clears only the veyl iOS `.expo` and Metro caches before starting.
 - `bun dev ios` starts Expo in dev-client mode for the installed `dev.veyl` app.
+- Validate performance-sensitive iOS startup, unlock, and route-load timings on a standalone test or production build, not only on `bun dev ios`; the dev-client and Metro runtime can bottleneck timing paths that are normal in real builds.
 - `bun make ios` and `bun make ios dev` run a clean Expo prebuild, then install the `dev.veyl` Expo dev-client build on `REGTEST` with bundle id `com.glyphteck.veyl.dev`. They do not start Metro; run the dev server separately with `bun dev ios` or the combined runtime.
 - `bun make ios reset` uninstalls the dev app before reinstalling it, which clears on-device app data and forces iOS to reprocess the current app identity.
 - `bun make ios test` installs the standalone test `test.veyl` build on `REGTEST` with bundle id `com.glyphteck.veyl.test`.

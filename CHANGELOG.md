@@ -4,6 +4,7 @@ Repo-level changes are listed newest first. Keep entries short and concrete. Bro
 
 ## 0.14.8 - 2026-06-09
 
+- Removed unlock icon animation waits from the vault unlock critical path and documented real-build validation for iOS load-time measurements.
 - Stabilized avatar loading across web and iOS with retained previous images, cache-aware fallback hiding, and current/peer avatar cache adoption before refetching.
 - Fixed the iOS avatar active-dot cutout so the avatar art is clipped away and the active dot floats over the screen behind it.
 - Made the iOS wallet transaction footer loader visible for fast paged row reveals while keeping the faster transaction batch loading behavior.
