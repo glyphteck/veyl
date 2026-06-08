@@ -8,7 +8,7 @@ import { truncateLabel } from '@veyl/shared/utils/display';
 
 import Avatar from '@/components/avatar';
 import SearchInput from '@/components/search';
-import { KeyboardStickyView, useReanimatedKeyboardAnimation } from '@/components/keyboardscroll';
+import { KeyboardChatScrollView, KeyboardStickyView, useReanimatedKeyboardAnimation } from '@/components/keyboardscroll';
 import { tap } from '@/lib/tap';
 
 const FOOTER_OFFSCREEN = 260;
@@ -123,6 +123,7 @@ export default function PeerPicker({
 
         scrollTo(listRef, 0, Math.max(0, linkedScrollBase.value + linkedScrollDelta.value * footerProgress.value), false);
     });
+    const footerExtraPadding = useDerivedValue(() => footerReserve.value * footerProgress.value);
 
     const getFooterHeight = useCallback(() => Math.max(0, footerHeightRef.current || footerHeight), [footerHeight]);
     const getFooterReserveHeight = useCallback(() => getFooterHeight() + FOOTER_LIST_CLEARANCE, [getFooterHeight]);
@@ -255,11 +256,14 @@ export default function PeerPicker({
 
         return { transform: [{ translateY: FOOTER_OFFSCREEN * (1 - footerProgress.value) }, { scale: 1 }] };
     });
-    const footerReserveStyle = useAnimatedStyle(() => ({ height: footerReserve.value * footerProgress.value + Math.max(0, -keyboardHeight.value - insets.bottom) }));
     const stickyOffset = useMemo(() => ({ closed: 0, opened: insets.bottom - FOOTER_KEYBOARD_GAP }), [insets.bottom]);
     const footerBottom = insets.bottom;
     const listBottomPadding = insets.bottom + LIST_DEFAULT_BOTTOM_GAP;
     const visibleFooter = footerOpen ? footer : openFooterRef.current;
+    const renderScrollComponent = useCallback(
+        (props) => <KeyboardChatScrollView {...props} keyboardLiftBehavior="never" extraContentPadding={footerExtraPadding} />,
+        [footerExtraPadding]
+    );
 
     return (
         <View style={{ flex: 1, overflow: 'hidden', paddingHorizontal: 12 }}>
@@ -295,6 +299,7 @@ export default function PeerPicker({
                     keyboardDismissMode="interactive"
                     keyboardShouldPersistTaps="handled"
                     contentContainerStyle={{ flexGrow: 1, paddingTop: LIST_CONTENT_TOP, paddingBottom: listBottomPadding }}
+                    renderScrollComponent={renderScrollComponent}
                     style={{ flex: 1 }}
                     onScroll={handleListScroll}
                     scrollEventThrottle={16}
@@ -304,7 +309,6 @@ export default function PeerPicker({
                     automaticallyAdjustContentInsets={false}
                     automaticallyAdjustsScrollIndicatorInsets={false}
                     contentInsetAdjustmentBehavior="never"
-                    ListFooterComponent={<Animated.View pointerEvents="none" style={footerReserveStyle} />}
                     ListEmptyComponent={emptyState}
                 />
 

@@ -30,7 +30,9 @@ When enabled, a bot:
 - pays any incoming payment request if funded, then sends a mirrored request back for the same amount
 - replies with an underfunded message if it can't afford a request
 - appends encrypted read receipt and hidden-message checkpoint controls for the latest processed peer message before sending its mirrored reply, without changing the chat preview
-- ignores encrypted control payloads such as read receipts, reactions, and hidden-message checkpoints
+- adopts peer retention system messages and peer-stamped message retention before writing replies
+- uses peer read receipts only to append preview-neutral hidden-message checkpoints for bot-authored messages
+- ignores other encrypted control payloads such as reactions and incoming hidden-message checkpoints
 - keeps message TTL dumb like the clients: new messages use the standard 21-day TTL, saved messages use `ttl: null`, and the runtime does not shorten TTL after read handling
 - accepts incoming transfers passively (balance updates automatically via Spark events)
 
@@ -59,15 +61,16 @@ The core bot loop. `BotRuntime` is a long-lived process that:
 1. subscribes to `bots` where `enabled == true` in Firestore
 2. for each enabled bot, reads its profile for the active network wallet key and `chatPK`, boots a Spark wallet session, and subscribes to its chats
 3. listens for Spark `transfer:claimed` and `balance:update` events to keep the admin-facing balance snapshot current
-4. processes new peer messages in bot-owned chats by comparing timestamps against `seen` and `resumeAt`
+4. watches bot-owned chats plus their latest message docs, then processes new peer messages and preview-neutral controls by comparing timestamps against `seen` and `resumeAt`
 
 Message handling:
 
 - text messages: decrypted and mirrored back
 - attachments: decrypted, re-encrypted under the bot's keys, uploaded as a fresh copy, and sent back
 - payment requests: paid if the bot has sufficient balance, original request patched with the tx id, then a mirrored request sent back for the same amount
+- retention: peer retention system messages and peer-stamped message retention update the bot-owned chat entry, so bot replies use the same delete-after-seen mode as the peer side
 - read receipts: appended as encrypted `t: 'rr'` control messages before mirrored replies and sent without updating the chat preview
-- hidden checkpoints: appended as encrypted `t: 'hid'` control messages with the bot read receipt, because the headless runtime has no chat UI to keep those messages visible
+- hidden checkpoints: appended as encrypted `t: 'hid'` control messages with the bot read receipt, and again when a peer read receipt covers bot-authored messages, because the headless runtime has no chat UI to keep those messages visible
 - reactions and incoming hidden checkpoints: encrypted control messages; skipped by the bot runtime instead of mirrored
 - incoming transfers: accepted passively — Spark claims them automatically and the runtime refreshes the balance snapshot
 

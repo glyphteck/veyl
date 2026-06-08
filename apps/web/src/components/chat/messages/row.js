@@ -4,7 +4,9 @@ import { Bookmark, Download, Flag, Loader, Reply, RotateCcw, Share2, SquarePen, 
 import { forwardRef, memo, useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Avatar, AvatarFallback, StaticAvatar } from '@/components/avatar';
 import { canReplyToMsg, canShareAttachmentMsg, getSystemMsgText, isSystemMsg } from '@veyl/shared/chat/messages';
-import { formatFullDateTime } from '@veyl/shared/utils/time';
+import { getDateSeparatorText, isDateSeparatorMsg } from '@veyl/shared/chat/messages/dates';
+import { getMessageOrderMs } from '@veyl/shared/chat/state';
+import { formatTimeHHMM } from '@veyl/shared/utils/time';
 import { bubbleBg, canDownloadMsgFile } from '@/lib/chat/messages';
 import { cn } from '@/lib/classes';
 import { ChatMessageType } from './type';
@@ -22,6 +24,11 @@ import {
 
 const ACTION_ICON = 'size-4';
 const EMPTY_ACTIONS = Object.freeze([]);
+
+function formatMsgTime(msg) {
+    const ms = getMessageOrderMs(msg);
+    return Number.isFinite(ms) && ms !== Infinity ? formatTimeHHMM(ms, true) : '';
+}
 
 function ActionButton({ title, icon: Icon, className = 'text-muted', iconClassName = '', onClick, disabled = false }) {
     return (
@@ -307,16 +314,20 @@ const RowShell = forwardRef(function RowShell({ rowState = 'present', hasRowAbov
     );
 });
 
+function getHelperMsgText(msg) {
+    return getDateSeparatorText(msg) || getSystemMsgText(msg);
+}
+
 function SystemRow({ msg, rowState, hasRowAbove }) {
     return (
         <RowShell rowState={rowState} hasRowAbove={hasRowAbove} gapPx={4} className="flex w-full shrink-0 items-center">
-            <div className="mx-auto max-w-[76%] px-2 py-0.5 text-center text-xs font-black leading-4 text-muted">{getSystemMsgText(msg)}</div>
+            <div className="mx-auto max-w-[76%] px-2 py-0.5 text-center text-xs font-black leading-4 text-muted">{getHelperMsgText(msg)}</div>
         </RowShell>
     );
 }
 
 function Row(props) {
-    return isSystemMsg(props.msg) ? <SystemRow msg={props.msg} rowState={props.rowState} hasRowAbove={props.hasRowAbove} /> : <InteractiveRow {...props} />;
+    return isSystemMsg(props.msg) || isDateSeparatorMsg(props.msg) ? <SystemRow msg={props.msg} rowState={props.rowState} hasRowAbove={props.hasRowAbove} /> : <InteractiveRow {...props} />;
 }
 
 function InteractiveRow({
@@ -391,7 +402,7 @@ function InteractiveRow({
         [actionSavedForever, canReport, canSaveForever, isDownloading, isReported, isSavingForever, msg, onDelete, onDownload, onEdit, onReply, onReport, onRetry, onSaveForever, onShare, peerChatPK, userSent]
     );
     const reactions = useMemo(() => (isReported ? [] : getOptimisticReactions(msg)), [getOptimisticReactions, isReported, msg]);
-    const messageTime = useMemo(() => formatFullDateTime(msg.ts || Date.now()), [msg.ts]);
+    const messageTime = useMemo(() => formatMsgTime(msg), [msg?.cid, msg?.id, msg?.ts]);
     const setRowRef = useCallback(
         (node) => {
             rowNodeRef.current = node;

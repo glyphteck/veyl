@@ -67,6 +67,7 @@ export const CHAT_LIST_PAGE_SIZE = 20;
 export const CHAT_INBOX_PING_PAGE_SIZE = 25;
 export const CHAT_LIST_CACHE_WRITE_DELAY_MS = 1500;
 export const CHAT_LIST_SNAPSHOT_COALESCE_MS = 80;
+export const CHAT_LIST_LISTENER_RETRY_MS = 1000;
 
 // Chat client warmup knobs. These trade faster first render against extra reads, memory, and media work.
 export const CHAT_TOP_WARM_COUNT = 1;

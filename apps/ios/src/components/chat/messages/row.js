@@ -9,6 +9,7 @@ import { TextBubble } from './text';
 import { GestureProvider } from './gesturecontext';
 import Icon from '@/components/icon';
 import { getSystemMsgText } from '@veyl/shared/chat/messages';
+import { getDateSeparatorText } from '@veyl/shared/chat/messages/dates';
 import { getMessageOrderMs } from '@veyl/shared/chat/state';
 import { formatTimeHHMM } from '@veyl/shared/utils/time';
 import {
@@ -392,6 +393,7 @@ export function SystemRow({ chatPad, msg, rowState = 'present', screenW, theme }
         return undefined;
     }, [appear, dropped, entering, exit, instant]);
 
+    const text = getDateSeparatorText(msg) || getSystemMsgText(msg);
     const rowBody = (
         <View
             collapsable={false}
@@ -402,7 +404,7 @@ export function SystemRow({ chatPad, msg, rowState = 'present', screenW, theme }
             }}
         >
             <Animated.View collapsable={false} style={[{ width: screenW, paddingHorizontal: chatPad, alignItems: 'center', transformOrigin: 'center bottom' }, visualStyle]}>
-                <Text style={{ maxWidth: '76%', color: theme.muted, fontSize: 11, fontWeight: '800', lineHeight: 14, textAlign: 'center' }}>{getSystemMsgText(msg)}</Text>
+                <Text style={{ maxWidth: '76%', color: theme.muted, fontSize: 11, fontWeight: '800', lineHeight: 14, textAlign: 'center' }}>{text}</Text>
             </Animated.View>
         </View>
     );

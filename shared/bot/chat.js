@@ -8,7 +8,7 @@ import { CHAT_ACTION_OPS } from '../chat/messages/actions.js';
 import { makeCid } from '../chat/state.js';
 import { makeOwnChatEntry, openOwnChatEntry, ownChatEntryId, sealOwnChatEntry } from '../chat/entry.js';
 import { sealPing } from '../chat/ping.js';
-import { randomBytes, toHex } from '../crypto/core.js';
+import { randomBytes, toBytes, toHex } from '../crypto/core.js';
 import { cleanText } from '../utils/text.js';
 
 const pairCache = new Map();
@@ -162,18 +162,28 @@ function isAlreadyExists(error) {
 }
 
 function adminBytes(value) {
-    return typeof value?.toUint8Array === 'function' ? Buffer.from(value.toUint8Array()) : value;
+    if (Buffer.isBuffer(value)) {
+        return value;
+    }
+    if (typeof value?.toUint8Array === 'function') {
+        return Buffer.from(value.toUint8Array());
+    }
+    try {
+        return Buffer.from(toBytes(value, 'bot bytes'));
+    } catch {
+        return value;
+    }
 }
 
 function callablePing(ping) {
-    const body = ping?.body;
-    if (typeof body?.toBase64 !== 'function') {
+    const body = adminBytes(ping?.body);
+    if (!Buffer.isBuffer(body)) {
         throw new Error('inbox ping body unavailable');
     }
     return {
         v: ping.v,
         epk: ping.epk,
-        body: body.toBase64(),
+        body: body.toString('base64'),
     };
 }
 
@@ -215,7 +225,7 @@ async function writeBotOwnerEntry(db, senderUid, senderChatPrivKey, pair, fields
     const entry = makeOwnChatEntry(pair, {
         peerUid: fields.peerUid || existing?.peerUid,
         actors: existing?.actors || {},
-        settings: existing?.settings,
+        settings: Object.prototype.hasOwnProperty.call(fields, 'settings') ? fields.settings : existing?.settings,
         preview: fields.preview || existing?.preview,
     });
     return {
@@ -336,6 +346,27 @@ export async function sendBotMsg(db, FieldValue, senderChatPK, senderChatPrivKey
     }
 
     return { chatId, msgId: msgRef.id };
+}
+
+export async function setBotChatRetention(db, FieldValue, senderUid, senderChatPK, senderChatPrivKey, receiverChatPK, retention, options = {}) {
+    if (!db || !FieldValue) {
+        throw new Error('firestore required');
+    }
+    if (!senderChatPK || !senderChatPrivKey || !receiverChatPK) {
+        throw new Error('bot chat keys required');
+    }
+
+    const nextRetention = cleanChatRetention(retention);
+    const pair = await resolveBotPair(db, FieldValue, senderChatPK, senderChatPrivKey, receiverChatPK, options);
+    const ownerEntry = await writeBotOwnerEntry(db, senderUid, senderChatPrivKey, pair, {
+        settings: { retention: nextRetention },
+        ts: options?.ts || new Date(),
+    });
+    if (ownerEntry) {
+        botFirestoreLog('write owner chat retention', { uid: safeLogId(senderUid), chatId: safeLogId(pair.chatId), retention: nextRetention });
+        await ownerEntry.ref.set(ownerEntry.data, { merge: true });
+    }
+    return nextRetention;
 }
 
 export async function updateBotMsg(db, chatId, msgId, senderChatPK, senderChatPrivKey, receiverChatPK, newMessage) {

@@ -1,10 +1,10 @@
-import { Bytes } from 'firebase/firestore';
 import { AES_IV_BYTES } from './aes.js';
 import { BOX_NONCE_BYTES } from './box.js';
 import { decoder, encoder, SALT_BYTES, toBytes } from './core.js';
 import { VAULT_CRYPTO, VAULT_KDF } from './seed.js';
 
 const SEED_MAGIC = encoder.encode(VAULT_CRYPTO);
+export const BODY_ENVELOPE_VERSION = 1;
 
 export const concatBytes = (...arrs) => {
     let len = 0;
@@ -18,13 +18,6 @@ export const concatBytes = (...arrs) => {
     }
     return out;
 };
-
-function toPackedBytes(bytes) {
-    if (typeof bytes?.toUint8Array === 'function') {
-        return bytes.toUint8Array();
-    }
-    return toBytes(bytes, 'packed bytes');
-}
 
 // pack seed data for storing
 export const packSeedData = ({ salt, iv, ciphertext, ct, kdf = VAULT_KDF }) => {
@@ -43,12 +36,12 @@ export const packSeedData = ({ salt, iv, ciphertext, ct, kdf = VAULT_KDF }) => {
     new DataView(header.buffer).setUint32(offset + 3, kdf.m);
     header[offset + 7] = kdf.version;
 
-    return Bytes.fromUint8Array(concatBytes(header, salt, iv, body));
+    return concatBytes(header, salt, iv, body);
 };
 
 // unpack seed data from storage
 export const unpackSeedData = (bytes) => {
-    const p = toPackedBytes(bytes);
+    const p = toBytes(bytes, 'packed bytes');
     const magicLen = p[0];
     const magic = decoder.decode(p.subarray(1, 1 + magicLen));
     if (magic !== VAULT_CRYPTO) {
@@ -75,13 +68,6 @@ export const unpackSeedData = (bytes) => {
 
 export const packRawData = (...arrs) => concatBytes(...arrs);
 
-export const packBodyData = (nonce, ct) => Bytes.fromUint8Array(packRawData(nonce, ct));
-
-export const unpackBodyData = (bytes, nonceBytes = BOX_NONCE_BYTES) => {
-    const p = toPackedBytes(bytes);
-    return { nonce: p.subarray(0, nonceBytes), ct: p.subarray(nonceBytes) };
-};
-
 export const packVersionedData = (version, nonce, ct) => {
     if (!Number.isInteger(version) || version < 0 || version > 255) {
         throw new Error('invalid data version');
@@ -90,7 +76,7 @@ export const packVersionedData = (version, nonce, ct) => {
 };
 
 export const unpackVersionedData = (bytes, nonceBytes = BOX_NONCE_BYTES) => {
-    const p = toPackedBytes(bytes);
+    const p = toBytes(bytes, 'packed bytes');
     if (p.byteLength <= 1 + nonceBytes) {
         throw new Error('invalid versioned data');
     }
@@ -99,4 +85,14 @@ export const unpackVersionedData = (bytes, nonceBytes = BOX_NONCE_BYTES) => {
         nonce: p.subarray(1, 1 + nonceBytes),
         ct: p.subarray(1 + nonceBytes),
     };
+};
+
+export const packBodyData = (nonce, ct) => packVersionedData(BODY_ENVELOPE_VERSION, nonce, ct);
+
+export const unpackBodyData = (bytes, nonceBytes = BOX_NONCE_BYTES) => {
+    const packed = unpackVersionedData(bytes, nonceBytes);
+    if (packed.version !== BODY_ENVELOPE_VERSION) {
+        throw new Error('unsupported body envelope');
+    }
+    return { nonce: packed.nonce, ct: packed.ct };
 };

@@ -2,6 +2,14 @@
 
 Repo-level changes are listed newest first. Keep entries short and concrete. Broad pushes get grouped bullets, while narrow fixes can use one concise bugfix or cleanup bullet that still names the actual change.
 
+## 0.14.7 - 2026-06-08
+
+- Moved encrypted client blobs to raw `Uint8Array` boundaries with Firebase-owned byte/base64 encoding, added a shared versioned body envelope for chat/file payloads, and recorded the remaining encrypted user-data and bot-backend abstraction work.
+- Reworked iOS chat and peer-picker keyboard geometry around `KeyboardChatScrollView`, added chat day separators on web and iOS, tightened username search, and centralized iOS media saving behind a full-library permission helper.
+- Hardened chat-list and message-window handling with listener retry, cached chat restoration, retained visible delete/TTL windows, safer inbox ping errors, and preview-neutral retention drops.
+- Updated the bot runtime to replace stale local runtimes during dev, load APNS process secrets, watch latest message docs, adopt peer retention, and write hidden checkpoints for peer read receipts.
+- Refreshed Expo, Firebase, Next, React, Spark, keyboard-controller, camera, icon, and form dependencies, documented dev-client performance caveats, and removed completed keyboard/cloud-format/dev-only media-lag todos.
+
 ## 0.14.6 - 2026-06-07
 
 - Fixed chat-list preview and timestamp handling so deleted latest messages drop previews, preserve confirmed chat ordering, and keep cross-client chat deletions live across the full local chat window.

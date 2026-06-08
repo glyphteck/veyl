@@ -2,7 +2,7 @@
 
 import { cleanBytes, randomBytes, toBytes, toBytes32, toHex } from './core.js';
 import { encodeScope } from './kdf.js';
-import { packRawData, unpackBodyData } from './pack.js';
+import { packBodyData, unpackBodyData } from './pack.js';
 
 const FILE_SCOPE = 'file-body';
 export const FILE_CRYPTO = 'aes-gcm';
@@ -60,7 +60,7 @@ export async function sealFile(_pair, key, bytes, scope) {
             cryptoKey,
             toBytes(bytes, 'plaintext')
         );
-        return packRawData(iv, new Uint8Array(ct));
+        return packBodyData(iv, new Uint8Array(ct));
     } finally {
         cleanBytes(fileKey);
     }

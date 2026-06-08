@@ -8,7 +8,14 @@ export function compareProfilesByName(a, b) {
     return String(a?.username || a?.uid || '').localeCompare(String(b?.username || b?.uid || ''));
 }
 
-// Username searches rank exact prefix matches first, then alphabetical.
+function usernameMatchRank(username, query) {
+    if (username === query) return 0;
+    if (username.startsWith(query)) return 1;
+    const index = username.indexOf(query);
+    return index >= 0 ? 2 + index : 100;
+}
+
+// Username searches rank exact, prefix, then substring matches.
 // Role / key / browse searches just sort alphabetically by username.
 export function sortProfiles(profiles = [], parsed) {
     const list = [...(profiles || [])];
@@ -20,12 +27,9 @@ export function sortProfiles(profiles = [], parsed) {
     return list.sort((a, b) => {
         const aN = cleanUsername(a?.username || '');
         const bN = cleanUsername(b?.username || '');
-        const aE = aN === q;
-        const bE = bN === q;
-        if (aE !== bE) return aE ? -1 : 1;
-        const aP = aN.startsWith(q);
-        const bP = bN.startsWith(q);
-        if (aP !== bP) return aP ? -1 : 1;
+        const aRank = usernameMatchRank(aN, q);
+        const bRank = usernameMatchRank(bN, q);
+        if (aRank !== bRank) return aRank - bRank;
         return aN.localeCompare(bN);
     });
 }

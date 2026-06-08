@@ -56,6 +56,7 @@ After a feature branch is merged, delete the merged branch and any abandoned pre
 - iOS `src/lib` is feature-folded into `cache`, `camera`, `chat`, `crypto`, `navigation`, `search`, and `user`, with small root platform helpers.
 - Shared cross-platform product logic lives in `shared` as `@veyl/shared`. Generic helpers are under `shared/utils/*`; feature logic is under owner folders such as `shared/chat`, `shared/wallet`, `shared/search`, `shared/cache`, `shared/navigation`, and `shared/bot`.
 - `shared/cloud/firebase.js` is intentionally centralized as the current Firebase adapter. Keep Firebase-specific reads, writes, Storage, Functions, and paging details contained there until the backend provider boundary is replaced.
+- Client encryption helpers emit raw `Uint8Array` encrypted blobs. Shared server-bound encrypted bodies use the `BODY_ENVELOPE_VERSION` byte envelope from `shared/crypto/pack.js`; cloud adapters own provider storage and transport encoding, such as Firestore `Bytes`, callable base64 payloads, SQL blobs, object bytes, or encoded text.
 - Web UI no longer uses shadcn-generated primitive files. Keep Veyl-owned primitives under `apps/web/src/components`.
 - Firebase Functions feature entrypoints live under `functions/passkey`, `functions/user`, `functions/chat`, `functions/wallet`, `functions/btc`, and `functions/admin`; deploy-local helpers live under `functions/lib`.
 - Repo tooling lives under `scripts`, with admin command helpers in `scripts/admin`.

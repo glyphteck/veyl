@@ -7,7 +7,7 @@ import { fileExtension, fileMime, isImageFile, isPngFile, isVideoFile } from '@v
 import { getMediaFileRef, makeChatMediaId, mediaFilePath } from '@veyl/shared/files';
 import { createFileKey, decodeFileKey, encodeFileKey, FILE_IV_BYTES, FILE_TAG_BYTES, getFileAadForPath } from '@veyl/shared/crypto/file';
 import { cleanBytes, randomBytes, toBytes } from '@veyl/shared/crypto/core';
-import { packRawData, unpackBodyData } from '@veyl/shared/crypto/pack';
+import { packBodyData, unpackBodyData } from '@veyl/shared/crypto/pack';
 import { makeAttachment } from '@veyl/shared/chat/messages';
 import { pickAttachmentMeta } from '@veyl/shared/chat/media';
 import { getCachedPair } from '@veyl/shared/chat/pairs';
@@ -68,7 +68,7 @@ async function sealChatFileNative(key, bytes, path) {
         const nonce = new Uint8Array(await sealed.iv());
         const ciphertext = new Uint8Array(await sealed.ciphertext({ includeTag: true }));
         mark('chat.media.encrypt.done', { path, bytes: ciphertext.byteLength || 0 });
-        return packRawData(nonce, ciphertext);
+        return packBodyData(nonce, ciphertext);
     } finally {
         cleanBytes(fileKey);
     }

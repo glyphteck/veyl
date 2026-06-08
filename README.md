@@ -95,6 +95,7 @@ bun dev web
 bun dev ios
 bun dev bot
 bun make ios
+bun make ios dev
 bun make rules
 bun make fns
 bun dirty

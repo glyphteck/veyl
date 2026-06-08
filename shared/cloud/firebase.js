@@ -1,4 +1,4 @@
-import { collection, deleteDoc, deleteField, doc, documentId, endBefore, getDoc, getDocFromServer, getDocs, getDocsFromServer, limit, limitToLast, onSnapshot, orderBy, query, serverTimestamp, setDoc, startAfter, startAt, Timestamp, updateDoc, where, writeBatch } from 'firebase/firestore';
+import { Bytes, collection, deleteDoc, deleteField, doc, documentId, endBefore, getDoc, getDocFromServer, getDocs, getDocsFromServer, limit, limitToLast, onSnapshot, orderBy, query, serverTimestamp, setDoc, startAfter, startAt, Timestamp, updateDoc, where, writeBatch } from 'firebase/firestore';
 import { onAuthStateChanged, signInWithCustomToken, signOut } from 'firebase/auth';
 import { httpsCallable } from 'firebase/functions';
 import { deleteObject, getBytes, getDownloadURL, ref, uploadBytes } from 'firebase/storage';
@@ -55,6 +55,35 @@ function reportEvidencePath(reporter, targetUid, evidenceId) {
 
 function isReactNative() {
     return typeof navigator !== 'undefined' && navigator.product === 'ReactNative';
+}
+
+function encryptedBytes(value, label = 'encrypted bytes') {
+    if (value == null || typeof value === 'string') {
+        throw new Error(`Invalid ${label}`);
+    }
+    if (typeof value?.toUint8Array === 'function') {
+        return value.toUint8Array();
+    }
+    return toBytes(value, label);
+}
+
+function readCloudBytes(value, label = 'encrypted bytes') {
+    return value == null ? null : encryptedBytes(value, label);
+}
+
+function writeCloudBytes(value, label = 'encrypted bytes') {
+    return Bytes.fromUint8Array(encryptedBytes(value, label));
+}
+
+function cloudBytesBase64(value, label = 'encrypted bytes') {
+    return writeCloudBytes(value, label).toBase64();
+}
+
+function decodeBodyRecord(record, label = 'encrypted body') {
+    if (!record || record.body == null) {
+        return record;
+    }
+    return { ...record, body: readCloudBytes(record.body, label) };
 }
 
 export function createFirebaseCloud({ db, auth, getAuth, functions, getFunctions, storage, getStorage, uploadStorageBytes, uploadSignedStorageBytes }) {
@@ -292,7 +321,7 @@ export function createFirebaseCloud({ db, auth, getAuth, functions, getFunctions
     async function readVault(uid) {
         requireUid(uid);
         const snap = await getDoc(doc(db, 'seeds', uid));
-        return snap.data()?.es ?? null;
+        return readCloudBytes(snap.data()?.es ?? null, 'vault bytes');
     }
 
     async function vaultExists(uid) {
@@ -306,7 +335,7 @@ export function createFirebaseCloud({ db, auth, getAuth, functions, getFunctions
         if (!vault) {
             throw new Error('vault required');
         }
-        await setDoc(doc(db, 'seeds', uid), { es: vault });
+        await setDoc(doc(db, 'seeds', uid), { es: writeCloudBytes(vault, 'vault bytes') });
         return true;
     }
 
@@ -315,7 +344,7 @@ export function createFirebaseCloud({ db, auth, getAuth, functions, getFunctions
         return onSnapshot(
             doc(db, 'seeds', uid),
             (snap) => {
-                onUpdate?.(snap.data()?.es ?? null, { exists: snap.exists() });
+                onUpdate?.(readCloudBytes(snap.data()?.es ?? null, 'vault bytes'), { exists: snap.exists() });
             },
             onError
         );
@@ -802,18 +831,30 @@ export function createFirebaseCloud({ db, auth, getAuth, functions, getFunctions
 
     function userChatsPage(snap, count) {
         return {
-            records: recordsFromSnapshot(snap),
+            records: userChatRecordsFromSnapshot(snap),
             nextAfterChat: pageMarkerFromDoc(snap.docs[snap.docs.length - 1] ?? null),
             hasMore: snap.docs.length >= positiveInt(count, CHAT_LIST_PAGE_SIZE),
         };
+    }
+
+    function userChatRecordFromDoc(snap) {
+        return decodeBodyRecord(recordFromDoc(snap), 'chat entry body');
+    }
+
+    function userChatRecordsFromSnapshot(snapshot) {
+        return snapshot.docs
+            .map(userChatRecordFromDoc)
+            .filter(Boolean);
     }
 
     function messageRecordFromDoc(snap) {
         if (!snap?.exists?.()) {
             return null;
         }
+        const data = snap.data() || {};
         return {
-            ...snap.data(),
+            ...data,
+            body: data.body == null ? data.body : readCloudBytes(data.body, 'chat message body'),
             id: snap.id,
             pending: snap.metadata?.hasPendingWrites === true,
         };
@@ -938,7 +979,7 @@ export function createFirebaseCloud({ db, auth, getAuth, functions, getFunctions
         }
         return {
             head: message.head,
-            body: message.body,
+            body: writeCloudBytes(message.body, 'chat message body'),
             ts: serverTimestamp(),
             ttl: Number.isFinite(message?.ttlMs) ? Timestamp.fromMillis(message.ttlMs) : null,
         };
@@ -951,7 +992,7 @@ export function createFirebaseCloud({ db, auth, getAuth, functions, getFunctions
         return {
             ref: doc(db, 'users', ownerEntry.uid, 'chats', ownerEntry.entryId),
             data: {
-                body: ownerEntry.record.body,
+                body: writeCloudBytes(ownerEntry.record.body, 'chat entry body'),
                 ts: Number.isFinite(ownerEntry.record.tsMs) ? Timestamp.fromMillis(ownerEntry.record.tsMs) : serverTimestamp(),
             },
         };
@@ -960,7 +1001,14 @@ export function createFirebaseCloud({ db, auth, getAuth, functions, getFunctions
     async function pushInbox(recipientUid, ping) {
         requireUid(recipientUid);
         if (!ping) throw new Error('inbox ping required');
-        await callFunction('push', { recipientUid, ping });
+        await callFunction('push', {
+            recipientUid,
+            ping: {
+                v: ping.v,
+                epk: ping.epk,
+                body: cloudBytesBase64(ping.body, 'inbox ping body'),
+            },
+        });
         return true;
     }
 
@@ -1088,14 +1136,14 @@ export function createFirebaseCloud({ db, auth, getAuth, functions, getFunctions
         requireUid(uid);
         if (!entryId) throw new Error('chat entry id required');
         const snap = await getDocFromServer(doc(db, 'users', uid, 'chats', entryId)).catch(() => null);
-        return recordFromDoc(snap);
+        return userChatRecordFromDoc(snap);
     }
 
     async function writeUserChat(uid, entryId, { body, tsMs, touchTs = false } = {}) {
         requireUid(uid);
         if (!entryId) throw new Error('chat entry id required');
         if (!body) throw new Error('chat entry body required');
-        const record = { body };
+        const record = { body: writeCloudBytes(body, 'chat entry body') };
         if (Number.isFinite(tsMs)) {
             record.ts = Timestamp.fromMillis(tsMs);
         } else if (touchTs) {
@@ -1122,7 +1170,7 @@ export function createFirebaseCloud({ db, auth, getAuth, functions, getFunctions
         return onSnapshot(
             query(collection(db, 'users', uid, 'inbox'), orderBy('ts', 'desc'), limit(count)),
             (snap) => {
-                onUpdate?.(recordsFromSnapshot(snap), {
+                onUpdate?.(inboxRecordsFromSnapshot(snap), {
                     empty: snap.empty,
                     pending: snap.metadata?.hasPendingWrites === true,
                 });
@@ -1135,7 +1183,17 @@ export function createFirebaseCloud({ db, auth, getAuth, functions, getFunctions
         requireUid(uid);
         const count = positiveInt(options?.limitCount ?? options?.pageSize ?? options?.count, CHAT_INBOX_PING_PAGE_SIZE);
         const snap = await getDocsFromServer(query(collection(db, 'users', uid, 'inbox'), orderBy('ts', 'desc'), limit(count))).catch(() => null);
-        return recordsFromSnapshot(snap || { docs: [] });
+        return inboxRecordsFromSnapshot(snap || { docs: [] });
+    }
+
+    function inboxRecordFromDoc(snap) {
+        return decodeBodyRecord(recordFromDoc(snap), 'inbox ping body');
+    }
+
+    function inboxRecordsFromSnapshot(snapshot) {
+        return snapshot.docs
+            .map(inboxRecordFromDoc)
+            .filter(Boolean);
     }
 
     async function deleteInboxItem(uid, pingId) {

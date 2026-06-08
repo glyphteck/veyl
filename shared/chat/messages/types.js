@@ -8,6 +8,7 @@ export const READ_RECEIPT_MSG_TYPE = 'rr';
 export const REACTION_MSG_TYPE = 'rxn';
 export const HIDDEN_CHECKPOINT_MSG_TYPE = 'hid';
 export const SYSTEM_MSG_TYPE = 'sys';
+export const DATE_SEPARATOR_MSG_TYPE = 'day';
 export const SYSTEM_RETENTION_KIND = 'retention';
 export const DEFAULT_REACTION_EMOJI = '❤️';
 export const MAX_REACTIONS = CHAT_MAX_REACTIONS;

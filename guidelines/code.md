@@ -39,7 +39,7 @@
 - Prefer existing patterns over new architecture.
 - If web and shared already solve a problem, do not invent a third approach.
 - If a change belongs in `shared`, put it there instead of duplicating the same logic in web and iOS.
-- Keep intentionally replaceable adapters contained. `shared/cloud/firebase.js` is centralized on purpose while Firebase remains the current backend provider; do not split Firebase implementation details across domain files unless the provider boundary itself is being replaced.
+- Keep intentionally replaceable adapters contained. `shared/cloud/firebase.js` is centralized on purpose while Firebase remains the current backend provider; do not split Firebase implementation details across domain files unless the provider boundary itself is being replaced. Shared crypto and chat code should pass encrypted blobs as raw bytes with the shared body envelope from `shared/crypto/pack.js`; provider-specific byte wrappers and transport encodings belong in the cloud adapter.
 
 ## Shared Helper Boundaries
 

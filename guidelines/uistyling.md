@@ -25,6 +25,8 @@ Do not set or animate `opacity` on `GlassView` or any component built on the `Gl
 
 Use `160ms` as the default fixed animation time for responsive UI state changes, including button/toggle state changes, avatar selection borders, menu/dialog fades, search focus crossfades, and chat row layout transitions for height changes, inserts, and removals. Timings in the `100ms` to `200ms` range should usually normalize to `160ms`; keep deliberately different longer/shorter timings, springs, gesture physics, media viewer staging, and spinner behavior only when they are tuned for a specific feel.
 
+Treat iOS animation, gesture latency, and tap reliability reports from the Expo dev-client path as dev-only until reproduced in a standalone test, production, or store build. The dev client, Metro, Fast Refresh, and dev tooling can add visible interaction lag that real builds do not show.
+
 Route and toolbar buttons usually use `GlassIcon`. The common size is `56`, icon size defaults to half that, and rounded square route buttons commonly use `rounded={16}`. Full circular buttons use the default `rounded="full"`. Accent actions set `accent`, which flips to foreground tint with background-colored content.
 
 Text buttons usually use `GlassButton`. The default height is `54`, border radius is half the height, horizontal padding is `20`, label size is `18`, and label weight is `900`. Use `accent` for the main confirm/submit action. Use `pressableStyle={{ flex: 1 }}` when a button should fill a row.
@@ -58,6 +60,8 @@ Rounding is generous and consistent:
 Color should come from `useTheme()` and `src/lib/colors.js`: `background`, `glassTint`, `foreground`, `muted`, `border`, `destructive`, `inflow`, `outflow`, `bitcoin`, and `active`. `background` is the real screen fill, while `glassTint` is the material tint used by `GlassView` so light-mode screens can stay full white without making native glass disappear. Use `alpha()` when a translucent variant is needed. Avoid hardcoded colors except for camera overlays or other isolated native surfaces.
 
 Headers and footers are usually absolute glass overlays. Account for safe areas with `useSafeAreaInsets()`. Keep scroll content padded under overlays instead of placing content behind them.
+
+Chat-style iOS lists should use `KeyboardChatScrollView` for scroll geometry and `KeyboardStickyView` for pinned composers or footers. Avoid `KeyboardGestureArea` in this checkout; it is the known risky native surface. For current-chat message lists, use `keyboardLiftBehavior="persistent"` so closing the keyboard does not apply a full keyboard-height drop-back scroll.
 
 On iOS, "bottom sheet" means an Expo Router native sheet route. Add a `Stack.Screen` with `presentation: 'formSheet'`, `sheetGrabberVisible: true`, an intentional `sheetAllowedDetents` value, and the right `contentStyle` for that sheet. Use existing route-backed sheets such as `scan`, `transfer`, and `peerselector` as the model. Do not build local `Modal` or absolute-position fake sheet implementations unless the task explicitly asks for a non-route overlay.
 

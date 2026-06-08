@@ -326,7 +326,9 @@ export function useChatMessageBatches({ cloud, media = {}, chatPK, chatPrivateKe
                             notifyPreviewDrop(onExpire, chatId, expiredMessages, existing.messages, chatPK, existing.peerChatPK);
                         }
                     }
-                    notifyRetentionPreviewDrop(onExpire, chatId, existing.messages, chatPK, existing.peerChatPK);
+                    if (!existing.route) {
+                        notifyRetentionPreviewDrop(onExpire, chatId, existing.messages, chatPK, existing.peerChatPK);
+                    }
                     if (existing.ready && isBatchFresh(existing)) {
                         onRead?.(chatId, existing.messages);
                     }
@@ -412,8 +414,8 @@ export function useChatMessageBatches({ cloud, media = {}, chatPK, chatPrivateKe
                         }
                     }
                     notifyPreviewDrop(onExpire, chatId, droppedKeys, entry.messages, chatPK, peerChatPK);
-                    notifyRetentionPreviewDrop(onExpire, chatId, entry.messages, chatPK, peerChatPK);
                     if (!entry.route) {
+                        notifyRetentionPreviewDrop(onExpire, chatId, entry.messages, chatPK, peerChatPK);
                         const expiredMessages = trimExpiredEntry(entry);
                         if (expiredMessages.length) {
                             notifyPreviewDrop(onExpire, chatId, expiredMessages, entry.messages, chatPK, peerChatPK);

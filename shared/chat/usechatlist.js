@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CHAT_LIST_CACHE_WRITE_DELAY_MS, CHAT_LIST_LIVE_COUNT, CHAT_LIST_PAGE_SIZE } from '../config.js';
+import { CHAT_LIST_CACHE_WRITE_DELAY_MS, CHAT_LIST_LISTENER_RETRY_MS, CHAT_LIST_LIVE_COUNT, CHAT_LIST_PAGE_SIZE } from '../config.js';
 import { readCachedChats, writeCachedChats } from '../cache/localdata.js';
 import {
     getLatestOwnReadReceiptTarget,
@@ -25,7 +25,7 @@ import {
     trimExpiredChatPreviews,
 } from './chats.js';
 import { collectMessageKeys } from './messagekeys.js';
-import { filterActiveUserChats, getChat, listenToChats, loadMoreChats as loadMoreChatEntries } from './list.js';
+import { filterActiveUserChats, getChat, listenToChats, loadMoreChats as loadMoreChatEntries, restoreUserChats } from './list.js';
 import { setChatPreview, setChatRead } from './messages/write.js';
 import { markChatsRead } from './read.js';
 import { CHAT_RETENTION_24H, normalizeChatSettings } from './ttl.js';
@@ -101,12 +101,16 @@ export function useChatList({
     const [hasMoreChats, setHasMoreChats] = useState(false);
     const [loadingMoreChats, setLoadingMoreChats] = useState(false);
     const [chatLoadVersion, setChatLoadVersion] = useState(0);
+    const [listenRetrySeq, setListenRetrySeq] = useState(0);
     const peersCache = useRef([]);
     const lastPeersKey = useRef('');
     const lastServerChatIdsKey = useRef('');
     const chatCacheWriteTimerRef = useRef(null);
     const pendingChatCacheWriteRef = useRef(null);
     const listenUpdateSeqRef = useRef(0);
+    const listenRetryTimerRef = useRef(null);
+    const cachedRestoreChatsRef = useRef([]);
+    const cachedRestoreReadyRef = useRef(false);
 
     useEffect(() => {
         chatsRef.current = chats;
@@ -166,6 +170,13 @@ export function useChatList({
     );
 
     useEffect(() => () => flushChatCacheWrite(), [flushChatCacheWrite]);
+
+    useEffect(() => () => {
+        if (listenRetryTimerRef.current) {
+            clearTimeout(listenRetryTimerRef.current);
+            listenRetryTimerRef.current = null;
+        }
+    }, []);
 
     const rememberHiddenChatPreviewKeys = useCallback(
         (chatId, keys) => {
@@ -308,6 +319,8 @@ export function useChatList({
             chatHasMoreRef.current = false;
             chatLoadingMoreRef.current = false;
             chatLoadsRef.current = new Set();
+            cachedRestoreChatsRef.current = [];
+            cachedRestoreReadyRef.current = false;
         },
         [
             chatHasMoreRef,
@@ -385,6 +398,7 @@ export function useChatList({
             const hydrateStartedAt = Date.now();
             markDiag(diag, 'chat.provider.cache.start', {});
             lastHydratedCacheKeyRef.current = hydrateKey;
+            cachedRestoreReadyRef.current = false;
             const cachedPayload = localCache?.read?.();
             const hasSavedChatSnapshot = Number(cachedPayload?.chatsSavedAt) > 0;
             const cachedChats = sortedChats(
@@ -393,10 +407,41 @@ export function useChatList({
                     hiddenChatPreviewKeysRef.current
                 ).filter((chatItem) => !!chatItem?.ts)
             );
+            cachedRestoreChatsRef.current = hasSavedChatSnapshot ? cachedChats : [];
             if (hasSavedChatSnapshot) {
+                const restoreMissingCachedChats = (candidateChats, existingIds, startedAt) => {
+                    if (!cachedRestoreReadyRef.current) {
+                        return [];
+                    }
+                    const existing = existingIds instanceof Set ? existingIds : new Set(existingIds || []);
+                    const hiddenIds = pendingDeleteIdsRef.current;
+                    const restoreChats = (candidateChats || []).filter((chatItem) => chatItem?.id && !existing.has(chatItem.id) && !hiddenIds.has(chatItem.id));
+                    if (!restoreChats.length) {
+                        return [];
+                    }
+                    void restoreUserChats(cloud, uid, chatPrivateKey, restoreChats)
+                        .then((count) => {
+                            markDone(diag, 'chat.provider.restore', startedAt, { count });
+                        })
+                        .catch((error) => {
+                            markError(diag, 'chat.provider.restore', startedAt, error, { count: restoreChats.length });
+                        });
+                    return restoreChats;
+                };
+
                 void filterActiveUserChats(cloud, uid, cachedChats)
                     .then((activeCachedChats) => {
-                        if (cancelled || serverChatsReadyRef.current) {
+                        cachedRestoreReadyRef.current = true;
+                        cachedRestoreChatsRef.current = activeCachedChats;
+                        if (cancelled) {
+                            return;
+                        }
+                        if (serverChatsReadyRef.current) {
+                            const restoreStartedAt = Date.now();
+                            const restoreChats = restoreMissingCachedChats(activeCachedChats, serverChatIdsRef.current, restoreStartedAt);
+                            if (restoreChats.length) {
+                                commitServerChats(sortedChats(lastServerChatsRef.current, restoreChats), { writeCache: false });
+                            }
                             return;
                         }
                         const shownCachedChats = commitServerChats(activeCachedChats, { writeCache: false, warm: false });
@@ -432,6 +477,16 @@ export function useChatList({
 
         const listenStartedAt = Date.now();
         markDiag(diag, 'chat.provider.listen.start', { limit: CHAT_LIST_LIVE_COUNT });
+        const retryListen = (error) => {
+            if (cancelled || listenRetryTimerRef.current) {
+                return;
+            }
+            listenRetryTimerRef.current = setTimeout(() => {
+                listenRetryTimerRef.current = null;
+                markDiag(diag, 'chat.provider.listen.retry', { reason: error?.code || error?.message || String(error || '') });
+                setListenRetrySeq((prev) => prev + 1);
+            }, CHAT_LIST_LISTENER_RETRY_MS);
+        };
         const unsubscribe = listenToChats(
             cloud,
             uid,
@@ -448,6 +503,18 @@ export function useChatList({
                 const nextChatIdsSet = new Set(nextChatIds);
                 const previousRenderedChats = chatsRef.current;
                 const previousServerIds = serverChatIdsRef.current;
+                const restoreChats = firstSnapshot && cachedRestoreReadyRef.current && cachedRestoreChatsRef.current.length
+                    ? cachedRestoreChatsRef.current.filter((chatItem) => chatItem?.id && !nextChatIdsSet.has(chatItem.id) && !pendingDeleteIdsRef.current.has(chatItem.id))
+                    : [];
+                if (restoreChats.length) {
+                    void restoreUserChats(cloud, uid, chatPrivateKey, restoreChats)
+                        .then((count) => {
+                            markDone(diag, 'chat.provider.restore', updateStartedAt, { count });
+                        })
+                        .catch((error) => {
+                            markError(diag, 'chat.provider.restore', updateStartedAt, error, { count: restoreChats.length });
+                        });
+                }
 
                 if (!chatPageLockedRef.current) {
                     chatPageAfterChatRef.current = meta?.nextAfterChat ?? null;
@@ -460,7 +527,7 @@ export function useChatList({
                 const preservedChats = preservePagedChats
                     ? lastServerChatsRef.current.filter((chatItem) => chatItem?.id && !nextChatIdsSet.has(chatItem.id) && !hiddenIds.has(chatItem.id))
                     : [];
-                const shownChats = commitServerChats(sortedChats(nextChatsWithRead, preservedChats));
+                const shownChats = commitServerChats(sortedChats(nextChatsWithRead, preservedChats, restoreChats), { writeCache: !restoreChats.length });
                 listenUpdateSeqRef.current += 1;
                 markDiag(diag, 'chat.provider.listen.update', {
                     seq: listenUpdateSeqRef.current,
@@ -504,6 +571,7 @@ export function useChatList({
                 markError(diag, 'chat.provider.listen', listenStartedAt, error);
                 console.warn('Chat listener error', error);
                 resetAllChatState();
+                retryListen(error);
             },
             { limitCount: CHAT_LIST_LIVE_COUNT }
         );
@@ -530,10 +598,12 @@ export function useChatList({
         lastServerChatsRef,
         localByChatRef,
         localCache,
+        listenRetrySeq,
         pendingDeleteIdsRef,
         readCacheRef,
         resetAllChatState,
         selectedChatIdRef,
+        serverChatIdsRef,
         serverChatsReadyRef,
         setSelectedChat,
         uid,

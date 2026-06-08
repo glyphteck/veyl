@@ -235,31 +235,6 @@ export function preserveChatTimestamps(chats, currentChats) {
     return changed ? sortChats(next) : chats;
 }
 
-export function duplicateChatEntryIds(chats) {
-    if (!Array.isArray(chats) || chats.length < 2) {
-        return [];
-    }
-
-    const winnerByKey = new Map();
-    for (const chat of canonicalChatVersions(chats)) {
-        const key = chatVersionKey(chat);
-        const entryId = cleanText(chat?.entryId);
-        if (key && entryId) {
-            winnerByKey.set(key, entryId);
-        }
-    }
-
-    const ids = [];
-    for (const chat of chats) {
-        const winnerEntryId = winnerByKey.get(chatVersionKey(chat));
-        const entryId = cleanText(chat?.entryId);
-        if (entryId && winnerEntryId && entryId !== winnerEntryId) {
-            ids.push(entryId);
-        }
-    }
-    return uniqueValues(ids);
-}
-
 export function filterPendingDeleteChats(chats, pendingDeleteIds) {
     if (!(pendingDeleteIds instanceof Set) || pendingDeleteIds.size === 0) {
         return chats;

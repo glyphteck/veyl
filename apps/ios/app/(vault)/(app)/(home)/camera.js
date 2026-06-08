@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Animated as RNAnimated, DeviceEventEmitter, Linking, StyleSheet, Text, View } from 'react-native';
-import * as MediaLibrary from 'expo-media-library';
 import { router, useIsFocused, usePathname } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CommonResolutions, useCameraPermission, useOrientation, usePhotoOutput, useVideoOutput } from 'react-native-vision-camera';
@@ -26,6 +25,7 @@ import { useCameraLens } from '@/lib/camera/lens';
 import { CameraSurface } from '@/lib/camera/surface';
 import { StagedPreview, stageCapturedPhoto } from '@/lib/camera/staging';
 import { useCameraWarming } from '@/lib/camera/warming';
+import { saveMediaToLibrary } from '@/lib/media/save';
 import { useRouteLock } from '@/lib/navigation/routelock';
 
 const PREVIEW_FADE = 250;
@@ -295,17 +295,11 @@ function CameraContent({ cameraActive, pageOpen, warming }) {
     const handleSaveStaged = useCallback(async () => {
         if (!stagedMedia) return;
         try {
-            const existing = await MediaLibrary.getPermissionsAsync(true);
-            const perm = existing.granted ? existing : await MediaLibrary.requestPermissionsAsync(true);
-            if (!perm.granted) {
-                Alert.alert('Permission needed', 'Please allow photo access to save media.');
-                return;
-            }
-            await MediaLibrary.Asset.create(stagedMedia.uri);
+            await saveMediaToLibrary(stagedMedia.uri);
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
         } catch (err) {
             console.warn('save failed', err);
-            Alert.alert('Save failed', 'Could not save this media.');
+            Alert.alert('Save failed', err?.message || 'Could not save this media.');
         }
     }, [stagedMedia]);
 

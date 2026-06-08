@@ -3,8 +3,8 @@
 status: planned
 branch: current
 worktree: current
-base: main@004b67abe2e1
-repo version: 0.14.4
+base: main@7d56e720d7e5
+repo version: 0.14.6
 
 - Add first-class USDB token support alongside BTC.
 - Treat USDB as just as central as Bitcoin in the balance model and wallet dashboard, not as a secondary add-on.

@@ -185,6 +185,7 @@ export function createUseChatMessages({ useChat, useUser, useVault, appState, pa
                     snapshotKeys,
                     fromMs,
                     cidById,
+                    keepKeys: visibleMessageKeysRef.current,
                 });
                 if (!result) {
                     return;
@@ -334,9 +335,9 @@ export function createUseChatMessages({ useChat, useUser, useVault, appState, pa
                             droppedKeys: droppedMessageKeysRef.current,
                             resolvedKeys: resolvedMessageKeysRef.current,
                         });
-                        return { chatMessages, expiredKeys, resolvedMessages };
+                        return { chatMessages, expiredKeys, keepKeys, resolvedMessages };
                     })
-                    .then(({ chatMessages, expiredKeys, resolvedMessages }) => {
+                    .then(({ chatMessages, expiredKeys, keepKeys, resolvedMessages }) => {
                         if (runId !== runRef.current || seq !== applyBatchRef.current) {
                             return;
                         }
@@ -353,7 +354,7 @@ export function createUseChatMessages({ useChat, useUser, useVault, appState, pa
                         const nextKeys = new Set(nextChatMessages.map(getMessageKey).filter(Boolean));
                         const overflow = nextChatMessages.length ? prevLive.filter((message) => !messageHasKey(message, deletedKeys) && getMessageOrderMs(message) < firstMs && !nextKeys.has(getMessageKey(message))) : [];
                         const liveBatch = getMessagesBatch(nextChatMessages, expiredKeys, deletedKeys);
-                        const nextLive = holdCurrentLiveMessages(prevLive, nextResolvedMessages, firstMs, nextKeys, expiredKeys, deletedKeys);
+                        const nextLive = holdCurrentLiveMessages(prevLive, nextResolvedMessages, firstMs, nextKeys, expiredKeys, deletedKeys, { keepKeys });
 
                         if (!nextChatMessages.length && !nextLive.length) {
                             setOlder([]);
@@ -373,6 +374,8 @@ export function createUseChatMessages({ useChat, useUser, useVault, appState, pa
                                 return changed ? next : prev;
                             });
                             setServerBatch(liveBatch);
+                        } else {
+                            setServerBatch((prev) => ({ ...(prev || {}), expiredKeys, deletedKeys }));
                         }
 
                         if (overflow.length) {
@@ -767,7 +770,8 @@ export function createUseChatMessages({ useChat, useUser, useVault, appState, pa
                 const current = leaveTtlRef.current;
                 releaseMessageView?.(scopeKey, () => {
                     if (current?.chatId === leavingChatId && current.ready && current.exists && (current.messages?.length || current.rawMessages?.length)) {
-                        const expiredMessages = getSeenHiddenMessages(current.messages, chatPK, peerChatPK);
+                        const expirySource = current.rawMessages?.length ? current.rawMessages : current.messages;
+                        const expiredMessages = getSeenHiddenMessages(expirySource, chatPK, peerChatPK);
                         if (expiredMessages.length) {
                             expireMessageView(updateMessageView, scopeKey, expiredMessages);
                             expireMessageBatch?.(leavingChatId, expiredMessages);

@@ -174,27 +174,32 @@ export async function processInbox(cloud, uid, userChatPK, userPrivKey, options 
     }
 
     const writes = await Promise.all([...latestByChat.values()].map(async (item) => {
-        const existing = chatsById.get(item.chatId) || null;
-        const entryId = ownChatEntryId(userPrivKey, item.chatId);
-        const actors = pingActors(item.ping, existing);
-        const existingMs = timestampMs(existing?.preview?.ts, 0) ?? 0;
-        const preview = existingMs >= item.ms ? existing?.preview || null : await readPingMsg(cloud, userChatPK, userPrivKey, item.ping, actors);
-        const chat = chatFromPing(item.ping, entryId, existing, preview, userChatPK, item.ms);
-        if (chat) {
-            chatsById.set(chat.id, chat);
-            options.onPingChat?.(chat);
-            await new Promise((resolve) => setTimeout(resolve, 0));
-        }
+        try {
+            const existing = chatsById.get(item.chatId) || null;
+            const entryId = ownChatEntryId(userPrivKey, item.chatId);
+            const actors = pingActors(item.ping, existing);
+            const existingMs = timestampMs(existing?.preview?.ts, 0) ?? 0;
+            const preview = existingMs >= item.ms ? existing?.preview || null : await readPingMsg(cloud, userChatPK, userPrivKey, item.ping, actors);
+            const chat = chatFromPing(item.ping, entryId, existing, preview, userChatPK, item.ms);
+            if (chat) {
+                chatsById.set(chat.id, chat);
+                options.onPingChat?.(chat);
+                await new Promise((resolve) => setTimeout(resolve, 0));
+            }
 
-        const wrote = await savePing(cloud, uid, userChatPK, userPrivKey, item.ping, {
-            existing,
-            actors,
-            preview,
-        });
-        if (wrote) {
-            await Promise.all(item.docs.map((pingDoc) => cloud.inbox.delete(uid, pingDoc.id).catch(() => {})));
+            const wrote = await savePing(cloud, uid, userChatPK, userPrivKey, item.ping, {
+                existing,
+                actors,
+                preview,
+            });
+            if (wrote) {
+                await Promise.all(item.docs.map((pingDoc) => cloud.inbox.delete(uid, pingDoc.id).catch(() => {})));
+            }
+            return wrote;
+        } catch (error) {
+            options.onPingError?.(error, item);
+            return false;
         }
-        return wrote;
     }));
     return writes.some(Boolean);
 }

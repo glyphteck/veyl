@@ -131,12 +131,10 @@ export function readCachedChats(cache) {
     if (!payload?.chatsById) {
         return [];
     }
-    const invalidIds = [];
     const chats = Object.entries(payload.chatsById)
         .map(([id, value]) => {
             const chat = reviveChat(value);
             if (!chat || !isCurrentChatCacheEntry(chat)) {
-                invalidIds.push(id);
                 return null;
             }
             return chat;
@@ -145,7 +143,7 @@ export function readCachedChats(cache) {
         .sort(compareCachedChats);
     const cappedChats = cappedCachedChats(chats);
     const cappedIds = new Set(cappedChats.map((chat) => chat.id));
-    const dropIds = [...invalidIds, ...chats.map((chat) => chat.id).filter((id) => !cappedIds.has(id))];
+    const dropIds = chats.map((chat) => chat.id).filter((id) => !cappedIds.has(id));
     if (dropIds.length) {
         dropCachedChats(cache, dropIds, payload);
     }
@@ -164,10 +162,18 @@ export function writeCachedChats(cache, chats) {
             items.push(item);
         }
     }
-    const next = chatMap(items);
-    const mediaIds = collectRemovedChatMediaIds(cache.read?.(), next);
 
+    let mediaIds = [];
     void cache.patch((payload) => {
+        const byId = new Map();
+        for (const chat of Object.values(payload.chatsById || {}).map(reviveChat).filter(Boolean)) {
+            byId.set(chat.id, chat);
+        }
+        for (const item of items) {
+            byId.set(item.id, item);
+        }
+        const next = chatMap([...byId.values()]);
+        mediaIds = collectRemovedChatMediaIds(payload, next);
         payload.chatsById = next;
         payload.chatsSavedAt = Date.now();
         return payload;

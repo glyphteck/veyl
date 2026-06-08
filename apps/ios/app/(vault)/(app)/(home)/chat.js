@@ -28,6 +28,7 @@ import { getChatPeerPK } from '@veyl/shared/chat/ids';
 import { getInsertedRowBatch, getMovedRowBatch, sameListIds } from '@veyl/shared/chat/listanimation';
 import { getMsgPreview } from '@veyl/shared/chat/messages';
 import { lowerText } from '@veyl/shared/utils/text';
+import { cleanUsername } from '@veyl/shared/username';
 
 const SEARCH_BAR_HEIGHT = 42;
 const HEADER_BOTTOM_PADDING = 8;
@@ -380,6 +381,8 @@ export default function ChatList() {
     const mainMenuHeight = getMainMenuHeight(insets.bottom);
 
     const chatQuery = useMemo(() => lowerText(search), [search]);
+    const usernameQuery = useMemo(() => cleanUsername(search), [search]);
+    const usernamePrefixSearch = chatQuery.startsWith('@');
 
     const hasBlockedUsers = !!blockedSet?.size;
     const showLoadingChats = !chatQuery && (!isChatDataReady || (hasBlockedUsers && !isPeerDataReady && Array.isArray(chats) && chats.length > 0));
@@ -401,10 +404,11 @@ export default function ChatList() {
             const atUsername = username ? `@${username}` : '';
             const preview = lowerText(getMsgPreview(chat?.preview, chatPK, null, null));
             const peerKey = lowerText(peerChatPK);
+            const usernameMatch = usernameQuery ? (usernamePrefixSearch ? username.startsWith(usernameQuery) : username.includes(usernameQuery)) : false;
 
-            return title.includes(chatQuery) || username.includes(chatQuery) || atUsername.includes(chatQuery) || preview.includes(chatQuery) || peerKey.includes(chatQuery);
+            return title.includes(chatQuery) || usernameMatch || atUsername.includes(chatQuery) || preview.includes(chatQuery) || peerKey.includes(chatQuery);
         });
-    }, [chatPK, chatQuery, chats, hasBlockedUsers, isBlockedChatPK, isPeerDataReady, peerByChatPK]);
+    }, [chatPK, chatQuery, chats, hasBlockedUsers, isBlockedChatPK, isPeerDataReady, peerByChatPK, usernamePrefixSearch, usernameQuery]);
 
     const chatPeerPKs = useMemo(() => new Set((Array.isArray(chats) ? chats : []).map((chat) => chat?.peerChatPK).filter(Boolean)), [chats]);
 

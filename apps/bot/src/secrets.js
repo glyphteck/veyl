@@ -9,6 +9,10 @@ function secretVersionName(projectId, version = 'latest') {
     return `${secretName(projectId)}/versions/${version}`;
 }
 
+function genericSecretVersionName(projectId, secretId, version = 'latest') {
+    return `projects/${projectId}/secrets/${secretId}/versions/${version}`;
+}
+
 function isNotFound(error) {
     return error?.code === 5 || error?.code === 404;
 }
@@ -123,6 +127,38 @@ async function writeBundle(client, projectId, bundle) {
 
 export function createSecretClient() {
     return new SecretManagerServiceClient();
+}
+
+export async function readSecretText(client, projectId, secretId, options = {}) {
+    try {
+        const [version] = await client.accessSecretVersion({
+            name: genericSecretVersionName(projectId, secretId),
+        });
+        return Buffer.from(version?.payload?.data || []).toString('utf8').trim();
+    } catch (error) {
+        if (options.optional && isNotFound(error)) {
+            return '';
+        }
+        throw error;
+    }
+}
+
+export async function loadProcessSecrets(client, projectId, secretIds) {
+    const loaded = [];
+    const missing = [];
+    for (const secretId of secretIds || []) {
+        if (!secretId || process.env[secretId]) {
+            continue;
+        }
+        const value = await readSecretText(client, projectId, secretId, { optional: true });
+        if (!value) {
+            missing.push(secretId);
+            continue;
+        }
+        process.env[secretId] = value;
+        loaded.push(secretId);
+    }
+    return { loaded, missing };
 }
 
 export async function readBotSeed(client, projectId, username) {

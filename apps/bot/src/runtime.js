@@ -29,13 +29,15 @@ import {
     BOT_TRAFFIC_TRANSFER_AMOUNT_SATS,
     BOT_TRAFFIC_TRANSFER_CONCURRENCY,
 } from '@veyl/shared/bot/traffic/transfers';
-import { clearBotChatPairCache, decryptBotChatSettings, decryptBotMsg, hasBotMsg, readBotMsgAttachment, sendBotMsg, updateBotMsg, uploadBotAttachmentMsg } from '@veyl/shared/bot/chat';
+import { clearBotChatPairCache, decryptBotChatSettings, decryptBotMsg, hasBotMsg, readBotMsgAttachment, sendBotMsg, setBotChatRetention, updateBotMsg, uploadBotAttachmentMsg } from '@veyl/shared/bot/chat';
 import { getBotBalance, mirrorBotTransfer } from '@veyl/shared/bot/wallet';
 import { getChatPeerPK } from '@veyl/shared/chat/ids';
 import { makeOwnChatEntry, openOwnChatEntry, ownChatEntryId, sealOwnChatEntry } from '@veyl/shared/chat/entry';
 import { openPing } from '@veyl/shared/chat/ping';
-import { hasStoredFileRef, isActionMutationMsg, isControlMsg, isSystemMsg, makeHiddenCheckpoint, makeReadReceipt, makeReq, makeTxt, setReqTx } from '@veyl/shared/chat/messages';
+import { toBytes } from '@veyl/shared/crypto/core';
+import { hasStoredFileRef, isActionMutationMsg, isControlMsg, isReadReceiptMsg, isSystemMsg, makeHiddenCheckpoint, makeReadReceipt, makeReq, makeTxt, setReqTx } from '@veyl/shared/chat/messages';
 import { getMessageKey, makeCid } from '@veyl/shared/chat/state';
+import { cleanChatRetention, getMessageRetention, hasChatRetention } from '@veyl/shared/chat/ttl';
 import {
     BOT_TRAFFIC_SESSION_WAIT_MS,
     BOT_REPLY_AFTER_READ_DELAY_MS,
@@ -50,11 +52,15 @@ import { SparkWallet, SparkWalletEvent } from '@buildonspark/spark-sdk';
 import { randomInt, randomUUID } from 'node:crypto';
 import { hostname } from 'node:os';
 import admin, { db, FieldValue, Timestamp, projectId } from './admin.js';
-import { createSecretClient, readBotSeed } from './secrets.js';
+import { createSecretClient, loadProcessSecrets, readBotSeed } from './secrets.js';
 import { cleanPing, sendPush as sendInboxPush } from '../../../functions/lib/inbox.js';
+
+process.env.VEYL_BOT_RUNTIME = '1';
 
 const SPARK_NETWORK = resolveNetwork(process.env);
 const VERBOSE = process.env.VEYL_VERBOSE === '1';
+const REPLACE_EXISTING_RUNTIME = process.env.VEYL_REPLACE_BOT_RUNTIME === '1';
+const APNS_SECRET_IDS = Object.freeze(['APNS_KEY_ID', 'APNS_TEAM_ID', 'APNS_PRIVATE_KEY_BASE64']);
 const MAX_BOT_PEER_CACHE = 512;
 const MAX_BOT_READ_CACHE = 2048;
 const REVIEW_BOT_USERNAME = 'review';
@@ -88,7 +94,17 @@ function cleanDocPart(value) {
 }
 
 function adminBytes(value) {
-    return typeof value?.toUint8Array === 'function' ? Buffer.from(value.toUint8Array()) : value;
+    if (Buffer.isBuffer(value)) {
+        return value;
+    }
+    if (typeof value?.toUint8Array === 'function') {
+        return Buffer.from(value.toUint8Array());
+    }
+    try {
+        return Buffer.from(toBytes(value, 'bot bytes'));
+    } catch {
+        return value;
+    }
 }
 
 function botReplyId(context, kind = 'reply') {
@@ -183,6 +199,31 @@ function logHeartbeatError(error) {
         return;
     }
     console.error('bot runtime heartbeat failed', error);
+}
+
+function isRunningPid(pid) {
+    if (!Number.isInteger(pid) || pid <= 0 || pid === process.pid) {
+        return false;
+    }
+    try {
+        process.kill(pid, 0);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+function canReplaceRuntimeLease(data) {
+    const pid = Number(data?.pid);
+    return REPLACE_EXISTING_RUNTIME
+        && data?.host === hostname()
+        && Number.isInteger(pid)
+        && pid > 0
+        && !isRunningPid(pid);
+}
+
+function secretLoadStatus(error) {
+    return error?.code != null ? `code ${error.code}` : 'unavailable';
 }
 
 function queueMapJob(map, key, job) {
@@ -352,6 +393,22 @@ export class BotRuntime {
         this.heartbeatTimer = null;
     }
 
+    async loadPushSecrets() {
+        const result = await loadProcessSecrets(this.secretClient, projectId, APNS_SECRET_IDS).catch((error) => {
+            console.warn('bot push APNS secrets unavailable', { status: secretLoadStatus(error) });
+            return null;
+        });
+        if (!result) {
+            return;
+        }
+        if (result.loaded.length) {
+            console.info('bot push APNS secrets loaded', { count: result.loaded.length });
+        }
+        if (result.missing.length) {
+            console.warn('bot push APNS secrets missing', { count: result.missing.length });
+        }
+    }
+
     async start() {
         if (this.running) {
             return;
@@ -359,6 +416,7 @@ export class BotRuntime {
 
         this.running = true;
         this.stopped = false;
+        await this.loadPushSecrets();
         await this.acquireRuntimeLease();
         await this.cancelStaleTrafficActions();
         this.startHeartbeat();
@@ -511,7 +569,7 @@ export class BotRuntime {
             const data = snap.exists ? snap.data() : {};
             const heartbeatMs = timestampMs(data?.heartbeatAt, 0);
             const active = data?.running === true && heartbeatMs > Date.now() - BOT_RUNTIME_LEASE_MS;
-            if (active && data?.runtimeId !== this.runtimeId) {
+            if (active && data?.runtimeId !== this.runtimeId && !canReplaceRuntimeLease(data)) {
                 throw new Error(`bot runtime already running (${data?.host || 'unknown host'} pid ${data?.pid || 'unknown'})`);
             }
 
@@ -1164,6 +1222,7 @@ export class BotRuntime {
         session.started = true;
         session.chatJobs = new Map();
         session.chatRead = new Map();
+        session.chatMessageUnsubs = new Map();
 
         this.attachWalletListeners(session);
         session.unsubscribeChats = this.subscribeChats(session);
@@ -1193,6 +1252,7 @@ export class BotRuntime {
                             .then((opened) => {
                                 if (opened?.chatId) {
                                     session.chatRead?.delete(opened.chatId);
+                                    this.closeChatMessageListener(session, opened.chatId);
                                 }
                             })
                             .catch(() => {});
@@ -1214,6 +1274,8 @@ export class BotRuntime {
                             actors: opened.actors || {},
                             ts: data?.ts,
                         };
+                        this.closeChatMessageListener(session, chat.id);
+                        this.watchChatMessages(session, chat);
                         return queueMapJob(session.chatJobs, chat.id, () => this.processChat(session, chat));
                     }).catch((error) => {
                         console.error(`bot @${session.username} chat entry ${change.doc.id} failed`, error);
@@ -1248,6 +1310,49 @@ export class BotRuntime {
             unsubscribeChats?.();
             unsubscribeInbox?.();
         };
+    }
+
+    closeChatMessageListener(session, chatId) {
+        const unsubscribe = session.chatMessageUnsubs?.get(chatId);
+        if (!unsubscribe) {
+            return;
+        }
+        try {
+            unsubscribe();
+        } catch {}
+        session.chatMessageUnsubs.delete(chatId);
+    }
+
+    watchChatMessages(session, chat) {
+        if (!session?.chatMessageUnsubs || !chat?.id || session.chatMessageUnsubs.has(chat.id)) {
+            return;
+        }
+
+        firestoreLog('listen latest chat message', { uid: safeLogId(session.uid), chatId: safeLogId(chat.id) });
+        const unsubscribe = chat.ref
+            .collection('messages')
+            .orderBy('ts', 'desc')
+            .limit(1)
+            .onSnapshot(
+                (snap) => {
+                    const latest = snap.docs?.[0]?.data?.();
+                    if (!latest?.ts) {
+                        return;
+                    }
+                    const latestChat = {
+                        ...chat,
+                        ts: latest.ts,
+                    };
+                    void queueMapJob(session.chatJobs, chat.id, () => this.processChat(session, latestChat)).catch((error) => {
+                        console.error(`bot @${session.username} chat messages ${chat.id} failed`, error);
+                    });
+                },
+                (error) => {
+                    console.error(`bot @${session.username} chat messages ${chat.id} listener failed`, error);
+                    this.closeChatMessageListener(session, chat.id);
+                }
+            );
+        session.chatMessageUnsubs.set(chat.id, unsubscribe);
     }
 
     async processChatPing(session, pingDoc) {
@@ -1455,6 +1560,7 @@ export class BotRuntime {
                 closing: false,
                 balance: null,
                 unsubscribeChats: null,
+                chatMessageUnsubs: new Map(),
                 walletListeners: null,
                 chatJobs: new Map(),
                 chatRead: new Map(),
@@ -1489,6 +1595,15 @@ export class BotRuntime {
                 session.unsubscribeChats();
             } catch {}
             session.unsubscribeChats = null;
+        }
+
+        if (session.chatMessageUnsubs) {
+            for (const unsubscribe of session.chatMessageUnsubs.values()) {
+                try {
+                    unsubscribe?.();
+                } catch {}
+            }
+            session.chatMessageUnsubs.clear();
         }
 
         if (session.walletListeners) {
@@ -1573,11 +1688,20 @@ export class BotRuntime {
         if (!settings) {
             return;
         }
-        const retention = settings.retention;
+        const storedRetention = cleanChatRetention(settings.retention);
+        let effectiveRetention = storedRetention;
+        let persistRetention = null;
+        const adoptRetention = (value) => {
+            const nextRetention = cleanChatRetention(value);
+            effectiveRetention = nextRetention;
+            persistRetention = nextRetention !== storedRetention ? nextRetention : null;
+            return nextRetention;
+        };
         const latestMs = timestampMs(msgsSnap.docs[msgsSnap.docs.length - 1]?.data()?.ts, 0);
         let readMs = sinceMs;
         const replies = [];
         let receipt = null;
+        let peerReadReceipt = null;
 
         for (const msgSnap of msgsSnap.docs) {
             if (session.closing) {
@@ -1587,20 +1711,44 @@ export class BotRuntime {
             const msgData = msgSnap.data();
             const msgMs = timestampMs(msgData?.ts, 0);
 
-            const context = {
+            const contextBase = {
                 chatId: chat.id,
                 msgId: msgSnap.id,
                 msgTs: msgData?.ts,
                 peerChatPK,
                 actors: chat.actors || {},
-                retention,
             };
-            const msg = await this.readChatMessage(
+            const msg = await this.decryptChatMessage(
                 session,
-                context,
+                contextBase,
                 msgData
             );
             if (msg?.s !== peerChatPK) {
+                readMs = Math.max(readMs, msgMs);
+                continue;
+            }
+            const messageRetention = getMessageRetention(msg, effectiveRetention);
+            if (hasChatRetention(msg?.retention)) {
+                adoptRetention(messageRetention);
+            }
+            const context = {
+                ...contextBase,
+                retention: messageRetention,
+            };
+            if (isSystemMsg(msg)) {
+                adoptRetention(msg.retention);
+                readMs = Math.max(readMs, msgMs);
+                continue;
+            }
+            if (isReadReceiptMsg(msg)) {
+                const target = cleanText(msg.upto);
+                if (target) {
+                    peerReadReceipt = { context, target };
+                }
+                readMs = Math.max(readMs, msgMs);
+                continue;
+            }
+            if (isControlMsg(msg) || isActionMutationMsg(msg)) {
                 readMs = Math.max(readMs, msgMs);
                 continue;
             }
@@ -1615,13 +1763,24 @@ export class BotRuntime {
             readMs = Math.max(readMs, msgMs);
         }
 
-        if (!replies.length) {
+        if (persistRetention) {
+            await setBotChatRetention(db, FieldValue, session.uid, session.chatPK, session.chatPrivKey, peerChatPK, persistRetention, { chatId: chat.id }).then((savedRetention) => {
+                chat.settings = { ...(chat.settings || {}), retention: savedRetention };
+            }).catch((error) => {
+                console.warn('bot retention update failed', chat.id, statusMessage(error));
+            });
+        }
+
+        if (!replies.length && !peerReadReceipt) {
             await this.ackChat(session, chat.id, readMs);
             return;
         }
 
         const peer = await this.resolvePeerByChatPK(peerChatPK);
         if (!peer?.uid) {
+            if (!replies.length) {
+                await this.ackChat(session, chat.id, readMs);
+            }
             return;
         }
 
@@ -1637,11 +1796,22 @@ export class BotRuntime {
             return;
         }
 
+        if (peerReadReceipt) {
+            await this.sendHiddenCheckpoint(session, peerChatPK, peerReadReceipt.target, peerReadReceipt.context.retention, peerReadReceipt.context).catch((error) => {
+                console.warn('bot peer-read hidden checkpoint failed', chat.id, statusMessage(error));
+            });
+        }
+
+        if (!replies.length) {
+            await this.ackChat(session, chat.id, readMs);
+            return;
+        }
+
         if (receipt) {
-            await this.sendReadReceipt(session, peerChatPK, receipt.target, retention, receipt.context).catch((error) => {
+            await this.sendReadReceipt(session, peerChatPK, receipt.target, receipt.context.retention, receipt.context).catch((error) => {
                 console.warn('bot read receipt failed', chat.id, statusMessage(error));
             });
-            await this.sendHiddenCheckpoint(session, peerChatPK, receipt.target, retention, receipt.context).catch((error) => {
+            await this.sendHiddenCheckpoint(session, peerChatPK, receipt.target, receipt.context.retention, receipt.context).catch((error) => {
                 console.warn('bot hidden checkpoint failed', chat.id, statusMessage(error));
             });
         }
@@ -1665,17 +1835,8 @@ export class BotRuntime {
         await this.ackChat(session, chat.id, readMs);
     }
 
-    async readChatMessage(session, context, msgData) {
-        const msg = await decryptBotMsg(msgData, session.chatPK, session.chatPrivKey, context.peerChatPK, { actors: context.actors, chatId: context.chatId }).catch(() => null);
-        if (!msg) {
-            return null;
-        }
-
-        if (isControlMsg(msg) || isSystemMsg(msg) || isActionMutationMsg(msg)) {
-            return null;
-        }
-
-        return msg;
+    async decryptChatMessage(session, context, msgData) {
+        return decryptBotMsg(msgData, session.chatPK, session.chatPrivKey, context.peerChatPK, { actors: context.actors, chatId: context.chatId }).catch(() => null);
     }
 
     async replyToChatMessage(session, context, msg) {

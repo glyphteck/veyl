@@ -47,6 +47,20 @@ export function dayKey(date) {
     return `${date.getFullYear()}-${twoDigits(date.getMonth() + 1)}-${twoDigits(date.getDate())}`;
 }
 
+export function localDayKey(value) {
+    const ms = timestampMs(value, null, { parseString: true });
+    if (!Number.isFinite(ms)) return '';
+    return dayKey(new Date(ms));
+}
+
+export function localDayStartMs(value) {
+    const ms = timestampMs(value, null, { parseString: true });
+    if (!Number.isFinite(ms)) return null;
+    const date = new Date(ms);
+    date.setHours(0, 0, 0, 0);
+    return date.getTime();
+}
+
 export function hourKey(dateOrHour) {
     const hour = dateOrHour instanceof Date ? dateOrHour.getHours() : dateOrHour;
     return twoDigits(hour);
@@ -59,6 +73,43 @@ export function dayHourKey(date) {
 export function formatDate(ymdString) {
     const [year, month, day] = ymdString.split('-').map(Number);
     return new Date(year, month - 1, day).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function ordinalDay(day) {
+    const mod100 = day % 100;
+    if (mod100 >= 11 && mod100 <= 13) {
+        return `${day}th`;
+    }
+    switch (day % 10) {
+        case 1:
+            return `${day}st`;
+        case 2:
+            return `${day}nd`;
+        case 3:
+            return `${day}rd`;
+        default:
+            return `${day}th`;
+    }
+}
+
+export function formatDayLabel(value, now = Date.now()) {
+    const key = typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : localDayKey(value);
+    if (!key) return '';
+    const nowMs = timestampMs(now, Date.now(), { parseString: true });
+    const today = localDayKey(nowMs);
+    if (key === today) return 'today';
+
+    const yesterday = new Date(nowMs);
+    yesterday.setHours(0, 0, 0, 0);
+    yesterday.setDate(yesterday.getDate() - 1);
+    if (key === dayKey(yesterday)) return 'yesterday';
+
+    const [year, month, day] = key.split('-').map(Number);
+    if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return '';
+    const date = new Date(year, month - 1, day);
+    const monthName = date.toLocaleDateString('en-US', { month: 'long' }).toLowerCase();
+    const yearText = year !== new Date(nowMs).getFullYear() ? `, ${year}` : '';
+    return `${monthName} ${ordinalDay(day)}${yearText}`;
 }
 
 export function formatHour(hourString) {

@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useImperativeHandle, useRef } from 'react';
+import { forwardRef, useCallback, useImperativeHandle, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, TextInput } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { Search, X } from 'lucide-react-native';
@@ -27,6 +27,7 @@ const SearchInput = forwardRef(function SearchInput(
 ) {
     const { theme, isDark } = useTheme();
     const inputRef = useRef(null);
+    const [focused, setFocused] = useState(false);
     const focus = useSharedValue(0);
     const focusScale = useSharedValue(1);
     const clearScale = useSharedValue(1);
@@ -35,12 +36,17 @@ const SearchInput = forwardRef(function SearchInput(
     const focusScaleStyle = useAnimatedStyle(() => ({ transform: [{ scale: focusScale.value }] }));
     const clearScaleStyle = useAnimatedStyle(() => ({ transform: [{ scale: clearScale.value }] }));
     const focusTap = tap({ value: focusScale, onPress: () => inputRef.current?.focus?.() });
-    const clearTap = tap({ value: clearScale, disabled: !onClear, onPress: onClear });
+    const handleClearPress = useCallback(() => {
+        onClear?.();
+        inputRef.current?.blur?.();
+    }, [onClear]);
+    const clearTap = tap({ value: clearScale, disabled: !focused, onPress: handleClearPress });
 
     useImperativeHandle(ref, () => inputRef.current, []);
 
     const handleFocus = useCallback(
         (event) => {
+            setFocused(true);
             focus.value = withTiming(1, { duration: 160 });
             onFocus?.(event);
         },
@@ -49,6 +55,7 @@ const SearchInput = forwardRef(function SearchInput(
 
     const handleBlur = useCallback(
         (event) => {
+            setFocused(false);
             focus.value = withTiming(0, { duration: 160 });
             onBlur?.(event);
         },
@@ -98,7 +105,7 @@ const SearchInput = forwardRef(function SearchInput(
             />
             {searching ? (
                 <ActivityIndicator size="small" color={theme.muted} />
-            ) : value ? (
+            ) : focused ? (
                 <Pressable accessibilityRole="button" accessibilityLabel="clear search" {...clearTap} hitSlop={10}>
                     <Animated.View style={clearScaleStyle}>
                         <Icon icon={X} color={theme.muted} />

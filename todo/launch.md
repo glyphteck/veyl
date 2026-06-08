@@ -3,8 +3,8 @@
 status: active
 branch: current
 worktree: current
-base: main@004b67abe2e1
-repo version: 0.14.4
+base: main@7d56e720d7e5
+repo version: 0.14.6
 
 - Complete App Store Connect submission notes, reviewer access, support contact, and final review-bot readiness.
 - Do a final release-readiness pass across safety, security, legal copy, Apple review support, wallet guardrails, account deletion, and export flows.

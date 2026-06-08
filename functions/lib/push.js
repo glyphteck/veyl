@@ -67,6 +67,9 @@ function normalizeCollapseId(value) {
 }
 
 function secretValue(param) {
+    if (process.env.VEYL_BOT_RUNTIME === '1') {
+        return '';
+    }
     try {
         return param.value();
     } catch {
@@ -75,14 +78,14 @@ function secretValue(param) {
 }
 
 function readApnsPrivateKey() {
-    const encoded = secretValue(APNS_PRIVATE_KEY_BASE64) || process.env.APNS_PRIVATE_KEY_BASE64;
+    const encoded = process.env.APNS_PRIVATE_KEY_BASE64 || secretValue(APNS_PRIVATE_KEY_BASE64);
     const raw = encoded ? Buffer.from(encoded, 'base64').toString('utf8') : process.env.APNS_PRIVATE_KEY;
     return typeof raw === 'string' ? raw.replace(/\\n/g, '\n').trim() : '';
 }
 
 function getApnsCredentials() {
-    const keyId = (secretValue(APNS_KEY_ID) || process.env.APNS_KEY_ID || '').trim();
-    const teamId = (secretValue(APNS_TEAM_ID) || process.env.APNS_TEAM_ID || '').trim();
+    const keyId = (process.env.APNS_KEY_ID || secretValue(APNS_KEY_ID) || '').trim();
+    const teamId = (process.env.APNS_TEAM_ID || secretValue(APNS_TEAM_ID) || '').trim();
     const privateKey = readApnsPrivateKey();
     return keyId && teamId && privateKey ? { keyId, privateKey, teamId } : null;
 }

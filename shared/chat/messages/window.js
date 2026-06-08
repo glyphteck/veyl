@@ -143,10 +143,11 @@ export function deriveRouteMessages({ older, live, locals, serverBatch, deletedK
     };
 }
 
-export function dropDeletedMessageWindow({ older, live, deletedKeys, removedKeys, snapshotKeys, fromMs, cidById }) {
+export function dropDeletedMessageWindow({ older, live, deletedKeys, removedKeys, snapshotKeys, fromMs, cidById, keepKeys }) {
     const explicitKeys = keySet(removedKeys);
     const currentKeys = snapshotKeys ? keySet(snapshotKeys) : null;
     const currentCidById = cidById instanceof Map ? cidById : null;
+    const retainedKeys = keySet(keepKeys);
     if (!explicitKeys.size && !currentKeys && !currentCidById) {
         return null;
     }
@@ -171,9 +172,13 @@ export function dropDeletedMessageWindow({ older, live, deletedKeys, removedKeys
             const sourceCid = currentCidById && inSnapshotRange ? currentCidById.get(message.id) : null;
             const sourceChanged = !!(sourceCid && message?.cid && sourceCid !== message.cid);
             if (explicitlyRemoved || missingFromSnapshot || sourceChanged) {
-                dropped = true;
                 addMessageKeys(nextDeletedKeys, message);
-                droppedMessages.push(message);
+                if (messageHasKey(message, retainedKeys)) {
+                    next.push(holdVisibleMsg(message));
+                } else {
+                    dropped = true;
+                    droppedMessages.push(message);
+                }
             } else {
                 next.push(message);
             }
@@ -228,12 +233,13 @@ export function expireMessageView(updateMessageView, scopeKey, messages) {
     });
 }
 
-export function holdCurrentLiveMessages(previous, next, firstMs, nextKeys, expiredKeys, deletedKeys) {
+export function holdCurrentLiveMessages(previous, next, firstMs, nextKeys, expiredKeys, deletedKeys, options = {}) {
     const current = next || [];
     if (!previous?.length) {
         return current;
     }
 
+    const keepKeys = keySet(options.keepKeys);
     const held = [];
     for (const message of previous) {
         const key = getMessageKey(message);
@@ -242,6 +248,9 @@ export function holdCurrentLiveMessages(previous, next, firstMs, nextKeys, expir
             continue;
         }
         if (messageHasKey(message, deletedKeys)) {
+            if (messageHasKey(message, keepKeys)) {
+                held.push(holdVisibleMsg(message));
+            }
             continue;
         }
         if (messageHasKey(message, expiredKeys)) {
@@ -284,9 +293,9 @@ export function messageSeedFromBatch(msgBatch, chatPK, peerChatPK) {
         return null;
     }
 
-    const live = trimExpiredMessages(filterChatMessages(msgBatch.messages, chatPK, peerChatPK));
     const expiredKeys = keySet(msgBatch.expiredKeys);
     const deletedKeys = keySet(msgBatch.deletedKeys);
+    const live = removeMessagesByKeys(trimExpiredMessages(filterChatMessages(msgBatch.messages, chatPK, peerChatPK)), deletedKeys);
     return {
         older: [],
         live,
@@ -304,10 +313,10 @@ export function messageSeedFromView(seed) {
         return null;
     }
 
-    const older = trimExpiredMessages(seed.older || []);
-    const live = trimExpiredMessages(seed.live || []);
     const expiredKeys = keySet(seed.serverBatch?.expiredKeys);
     const deletedKeys = keySet(seed.serverBatch?.deletedKeys);
+    const older = removeMessagesByKeys(trimExpiredMessages(seed.older || []), deletedKeys);
+    const live = removeMessagesByKeys(trimExpiredMessages(seed.live || []), deletedKeys);
 
     return {
         older,

@@ -8,7 +8,8 @@ export function matchesProfile(profile, parsed) {
 
     if (parsed.kind === 'username') {
         if (!parsed.value) return true;
-        return cleanUsername(profile.username || '').startsWith(parsed.value);
+        const username = cleanUsername(profile.username || '');
+        return String(parsed.raw || '').startsWith('@') ? username.startsWith(parsed.value) : username.includes(parsed.value);
     }
 
     if (parsed.kind === 'role') {

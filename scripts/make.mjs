@@ -44,7 +44,8 @@ const iosVariants = {
 };
 
 function resolveIosDir(name) {
-    const cwd = resolve(rootDir, 'apps', name, 'ios');
+    const appDir = name === 'veyl' ? 'ios' : name;
+    const cwd = resolve(rootDir, 'apps', appDir);
     if (!existsSync(resolve(cwd, 'package.json'))) {
         return null;
     }
@@ -469,7 +470,7 @@ async function main() {
     }
 
     console.error('Usage: bun make [-v|--verbose] <ios|backend|db|rules|fns|cors|lifecycle>');
-    console.error('Examples: bun make ios, bun make ios reset, bun make ios test, bun make ios prod, bun make ios store');
+    console.error('Examples: bun make ios, bun make ios dev, bun make ios reset, bun make ios test, bun make ios prod, bun make ios store');
     process.exitCode = 1;
 }
 

@@ -4,6 +4,14 @@ This file is for dormant product, privacy, and architecture ideas that are worth
 
 This is not the active task list. Move an idea into `todo/` only when it becomes a committed large feature or architecture project.
 
+## LLM-Assisted Search
+
+- Explore an optional search assistant only after cheap deterministic retrieval is exhausted.
+- Keep indexed lookup as the source of truth for candidate rows; use an LLM, if ever needed, to rerank, explain, or answer when no product row is relevant.
+- Do not stream the full user table into an LLM for real-time matching. That would be slower, more expensive, less deterministic, and harder to protect than local cache checks plus indexed profile queries.
+- Useful future shapes could include semantic action search in the main menu, typo-tolerant intent routing, natural-language help answers, or "no exact result, but here is what you can do" responses.
+- Gate any prototype behind strict latency, cost, privacy, and hallucination checks before it becomes part of search.
+
 ## Chat Presence
 
 - Explore lightweight encrypted-chat presence only if a concrete UX, retention, or deletion-coordination problem needs it.

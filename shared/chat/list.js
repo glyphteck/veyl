@@ -1,8 +1,9 @@
 import { CHAT_LIST_PAGE_SIZE, CHAT_LIST_SNAPSHOT_COALESCE_MS } from '../config.js';
 import { canShowMsg, canStoreMsg, isControlMsg } from './messages.js';
-import { openOwnChatEntry, ownChatEntryId } from './entry.js';
+import { openOwnChatEntry, ownChatEntryId, sealOwnChatEntry } from './entry.js';
 import { processInbox } from './inbox.js';
-import { canonicalChatVersions, duplicateChatEntryIds, isChatUnseenForUser, isCurrentUserChatEntry } from './chats.js';
+import { canonicalChatVersions, isChatUnseenForUser, isCurrentUserChatEntry } from './chats.js';
+import { sameBytes } from './equal.js';
 import { timestampKey, timestampMs } from '../utils/time.js';
 import { positiveInt } from '../utils/number.js';
 
@@ -10,7 +11,7 @@ function chatDocDataEqual(a, b) {
     if (a === b) {
         return true;
     }
-    return !!a && !!b && timestampKey(a.ts ?? null) === timestampKey(b.ts ?? null) && a.body === b.body;
+    return !!a && !!b && timestampKey(a.ts ?? null) === timestampKey(b.ts ?? null) && sameBytes(a.body, b.body);
 }
 
 function normalizeChatPreview(msgData, message) {
@@ -40,22 +41,19 @@ async function readEntryPage(cloud, userChatPK, userPrivKey, docs, cache, option
         }
     }
 
-    const results = await Promise.all((docs || []).map((docSnap) => readEntryResult(docSnap, userChatPK, userPrivKey, cache)));
-    const rawChats = results.map((result) => result.chat).filter(Boolean);
+    const rawChats = (await Promise.all((docs || []).map((docSnap) => readEntryResult(docSnap, userChatPK, userPrivKey, cache)))).filter(Boolean);
     const canonicalChats = canonicalChatVersions(rawChats);
     const inactiveChatIds = options?.checkStatus === false ? new Set() : await getInactiveChatIds(cloud, canonicalChats);
     const activeChats = inactiveChatIds.size ? canonicalChats.filter((chat) => !inactiveChatIds.has(chat.id)) : canonicalChats;
     return {
         chats: activeChats,
-        staleEntryIds: [
-            ...results.map((result) => result.invalidEntryId).filter(Boolean),
-            ...duplicateChatEntryIds(rawChats),
+        deletedEntryIds: [
             ...canonicalChats.filter((chat) => inactiveChatIds.has(chat.id)).map((chat) => chat.entryId).filter(Boolean),
         ],
     };
 }
 
-async function pruneDuplicateUserChats(cloud, uid, entryIds) {
+async function deleteConfirmedUserChats(cloud, uid, entryIds) {
     if (typeof cloud?.user?.chats?.delete !== 'function' || !Array.isArray(entryIds) || !entryIds.length) {
         return;
     }
@@ -83,12 +81,40 @@ export async function filterActiveUserChats(cloud, uid, chats) {
         return canonicalChats;
     }
 
-    await pruneDuplicateUserChats(
+    await deleteConfirmedUserChats(
         cloud,
         uid,
         canonicalChats.filter((chat) => inactiveChatIds.has(chat.id)).map((chat) => chat.entryId).filter(Boolean)
     );
     return canonicalChats.filter((chat) => !inactiveChatIds.has(chat.id));
+}
+
+export async function restoreUserChats(cloud, uid, userPrivKey, chats) {
+    if (typeof cloud?.user?.chats?.write !== 'function' || !uid || !userPrivKey || !Array.isArray(chats) || !chats.length) {
+        return 0;
+    }
+
+    const writes = chats.filter(isCurrentUserChatEntry).map(async (chat) => {
+        const entryId = ownChatEntryId(userPrivKey, chat.id);
+        const tsMs = timestampMs(chat.ts, null, { positive: true }) ?? Date.now();
+        await cloud.user.chats.write(uid, entryId, {
+            body: await sealOwnChatEntry(userPrivKey, entryId, {
+                linkId: chat.linkId,
+                chatId: chat.id,
+                peerChatPK: chat.peerChatPK,
+                peerUid: chat.peerUid || null,
+                actors: chat.actors || {},
+                settings: chat.settings,
+                preview: chat.preview || null,
+                saved: chat.saved || null,
+                readMs: timestampMs(chat.readMs, null, { positive: true }) ?? null,
+            }),
+            tsMs,
+        });
+        return true;
+    });
+    const results = await Promise.allSettled(writes);
+    return results.filter((result) => result.status === 'fulfilled' && result.value).length;
 }
 
 export function listenToChats(cloud, uid, userChatPK, userPrivKey, onUpdate, onError, options = {}) {
@@ -175,7 +201,7 @@ export function listenToChats(cloud, uid, userChatPK, userPrivKey, onUpdate, onE
                         nextAfterChat: snapshot.nextAfterChat,
                         hasMore: snapshot.hasMore,
                     });
-                    void pruneDuplicateUserChats(cloud, uid, page.staleEntryIds);
+                    void deleteConfirmedUserChats(cloud, uid, page.deletedEntryIds);
                 }
             })
             .catch((error) => {
@@ -200,10 +226,13 @@ export function listenToChats(cloud, uid, userChatPK, userPrivKey, onUpdate, onE
         void processInbox(cloud, uid, userChatPK, userPrivKey, {
             currentChats: latestChats,
             onPingChat: publishPingChat,
+            onPingError: (error) => {
+                console.warn('Inbox ping process failed', error);
+            },
         })
             .catch((error) => {
                 if (!closed) {
-                    onError?.(error);
+                    console.warn('Inbox process failed', error);
                 }
             })
             .finally(() => {
@@ -281,7 +310,7 @@ export async function loadMoreChats(cloud, uid, userChatPK, userPrivKey, afterCh
     const count = positiveInt(pageSize, CHAT_LIST_PAGE_SIZE);
     const page = await cloud.user.chats.list(uid, { count, afterChat });
     const entryPage = await readEntryPage(cloud, userChatPK, userPrivKey, page.records, new Map(), { prune: false });
-    void pruneDuplicateUserChats(cloud, uid, entryPage.staleEntryIds);
+    void deleteConfirmedUserChats(cloud, uid, entryPage.deletedEntryIds);
     const nextAfterChat = page.nextAfterChat ?? null;
     return {
         chats: entryPage.chats,
@@ -332,7 +361,7 @@ export async function getChat(cloud, uid, chatId, userChatPK, userPrivKey) {
     }
     const inactiveChatIds = await getInactiveChatIds(cloud, [chat]);
     if (inactiveChatIds.has(chatId)) {
-        await pruneDuplicateUserChats(cloud, uid, [entry.id]);
+        await deleteConfirmedUserChats(cloud, uid, [entry.id]);
         return null;
     }
     return chat;
@@ -381,9 +410,9 @@ async function chatFromEntry(entryRecord, userChatPK, userPrivKey, cache) {
 
 async function readEntryResult(entryRecord, userChatPK, userPrivKey, cache) {
     try {
-        return { chat: await chatFromEntry(entryRecord, userChatPK, userPrivKey, cache), invalidEntryId: null };
+        return await chatFromEntry(entryRecord, userChatPK, userPrivKey, cache);
     } catch {
         cache?.delete?.(entryRecord?.id);
-        return { chat: null, invalidEntryId: entryRecord?.id || null };
+        return null;
     }
 }

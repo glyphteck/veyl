@@ -150,18 +150,6 @@ function ownerEditedPreview(senderPubkey, message) {
     };
 }
 
-function callablePing(ping) {
-    const body = ping?.body;
-    if (typeof body?.toBase64 !== 'function') {
-        throw new Error('inbox ping body unavailable');
-    }
-    return {
-        v: ping.v,
-        epk: ping.epk,
-        body: body.toBase64(),
-    };
-}
-
 function messageFileChatId(message) {
     try {
         const ref = getMediaFileRef(message?.p);
@@ -236,7 +224,7 @@ export async function sendMsg(cloud, senderPubkey, senderPrivkey, receiverChatPK
         messageId,
         message: msgData,
         ownerEntry,
-        inbox: ping ? { recipientUid: recipientProfile?.uid, ping: callablePing(ping) } : null,
+        inbox: ping ? { recipientUid: recipientProfile?.uid, ping } : null,
     });
     return { chatId, msgId: messageId, cid: head.cid, preview };
 }

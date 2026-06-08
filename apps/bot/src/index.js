@@ -26,6 +26,10 @@ console.error = (...args) => {
 const botDir = resolve(import.meta.dirname, '..');
 const lockdir = resolve(botDir, '.bot.lock');
 const lockfile = resolve(lockdir, 'pid');
+const REPLACE_EXISTING_RUNTIME = process.env.VEYL_REPLACE_BOT_RUNTIME === '1';
+const REPLACE_TERM_WAIT_MS = 5000;
+const REPLACE_KILL_WAIT_MS = 1000;
+const REPLACE_POLL_MS = 100;
 
 function isRunning(pid) {
     if (!Number.isInteger(pid) || pid <= 0 || pid === process.pid) {
@@ -91,13 +95,64 @@ function botRuntimePids() {
         .filter((pid) => processCwd(pid) === botDir && /\bbun\b/.test(processCommand(pid)));
 }
 
+function sleep(ms) {
+    return new Promise((resolve) => {
+        setTimeout(resolve, ms);
+    });
+}
+
+async function waitForExit(pid, timeoutMs) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+        if (!isRunning(pid)) {
+            return true;
+        }
+        await sleep(REPLACE_POLL_MS);
+    }
+    return !isRunning(pid);
+}
+
+async function terminatePid(pid) {
+    if (!isRunning(pid)) {
+        return;
+    }
+
+    try {
+        process.kill(pid, 'SIGTERM');
+    } catch {}
+
+    if (await waitForExit(pid, REPLACE_TERM_WAIT_MS)) {
+        return;
+    }
+
+    try {
+        process.kill(pid, 'SIGKILL');
+    } catch {}
+
+    await waitForExit(pid, REPLACE_KILL_WAIT_MS);
+}
+
+async function replacePids(pids) {
+    const targets = [...new Set(pids)].filter((pid) => isRunning(pid));
+    if (!targets.length) {
+        return;
+    }
+
+    await Promise.all(targets.map((pid) => terminatePid(pid)));
+
+    const running = targets.filter((pid) => isRunning(pid));
+    if (running.length) {
+        throw new Error(`bot runtime replacement failed (pid${running.length === 1 ? '' : 's'} ${running.join(', ')})`);
+    }
+}
+
 function removeLock() {
     try {
         rmSync(lockdir, { recursive: true, force: true });
     } catch {}
 }
 
-function acquireLock() {
+async function acquireLock() {
     try {
         mkdirSync(lockdir);
         writeFileSync(lockfile, String(process.pid));
@@ -108,7 +163,11 @@ function acquireLock() {
 
         const pid = readPid(lockfile);
         if (isRunning(pid)) {
-            throw new Error(`bot runtime already running (pid ${pid})`, { cause: error });
+            if (REPLACE_EXISTING_RUNTIME) {
+                await replacePids([pid]);
+            } else {
+                throw new Error(`bot runtime already running (pid ${pid})`, { cause: error });
+            }
         }
 
         removeLock();
@@ -118,12 +177,25 @@ function acquireLock() {
 
     const pids = new Set(botRuntimePids());
     if (pids.size) {
+        if (REPLACE_EXISTING_RUNTIME) {
+            await replacePids(pids);
+            removeLock();
+            mkdirSync(lockdir);
+            writeFileSync(lockfile, String(process.pid));
+        } else {
+            removeLock();
+            throw new Error(`bot runtime already running (pid${pids.size === 1 ? '' : 's'} ${[...pids].join(', ')})`);
+        }
+    }
+
+    const remainingPids = new Set(botRuntimePids());
+    if (remainingPids.size) {
         removeLock();
-        throw new Error(`bot runtime already running (pid${pids.size === 1 ? '' : 's'} ${[...pids].join(', ')})`);
+        throw new Error(`bot runtime already running (pid${remainingPids.size === 1 ? '' : 's'} ${[...remainingPids].join(', ')})`);
     }
 }
 
-acquireLock();
+await acquireLock();
 
 const runtime = new BotRuntime();
 let stopping = false;

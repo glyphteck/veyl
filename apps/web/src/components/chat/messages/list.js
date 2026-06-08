@@ -5,8 +5,9 @@ import { useChat } from '@/components/providers/chatprovider';
 import { useUser } from '@/components/providers/userprovider';
 import { usePeer } from '@/components/providers/peerprovider';
 import { canShowMsg, collapseSystemMessages, getLatestReadOutgoingReceipt, isPeerMsg, isSavedForeverMsg } from '@veyl/shared/chat/messages';
+import { withDateSeparators } from '@veyl/shared/chat/messages/dates';
 import { formatUserDisplay } from '@veyl/shared/profile';
-import { formatFullDateTime } from '@veyl/shared/utils/time';
+import { formatTimeHHMM } from '@veyl/shared/utils/time';
 import { getMessageKey, getMessageOrderMs } from '@veyl/shared/chat/state';
 import { useChatMessages } from '@/lib/chat/usemessages';
 import { useRef, useEffect, useCallback, useMemo } from 'react';
@@ -17,9 +18,9 @@ import { useScroll } from './scroll';
 
 const EMPTY_RECEIPT_PEER = Object.freeze({});
 
-function formatMsgFullDateTime(msg) {
+function formatMsgTime(msg) {
     const ms = getMessageOrderMs(msg);
-    return Number.isFinite(ms) && ms !== Infinity ? formatFullDateTime(ms) : '';
+    return Number.isFinite(ms) && ms !== Infinity ? formatTimeHHMM(ms, true) : '';
 }
 
 export function Messages({ onReply, onEdit, bottomPad = 96 }) {
@@ -79,7 +80,8 @@ export function Messages({ onReply, onEdit, bottomPad = 96 }) {
         selectedChatId,
     });
     const visibleMsgs = useMemo(() => collapseSystemMessages((msgs || []).filter(canShowMsg)), [msgs]);
-    const displayMsgs = useMemo(() => [...visibleMsgs].reverse(), [visibleMsgs]);
+    const datedMsgs = useMemo(() => withDateSeparators(visibleMsgs), [visibleMsgs]);
+    const displayMsgs = useMemo(() => [...datedMsgs].reverse(), [datedMsgs]);
     const displayRows = useAnimatedRows(displayMsgs, selectedChatId || '', deletingMessageKeys, ready);
     const newestRowKey = displayRows.find((row) => row.state !== 'leaving')?.key || '';
     const replyMap = useMemo(() => {
@@ -116,7 +118,7 @@ export function Messages({ onReply, onEdit, bottomPad = 96 }) {
 
     const latestReadReceipt = useMemo(() => getLatestReadOutgoingReceipt(msgs, chatPK, peerChatPK), [chatPK, msgs, peerChatPK]);
     const latestReadReceiptKey = getMessageKey(latestReadReceipt?.message);
-    const latestReadReceiptTime = useMemo(() => formatMsgFullDateTime(latestReadReceipt?.receipt), [latestReadReceipt?.receipt]);
+    const latestReadReceiptTime = useMemo(() => formatMsgTime(latestReadReceipt?.receipt), [latestReadReceipt?.receipt]);
     const latestReceiptMeta = useMemo(
         () =>
             latestReadReceiptKey

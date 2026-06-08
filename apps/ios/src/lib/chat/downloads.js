@@ -1,6 +1,5 @@
 import { ActionSheetIOS } from "react-native";
 import * as Clipboard from "expo-clipboard";
-import * as MediaLibrary from "expo-media-library";
 import * as FileSystem from "expo-file-system/legacy";
 import {
   dropCachedMsgFile,
@@ -14,6 +13,7 @@ import { CHAT_READY_DOWNLOAD_MAX_BYTES } from "@veyl/shared/config";
 import { fileExtension, mimeExtension } from "@veyl/shared/utils/filetype";
 import { cleanText } from "@veyl/shared/utils/text";
 import { fileUri } from "@/lib/file";
+import { saveMediaToLibrary } from "@/lib/media/save";
 
 function cleanPart(value, fallback) {
   const raw = String(value || fallback || "")
@@ -248,14 +248,7 @@ export async function copyMessageFile(msg, peerChatPK, readMessageFile) {
 
 export async function downloadMessageImage(msg, peerChatPK, readMessageFile) {
   const uri = await resolveImageUri(msg, peerChatPK, readMessageFile);
-  const existing = await MediaLibrary.getPermissionsAsync(true);
-  const perm = existing.granted
-    ? existing
-    : await MediaLibrary.requestPermissionsAsync(true);
-  if (!perm.granted) {
-    throw new Error("Please allow photo access to save pictures.");
-  }
-  await MediaLibrary.Asset.create(uri);
+  await saveMediaToLibrary(uri);
 }
 
 export async function downloadMessageFile(msg, peerChatPK, readMessageFile) {

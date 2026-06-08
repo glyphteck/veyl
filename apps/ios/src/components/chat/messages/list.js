@@ -8,7 +8,7 @@ import { useMenu } from '@/providers/menuprovider';
 import { useMediaViewer } from '@/providers/mediaviewerprovider';
 import { useUser } from '@/providers/userprovider';
 import GlassIcon from '@/components/glass/glassicon';
-import { KeyboardStickyView } from '@/components/keyboardscroll';
+import { KeyboardChatScrollView, KeyboardStickyView } from '@/components/keyboardscroll';
 import { ChatMessageType } from '@/components/chat/messages/type';
 import ReceiptMark, { RECEIPT_MARK_RESERVE } from '@/components/chat/receiptmark';
 import { REACTION_SPACE } from '@/components/chat/messages/reactiontray';
@@ -23,6 +23,7 @@ import { useChatMessages } from '@/lib/chat/usemessages';
 import { getMediaViewerKey, isMediaViewerMsg } from '@/lib/chat/viewer';
 import { cancelPendingMsgFileLoads } from '@/lib/chat/imagecache';
 import { canReplyToMsg, canShowMsg, collapseSystemMessages, getLatestReadOutgoingReceipt, isPeerMsg, isSavedForeverMsg, isSystemMsg } from '@veyl/shared/chat/messages';
+import { isDateSeparatorMsg, withDateSeparators } from '@veyl/shared/chat/messages/dates';
 import { messageKeys } from '@veyl/shared/chat/messagekeys';
 import { formatTimeHHMM } from '@veyl/shared/utils/time';
 import { getMessageKey, getMessageOrderMs } from '@veyl/shared/chat/state';
@@ -105,7 +106,8 @@ export default function Messages({
         [deletingMessageKeys, messagesAsc]
     );
     const visibleMessagesAsc = useMemo(() => collapseSystemMessages(activeMessagesAsc.filter(canShowMsg)), [activeMessagesAsc]);
-    const messages = useMemo(() => [...visibleMessagesAsc].reverse(), [visibleMessagesAsc]);
+    const datedMessagesAsc = useMemo(() => withDateSeparators(visibleMessagesAsc), [visibleMessagesAsc]);
+    const messages = useMemo(() => [...datedMessagesAsc].reverse(), [datedMessagesAsc]);
     const displayRows = useAnimatedRows(messages, chatId || '', ready);
     const rowLayoutAnimation = useMemo(() => (displayRows.some((row) => row?.state === 'entering') ? MESSAGE_ROW_LAYOUT : undefined), [displayRows]);
     const latestReadReceipt = useMemo(() => getLatestReadOutgoingReceipt(activeMessagesAsc, chatPK, peerChatPK), [activeMessagesAsc, chatPK, peerChatPK]);
@@ -170,7 +172,6 @@ export default function Messages({
         bottomMounted: scrollBottomMounted,
         bottomPositionStyle: scrollBottomPositionStyle,
         bottomStyle: scrollBottomStyle,
-        composerReserveStyle,
         contentContainerStyle,
         handleListScroll,
         handleLoadOlder,
@@ -186,6 +187,18 @@ export default function Messages({
         loadOlder,
         loadingOlder,
     });
+    const renderScrollComponent = useCallback(
+        (props) => (
+            <KeyboardChatScrollView
+                {...props}
+                inverted
+                keyboardDismissMode={KEYBOARD_DISMISS_MODE}
+                keyboardLiftBehavior="persistent"
+                extraContentPadding={extraContentPadding}
+            />
+        ),
+        [extraContentPadding]
+    );
 
     useEffect(() => {
         setMediaItems([]);
@@ -258,7 +271,7 @@ export default function Messages({
         ({ item: row }) => {
             const msg = row?.msg;
             const rowState = row?.state || 'present';
-            if (isSystemMsg(msg)) {
+            if (isSystemMsg(msg) || isDateSeparatorMsg(msg)) {
                 return <SystemRow chatPad={chatPad} msg={msg} rowState={rowState} screenW={screenW} theme={theme} />;
             }
 
@@ -380,7 +393,7 @@ export default function Messages({
                                 style={{ flex: 1, width: screenW + STAMP_TRAY, zIndex: 0 }}
                                 inverted
                                 contentContainerStyle={contentContainerStyle}
-                                ListHeaderComponent={<Animated.View pointerEvents="none" style={composerReserveStyle} />}
+                                renderScrollComponent={renderScrollComponent}
                                 automaticallyAdjustKeyboardInsets={false}
                                 contentInsetAdjustmentBehavior="never"
                                 keyboardDismissMode={KEYBOARD_DISMISS_MODE}

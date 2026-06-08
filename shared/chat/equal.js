@@ -1,22 +1,24 @@
+import { toBytes } from '../crypto/core.js';
+
+function readableBytes(value) {
+    try {
+        return value == null ? null : toBytes(value, 'chat bytes');
+    } catch {
+        return null;
+    }
+}
+
 export function sameBytes(a, b) {
     if (a === b) {
         return true;
     }
-    if (typeof a?.isEqual === 'function') {
-        return a.isEqual(b);
-    }
-    if (typeof b?.isEqual === 'function') {
-        return b.isEqual(a);
-    }
-    if (typeof a?.toUint8Array !== 'function' || typeof b?.toUint8Array !== 'function') {
+
+    const left = readableBytes(a);
+    const right = readableBytes(b);
+    if (!left || !right || left.length !== right.length) {
         return false;
     }
 
-    const left = a.toUint8Array();
-    const right = b.toUint8Array();
-    if (left.length !== right.length) {
-        return false;
-    }
     for (let index = 0; index < left.length; index += 1) {
         if (left[index] !== right[index]) {
             return false;

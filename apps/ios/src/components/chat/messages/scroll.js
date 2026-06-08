@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useReanimatedKeyboardAnimation } from '@/components/keyboardscroll';
 import { positivePx } from '@/components/chat/rowmotion';
 
 const NEWEST_GAP = 8;
@@ -15,7 +14,6 @@ const KEYBOARD_GAP = 8;
 
 export function useScroll({ chatId, extraContentPadding, hasOlder, inputH, loadOlder, loadingOlder }) {
     const insets = useSafeAreaInsets();
-    const { height: keyboardHeight } = useReanimatedKeyboardAnimation();
     const [showBottom, setShowBottom] = useState(false);
     const [bottomMounted, setBottomMounted] = useState(false);
     const listRef = useRef(null);
@@ -31,11 +29,6 @@ export function useScroll({ chatId, extraContentPadding, hasOlder, inputH, loadO
         }),
         [insets.bottom, insets.top, inputH]
     );
-    const composerReserveStyle = useAnimatedStyle(() => {
-        const extra = extraContentPadding ? extraContentPadding.value : 0;
-        const keyboard = Math.max(0, Math.round(-keyboardHeight.value - insets.bottom));
-        return { height: keyboard + Math.max(0, Math.round(extra)) };
-    }, [extraContentPadding, insets.bottom, keyboardHeight]);
     const bottomStyle = useAnimatedStyle(() => ({
         transform: [
             {
@@ -108,7 +101,6 @@ export function useScroll({ chatId, extraContentPadding, hasOlder, inputH, loadO
         bottomMounted,
         bottomPositionStyle,
         bottomStyle,
-        composerReserveStyle,
         contentContainerStyle,
         handleListScroll,
         handleLoadOlder,

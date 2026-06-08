@@ -72,7 +72,7 @@ export const allowedPasskeyOrigins = Object.freeze(${JSON.stringify(allowedPassk
 }
 
 export async function writeIosLinks() {
-    const file = resolve(rootDir, 'apps', 'veyl', 'ios', 'links.config.js');
+    const file = resolve(rootDir, 'apps', 'ios', 'links.config.js');
     const body = `// Generated from shared/links.js by scripts/links.mjs.
 const PASSKEY_DOMAIN = ${JSON.stringify(PASSKEY_DOMAIN)};
 

@@ -473,7 +473,10 @@ async function runDev() {
     await clearPorts(devPorts);
 
     const spawnRuntime = (name, command, ...commandArgs) => {
-        const child = run(command, commandArgs, { env: childEnv, stdio: ['ignore', 'pipe', 'pipe'] });
+        const env = name === 'bot'
+            ? { ...childEnv, VEYL_REPLACE_BOT_RUNTIME: '1' }
+            : childEnv;
+        const child = run(command, commandArgs, { env, stdio: ['ignore', 'pipe', 'pipe'] });
         children.set(name, child);
         pipe(name, child.stdout, process.stdout);
         pipe(name, child.stderr, process.stderr);
@@ -606,7 +609,11 @@ if (target === 'ios' && rest[0] === 'submit') {
 }
 
 const [command, ...commandArgs] = commandLine;
-const env = verbose ? { ...process.env, VEYL_VERBOSE: '1' } : process.env;
+const env = {
+    ...process.env,
+    ...(verbose ? { VEYL_VERBOSE: '1' } : {}),
+    ...(target === 'bot' ? { VEYL_REPLACE_BOT_RUNTIME: '1' } : {}),
+};
 const shouldFilterOutput = !verbose && !(target === 'ios' && rest[0] === 'submit');
 const child = run(command, commandArgs, {
     cwd,
