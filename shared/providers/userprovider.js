@@ -405,7 +405,23 @@ export function createUserProvider({ cloud, network, avatarCache = null, diag = 
                         if (avatarVersion == null) {
                             void fetchAvatar(authUser.uid, { clear: true });
                         } else if (info.exists) {
-                            void fetchAvatar(authUser.uid, { version: avatarVersion });
+                            void (async () => {
+                                const cached = await readCachedAvatar(authUser.uid, avatarVersion);
+                                if (cached && authSessionRef.current === authSession && cloud.auth.user?.uid === authUser.uid) {
+                                    avatarFetchRef.current = { uid: authUser.uid, key: String(avatarVersion), promise: Promise.resolve(cached.url) };
+                                    setUser((prevUser) => {
+                                        if (prevUser.uid !== authUser.uid) {
+                                            return prevUser;
+                                        }
+                                        if (prevUser.avatar === cached.url && prevUser.avatarVersion === cached.version) {
+                                            return prevUser;
+                                        }
+                                        return { ...prevUser, avatar: cached.url, avatarVersion: cached.version };
+                                    });
+                                    return;
+                                }
+                                await fetchAvatar(authUser.uid, { version: avatarVersion });
+                            })();
                         }
                     },
                     (error) => {

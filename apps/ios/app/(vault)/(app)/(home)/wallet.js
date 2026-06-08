@@ -35,6 +35,7 @@ const TX_ROW_SEPARATOR_HEIGHT = 1;
 const TX_ROW_CONTENT_HEIGHT = TX_ROW_HEIGHT - TX_ROW_SEPARATOR_HEIGHT;
 const TX_INITIAL_RENDER_COUNT = 20;
 const TX_RENDER_BATCH_SIZE = 24;
+const TX_LOAD_MORE_LOADER_MS = 160;
 
 function sameTxRow(a, b) {
     if (a === b) return true;
@@ -219,7 +220,7 @@ export default function Wallet() {
     const isFocused = useIsFocused();
     const insets = useSafeAreaInsets();
     const bitcoin = useBitcoin();
-    const { balance, hasMoreTxs, loadMoreTxs, txReady } = useWallet();
+    const { balance, hasMoreTxs, isTxLoading, loadMoreTxs, txReady } = useWallet();
     const user = useUser();
     const { settings, chatBanned } = user || {};
     const { peerByWalletPK } = usePeer() || {};
@@ -272,8 +273,14 @@ export default function Wallet() {
     const balanceFeedback = useTap({ onPress: cycleFormat, disabled: !showBalance });
 
     const txListData = txData?.sortedTransactions ?? [];
+    const mountedRef = useRef(true);
     const loadingMoreRef = useRef(false);
-    const txListHasLoader = txListData.length > 0 && hasMoreTxs;
+    const loadingMoreFrameRef = useRef(null);
+    const loadingMoreStartTimerRef = useRef(null);
+    const loadingMoreFinishTimerRef = useRef(null);
+    const [loadingMoreTxs, setLoadingMoreTxs] = useState(false);
+    const txListShowsLoader = txListData.length > 0 && (loadingMoreTxs || (hasMoreTxs && isTxLoading));
+    const txListHasFooter = txListData.length > 0 && (txListShowsLoader || listBottomPadding > 0);
     const txProfileSignature = useMemo(
         () =>
             txListData
@@ -344,14 +351,51 @@ export default function Wallet() {
         [lockRoute, router]
     );
 
-    const handleLoadMoreTxs = useCallback(() => {
-        if (!hasMoreTxs || loadingMoreRef.current) return;
-        loadingMoreRef.current = true;
-        const request = loadMoreTxs?.();
-        Promise.resolve(request).finally(() => {
+    useEffect(
+        () => () => {
+            mountedRef.current = false;
+            if (loadingMoreFrameRef.current != null) cancelAnimationFrame(loadingMoreFrameRef.current);
+            if (loadingMoreStartTimerRef.current) clearTimeout(loadingMoreStartTimerRef.current);
+            if (loadingMoreFinishTimerRef.current) clearTimeout(loadingMoreFinishTimerRef.current);
+        },
+        []
+    );
+
+    const finishLoadMoreTxs = useCallback((startedAt) => {
+        if (!mountedRef.current) return;
+        const delay = Math.max(0, TX_LOAD_MORE_LOADER_MS - (Date.now() - startedAt));
+        if (loadingMoreFinishTimerRef.current) {
+            clearTimeout(loadingMoreFinishTimerRef.current);
+        }
+        loadingMoreFinishTimerRef.current = setTimeout(() => {
+            loadingMoreFinishTimerRef.current = null;
             loadingMoreRef.current = false;
+            if (mountedRef.current) {
+                setLoadingMoreTxs(false);
+            }
+        }, delay);
+    }, []);
+
+    const handleLoadMoreTxs = useCallback(() => {
+        if (!txReady || !hasMoreTxs || isTxLoading || loadingMoreRef.current || typeof loadMoreTxs !== 'function') return;
+        loadingMoreRef.current = true;
+        setLoadingMoreTxs(true);
+        if (loadingMoreFinishTimerRef.current) {
+            clearTimeout(loadingMoreFinishTimerRef.current);
+            loadingMoreFinishTimerRef.current = null;
+        }
+        loadingMoreFrameRef.current = requestAnimationFrame(() => {
+            loadingMoreFrameRef.current = null;
+            loadingMoreStartTimerRef.current = setTimeout(() => {
+                loadingMoreStartTimerRef.current = null;
+                const startedAt = Date.now();
+                Promise.resolve()
+                    .then(loadMoreTxs)
+                    .catch(() => {})
+                    .finally(() => finishLoadMoreTxs(startedAt));
+            }, 0);
         });
-    }, [hasMoreTxs, loadMoreTxs]);
+    }, [finishLoadMoreTxs, hasMoreTxs, isTxLoading, loadMoreTxs, txReady]);
 
     const handleTxEndReached = useCallback(() => {
         handleLoadMoreTxs();
@@ -366,14 +410,14 @@ export default function Wallet() {
                     theme={theme}
                     moneyFormat={moneyFormat}
                     btcPrice={btcPrice}
-                    isLast={!txListHasLoader && index === txListData.length - 1}
+                    isLast={!txListShowsLoader && index === txListData.length - 1}
                     openRoute={openRoute}
                     selectPeerChat={selectPeerChat}
                     user={user}
                 />
             );
         },
-        [btcPrice, moneyFormat, openRoute, peerByWalletPK, selectPeerChat, theme, txListData.length, txListHasLoader, user]
+        [btcPrice, moneyFormat, openRoute, peerByWalletPK, selectPeerChat, theme, txListData.length, txListShowsLoader, user]
     );
 
     const getTxItemLayout = useCallback((data, index) => {
@@ -393,7 +437,7 @@ export default function Wallet() {
             theme.inflow,
             theme.outflow,
             theme.border,
-            txListHasLoader ? '1' : '0',
+            txListShowsLoader ? '1' : '0',
             txProfileSignature,
         ].join('|'),
         [
@@ -404,7 +448,7 @@ export default function Wallet() {
             theme.inflow,
             theme.muted,
             theme.outflow,
-            txListHasLoader,
+            txListShowsLoader,
             user?.avatar,
             user?.chatBanned,
             user?.chatPK,
@@ -426,7 +470,7 @@ export default function Wallet() {
                     onEndReached={handleTxEndReached}
                     onEndReachedThreshold={0.6}
                     ListHeaderComponent={<View style={{ height: listTopSpace }} />}
-                    ListFooterComponent={txListData.length > 0 ? <TxListFooter bottomPadding={listBottomPadding} loading={txListHasLoader} theme={theme} /> : null}
+                    ListFooterComponent={txListHasFooter ? <TxListFooter bottomPadding={listBottomPadding} loading={txListShowsLoader} theme={theme} /> : null}
                     ListEmptyComponent={() => (txReady ? <WalletEmpty /> : <WalletLoading />)}
                     contentContainerStyle={{ flexGrow: 1 }}
                     style={{ flex: 1 }}

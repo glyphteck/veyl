@@ -1,6 +1,7 @@
-import { memo, useEffect, useId, useMemo } from 'react';
+import { useCallback, useEffect, useId, useMemo, useState } from 'react';
 import { Animated as RNAnimated, Pressable, StyleSheet, View } from 'react-native';
 import Animated, { useAnimatedProps, useSharedValue, withTiming } from 'react-native-reanimated';
+import { Image } from 'expo-image';
 import Svg, { Circle, Defs, G, Image as SvgImage, Mask, Path, Rect } from 'react-native-svg';
 import { avatarSourceKey } from '@veyl/shared/avatar';
 import { prefixedId } from '@veyl/shared/utils/display';
@@ -11,6 +12,7 @@ import { useTheme } from '../providers/themeprovider';
 
 const AVATAR_ANIMATION_MS = 160;
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
+const loadedAvatarSrcs = new Set();
 
 function useAvatarImageSource(source) {
     const sourceKey = avatarSourceKey(source);
@@ -23,28 +25,139 @@ function useAvatarImageSource(source) {
     return { sourceKey, imageSource };
 }
 
+function AvatarFallbackLayer({ bot, size, color, glyphScale, theme }) {
+    return (
+        <Svg width={size} height={size} pointerEvents="none" style={StyleSheet.absoluteFill}>
+            <Rect x="0" y="0" width={size} height={size} fill={theme.background} />
+            <AvatarGlyph bot={bot} size={size} color={color} glyphScale={glyphScale} />
+        </Svg>
+    );
+}
+
+function useAvatarImageState(sourceKey, imageSource) {
+    const [visibleSourceKey, setVisibleSourceKey] = useState(() => (sourceKey && loadedAvatarSrcs.has(sourceKey) ? sourceKey : ''));
+    const [visibleImageSource, setVisibleImageSource] = useState(() => (sourceKey && loadedAvatarSrcs.has(sourceKey) ? imageSource : null));
+    const [readySourceKey, setReadySourceKey] = useState(() => (sourceKey && loadedAvatarSrcs.has(sourceKey) ? sourceKey : ''));
+
+    useEffect(() => {
+        if (!sourceKey) {
+            setVisibleSourceKey('');
+            setVisibleImageSource(null);
+            setReadySourceKey('');
+            return;
+        }
+        if (loadedAvatarSrcs.has(sourceKey)) {
+            setVisibleSourceKey(sourceKey);
+            setVisibleImageSource(imageSource);
+            setReadySourceKey(sourceKey);
+            return;
+        }
+        setReadySourceKey('');
+    }, [imageSource, sourceKey]);
+
+    const markLoaded = useCallback(() => {
+        loadedAvatarSrcs.add(sourceKey);
+        setVisibleSourceKey(sourceKey);
+        setVisibleImageSource(imageSource);
+        setReadySourceKey(sourceKey);
+    }, [imageSource, sourceKey]);
+
+    const markError = useCallback(() => {
+        if (!visibleSourceKey) {
+            setReadySourceKey('');
+        }
+    }, [visibleSourceKey]);
+
+    return {
+        imageReady: !!sourceKey && readySourceKey === sourceKey,
+        markError,
+        markLoaded,
+        showPrevious: !!visibleSourceKey && visibleSourceKey !== sourceKey && !!visibleImageSource,
+        visibleImageSource,
+    };
+}
+
+function AvatarImageSurface({ sourceKey, imageSource, size, bot = false, glyphColor, glyphScale = 1, theme }) {
+    const { imageReady, markError, markLoaded, showPrevious, visibleImageSource } = useAvatarImageState(sourceKey, imageSource);
+
+    return (
+        <View style={{ width: size, height: size, backgroundColor: theme.background }}>
+            <AvatarFallbackLayer bot={bot} size={size} color={glyphColor} glyphScale={glyphScale} theme={theme} />
+            {showPrevious ? (
+                <Image
+                    source={visibleImageSource}
+                    style={[StyleSheet.absoluteFill, { width: size, height: size }]}
+                    contentFit="cover"
+                    cachePolicy="memory-disk"
+                    enableLiveTextInteraction={false}
+                />
+            ) : null}
+            {sourceKey ? (
+                <Image
+                    key={sourceKey}
+                    source={imageSource}
+                    style={[StyleSheet.absoluteFill, { width: size, height: size, opacity: imageReady ? 1 : 0 }]}
+                    contentFit="cover"
+                    cachePolicy="memory-disk"
+                    enableLiveTextInteraction={false}
+                    onLoad={markLoaded}
+                    onError={markError}
+                />
+            ) : null}
+        </View>
+    );
+}
+
+function getMaskId(id) {
+    return prefixedId('avatar-mask', id);
+}
+
+function MaskedAvatarSurface({ sourceKey, imageSource, size, bot = false, glyphColor, glyphScale = 1, theme, maskId, maskItems, selectable, selectedProps, selectedRadius, selectedStroke }) {
+    const { imageReady, markError, markLoaded, showPrevious, visibleImageSource } = useAvatarImageState(sourceKey, imageSource);
+
+    return (
+        <Svg width={size} height={size} pointerEvents="none">
+            <Defs>
+                <Mask id={maskId} x="0" y="0" width={size} height={size} maskUnits="userSpaceOnUse">
+                    <Rect x="0" y="0" width={size} height={size} fill="black" />
+                    <Circle cx={size / 2} cy={size / 2} r={size / 2} fill="white" />
+                    {maskItems.map((item) => (
+                        <Circle key={item.key} cx={item.centerX} cy={item.centerY} r={item.radius} fill="black" />
+                    ))}
+                </Mask>
+            </Defs>
+            <G mask={`url(#${maskId})`}>
+                <Rect x="0" y="0" width={size} height={size} fill={theme.background} />
+                <AvatarGlyph bot={bot} size={size} color={glyphColor} glyphScale={glyphScale} />
+                {showPrevious ? <SvgImage href={visibleImageSource} x="0" y="0" width={size} height={size} preserveAspectRatio="xMidYMid slice" /> : null}
+                {sourceKey ? (
+                    <SvgImage
+                        key={sourceKey}
+                        href={imageSource}
+                        x="0"
+                        y="0"
+                        width={size}
+                        height={size}
+                        preserveAspectRatio="xMidYMid slice"
+                        opacity={imageReady ? 1 : 0}
+                        onLoad={markLoaded}
+                        onError={markError}
+                    />
+                ) : null}
+                {selectable ? <AnimatedCircle animatedProps={selectedProps} cx={size / 2} cy={size / 2} r={selectedRadius} fill="none" stroke={theme.active} strokeWidth={selectedStroke} /> : null}
+            </G>
+        </Svg>
+    );
+}
+
 export function StaticAvatar({ source, size = 52, style, pointerEvents, bot = false, glyphColor, glyphScale = 1 }) {
     const { theme } = useTheme();
     const resolvedGlyphColor = glyphColor ?? theme.foreground;
     const { sourceKey, imageSource } = useAvatarImageSource(source);
 
-    if (!sourceKey) {
-        return (
-            <View pointerEvents={pointerEvents} style={[{ width: size, height: size, borderRadius: size / 2, overflow: 'hidden', backgroundColor: theme.background }, style]}>
-                <Svg width={size} height={size} pointerEvents={pointerEvents}>
-                    <Rect x="0" y="0" width={size} height={size} fill={theme.background} />
-                    <AvatarGlyph bot={bot} size={size} color={resolvedGlyphColor} glyphScale={glyphScale} />
-                </Svg>
-            </View>
-        );
-    }
-
     return (
-        <View key={sourceKey} pointerEvents={pointerEvents} style={[{ width: size, height: size, borderRadius: size / 2, overflow: 'hidden', backgroundColor: theme.background }, style]}>
-            <Svg width={size} height={size} pointerEvents={pointerEvents}>
-                <Rect x="0" y="0" width={size} height={size} fill={theme.background} />
-                <AvatarImageLayer href={imageSource} size={size} />
-            </Svg>
+        <View pointerEvents={pointerEvents} style={[{ width: size, height: size, borderRadius: size / 2, overflow: 'hidden', backgroundColor: theme.background }, style]}>
+            <AvatarImageSurface sourceKey={sourceKey} imageSource={imageSource} size={size} bot={bot} glyphColor={resolvedGlyphColor} glyphScale={glyphScale} theme={theme} />
         </View>
     );
 }
@@ -100,17 +213,6 @@ function normalizeMaskAdornment(adornment, index) {
         radius: adornment.maskRadius ?? outerSize / 2,
     };
 }
-
-function getMaskId(id) {
-    return prefixedId('avatar-mask', id);
-}
-
-const AvatarImageLayer = memo(
-    function AvatarImageLayer({ href, size }) {
-        return <SvgImage href={href} x="0" y="0" width={size} height={size} preserveAspectRatio="xMidYMid slice" />;
-    },
-    (prev, next) => prev.href === next.href && prev.size === next.size
-);
 
 export function getAvatarAdornmentMetrics(size, { type = 'dot' } = {}) {
     if (type === 'action') {
@@ -244,32 +346,32 @@ export default function Avatar({
 
     return (
         <View style={[styles.shadow, style]} pointerEvents={pointerEvents}>
-            <Svg width={size} height={size} pointerEvents={pointerEvents}>
-                <Defs>
-                    <Mask id={maskId} x="0" y="0" width={size} height={size} maskUnits="userSpaceOnUse">
-                        <Rect x="0" y="0" width={size} height={size} fill="black" />
-                        <Circle cx={size / 2} cy={size / 2} r={size / 2} fill="white" />
-                        {maskItems.map((item) => (
-                            <Circle key={item.key} cx={item.centerX} cy={item.centerY} r={item.radius} fill="black" />
-                        ))}
-                    </Mask>
-                </Defs>
-                <G mask={`url(#${maskId})`}>
-                    <Rect x="0" y="0" width={size} height={size} fill={theme.background} />
-                    {sourceKey ? (
-                        <AvatarImageLayer
-                            key={sourceKey}
-                            href={imageSource}
-                            size={size}
-                        />
-                    ) : (
-                        <AvatarGlyph bot={bot} size={size} color={resolvedGlyphColor} glyphScale={glyphScale} />
-                    )}
+            {maskItems.length ? (
+                <MaskedAvatarSurface
+                    sourceKey={sourceKey}
+                    imageSource={imageSource}
+                    size={size}
+                    bot={bot}
+                    glyphColor={resolvedGlyphColor}
+                    glyphScale={glyphScale}
+                    theme={theme}
+                    maskId={maskId}
+                    maskItems={maskItems}
+                    selectable={selectable}
+                    selectedProps={selectedProps}
+                    selectedRadius={selectedRadius}
+                    selectedStroke={selectedStroke}
+                />
+            ) : (
+                <View style={{ width: size, height: size, borderRadius: size / 2, overflow: 'hidden', backgroundColor: theme.background }}>
+                    <AvatarImageSurface sourceKey={sourceKey} imageSource={imageSource} size={size} bot={bot} glyphColor={resolvedGlyphColor} glyphScale={glyphScale} theme={theme} />
                     {selectable ? (
-                        <AnimatedCircle animatedProps={selectedProps} cx={size / 2} cy={size / 2} r={selectedRadius} fill="none" stroke={theme.active} strokeWidth={selectedStroke} />
+                        <Svg width={size} height={size} pointerEvents="none" style={StyleSheet.absoluteFill}>
+                            <AnimatedCircle animatedProps={selectedProps} cx={size / 2} cy={size / 2} r={selectedRadius} fill="none" stroke={theme.active} strokeWidth={selectedStroke} />
+                        </Svg>
                     ) : null}
-                </G>
-            </Svg>
+                </View>
+            )}
             <AvatarAdornment metrics={dot} show={active} color={theme.active} />
         </View>
     );

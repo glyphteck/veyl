@@ -34,7 +34,7 @@ const Avatar = React.forwardRef(function Avatar({ className, active = false, sel
                 <Dot show={active} type="active" vectorMask className="size-full" maskTargetClassName="relative size-full overflow-hidden rounded-full">
                     {children}
                     {selectable ? (
-                        <span className={cn('pointer-events-none absolute inset-0 rounded-full border-[3px] transition-colors ease-out', selected ? 'border-active' : 'border-transparent')} aria-hidden />
+                        <span className={cn('pointer-events-none absolute inset-0 z-20 rounded-full border-[3px] transition-colors ease-out', selected ? 'border-active' : 'border-transparent')} aria-hidden />
                     ) : null}
                 </Dot>
             </div>
@@ -47,14 +47,18 @@ const AvatarImage = React.forwardRef(function AvatarImage({ className, src, alt 
     const setStatus = avatar?.setStatus;
     const imgRef = React.useRef(null);
     const srcKey = getAvatarImageKey(src);
+    const [visibleSrc, setVisibleSrc] = React.useState(() => (srcKey && loadedAvatarSrcs.has(srcKey) ? srcKey : ''));
     const loaded = (avatar?.status === 'loaded' && avatar?.srcKey === srcKey) || loadedAvatarSrcs.has(srcKey);
+    const showPrevious = !!visibleSrc && visibleSrc !== srcKey;
 
     useAvatarLayoutEffect(() => {
         if (!srcKey) {
+            setVisibleSrc('');
             setStatus?.('error', srcKey);
             return;
         }
         if (loadedAvatarSrcs.has(srcKey)) {
+            setVisibleSrc(srcKey);
             setStatus?.('loaded', srcKey);
             return;
         }
@@ -63,6 +67,7 @@ const AvatarImage = React.forwardRef(function AvatarImage({ className, src, alt 
         if (img?.complete) {
             if (img.naturalWidth > 0) {
                 loadedAvatarSrcs.add(srcKey);
+                setVisibleSrc(srcKey);
                 setStatus?.('loaded', srcKey);
             } else {
                 setStatus?.('error', srcKey);
@@ -71,40 +76,55 @@ const AvatarImage = React.forwardRef(function AvatarImage({ className, src, alt 
         }
 
         setStatus?.('loading', srcKey);
-    }, [setStatus, srcKey]);
+    }, [loaded, setStatus, srcKey]);
 
     if (!srcKey) {
         return null;
     }
 
     return (
-        <Image
-            alt={alt}
-            ref={(node) => {
-                imgRef.current = node;
-                if (typeof ref === 'function') {
-                    ref(node);
-                } else if (ref) {
-                    ref.current = node;
-                }
-            }}
-            className={cn('pointer-events-none absolute inset-0 size-full select-none object-cover transition-opacity duration-200 ease-out', loaded ? 'opacity-100' : 'opacity-0', className)}
-            draggable={false}
-            height={40}
-            src={srcKey}
-            unoptimized
-            width={40}
-            onLoad={(event) => {
-                loadedAvatarSrcs.add(srcKey);
-                setStatus?.('loaded', srcKey);
-                onLoad?.(event);
-            }}
-            onError={(event) => {
-                setStatus?.('error', srcKey);
-                onError?.(event);
-            }}
-            {...props}
-        />
+        <>
+            {showPrevious ? (
+                <Image
+                    alt=""
+                    aria-hidden="true"
+                    className={cn('pointer-events-none absolute inset-0 z-10 size-full select-none object-cover transition-opacity duration-200 ease-out opacity-100', className)}
+                    draggable={false}
+                    height={40}
+                    src={visibleSrc}
+                    unoptimized
+                    width={40}
+                />
+            ) : null}
+            <Image
+                alt={alt}
+                ref={(node) => {
+                    imgRef.current = node;
+                    if (typeof ref === 'function') {
+                        ref(node);
+                    } else if (ref) {
+                        ref.current = node;
+                    }
+                }}
+                className={cn('pointer-events-none absolute inset-0 z-10 size-full select-none object-cover transition-opacity duration-200 ease-out', loaded ? 'opacity-100' : 'opacity-0', className)}
+                draggable={false}
+                height={40}
+                src={srcKey}
+                unoptimized
+                width={40}
+                onLoad={(event) => {
+                    loadedAvatarSrcs.add(srcKey);
+                    setVisibleSrc(srcKey);
+                    setStatus?.('loaded', srcKey);
+                    onLoad?.(event);
+                }}
+                onError={(event) => {
+                    setStatus?.('error', srcKey);
+                    onError?.(event);
+                }}
+                {...props}
+            />
+        </>
     );
 });
 
@@ -155,10 +175,10 @@ const StaticAvatar = React.forwardRef(function StaticAvatar({ className, src, st
 
 const AvatarFallback = React.forwardRef(function AvatarFallback({ className, children, ...props }, ref) {
     const avatar = React.useContext(AvatarContext);
-    const hidden = avatar?.status === 'loaded';
+    const hidden = avatar?.status === 'loaded' || (!!avatar?.srcKey && loadedAvatarSrcs.has(avatar.srcKey));
 
     return (
-        <div ref={ref} className={cn('pointer-events-none absolute inset-0 flex size-full items-center justify-center overflow-hidden rounded-full bg-background transition-opacity duration-200 ease-out', hidden ? 'opacity-0' : 'opacity-100', className)} {...props}>
+        <div ref={ref} className={cn('pointer-events-none absolute inset-0 z-0 flex size-full items-center justify-center overflow-hidden rounded-full bg-background transition-opacity duration-200 ease-out', hidden ? 'opacity-0' : 'opacity-100', className)} {...props}>
             {children ?? (avatar?.bot ? <Bot className="size-[70%] stroke-2" aria-hidden /> : <UserRound className="mt-[25%] size-full stroke-2" aria-hidden />)}
         </div>
     );

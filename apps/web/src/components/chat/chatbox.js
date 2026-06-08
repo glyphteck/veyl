@@ -15,6 +15,7 @@ import { renderMoney } from '@veyl/shared/money';
 import { chatUploadErrorMessage, queueMessages } from '@/lib/chat/files';
 import { canReplyToMsg, makeReq, makeTxt, setReply, setTxt } from '@veyl/shared/chat/messages';
 import { parseCommandAmountSats } from '@veyl/shared/commands';
+import { MessageCirclePlus } from 'lucide-react';
 import { toast } from 'sonner';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -208,6 +209,10 @@ export function Chatbox() {
         setDraft(null);
     }, []);
 
+    const handleStartChat = useCallback(() => {
+        openDialog('newchat');
+    }, [openDialog]);
+
     const handleChatKeyDown = useCallback(
         (event) => {
             if (event.metaKey || event.ctrlKey || event.altKey) {
@@ -306,7 +311,13 @@ export function Chatbox() {
         return (
             <Card className="h-full flex flex-col">
                 <div className="flex flex-1 items-center justify-center p-6">
-                    <p className="text-2xl text-muted">Select a chat.</p>
+                    <div className="text-center">
+                        <p className="text-lg text-muted">No chat selected</p>
+                        <Button onClick={handleStartChat} className="button-fill shrinker text-lg w-3xs mt-4">
+                            <MessageCirclePlus />
+                            new chat
+                        </Button>
+                    </div>
                 </div>
             </Card>
         );

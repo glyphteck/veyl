@@ -2,6 +2,13 @@
 
 Repo-level changes are listed newest first. Keep entries short and concrete. Broad pushes get grouped bullets, while narrow fixes can use one concise bugfix or cleanup bullet that still names the actual change.
 
+## 0.14.8 - 2026-06-09
+
+- Stabilized avatar loading across web and iOS with retained previous images, cache-aware fallback hiding, and current/peer avatar cache adoption before refetching.
+- Fixed the iOS avatar active-dot cutout so the avatar art is clipped away and the active dot floats over the screen behind it.
+- Made the iOS wallet transaction footer loader visible for fast paged row reveals while keeping the faster transaction batch loading behavior.
+- Added a direct new-chat action to the empty web chat panel.
+
 ## 0.14.7 - 2026-06-08
 
 - Moved encrypted client blobs to raw `Uint8Array` boundaries with Firebase-owned byte/base64 encoding, added a shared versioned body envelope for chat/file payloads, and recorded the remaining encrypted user-data and bot-backend abstraction work.

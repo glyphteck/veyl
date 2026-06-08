@@ -159,12 +159,19 @@ export function createPeersApi({ cloud, network, avatarCache = null }) {
         const currentAvatar = profile.avatar ?? existing?.avatar ?? null;
         let reusableAvatar = changedAvatarState ? null : currentAvatar;
         if (!changedAvatarState && currentAvatar) {
-            if (isLocalAvatarSource(currentAvatar) && typeof avatarCache?.read === 'function') {
+            if (typeof avatarCache?.read === 'function') {
                 const cachedAvatar = await readCachedAvatar(profile.uid, profile.avatarVersion);
                 if (cachedAvatar) {
                     return cachedAvatar;
                 }
-                reusableAvatar = null;
+                if (isLocalAvatarSource(currentAvatar)) {
+                    reusableAvatar = null;
+                } else if (typeof avatarCache?.write === 'function' && typeof cloud.peer.avatar.read === 'function') {
+                    const cachedSource = await getAvatarUrl(profile.uid, profile.avatarVersion);
+                    return cachedSource || currentAvatar;
+                } else {
+                    return currentAvatar;
+                }
             } else {
                 return currentAvatar;
             }
@@ -373,7 +380,11 @@ export function createPeersApi({ cloud, network, avatarCache = null }) {
     }
 
     function needsAvatarResolve(profile) {
-        return !!profile?.uid && profile.avatarVersion != null && !profile.avatar;
+        return (
+            !!profile?.uid &&
+            profile.avatarVersion != null &&
+            (!profile.avatar || (typeof avatarCache?.read === 'function' && !isLocalAvatarSource(profile.avatar)))
+        );
     }
 
     function queueCachedAvatarResolve(profiles, key, type) {
