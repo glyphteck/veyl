@@ -93,11 +93,13 @@ export function isChatUnseenForUser(chatData, userChatPK) {
 
 function sortChats(chats) {
     return [...chats].sort((a, b) => {
-        const delta = (b?.ts || 0) - (a?.ts || 0);
+        const delta = (timestampMs(b?.ts, 0) || 0) - (timestampMs(a?.ts, 0) || 0);
         if (delta !== 0) {
             return delta;
         }
-        return String(a?.id || '').localeCompare(String(b?.id || ''));
+        const aEntry = cleanText(a?.entryId) || cleanText(a?.id);
+        const bEntry = cleanText(b?.entryId) || cleanText(b?.id);
+        return bEntry.localeCompare(aEntry);
     });
 }
 
@@ -141,10 +143,6 @@ export function isCurrentUserChatEntry(chat) {
 
 function hasPendingPreview(chat) {
     return chat?.preview?.pending === true && chat?.preview?.failed !== true;
-}
-
-function hasLocalPreviewTimestamp(chat) {
-    return chat?.preview?.pending === true || chat?.preview?.failed === true;
 }
 
 function hasUsableEntry(chat) {
@@ -197,42 +195,6 @@ export function canonicalChatVersions(chats) {
     }
 
     return sortChats([...byVersion.values(), ...unkeyed]);
-}
-
-export function preserveChatTimestamps(chats, currentChats) {
-    if (!Array.isArray(chats) || !chats.length || !Array.isArray(currentChats) || !currentChats.length) {
-        return chats;
-    }
-
-    const currentById = new Map();
-    for (const chat of currentChats) {
-        if (!chat?.id) {
-            continue;
-        }
-        const current = currentById.get(chat.id);
-        const chatTs = timestampMs(chat.ts, null);
-        const currentTs = timestampMs(current?.ts, null);
-        if (chatTs != null && (currentTs == null || chatTs > currentTs)) {
-            currentById.set(chat.id, chat);
-        }
-    }
-
-    let changed = false;
-    const next = (chats || []).map((chat) => {
-        const current = currentById.get(chat?.id);
-        const currentTs = timestampMs(current?.ts, null);
-        const nextTs = timestampMs(chat?.ts, null);
-        if (currentTs == null || nextTs == null || nextTs >= currentTs || hasLocalPreviewTimestamp(current)) {
-            return chat;
-        }
-        changed = true;
-        return {
-            ...chat,
-            ts: currentTs,
-        };
-    });
-
-    return changed ? sortChats(next) : chats;
 }
 
 export function filterPendingDeleteChats(chats, pendingDeleteIds) {

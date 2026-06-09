@@ -1,5 +1,6 @@
-import { LEGACY_V2_VAULT_CRYPTO, packSeedData, seedDataHash, unpackLegacyV2SeedData, unpackSeedData } from '@veyl/shared/crypto/pack';
-import { createSecretRegistry, decryptSeed as decryptSeedShared, deriveLegacyWalletEntropy, deriveSeed, encryptSeed as encryptSeedShared, getDefaultWalletEntropy, mnemonicFromWalletEntropy, openSecretRegistry } from '@veyl/shared/crypto/seed';
+import { unpackSeedData } from '@veyl/shared/crypto/pack';
+import { decryptSeed as decryptSeedShared, encryptSeed as encryptSeedShared, getDefaultWalletEntropy, mnemonicFromWalletEntropy, openSecretRegistry } from '@veyl/shared/crypto/seed';
+import { migrateVault as migrateVaultShared, shouldMigrateVault as shouldMigrateVaultShared } from '@veyl/shared/crypto/vaultmigration';
 import { normalizePassword } from '@veyl/shared/password';
 import { deriveVaultKey } from './kdf';
 
@@ -19,6 +20,10 @@ export function decryptSeed(ciphertext, salt, iv, password, kdf) {
     return decryptSeedShared(ciphertext, salt, iv, password, kdf, { deriveKey: deriveVaultKey });
 }
 
+export function unpackVaultSeedData(vault) {
+    return unpackSeedData(vault);
+}
+
 export async function decryptMasterSeed(vault, password) {
     const nextPassword = normalizePassword(password);
     if (!nextPassword) {
@@ -28,7 +33,7 @@ export async function decryptMasterSeed(vault, password) {
         throw new Error('vault not ready');
     }
 
-    const { salt, iv, ct, kdf } = unpackSeedData(vault);
+    const { salt, iv, ct, kdf } = unpackVaultSeedData(vault);
     return decryptSeed(ct, salt, iv, nextPassword, kdf);
 }
 
@@ -41,7 +46,7 @@ export async function decryptWalletMnemonic(vault, password) {
         throw new Error('vault not ready');
     }
 
-    const { salt, iv, ct, kdf, registry } = unpackSeedData(vault);
+    const { salt, iv, ct, kdf, registry } = unpackVaultSeedData(vault);
     const masterSeed = await decryptSeed(ct, salt, iv, nextPassword, kdf);
     let walletEntropy = null;
     try {
@@ -62,37 +67,10 @@ export async function verifyVaultPassword(vault, password) {
     }
 }
 
-export async function migrateLegacyV2Vault(vault, password) {
-    const nextPassword = normalizePassword(password);
-    if (!nextPassword) {
-        throw new Error('password required');
-    }
-    if (!vault) {
-        throw new Error('vault not ready');
-    }
+export function shouldMigrateVault(vault) {
+    return shouldMigrateVaultShared(vault);
+}
 
-    const { salt, iv, ct, kdf } = unpackLegacyV2SeedData(vault);
-    const masterSeed = await decryptSeed(ct, salt, iv, nextPassword, kdf);
-    let walletEntropy = null;
-    let chatSeed = null;
-    try {
-        walletEntropy = deriveLegacyWalletEntropy(masterSeed);
-        chatSeed = deriveSeed(masterSeed, 'chat');
-        const seedData = await encryptSeedShared(nextPassword, {
-            deriveKey: deriveVaultKey,
-            registry: createSecretRegistry({ walletEntropy, chatSeed }),
-        });
-        return {
-            vault: packSeedData(seedData),
-            expectedHash: seedDataHash(vault),
-            from: LEGACY_V2_VAULT_CRYPTO,
-            to: seedData.crypto,
-            walletEntropy: new Uint8Array(walletEntropy),
-            chatSeed: new Uint8Array(chatSeed),
-        };
-    } finally {
-        zero(masterSeed);
-        zero(walletEntropy);
-        zero(chatSeed);
-    }
+export async function migrateVault(vault, password) {
+    return migrateVaultShared(vault, password, { deriveKey: deriveVaultKey });
 }

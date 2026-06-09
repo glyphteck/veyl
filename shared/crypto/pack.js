@@ -4,9 +4,7 @@ import { BOX_NONCE_BYTES } from './box.js';
 import { decoder, encoder, SALT_BYTES, toBytes, toHex } from './core.js';
 import { SECRET_REGISTRY_ENVELOPE_VERSION, VAULT_CRYPTO, VAULT_KDF, vaultIncompatibleError } from './seed.js';
 
-const SEED_MAGIC = encoder.encode(VAULT_CRYPTO);
 const SEED_CT_LENGTH_BYTES = 4;
-export const LEGACY_V2_VAULT_CRYPTO = 'crypto_glyphseal_v2';
 export const BODY_ENVELOPE_VERSION = 1;
 
 export const concatBytes = (...arrs) => {
@@ -72,16 +70,17 @@ export function seedDataHash(bytes) {
 }
 
 // pack seed data for storing
-export const packSeedData = ({ salt, iv, ciphertext, ct, registry, kdf = VAULT_KDF }) => {
+export const packSeedData = ({ crypto = VAULT_CRYPTO, salt, iv, ciphertext, ct, registry, kdf = VAULT_KDF }) => {
     const body = ciphertext || ct;
     if (!salt || !iv || !body || !registry) {
         throw new Error('seed data missing');
     }
 
-    const header = new Uint8Array(1 + SEED_MAGIC.length + 8);
-    header[0] = SEED_MAGIC.length;
-    header.set(SEED_MAGIC, 1);
-    const offset = 1 + SEED_MAGIC.length;
+    const magic = encoder.encode(crypto);
+    const header = new Uint8Array(1 + magic.length + 8);
+    header[0] = magic.length;
+    header.set(magic, 1);
+    const offset = 1 + magic.length;
     header[offset] = kdf.t;
     header[offset + 1] = kdf.p;
     header[offset + 2] = kdf.dkLen;
@@ -94,10 +93,9 @@ export const packSeedData = ({ salt, iv, ciphertext, ct, registry, kdf = VAULT_K
     return concatBytes(header, salt, iv, bodyLength, body, packRegistryData(registry));
 };
 
-// unpack seed data from storage
-export const unpackSeedData = (bytes) => {
+export function unpackSeedDataForCrypto(bytes, expectedCrypto) {
     const { p, magic, offset, kdf } = readSeedHeader(bytes);
-    if (magic !== VAULT_CRYPTO) {
+    if (magic !== expectedCrypto) {
         throw vaultIncompatibleError('unsupported seed crypto');
     }
 
@@ -116,22 +114,10 @@ export const unpackSeedData = (bytes) => {
         ct: p.subarray(ctOffset, registryOffset),
         registry: unpackRegistryData(p.subarray(registryOffset)),
     };
-};
+}
 
-export const unpackLegacyV2SeedData = (bytes) => {
-    const { p, magic, offset, kdf } = readSeedHeader(bytes);
-    if (magic !== LEGACY_V2_VAULT_CRYPTO) {
-        throw vaultIncompatibleError('unsupported legacy seed crypto');
-    }
-
-    return {
-        crypto: magic,
-        kdf,
-        salt: p.subarray(offset, offset + SALT_BYTES),
-        iv: p.subarray(offset + SALT_BYTES, offset + SALT_BYTES + AES_IV_BYTES),
-        ct: p.subarray(offset + SALT_BYTES + AES_IV_BYTES),
-    };
-};
+// unpack seed data from storage
+export const unpackSeedData = (bytes, { crypto = VAULT_CRYPTO } = {}) => unpackSeedDataForCrypto(bytes, crypto);
 
 export const packRawData = (...arrs) => concatBytes(...arrs);
 

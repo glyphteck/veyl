@@ -4,8 +4,7 @@ import admin, { db, OK } from '../../lib/admin.js';
 import { HOUR_MS, limitCallable, uidLimitKey } from '../../lib/ratelimit.js';
 import { loggedCall } from '../../lib/actionlog.js';
 
-const CURRENT_VAULT_CRYPTO = 'crypto_glyphseal_v3';
-const LEGACY_V2_VAULT_CRYPTO = 'crypto_glyphseal_v2';
+const SUPPORTED_MIGRATIONS = new Set([]);
 const MAX_VAULT_BYTES = 256 * 1024;
 const HEX_32 = /^[0-9a-f]{64}$/;
 const PK_HEX_32 = /^[0-9a-f]{64}$/;
@@ -82,13 +81,14 @@ export const replaceVault = onCall(loggedCall('replaceVault', async (context) =>
     }
 
     const expectedFrom = typeof context.data?.from === 'string' ? context.data.from.trim() : '';
-    if (expectedFrom && expectedFrom !== LEGACY_V2_VAULT_CRYPTO && expectedFrom !== CURRENT_VAULT_CRYPTO) {
-        throw new HttpsError('invalid-argument', 'bad source vault version');
+    const expectedTo = typeof context.data?.to === 'string' ? context.data.to.trim() : '';
+    if (!SUPPORTED_MIGRATIONS.has(`${expectedFrom}->${expectedTo}`)) {
+        throw new HttpsError('invalid-argument', 'bad vault migration');
     }
 
     const nextVault = decodeBase64Bytes(context.data?.vault, 'vault');
-    if (vaultCrypto(nextVault) !== CURRENT_VAULT_CRYPTO) {
-        throw new HttpsError('invalid-argument', 'replacement vault must be current');
+    if (vaultCrypto(nextVault) !== expectedTo) {
+        throw new HttpsError('invalid-argument', 'replacement vault version');
     }
 
     const walletPK = cleanWalletPK(context.data?.walletPK);
@@ -100,8 +100,7 @@ export const replaceVault = onCall(loggedCall('replaceVault', async (context) =>
     await db.runTransaction(async (tx) => {
         const [seedSnap, profileSnap] = await Promise.all([tx.get(seedRef), tx.get(profileRef)]);
         const currentVault = vaultBytesFromSnap(seedSnap);
-        const currentCrypto = vaultCrypto(currentVault);
-        if (expectedFrom && currentCrypto !== expectedFrom) {
+        if (vaultCrypto(currentVault) !== expectedFrom) {
             throw new HttpsError('failed-precondition', 'vault version changed');
         }
         if (vaultHash(currentVault) !== expectedHash) {

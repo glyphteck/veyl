@@ -294,9 +294,12 @@ export async function encryptSeedWithPassword(seed, pwd, options = {}) {
     const registry = normalizeSecretRegistry(options.registry || createSecretRegistry());
     const sealedRegistry = await sealSecretRegistry(seed, registry);
     const key = await deriveKey(pwd, salt, params);
-    const { iv, ct } = await sealAes(key, seed);
-    key.fill(0);
-    return { crypto: VAULT_CRYPTO, kdf: params, ciphertext: ct, salt, iv, registry: sealedRegistry };
+    try {
+        const { iv, ct } = await sealAes(key, seed);
+        return { crypto: options.crypto || VAULT_CRYPTO, kdf: params, ciphertext: ct, salt, iv, registry: sealedRegistry };
+    } finally {
+        key.fill(0);
+    }
 }
 
 export async function encryptSeed(pwd, options = {}) {
@@ -312,9 +315,11 @@ export async function decryptSeed(ciphertext, salt, iv, pwd, params = VAULT_KDF,
     const kdf = normalizeVaultKdf(params);
     const deriveKey = getVaultDeriveKey(options);
     const key = await deriveKey(pwd, salt, kdf);
-    const seed = await openAes(key, iv, ciphertext);
-    key.fill(0);
-    return seed;
+    try {
+        return await openAes(key, iv, ciphertext);
+    } finally {
+        key.fill(0);
+    }
 }
 
 // get feature specific seeds

@@ -17,14 +17,13 @@ import {
     getPeersFromChats,
     mergeChatPreviewDrop,
     nextChatPreviewExpiryMs,
-    preserveChatTimestamps,
     replaceChatPreview,
     sameChats,
     sameLastChat,
     setLocalChats,
     trimExpiredChatPreviews,
 } from './chats.js';
-import { collectMessageKeys } from './messagekeys.js';
+import { collectMessageKeys, messageHasKey } from './messagekeys.js';
 import { filterActiveUserChats, getChat, listenToChats, loadMoreChats as loadMoreChatEntries, restoreUserChats } from './list.js';
 import { setChatPreview, setChatRead } from './messages/write.js';
 import { markChatsRead } from './read.js';
@@ -128,7 +127,7 @@ export function useChatList({
                 chatPK,
                 readCacheRef.current
             );
-            const shownChats = preserveChatTimestamps(sortedChats(setLocalChats(filterPendingDeleteChats(filteredChats, pendingDeleteIdsRef.current), localByChatRef.current)), chatsRef.current);
+            const shownChats = sortedChats(setLocalChats(filterPendingDeleteChats(filteredChats, pendingDeleteIdsRef.current), localByChatRef.current));
             chatsRef.current = shownChats;
             setChats((prev) => (sameChats(prev, shownChats) ? prev : shownChats));
             const nextLastChat = getLastChat(shownChats, chatPK);
@@ -215,9 +214,15 @@ export function useChatList({
     const clearChatPreviewKeys = useCallback(
         (chatId, keys, replacement = null) => {
             const currentChat = lastServerChatsRef.current.find((chatItem) => chatItem?.id === chatId) || chatsRef.current.find((chatItem) => chatItem?.id === chatId);
-            const dropCutoffMs = timestampMs(currentChat?.preview?.ts, null) ?? timestampMs(currentChat?.ts, null);
-            const remembered = rememberHiddenChatPreviewKeys(chatId, keys);
-            const replaced = mergeChatPreviewDrop(chatPreviewOverridesRef.current, chatId, keys, replacement, { dropCutoffMs });
+            const nextKeys = keys instanceof Set ? keys : collectMessageKeys(keys);
+            const affectsPreview = !!currentChat?.preview && messageHasKey(currentChat.preview, nextKeys);
+            if (!affectsPreview && replacement == null) {
+                return;
+            }
+
+            const dropCutoffMs = affectsPreview ? timestampMs(currentChat?.preview?.ts, null) ?? timestampMs(currentChat?.ts, null) : null;
+            const remembered = affectsPreview ? rememberHiddenChatPreviewKeys(chatId, nextKeys) : false;
+            const replaced = mergeChatPreviewDrop(chatPreviewOverridesRef.current, chatId, nextKeys, replacement, { dropCutoffMs });
             if (remembered || replaced) {
                 persistChatPreview(chatId, chatPreviewOverridesRef.current.get(chatId)?.preview || null);
             }
@@ -277,7 +282,7 @@ export function useChatList({
 
     const commitServerChats = useCallback(
         (nextChats, options = {}) => {
-            const sorted = preserveChatTimestamps(sortedChats(nextChats), lastServerChatsRef.current);
+            const sorted = sortedChats(nextChats);
             hydrateReadCache(sorted, readCacheRef.current);
             const nextServerChats = applyChatPreviewOverrides(sorted, chatPreviewOverridesRef.current, chatPK, readCacheRef.current);
             lastServerChatsRef.current = nextServerChats;

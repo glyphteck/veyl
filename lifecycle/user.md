@@ -56,7 +56,7 @@ flowchart TD
     H --> D
 ```
 
-Owner entries are the chat-list source. Inbox pings are sealed 21-day delivery pointers, not duplicated message content.
+Owner entries are the chat-list source. The owner path, entry id, and `ts` query marker are plaintext metadata, so backend/admin access can count a user's chat entries and inspect list-order timestamps. The encrypted entry body contains the peer key, peer uid, settings, read state, and preview, so those fields stay unreadable without the user's chat private key. Inbox pings are sealed 21-day delivery pointers, not duplicated message content.
 
 ## Push And Private Routing
 
@@ -71,7 +71,7 @@ flowchart TD
     E --> F["Recipient decrypts ping after unlock"]
 ```
 
-The backend can know sender auth uid and recipient uid for push routing. It must not receive plaintext message content, chat previews, read state, reaction state, retention state, payment state, or hidden state.
+The backend can know sender auth uid and recipient uid for push routing. It uses those ids for ban checks, block checks, rate limits, inbox writes, and generic notification delivery. Function logs must keep ids redacted, and the backend must not receive plaintext message content, chat previews, read state, reaction state, retention state, payment state, or hidden state.
 
 ## Account Deletion
 

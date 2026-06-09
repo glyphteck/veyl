@@ -271,6 +271,17 @@ function pickRandom(items) {
     return items[randomInt(items.length)];
 }
 
+function shuffled(items) {
+    const out = [...(items || [])];
+    for (let index = out.length - 1; index > 0; index -= 1) {
+        const swapIndex = randomInt(index + 1);
+        const current = out[index];
+        out[index] = out[swapIndex];
+        out[swapIndex] = current;
+    }
+    return out;
+}
+
 function senderKey(session) {
     return lowerText(session?.username) || cleanText(session?.uid) || 'unknown';
 }
@@ -985,6 +996,7 @@ export class BotRuntime {
         const messages = [];
         const errors = [];
         const jobs = new Set();
+        let coverageSessions = [];
         let sent = 0;
         let requests = 0;
         let cancelled = false;
@@ -1023,21 +1035,37 @@ export class BotRuntime {
             jobs.add(job);
         };
 
+        const nextMessageSession = () => {
+            const sessions = soloSession ? [soloSession] : this.activeTrafficSessions();
+            if (!sessions.length) {
+                throw new Error('no active bot sessions');
+            }
+            if (soloSession) {
+                return soloSession;
+            }
+
+            const activeUids = new Set(sessions.map((session) => session.uid).filter(Boolean));
+            coverageSessions = coverageSessions.filter((session) => activeUids.has(session.uid) && !session.closing);
+            if (!coverageSessions.length) {
+                coverageSessions = shuffled(sessions);
+            }
+
+            const readyIndex = coverageSessions.findIndex((session) => !session.chatJobs.has(`${session.uid}:${target.chatPK}`));
+            if (readyIndex >= 0) {
+                const [session] = coverageSessions.splice(readyIndex, 1);
+                return session;
+            }
+
+            return coverageSessions.shift() || pickRandom(sessions);
+        };
+
         for (let index = 0; index < count; index++) {
             if (this.stopped || await this.isActionCancelRequested(action)) {
                 cancelled = true;
                 break;
             }
 
-            const sessions = soloSession ? [soloSession] : this.activeTrafficSessions();
-            if (!sessions.length) {
-                throw new Error('no active bot sessions');
-            }
-            const availableSessions = soloSession
-                ? sessions
-                : sessions.filter((session) => !session.chatJobs.has(`${session.uid}:${target.chatPK}`));
-            const session = soloSession || pickRandom(availableSessions.length ? availableSessions : sessions);
-
+            const session = nextMessageSession();
             const message = randomTrafficPayload();
             const chatId = `${session.uid}:${target.chatPK}`;
             sendTrafficMessage(session, message, chatId);

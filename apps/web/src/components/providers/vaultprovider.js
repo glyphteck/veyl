@@ -1,10 +1,9 @@
 'use client';
 import { createContext, useContext, useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { openLocalDataCache } from '@/lib/cache/localdata';
-import { unpackSeedData } from '@veyl/shared/crypto/pack';
 import { getCacheSeed, getChatSeed, getDefaultWalletEntropy, isVaultIncompatibleError, mnemonicFromWalletEntropy, openSecretRegistry } from '@veyl/shared/crypto/seed';
 import { yieldToUi } from '@veyl/shared/utils/async';
-import { decryptSeed, migrateLegacyV2Vault } from '@/lib/crypto/seed';
+import { decryptSeed, migrateVault, shouldMigrateVault, unpackVaultSeedData } from '@/lib/crypto/seed';
 import { normalizePassword } from '@veyl/shared/password';
 import { bootWallet, lockWallet, bootChat, lockChat } from '@/lib/vault';
 import { useUser } from '@/components/providers/userprovider';
@@ -171,15 +170,15 @@ export function VaultProvider({ children }) {
                 const unpackStartedAt = Date.now();
                 let unpacked = null;
                 try {
-                    unpacked = unpackSeedData(vault);
+                    unpacked = unpackVaultSeedData(vault);
                 } catch (error) {
-                    if (!isVaultIncompatibleError(error)) {
+                    if (!isVaultIncompatibleError(error) || !shouldMigrateVault(vault)) {
                         throw error;
                     }
                     setLockState('migrating');
                     const migrateStartedAt = Date.now();
                     mark('vault.unlock.migrate.start', { source });
-                    const migration = await migrateLegacyV2Vault(vault, password);
+                    const migration = await migrateVault(vault, password);
                     let verifyWallet = null;
                     let verifyChatPrivKey = null;
                     try {
@@ -189,13 +188,14 @@ export function VaultProvider({ children }) {
                             vault: migration.vault,
                             expectedHash: migration.expectedHash,
                             from: migration.from,
+                            to: migration.to,
                             walletPK: user.walletPK,
                             chatPK: user.chatPK,
                             network: WALLET_NETWORK,
                         });
                         vault = migration.vault;
                         updateVault(vault);
-                        unpacked = unpackSeedData(vault);
+                        unpacked = unpackVaultSeedData(vault);
                         mark('vault.unlock.migrate.done', { elapsedMs: Date.now() - migrateStartedAt, source, from: migration.from, to: migration.to });
                     } finally {
                         migration.walletEntropy?.fill?.(0);

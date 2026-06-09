@@ -365,14 +365,15 @@ export function createFirebaseCloud({ db, auth, getAuth, functions, getFunctions
         return true;
     }
 
-    async function replaceVault(uid, { vault, expectedHash, from, walletPK, chatPK, network } = {}) {
+    async function replaceVault(uid, { vault, expectedHash, from, to, walletPK, chatPK, network } = {}) {
         requireUid(uid);
-        if (!vault || !expectedHash) {
+        if (!vault || !expectedHash || !from || !to) {
             throw new Error('vault replacement required');
         }
         await callFunction('replaceVault', {
             expectedHash,
-            from: from || null,
+            from,
+            to,
             vault: cloudBytesBase64(vault, 'vault bytes'),
             walletPK: walletPK || null,
             chatPK: chatPK || null,

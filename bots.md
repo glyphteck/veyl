@@ -229,7 +229,7 @@ bun bot traffic mixed @alice fast --count 50
 bun bot traffic mixed @alice slow --duration 10m --no-wait
 ```
 
-`fast` uses a 500ms delay and `slow` uses a 5s delay. Without a speed preset, traffic uses the default 3s delay. Message traffic randomly picks from enabled traffic-group bot sessions, then uses shared text-vs-request weights. Text messages come from the shared 100-item traffic-msg pool. Requests use weighted amount buckets from 1,000 to 1,000,000 sats, with most requests in the 10,000-99,999 sat range and fewer larger asks. The runtime still tries one final encrypted read receipt per bot chat when there is a recent user-authored message to acknowledge.
+`fast` uses a 500ms delay and `slow` uses a 5s delay. Without a speed preset, traffic uses the default 3s delay. Message traffic shuffles enabled traffic-group bot sessions, covers each active bot once before repeating, then uses shared text-vs-request weights. Text messages come from the shared 100-item traffic-msg pool. Requests use weighted amount buckets from 1,000 to 1,000,000 sats, with most requests in the 10,000-99,999 sat range and fewer larger asks. The runtime still tries one final encrypted read receipt per bot chat when there is a recent user-authored message to acknowledge.
 
 Queue focused traffic:
 

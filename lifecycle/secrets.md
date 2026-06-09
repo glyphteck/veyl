@@ -80,16 +80,16 @@ The registry is the layer that lets Veyl add more wallets, rotate a chat identit
 
 ## Vault Migration
 
-Normal unlock supports only the current vault envelope. Older envelopes are handled by an explicit unlock-time migration phase:
+Normal unlock supports the current vault envelope. When the app bumps the envelope version, unlock auto-migrates only the previous current envelope:
 
-1. `unpackSeedData(vault)` rejects the old envelope and the provider moves to `migrating`.
-2. The migration adapter decrypts the old envelope locally with the entered password.
-3. The adapter extracts canonical secrets such as wallet entropy and chat seed.
+1. `unpackSeedData(vault)` rejects the previous envelope and the provider moves to `migrating`.
+2. The migration adapter decrypts the previous envelope locally with the entered password.
+3. The adapter opens the existing secret registry and preserves the wallet, chat, and cache secrets.
 4. The client verifies the derived wallet and chat identities against the current profile by booting the wallet/chat paths before replacement.
 5. The client builds a fresh current vault envelope with a normal encrypted registry.
 6. `replaceVault` replaces `seeds/{uid}.es` only if the current stored vault hash still matches the bytes the client migrated from.
 
-The replacement writes only the current `es` blob. There is no migration marker and no alternate unlock path after migration.
+Unknown envelopes stay incompatible. The replacement writes only the current `es` blob; there is no migration marker and no alternate unlock path after migration.
 
 ## Local Cache Device Secret
 

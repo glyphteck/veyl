@@ -4,7 +4,7 @@ Repo-level changes are listed newest first. Keep entries short and concrete. Bro
 
 ## 0.14.10 - 2026-06-09
 
-- Added the current vault secret registry shape with guarded `replaceVault` migration, device-mixed local cache keys, and secret lifecycle documentation.
+- Added the current vault secret registry shape with guarded migration plumbing, device-mixed local cache keys, and secret lifecycle documentation.
 - Scoped chat pair and message crypto to active chat ids with separate link roots, updated ping proofs, and shared request-message ownership.
 - Hardened web headers with nonce-based CSP in the Next proxy, removed app-authored inline scripts, and added browser security headers.
 - Tightened wallet transfer cache reads by ignoring pending transfers and clamping cached history offsets.
