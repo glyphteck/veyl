@@ -10,8 +10,7 @@ import { useUser } from '@/providers/userprovider';
 import { useWallet } from '@/providers/walletprovider';
 import { bubbleTint, imageWidth } from '@/lib/chat/messages';
 import { useMsgImage } from '@/lib/chat/useimage';
-import { UNAVAILABLE_REPLY_MSG_TYPE, getAttachmentCaption, getAttachmentTitle, getImageAspect, makeUnavailableReply } from '@veyl/shared/chat/messages';
-import { renderMoney } from '@veyl/shared/money';
+import { UNAVAILABLE_REPLY_MSG_TYPE, getAttachmentCaption, getAttachmentTitle, getImageAspect, getRequestContext, makeUnavailableReply } from '@veyl/shared/chat/messages';
 import { useGestureBlockers } from './gesturecontext';
 import GlassView from '@/components/glass/glassview';
 import Menu from '@/components/menu';
@@ -75,10 +74,7 @@ function ReplyRequest({ blockExternalGestures, reply, replyFromPeer, peerDisplay
     const { settings } = useUser();
     const bitcoin = useBitcoin();
     const { getTxById } = useTxData();
-    const msgTx = reply.tx ? getTxById?.(reply.tx) : null;
-    const displayAmount = msgTx ? Math.abs(Number(msgTx.amount)) : Number(reply.a);
-    const amount = renderMoney(displayAmount, settings?.moneyFormat, bitcoin?.price);
-    const label = reply.tx ? (replyFromPeer ? 'You sent' : 'You received') : replyFromPeer ? `${peerDisplayName || 'They'} requested` : 'You requested';
+    const { amount, label } = getRequestContext(reply, { fromPeer: replyFromPeer, peerDisplayName, moneyFormat: settings?.moneyFormat, btcPrice: bitcoin?.price, getTxById });
 
     return (
         <ReplyPressable blockExternalGestures={blockExternalGestures} onReplyPress={onReplyPress}>

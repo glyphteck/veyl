@@ -1,12 +1,15 @@
 'use client';
 
 import { openVaultCache } from '@veyl/shared/cache/localdata';
+import { cleanBytes, fromHexBytes, randomBytes, toHex } from '@veyl/shared/crypto/core';
+import { deriveDeviceCacheKey } from '@veyl/shared/crypto/seed';
 import { resolveNetwork } from '@veyl/shared/network';
 import { createIdbOpener, idbRequest, idbTx } from '@/lib/cache/idb';
 
 const DB_NAME = 'veyl-vault-local-cache';
 const DB_VERSION = 1;
 const STORE_NAME = 'cache';
+const INSTALL_SECRET_BYTES = 32;
 
 const openDb = createIdbOpener(DB_NAME, DB_VERSION, [STORE_NAME]);
 
@@ -39,6 +42,48 @@ function mainKey(scope) {
 
 function mediaKeyPrefix(scope) {
     return `media:${scope}:`;
+}
+
+function installSecretKey(scope) {
+    return `install:${scope}`;
+}
+
+function parseInstallSecret(value) {
+    if (typeof value !== 'string' || !/^[0-9a-f]{64}$/i.test(value)) {
+        return null;
+    }
+    return fromHexBytes(value, 'local cache install secret');
+}
+
+async function readOrCreateInstallSecret(scope) {
+    const key = installSecretKey(scope);
+    const db = await openDb();
+    if (!db) {
+        return randomBytes(INSTALL_SECRET_BYTES);
+    }
+
+    const readTx = db.transaction(STORE_NAME, 'readonly');
+    const existing = parseInstallSecret(await idbRequest(readTx.objectStore(STORE_NAME).get(key)).catch(() => null));
+    if (existing) {
+        return existing;
+    }
+
+    const secret = randomBytes(INSTALL_SECRET_BYTES);
+    try {
+        const writeTx = db.transaction(STORE_NAME, 'readwrite');
+        writeTx.objectStore(STORE_NAME).put(toHex(secret), key);
+        await idbTx(writeTx);
+    } catch {}
+    return secret;
+}
+
+async function localCacheKey(rootKey, { uid, network, scope }) {
+    const installSecret = await readOrCreateInstallSecret(scope);
+    try {
+        return deriveDeviceCacheKey(rootKey, installSecret, uid, network);
+    } finally {
+        cleanBytes(installSecret);
+    }
 }
 
 function makeStorage({ uid, network }) {
@@ -144,12 +189,18 @@ function makeStorage({ uid, network }) {
     };
 }
 
-export function openLocalDataCache(key, { uid } = {}) {
+export async function openLocalDataCache(key, { uid } = {}) {
     const network = resolveNetwork({ NEXT_PUBLIC_NETWORK: process.env.NEXT_PUBLIC_NETWORK });
-    return openVaultCache({
-        key,
-        storage: makeStorage({ uid, network }),
-        uid,
-        network,
-    });
+    const scope = storageScope(uid, network);
+    const cacheKey = await localCacheKey(key, { uid, network, scope });
+    try {
+        return await openVaultCache({
+            key: cacheKey,
+            storage: makeStorage({ uid, network }),
+            uid,
+            network,
+        });
+    } finally {
+        cleanBytes(cacheKey);
+    }
 }

@@ -13,7 +13,7 @@
 - The decrypted seed and derived wallet/chat secrets should stay client-side.
 - Unlock happens locally.
 - Vault lock should tear down wallet connections, zero the live chat private key where possible, clear provider state, and clear derived chat-pair caches.
-- Vaulted local data cache keys are derived only after local seed decrypt, are never stored directly, and must be zeroed/closed on lock, failed unlock, auth switch, and provider unmount.
+- Vaulted local data cache keys are derived only after local seed decrypt, are mixed with a local-only install secret, are never stored directly, and must be zeroed/closed on lock, failed unlock, auth switch, and provider unmount. Do not upload the local install secret or use it as a cloud-visible device id.
 - The durable local cache must contain only ciphertext plus nonsensitive envelope metadata while the vault is locked. Do not put chat ids, public keys, usernames, message previews, transaction amounts, or peer lists in plaintext localStorage keys, IndexedDB indexes, AsyncStorage keys, or filenames.
 - Cached chat media bytes must be stored as vault-encrypted blobs with opaque local ids. Storage paths, file keys, chat ids, public keys, filenames, captions, and media metadata belong only inside the encrypted local cache payload.
 - Chat message lists must not be hydrated from durable local cache. The server is the source of truth for message existence, especially because either participant can hard-delete messages at any time.
@@ -28,8 +28,8 @@
 
 - Chat is custom encrypted 1:1 messaging over Firestore.
 - Message payload shape is cross-platform and backend-sensitive.
-- Detailed chat, message, message batch, and user lifecycle diagrams live in [lifecycle/chat.md](../lifecycle/chat.md), [lifecycle/msg.md](../lifecycle/msg.md), [lifecycle/batches.md](../lifecycle/batches.md), and [lifecycle/user.md](../lifecycle/user.md). Keep this section focused on security invariants.
-- Link IDs are derived from the X25519 pair secret plus ordered chat public keys. Active chat ids are backend-issued at `links/{linkId}.chat.id`. Neither id may reveal participant keys or be sorted public-key strings.
+- Detailed secret, chat, message, message batch, and user lifecycle diagrams live in [lifecycle/secrets.md](../lifecycle/secrets.md), [lifecycle/chat.md](../lifecycle/chat.md), [lifecycle/msg.md](../lifecycle/msg.md), [lifecycle/batches.md](../lifecycle/batches.md), and [lifecycle/user.md](../lifecycle/user.md). Keep this section focused on security invariants.
+- Link IDs are derived from the X25519 pair secret plus ordered chat public keys. Active chat ids are backend-issued at `links/{linkId}.chat.id`. Neither id may reveal participant keys or be sorted public-key strings. Message roots, action authenticators, and actor keys are scoped by active `chatId`, not by `linkId`.
 - The chat security model is dumb server, smart client powered by cryptography. The server checks owner paths, auth, sender bans and recipient blocks for inbox ping delivery, rate limits, and bounded shapes; clients derive link ids, decrypt owner entries and inbox pings, pin per-chat actor keys, verify action signatures, and ignore invalid records.
 - Messages are encrypted before storage.
 - A pair-encryption key proves that one participant could create a ciphertext, but it does not prove which participant authored it. Message ownership, edits, and payment confirmations need actor signatures derived from user-held secrets, not from the pair key. Global message deletion is a hard source-doc delete authorized by knowing the opaque `chatId`.

@@ -6,7 +6,17 @@ import {
 } from '../../config.js';
 import { lowerText } from '../../utils/text.js';
 
-export const BOT_TRAFFIC_EXCLUDED_USERNAMES = Object.freeze(['review']);
+export const BOT_TRAFFIC_GROUP = 'traffic';
+
+export function botTrafficGroups({ traffic = false } = {}) {
+    return {
+        [BOT_TRAFFIC_GROUP]: traffic === true,
+    };
+}
+
+export function hasBotTrafficGroup(value) {
+    return value?.groups?.[BOT_TRAFFIC_GROUP] === true;
+}
 
 export function cleanTrafficCount(value, name = 'traffic count') {
     const count = Number(value ?? BOT_TRAFFIC_DEFAULT_COUNT);

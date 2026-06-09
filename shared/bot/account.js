@@ -1,4 +1,4 @@
-import { deriveSeed, deriveWalletMnemonic, getKeyPair } from '../crypto/seed.js';
+import { deriveLegacyWalletEntropy, deriveSeed, getChatSeed, getDefaultWalletEntropy, getKeyPair, mnemonicFromWalletEntropy, openSecretRegistry } from '../crypto/seed.js';
 import { cleanBytes, toHex } from '../crypto/core.js';
 import { cleanText } from '../utils/text.js';
 
@@ -22,7 +22,7 @@ export function closeBotAccount(account) {
     } catch {}
 }
 
-export async function bootBotAccount(masterSeed, { SparkWallet, network, accountNumber } = {}) {
+export async function bootBotAccountFromSecrets(walletEntropy, chatSeed, { SparkWallet, network, accountNumber } = {}) {
     if (!SparkWallet) {
         throw new Error('SparkWallet missing');
     }
@@ -30,8 +30,7 @@ export async function bootBotAccount(masterSeed, { SparkWallet, network, account
         throw new Error('network missing');
     }
 
-    const walletMnemonic = deriveWalletMnemonic(masterSeed);
-    const chatSeed = deriveSeed(masterSeed, 'chat');
+    const walletMnemonic = mnemonicFromWalletEntropy(walletEntropy);
 
     let wallet = null;
     let chatPrivKey = null;
@@ -69,5 +68,26 @@ export async function bootBotAccount(masterSeed, { SparkWallet, network, account
         throw error;
     } finally {
         cleanBytes(chatSeed, chatPubKey);
+    }
+}
+
+export async function bootBotAccount(masterSeed, options = {}) {
+    const walletEntropy = deriveLegacyWalletEntropy(masterSeed);
+    const chatSeed = deriveSeed(masterSeed, 'chat');
+    try {
+        return await bootBotAccountFromSecrets(walletEntropy, chatSeed, options);
+    } finally {
+        cleanBytes(walletEntropy, chatSeed);
+    }
+}
+
+export async function bootRegistryBotAccount(masterSeed, registryEnvelope, options = {}) {
+    const registry = await openSecretRegistry(masterSeed, registryEnvelope);
+    const walletEntropy = getDefaultWalletEntropy(registry);
+    const chatSeed = getChatSeed(registry);
+    try {
+        return await bootBotAccountFromSecrets(walletEntropy, chatSeed, options);
+    } finally {
+        cleanBytes(walletEntropy, chatSeed);
     }
 }

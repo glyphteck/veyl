@@ -6,18 +6,11 @@ import { useVault } from '@/providers/vaultprovider';
 import { useUser } from '@/providers/userprovider';
 import { mark } from '@/lib/diagnostics';
 import { WALLET_TRANSFER_CLAIM_POLL_MS } from '@veyl/shared/config';
+import { isClaimablePendingTransfer } from '@veyl/shared/wallet/tx';
 
 const CLAIM_BATCH_SIZE = 3;
 const CLAIM_BATCH_DELAY_MS = 120;
 const TRANSFER_CLAIMED_EVENT = 'transfer:claimed';
-const CLAIMABLE_STATUS_CODES = new Set([2, 3, 4, 9, 10]);
-const CLAIMABLE_STATUS_NAMES = new Set([
-    'TRANSFER_STATUS_SENDER_KEY_TWEAKED',
-    'TRANSFER_STATUS_RECEIVER_KEY_TWEAKED',
-    'TRANSFER_STATUS_RECEIVER_REFUND_SIGNED',
-    'TRANSFER_STATUS_RECEIVER_KEY_TWEAK_LOCKED',
-    'TRANSFER_STATUS_RECEIVER_KEY_TWEAK_APPLIED',
-]);
 
 function useWalletSettings() {
     const { settings } = useUser();
@@ -49,15 +42,8 @@ function delay(ms) {
     });
 }
 
-function isClaimableStatus(status) {
-    return CLAIMABLE_STATUS_CODES.has(status) || CLAIMABLE_STATUS_NAMES.has(status);
-}
-
 function canClaimTransfer(transfer, types) {
-    if (types && !types.includes(transfer?.type)) {
-        return false;
-    }
-    return isClaimableStatus(transfer?.status);
+    return isClaimablePendingTransfer(transfer, types);
 }
 
 function shouldLogClaimBatch(batchIndex, batchCount) {

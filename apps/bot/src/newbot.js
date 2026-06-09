@@ -1,15 +1,17 @@
 import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { SparkWallet } from '@buildonspark/spark-sdk';
-import { generateSeed } from '@veyl/shared/crypto/seed';
+import { createSecretRegistry, generateSeed, sealSecretRegistry } from '@veyl/shared/crypto/seed';
 import { resolveNetwork } from '@veyl/shared/network';
 import { normalizeWalletNetwork, resolveWalletPK, walletPKPatch } from '@veyl/shared/wallet/keys';
 import { BOT_MODE } from '@veyl/shared/bot/events';
-import { bootBotAccount, closeBotAccount } from '@veyl/shared/bot/account';
+import { botTrafficGroups } from '@veyl/shared/bot/traffic';
+import { bootRegistryBotAccount, closeBotAccount } from '@veyl/shared/bot/account';
 import { MAX_USERNAME, isUsername, normalizeUsername } from '@veyl/shared/username';
 import { cleanText, sameText } from '@veyl/shared/utils/text';
+import { cleanBytes } from '@veyl/shared/crypto/core';
 import admin, { db, projectId } from './admin.js';
-import { createSecretClient, ensureBotSeed } from './secrets.js';
+import { createSecretClient, ensureBotSecret } from './secrets.js';
 import { ensureUserDoc } from '../../../functions/lib/userdoc.js';
 
 async function resolveUid(username) {
@@ -49,7 +51,11 @@ async function ensureAuthUser(uid, username) {
     ).uid;
 }
 
-async function syncDocs({ uid, username, walletPK, chatPK, network }) {
+function defaultBotGroups(username) {
+    return botTrafficGroups({ traffic: !sameText(username, 'review') });
+}
+
+async function syncDocs({ uid, username, walletPK, chatPK, network, groups = defaultBotGroups(username) }) {
     const walletNetwork = normalizeWalletNetwork(network);
     const botRef = db.collection('bots').doc(uid);
     const profileRef = db.collection('profiles').doc(uid);
@@ -102,6 +108,7 @@ async function syncDocs({ uid, username, walletPK, chatPK, network }) {
                 lastRunAt: botData?.lastRunAt ?? null,
                 lastError: null,
                 resumeAt: botData?.resumeAt ?? null,
+                groups,
                 ...walletPKPatch(walletPK, walletNetwork),
                 chatPK,
             },
@@ -143,16 +150,22 @@ export async function provisionBot(rawInput) {
     }
 
     const secretClient = createSecretClient();
-    const seedInput = generateSeed();
-    let seed = null;
+    const masterSeedInput = generateSeed();
+    let secretInput = null;
+    let secret = null;
     let account = null;
     const network = resolveNetwork(process.env);
 
     try {
-        const ensured = await ensureBotSeed(secretClient, projectId, username, seedInput);
-        seed = ensured.seed;
+        secretInput = {
+            v: 3,
+            masterSeed: masterSeedInput,
+            registry: await sealSecretRegistry(masterSeedInput, createSecretRegistry()),
+        };
+        const ensured = await ensureBotSecret(secretClient, projectId, username, secretInput);
+        secret = ensured.secret;
         const existingUid = await resolveUid(username);
-        account = await bootBotAccount(seed, {
+        account = await bootRegistryBotAccount(secret.masterSeed, secret.registry, {
             SparkWallet,
             network,
         });
@@ -179,11 +192,10 @@ export async function provisionBot(rawInput) {
             username,
             walletPK: account.walletPK,
             chatPK: account.chatPK,
-            seedCreated: ensured.created,
+            secretCreated: ensured.created,
         };
     } finally {
-        seedInput.fill(0);
-        seed?.fill?.(0);
+        cleanBytes(masterSeedInput, secretInput?.registry?.iv, secretInput?.registry?.ct, secret?.masterSeed, secret?.registry?.iv, secret?.registry?.ct);
         closeBotAccount(account);
     }
 }

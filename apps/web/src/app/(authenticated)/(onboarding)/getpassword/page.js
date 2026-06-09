@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Input } from '@/components/input';
@@ -13,13 +12,13 @@ import { packSeedData } from '@veyl/shared/crypto/pack';
 import { encryptSeed } from '@/lib/crypto/seed';
 import { getPasswordFeedback, isPassword, MAX_PASSWORD, normalizePassword } from '@veyl/shared/password';
 import { cloud } from '@/lib/cloud';
+import { refreshOnboardingState } from '@/lib/routeguards';
 
 const passwordSchema = z.object({
     password: z.string().refine((value) => isPassword(value)),
 });
 
 const GetPsw = () => {
-    const router = useRouter();
     const { openDialog } = useDialog();
     const [status, setStatus] = useState('idle');
     const [showPassword, setShowPassword] = useState(false);
@@ -61,11 +60,11 @@ const GetPsw = () => {
         const uid = cloud.auth.user?.uid;
         if (!uid) {
             setStatus('idle');
-            router.refresh();
+            refreshOnboardingState();
             return;
         }
         if (await cloud.user.vault.exists(uid)) {
-            router.refresh();
+            refreshOnboardingState();
             return;
         }
 
@@ -73,7 +72,7 @@ const GetPsw = () => {
             const seedData = await encryptSeed(password);
             const vault = packSeedData(seedData);
             await cloud.user.vault.write(uid, vault);
-            router.refresh();
+            refreshOnboardingState();
         } catch (error) {
             console.error('Error in encryption process:', error);
             setStatus('idle');

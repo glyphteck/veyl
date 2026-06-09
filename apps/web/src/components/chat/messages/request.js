@@ -9,7 +9,7 @@ import { useWallet } from '@/components/providers/walletprovider';
 import { Loader } from 'lucide-react';
 import { useCloak } from '@veyl/shared/providers/cloakprovider';
 import { bubbleBg, stopClick } from '@/lib/chat/messages';
-import { renderMoney } from '@veyl/shared/money';
+import { getRequestContext } from '@veyl/shared/chat/messages';
 
 export default function RequestMessage({ msg, fromPeer = false, peerDisplayName, onPay, isPaying = false }) {
     const { settings } = useUser();
@@ -18,9 +18,7 @@ export default function RequestMessage({ msg, fromPeer = false, peerDisplayName,
     const { getTxById } = useTxData();
     const { openDialog } = useDialog();
     const { cloaked } = useCloak();
-    const msgTx = msg.tx ? getTxById?.(msg.tx) : null;
-    const displayAmount = msgTx ? Math.abs(Number(msgTx.amount)) : Number(msg.a);
-    const formattedAmount = renderMoney(displayAmount, settings?.moneyFormat, bitcoin?.price);
+    const { amount: formattedAmount, label, tx: msgTx } = getRequestContext(msg, { fromPeer, peerDisplayName, moneyFormat: settings?.moneyFormat, btcPrice: bitcoin?.price, getTxById });
     const isTransactionPending = msg.tx && (!msgTx || msgTx.pending !== false);
     const handleClick = msg.tx
         ? (event) => {
@@ -35,7 +33,7 @@ export default function RequestMessage({ msg, fromPeer = false, peerDisplayName,
         return (
             <div className={`backdrop-blur-sm max-w-full shadow rounded-round p-3 ${bubbleBg(fromPeer)} ${msg.tx ? 'grower-sm' : ''}`} onClick={handleClick}>
                 <div className="flex flex-col w-full">
-                    <p className="break-words text-muted">{msg.tx ? 'You sent' : `${peerDisplayName} requested`}</p>
+                    <p className="break-words text-muted">{label}</p>
                     <p className={`text-6xl font-black ${msg.tx ? (isTransactionPending ? 'text-outflow opacity-50' : 'text-outflow') : ''} ${cloaked ? 'cloaked' : ''}`}>{formattedAmount}</p>
                     {!msg.tx ? (
                         <Button className="button-fill shrinker mt-2 mb-1 w-full" disabled={!canAfford || isPaying} onClick={() => onPay?.()}>
@@ -51,7 +49,7 @@ export default function RequestMessage({ msg, fromPeer = false, peerDisplayName,
         <div className={`backdrop-blur-sm max-w-full shadow rounded-round p-3 ${bubbleBg(fromPeer)} ${msg.tx ? 'grower-sm' : ''}`} onClick={handleClick}>
             <div className="flex flex-col gap-2 w-full">
                 <div className="flex flex-col items-end">
-                    <p className="break-words text-muted text-right">{msg.tx ? 'You received' : 'You requested'}</p>
+                    <p className="break-words text-muted text-right">{label}</p>
                     <p className={`text-6xl font-black ${msg.tx ? (isTransactionPending ? 'text-inflow opacity-50' : 'text-inflow') : ''} ${cloaked ? 'cloaked' : ''}`}>{formattedAmount}</p>
                 </div>
             </div>

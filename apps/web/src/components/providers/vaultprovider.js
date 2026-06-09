@@ -2,10 +2,9 @@
 import { createContext, useContext, useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { openLocalDataCache } from '@/lib/cache/localdata';
 import { unpackSeedData } from '@veyl/shared/crypto/pack';
-import { deriveSeed, deriveWalletMnemonic } from '@veyl/shared/crypto/seed';
+import { getCacheSeed, getChatSeed, getDefaultWalletEntropy, isVaultIncompatibleError, mnemonicFromWalletEntropy, openSecretRegistry } from '@veyl/shared/crypto/seed';
 import { yieldToUi } from '@veyl/shared/utils/async';
-import { LOCAL_DATA_CACHE_LABEL } from '@veyl/shared/cache/localdata';
-import { decryptSeed } from '@/lib/crypto/seed';
+import { decryptSeed, migrateLegacyV2Vault } from '@/lib/crypto/seed';
 import { normalizePassword } from '@veyl/shared/password';
 import { bootWallet, lockWallet, bootChat, lockChat } from '@/lib/vault';
 import { useUser } from '@/components/providers/userprovider';
@@ -13,10 +12,12 @@ import { toast } from 'sonner';
 import { Lock } from 'lucide-react';
 import { cloud } from '@/lib/cloud';
 import { mark } from '@/lib/diagnostics';
+import { resolveNetwork } from '@veyl/shared/network';
 
 export const VaultCtx = createContext(null);
 
-const UNLOCK_STATES = new Set(['decrypting', 'seed-decrypted', 'deriving', 'wallet', 'chat', 'launching']);
+const UNLOCK_STATES = new Set(['decrypting', 'seed-decrypted', 'migrating', 'deriving', 'wallet', 'chat', 'launching']);
+const WALLET_NETWORK = resolveNetwork({ NEXT_PUBLIC_NETWORK: process.env.NEXT_PUBLIC_NETWORK });
 
 export function VaultProvider({ children }) {
     const user = useUser();
@@ -158,16 +159,52 @@ export function VaultProvider({ children }) {
             let w = null;
             let chatPrivKey = null;
             let masterSeed = null;
+            let walletEntropy = null;
             let chatSeed = null;
             let cacheKey = null;
             let nextCache = null;
             try {
-                const vault = await waitForVault();
+                let vault = await waitForVault();
                 if (!isCurrentUnlock()) {
                     throw new Error('account changed during unlock');
                 }
                 const unpackStartedAt = Date.now();
-                const { salt, iv, ct, kdf } = unpackSeedData(vault);
+                let unpacked = null;
+                try {
+                    unpacked = unpackSeedData(vault);
+                } catch (error) {
+                    if (!isVaultIncompatibleError(error)) {
+                        throw error;
+                    }
+                    setLockState('migrating');
+                    const migrateStartedAt = Date.now();
+                    mark('vault.unlock.migrate.start', { source });
+                    const migration = await migrateLegacyV2Vault(vault, password);
+                    let verifyWallet = null;
+                    let verifyChatPrivKey = null;
+                    try {
+                        verifyWallet = await bootWallet(mnemonicFromWalletEntropy(migration.walletEntropy), user);
+                        verifyChatPrivKey = await bootChat(new Uint8Array(migration.chatSeed), user);
+                        await cloud.user.vault.replace(unlockUid, {
+                            vault: migration.vault,
+                            expectedHash: migration.expectedHash,
+                            from: migration.from,
+                            walletPK: user.walletPK,
+                            chatPK: user.chatPK,
+                            network: WALLET_NETWORK,
+                        });
+                        vault = migration.vault;
+                        updateVault(vault);
+                        unpacked = unpackSeedData(vault);
+                        mark('vault.unlock.migrate.done', { elapsedMs: Date.now() - migrateStartedAt, source, from: migration.from, to: migration.to });
+                    } finally {
+                        migration.walletEntropy?.fill?.(0);
+                        migration.chatSeed?.fill?.(0);
+                        lockWallet(verifyWallet);
+                        lockChat(verifyChatPrivKey);
+                    }
+                }
+                const { salt, iv, ct, kdf, registry: registryEnvelope } = unpacked;
                 mark('vault.unlock.unpack.done', { elapsedMs: Date.now() - unpackStartedAt, source });
                 const decryptStartedAt = Date.now();
                 mark('vault.unlock.decrypt.start', { source });
@@ -199,12 +236,16 @@ export function VaultProvider({ children }) {
                 // Derive feature-specific seeds
                 setLockState('deriving');
                 const deriveStartedAt = Date.now();
-                const walletMnemonic = deriveWalletMnemonic(masterSeed);
-                chatSeed = deriveSeed(masterSeed, 'chat');
-                cacheKey = deriveSeed(masterSeed, LOCAL_DATA_CACHE_LABEL);
+                const secretRegistry = await openSecretRegistry(masterSeed, registryEnvelope);
+                walletEntropy = getDefaultWalletEntropy(secretRegistry);
+                const walletMnemonic = mnemonicFromWalletEntropy(walletEntropy);
+                chatSeed = getChatSeed(secretRegistry);
+                cacheKey = getCacheSeed(secretRegistry);
                 mark('vault.unlock.derive.done', { elapsedMs: Date.now() - deriveStartedAt, source });
 
                 // Zero the master seed from memory
+                walletEntropy.fill(0);
+                walletEntropy = null;
                 masterSeed.fill(0);
                 masterSeed = null;
 
@@ -269,6 +310,7 @@ export function VaultProvider({ children }) {
                 mark('vault.unlock.error', { elapsedMs: Date.now() - startedAt, source, code: error?.code || '', message: error?.message || String(error) });
                 try {
                     masterSeed?.fill?.(0);
+                    walletEntropy?.fill?.(0);
                     chatSeed?.fill?.(0);
                     cacheKey?.fill?.(0);
                 } catch {}
@@ -292,7 +334,7 @@ export function VaultProvider({ children }) {
                 throw error;
             }
         },
-        [lockState, user, waitForVault]
+        [lockState, updateVault, user, waitForVault]
     );
 
     //lock the app

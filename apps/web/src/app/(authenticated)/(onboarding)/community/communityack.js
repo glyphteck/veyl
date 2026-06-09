@@ -1,14 +1,13 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { Loader } from 'lucide-react';
 import { COMMUNITY_RULES_DATE, COMMUNITY_RULES_EFFECTIVE, COMMUNITY_RULES_VERSION, COMMUNITY_SECTIONS } from '@veyl/shared/community';
 import { Button } from '@/components/button';
 import { cloud } from '@/lib/cloud';
+import { refreshOnboardingState } from '@/lib/routeguards';
 
 export default function CommunityAck() {
-    const router = useRouter();
     const bodyRef = useRef(null);
     const [canAccept, setCanAccept] = useState(false);
     const [status, setStatus] = useState('idle');
@@ -45,12 +44,12 @@ export default function CommunityAck() {
         setStatus('submitting');
         try {
             await cloud.user.community.accept(uid, { version: COMMUNITY_RULES_VERSION, date: COMMUNITY_RULES_DATE });
-            router.refresh();
+            refreshOnboardingState();
         } catch (error) {
             console.warn('community rules acknowledgement failed', error);
             setStatus('error');
         }
-    }, [canAccept, isSubmitting, router]);
+    }, [canAccept, isSubmitting]);
 
     return (
         <main className="absolute inset-0 overflow-hidden">

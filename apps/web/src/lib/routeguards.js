@@ -12,6 +12,15 @@ const STEP_HREF = {
     password: '/getpassword',
 };
 let leavingAuth = false;
+let onboardingRefreshKey = 0;
+const onboardingRefreshListeners = new Set();
+
+export function refreshOnboardingState() {
+    onboardingRefreshKey += 1;
+    for (const listener of onboardingRefreshListeners) {
+        listener(onboardingRefreshKey);
+    }
+}
 
 function useAuthUser() {
     const [state, setState] = useState({ ready: false, user: null });
@@ -19,6 +28,19 @@ function useAuthUser() {
     useEffect(() => cloud.auth.watch((user) => setState({ ready: true, user })), []);
 
     return state;
+}
+
+function useOnboardingRefreshKey() {
+    const [key, setKey] = useState(onboardingRefreshKey);
+
+    useEffect(() => {
+        onboardingRefreshListeners.add(setKey);
+        return () => {
+            onboardingRefreshListeners.delete(setKey);
+        };
+    }, []);
+
+    return key;
 }
 
 function leaveAuth() {
@@ -42,6 +64,7 @@ export function hrefForOnboardingState(state) {
 
 function useOnboardingState(user, enabled) {
     const [state, setState] = useState({ loading: false, uid: null, value: null, error: null });
+    const refreshKey = useOnboardingRefreshKey();
 
     useEffect(() => {
         if (!enabled || !user?.uid) {
@@ -63,7 +86,7 @@ function useOnboardingState(user, enabled) {
         return () => {
             active = false;
         };
-    }, [enabled, user?.uid]);
+    }, [enabled, refreshKey, user?.uid]);
 
     return {
         ...state,

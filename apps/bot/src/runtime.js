@@ -13,11 +13,11 @@ import {
     BOT_RUNTIME_LEASE_MS,
     BOT_UNDERFUNDED_TEXT,
 } from '@veyl/shared/bot/events';
-import { bootBotAccount, closeBotAccount } from '@veyl/shared/bot/account';
+import { bootRegistryBotAccount, closeBotAccount } from '@veyl/shared/bot/account';
 import {
-    BOT_TRAFFIC_EXCLUDED_USERNAMES,
     cleanTrafficCount,
     cleanTrafficDelayMs,
+    hasBotTrafficGroup,
 } from '@veyl/shared/bot/traffic';
 import {
     BOT_TRAFFIC_MESSAGES,
@@ -34,7 +34,7 @@ import { getBotBalance, mirrorBotTransfer } from '@veyl/shared/bot/wallet';
 import { getChatPeerPK } from '@veyl/shared/chat/ids';
 import { makeOwnChatEntry, openOwnChatEntry, ownChatEntryId, sealOwnChatEntry } from '@veyl/shared/chat/entry';
 import { openPing } from '@veyl/shared/chat/ping';
-import { toBytes } from '@veyl/shared/crypto/core';
+import { cleanBytes, toBytes } from '@veyl/shared/crypto/core';
 import { hasStoredFileRef, isActionMutationMsg, isControlMsg, isReadReceiptMsg, isSystemMsg, makeHiddenCheckpoint, makeReadReceipt, makeReq, makeTxt, setReqTx } from '@veyl/shared/chat/messages';
 import { getMessageKey, makeCid } from '@veyl/shared/chat/state';
 import { cleanChatRetention, getMessageRetention, hasChatRetention } from '@veyl/shared/chat/ttl';
@@ -52,7 +52,7 @@ import { SparkWallet, SparkWalletEvent } from '@buildonspark/spark-sdk';
 import { randomInt, randomUUID } from 'node:crypto';
 import { hostname } from 'node:os';
 import admin, { db, FieldValue, Timestamp, projectId } from './admin.js';
-import { createSecretClient, loadProcessSecrets, readBotSeed } from './secrets.js';
+import { createSecretClient, loadProcessSecrets, readBotSecret } from './secrets.js';
 import { cleanPing, sendPush as sendInboxPush } from '../../../functions/lib/inbox.js';
 
 process.env.VEYL_BOT_RUNTIME = '1';
@@ -263,8 +263,6 @@ function setLimitedMap(map, key, value, max) {
 function runtimeRef() {
     return db.collection('runtimes').doc(BOT_RUNTIME_DOC_ID);
 }
-
-const trafficExcludedUsernames = new Set(BOT_TRAFFIC_EXCLUDED_USERNAMES.map(lowerText));
 
 function pickRandom(items) {
     if (!items.length) {
@@ -730,10 +728,10 @@ export class BotRuntime {
             session?.started &&
             !session.closing &&
             (!session.mode || session.mode === BOT_MODE) &&
+            hasBotTrafficGroup(session) &&
             session.chatJobs &&
             session.chatPK &&
-            session.chatPrivKey &&
-            !trafficExcludedUsernames.has(lowerText(session.username))
+            session.chatPrivKey
         ));
     }
 
@@ -1183,6 +1181,7 @@ export class BotRuntime {
             current.username = bot.username;
             current.resumeAtMs = timestampMs(bot.resumeAt, 0);
             current.mode = bot.mode || BOT_MODE;
+            current.groups = bot.groups || {};
             return;
         }
 
@@ -1531,14 +1530,15 @@ export class BotRuntime {
             current.username = bot.username;
             current.resumeAtMs = timestampMs(bot.resumeAt, 0);
             current.mode = bot.mode || BOT_MODE;
+            current.groups = bot.groups || {};
             return current;
         }
 
         await this.closeSession(bot.uid);
 
-        const masterSeed = await readBotSeed(this.secretClient, projectId, bot.username);
+        const secret = await readBotSecret(this.secretClient, projectId, bot.username);
         try {
-            const account = await bootBotAccount(masterSeed, {
+            const account = await bootRegistryBotAccount(secret.masterSeed, secret.registry, {
                 SparkWallet,
                 network: SPARK_NETWORK,
             });
@@ -1556,6 +1556,7 @@ export class BotRuntime {
                 ref: bot.ref,
                 resumeAtMs: timestampMs(bot.resumeAt, 0),
                 mode: bot.mode || BOT_MODE,
+                groups: bot.groups || {},
                 started: false,
                 closing: false,
                 balance: null,
@@ -1578,7 +1579,7 @@ export class BotRuntime {
 
             return session;
         } finally {
-            masterSeed.fill(0);
+            cleanBytes(secret.masterSeed, secret.registry?.iv, secret.registry?.ct);
         }
     }
 

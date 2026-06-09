@@ -75,8 +75,34 @@ function writeCloudBytes(value, label = 'encrypted bytes') {
     return Bytes.fromUint8Array(encryptedBytes(value, label));
 }
 
+function bytesBase64(bytes) {
+    const source = encryptedBytes(bytes, 'base64 bytes');
+    let binary = '';
+    for (let index = 0; index < source.length; index += 1) {
+        binary += String.fromCharCode(source[index]);
+    }
+    if (typeof btoa === 'function') {
+        return btoa(binary);
+    }
+    if (typeof globalThis.Buffer?.from === 'function') {
+        return globalThis.Buffer.from(source).toString('base64');
+    }
+    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+    let out = '';
+    for (let index = 0; index < source.length; index += 3) {
+        const a = source[index];
+        const b = index + 1 < source.length ? source[index + 1] : 0;
+        const c = index + 2 < source.length ? source[index + 2] : 0;
+        out += alphabet[a >> 2];
+        out += alphabet[((a & 3) << 4) | (b >> 4)];
+        out += index + 1 < source.length ? alphabet[((b & 15) << 2) | (c >> 6)] : '=';
+        out += index + 2 < source.length ? alphabet[c & 63] : '=';
+    }
+    return out;
+}
+
 function cloudBytesBase64(value, label = 'encrypted bytes') {
-    return writeCloudBytes(value, label).toBase64();
+    return bytesBase64(encryptedBytes(value, label));
 }
 
 function decodeBodyRecord(record, label = 'encrypted body') {
@@ -336,6 +362,22 @@ export function createFirebaseCloud({ db, auth, getAuth, functions, getFunctions
             throw new Error('vault required');
         }
         await setDoc(doc(db, 'seeds', uid), { es: writeCloudBytes(vault, 'vault bytes') });
+        return true;
+    }
+
+    async function replaceVault(uid, { vault, expectedHash, from, walletPK, chatPK, network } = {}) {
+        requireUid(uid);
+        if (!vault || !expectedHash) {
+            throw new Error('vault replacement required');
+        }
+        await callFunction('replaceVault', {
+            expectedHash,
+            from: from || null,
+            vault: cloudBytesBase64(vault, 'vault bytes'),
+            walletPK: walletPK || null,
+            chatPK: chatPK || null,
+            network: network || null,
+        });
         return true;
     }
 
@@ -1324,6 +1366,7 @@ export function createFirebaseCloud({ db, auth, getAuth, functions, getFunctions
                 read: readVault,
                 exists: vaultExists,
                 write: writeVault,
+                replace: replaceVault,
                 watch: watchVault,
             },
             onboarding: readOnboarding,

@@ -7,14 +7,15 @@ import { openLocalDataCache } from '@/lib/cache/localdata';
 import { clearMsgImageCache } from '@/lib/chat/imagecache';
 import { useUser } from '@/providers/userprovider';
 import { unpackSeedData } from '@veyl/shared/crypto/pack';
-import { deriveSeed, deriveWalletMnemonic } from '@veyl/shared/crypto/seed';
-import { LOCAL_DATA_CACHE_LABEL } from '@veyl/shared/cache/localdata';
-import { decryptSeed } from '@/lib/crypto/seed';
+import { getCacheSeed, getChatSeed, getDefaultWalletEntropy, isVaultIncompatibleError, mnemonicFromWalletEntropy, openSecretRegistry } from '@veyl/shared/crypto/seed';
+import { decryptSeed, migrateLegacyV2Vault } from '@/lib/crypto/seed';
 import { normalizePassword } from '@veyl/shared/password';
+import { resolveNetwork } from '@veyl/shared/network';
 import { bootWallet, bootChat, lockWallet, lockChat } from '@/lib/vault';
 import { mark } from '@/lib/diagnostics';
 
 const VaultContext = createContext(null);
+const WALLET_NETWORK = resolveNetwork(globalThis?.process?.env ?? {});
 function zero(bytes) {
     try {
         bytes?.fill?.(0);
@@ -265,7 +266,7 @@ export function VaultProvider({ children }) {
                 mark('vault.unlock.error', { elapsedMs: Date.now() - startedAt, source, reason: 'missing-vault' });
                 throw new Error('vault not ready');
             }
-            if (lockState === 'unlocking') {
+            if (lockState !== 'locked') {
                 mark('vault.unlock.error', { elapsedMs: Date.now() - startedAt, source, reason: 'already-unlocking' });
                 throw new Error('unlock in progress');
             }
@@ -281,6 +282,7 @@ export function VaultProvider({ children }) {
             let w = null;
             let chatPrivKey = null;
             let masterSeed = null;
+            let walletEntropy = null;
             let chatSeed = null;
             let cacheKey = null;
             let nextCache = null;
@@ -293,7 +295,43 @@ export function VaultProvider({ children }) {
 
             try {
                 const unpackStartedAt = Date.now();
-                const { salt, iv, ct, kdf } = unpackSeedData(vault);
+                let nextVault = vault;
+                let unpacked = null;
+                try {
+                    unpacked = unpackSeedData(nextVault);
+                } catch (error) {
+                    if (!isVaultIncompatibleError(error)) {
+                        throw error;
+                    }
+                    setLockState('migrating');
+                    const migrateStartedAt = Date.now();
+                    mark('vault.unlock.migrate.start', { source });
+                    const migration = await migrateLegacyV2Vault(nextVault, password);
+                    let verifyWallet = null;
+                    let verifyChatPrivKey = null;
+                    try {
+                        verifyWallet = await bootWallet(mnemonicFromWalletEntropy(migration.walletEntropy), user);
+                        verifyChatPrivKey = await bootChat(new Uint8Array(migration.chatSeed), user);
+                        await cloud.user.vault.replace(unlockUid, {
+                            vault: migration.vault,
+                            expectedHash: migration.expectedHash,
+                            from: migration.from,
+                            walletPK: user.walletPK,
+                            chatPK: user.chatPK,
+                            network: WALLET_NETWORK,
+                        });
+                        nextVault = migration.vault;
+                        setVault(nextVault);
+                        unpacked = unpackSeedData(nextVault);
+                        mark('vault.unlock.migrate.done', { elapsedMs: Date.now() - migrateStartedAt, source, from: migration.from, to: migration.to });
+                    } finally {
+                        migration.walletEntropy?.fill?.(0);
+                        migration.chatSeed?.fill?.(0);
+                        lockWallet(verifyWallet);
+                        lockChat(verifyChatPrivKey);
+                    }
+                }
+                const { salt, iv, ct, kdf, registry: registryEnvelope } = unpacked;
                 mark('vault.unlock.unpack.done', { elapsedMs: Date.now() - unpackStartedAt, source });
                 const decryptStartedAt = Date.now();
                 mark('vault.unlock.decrypt.start', { source });
@@ -328,11 +366,15 @@ export function VaultProvider({ children }) {
                 mark('vault.unlock.faceIdStageCheck.done', { elapsedMs: Date.now() - faceIdStartedAt, source, shouldStagePassword });
 
                 const deriveStartedAt = Date.now();
-                const walletMnemonic = deriveWalletMnemonic(masterSeed);
-                chatSeed = deriveSeed(masterSeed, 'chat');
-                cacheKey = deriveSeed(masterSeed, LOCAL_DATA_CACHE_LABEL);
+                const secretRegistry = await openSecretRegistry(masterSeed, registryEnvelope);
+                walletEntropy = getDefaultWalletEntropy(secretRegistry);
+                const walletMnemonic = mnemonicFromWalletEntropy(walletEntropy);
+                chatSeed = getChatSeed(secretRegistry);
+                cacheKey = getCacheSeed(secretRegistry);
                 mark('vault.unlock.derive.done', { elapsedMs: Date.now() - deriveStartedAt, source });
 
+                zero(walletEntropy);
+                walletEntropy = null;
                 masterSeed.fill(0);
                 masterSeed = null;
 
@@ -390,6 +432,7 @@ export function VaultProvider({ children }) {
             } catch (err) {
                 mark('vault.unlock.error', { elapsedMs: Date.now() - startedAt, source, code: err?.code || '', message: err?.message || String(err) });
                 zero(masterSeed);
+                zero(walletEntropy);
                 zero(chatSeed);
                 zero(cacheKey);
                 try {

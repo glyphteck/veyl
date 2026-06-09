@@ -23,9 +23,9 @@ function getOpaqueLinkId(sharedSecret, chatPK, peerChatPK) {
     return toHex(deriveKey(sharedSecret, 'opaque-chat-link-v1', orderChatKeys(chatPK, peerChatPK), 32));
 }
 
-function cleanInstanceChatId(value, fallback) {
+function cleanInstanceChatId(value) {
     const chatId = typeof value === 'string' ? value.trim().toLowerCase() : '';
-    return /^[0-9a-f]{64}$/.test(chatId) ? chatId : fallback;
+    return /^[0-9a-f]{64}$/.test(chatId) ? chatId : '';
 }
 
 export async function openPair(chatPK, chatPrivKey, peerChatPK, options = {}) {
@@ -39,15 +39,16 @@ export async function openPair(chatPK, chatPrivKey, peerChatPK, options = {}) {
     const secret = sharedSecret.subarray(0, 32);
     const orderedKeys = orderChatKeys(chatPK, peerChatPK);
     const linkId = getOpaqueLinkId(secret, chatPK, peerChatPK);
-    const chatId = cleanInstanceChatId(options?.chatId, linkId);
-    const root = deriveKey(secret, 'pair-root-v2', [linkId, ...orderedKeys]);
-    const actor = getChatActorKey(privKeyBytes, chatId, chatPK, peerChatPK);
+    const chatId = cleanInstanceChatId(options?.chatId);
+    const linkRoot = deriveKey(secret, 'chat-link-root-v1', orderedKeys);
+    const root = chatId ? deriveKey(secret, 'chat-root-v1', [chatId, ...orderedKeys]) : null;
+    const actor = chatId ? getChatActorKey(privKeyBytes, chatId, chatPK, peerChatPK) : null;
     cleanBytes(sharedSecret);
-    return { linkId, chatId, chatPK, peerChatPK, root, actor };
+    return { linkId, chatId, chatPK, peerChatPK, linkRoot, root, actor };
 }
 
 export function closePair(pair) {
-    cleanBytes(pair?.root, pair?.actor?.secret);
+    cleanBytes(pair?.linkRoot, pair?.root, pair?.actor?.secret);
 }
 
 export function derivePairKey(pair, scope, ...parts) {

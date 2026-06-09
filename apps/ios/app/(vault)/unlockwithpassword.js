@@ -18,6 +18,7 @@ import { logout } from '@/lib/user/actions';
 import { mark } from '@/lib/diagnostics';
 import { sleep, yieldToUi } from '@veyl/shared/utils/async';
 import { isPassword, MAX_PASSWORD, normalizePassword } from '@veyl/shared/password';
+import { isVaultIncompatibleError } from '@veyl/shared/crypto/seed';
 
 export default function UnlockScreen() {
     const { theme } = useTheme();
@@ -27,7 +28,7 @@ export default function UnlockScreen() {
 
     const [password, setPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
-    const [status, setStatus] = useState('idle'); // idle | loading | error
+    const [status, setStatus] = useState('idle'); // idle | loading | error | incompatible
     const [isCovering, setIsCovering] = useState(false);
 
     const lockOpacity = useRef(new RNAnimated.Value(1)).current;
@@ -37,11 +38,12 @@ export default function UnlockScreen() {
     const coverStyle = useAnimatedStyle(() => ({ opacity: cover.value }));
 
     const vaultReady = !!vault;
-    const isUnlocking = status === 'loading' || lockState === 'unlocking' || lockState === 'seed-decrypted';
+    const isUnlocking = status === 'loading' || lockState === 'unlocking' || lockState === 'seed-decrypted' || lockState === 'migrating';
     const disabled = isUnlocking || !vaultReady || isCovering;
 
     const labelText = useMemo(() => {
         if (!vaultReady) return 'loading your vault';
+        if (status === 'incompatible') return 'vault reset required';
         if (status === 'error') return 'wrong password';
         return 'unlock your vault';
     }, [status, vaultReady]);
@@ -92,9 +94,12 @@ export default function UnlockScreen() {
         } catch (err) {
             mark('unlock.password.submit.error', { elapsedMs: Date.now() - startedAt, code: err?.code || '', message: err?.message || String(err) });
             console.warn('unlock failed', err);
-            await swap(() => setStatus('error'));
+            const incompatible = isVaultIncompatibleError(err);
+            await swap(() => setStatus(incompatible ? 'incompatible' : 'error'));
             setPassword('');
-            setTimeout(() => setStatus('idle'), 900);
+            if (!incompatible) {
+                setTimeout(() => setStatus('idle'), 900);
+            }
         }
     };
 
@@ -168,7 +173,7 @@ export default function UnlockScreen() {
                             </View>
 
                             <GlassField disabled={disabled} style={{ gap: 8, paddingHorizontal: 14 }}>
-                                <Icon icon={disabled ? LockOpen : Lock} size={22} color={status === 'error' ? theme.destructive : theme.inflow} />
+                                <Icon icon={disabled ? LockOpen : Lock} size={22} color={status === 'error' || status === 'incompatible' ? theme.destructive : theme.inflow} />
                                 <TextInput
                                     value={password}
                                     onChangeText={(value) => setPassword(value.slice(0, MAX_PASSWORD))}

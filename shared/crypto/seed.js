@@ -5,12 +5,20 @@ import { x25519 } from '@noble/curves/ed25519.js';
 import { entropyToMnemonic } from '@scure/bip39';
 import { wordlist } from '@scure/bip39/wordlists/english.js';
 import { sealAes, openAes } from './aes.js';
-import { encoder, SALT_BYTES, randomBytes } from './core.js';
+import { cleanBytes, decoder, encoder, fromHex, fromHexBytes, randomBytes, SALT_BYTES, toBytes, toHex } from './core.js';
 
 const VAULT_SALT = sha256(encoder.encode('vault-v1'));
 const WALLET_MNEMONIC_ENTROPY_BYTES = 16;
+const SECRET_REGISTRY_AAD = encoder.encode('secret-registry-v1');
+const ENTROPY_HEX_RE = /^[0-9a-f]{32}$/;
+const SEED_HEX_RE = /^[0-9a-f]{64}$/;
+const DEFAULT_WALLET_ID = 'main';
+const DEFAULT_WALLET_KIND = 'bip39-entropy-v1';
 
-export const VAULT_CRYPTO = 'crypto_glyphseal_v2';
+export const VAULT_CRYPTO = 'crypto_glyphseal_v3';
+export const VAULT_INCOMPATIBLE_ERROR = 'vault/incompatible';
+export const SECRET_REGISTRY_VERSION = 1;
+export const SECRET_REGISTRY_ENVELOPE_VERSION = 1;
 export const VAULT_KDF = {
     name: 'argon2id',
     version: 0x13,
@@ -35,9 +43,246 @@ function getVaultDeriveKey(options = {}) {
     return options.deriveKey;
 }
 
+export function vaultIncompatibleError(message = 'vault reset required') {
+    const error = new Error(message);
+    error.code = VAULT_INCOMPATIBLE_ERROR;
+    return error;
+}
+
+export function isVaultIncompatibleError(error) {
+    return error?.code === VAULT_INCOMPATIBLE_ERROR;
+}
+
 // generate a new random seed
 export function generateSeed() {
     return randomBytes(32);
+}
+
+function nowMs(value) {
+    return Number.isFinite(value) && value > 0 ? value : Date.now();
+}
+
+function cleanId(value, fallback) {
+    const text = typeof value === 'string' ? value.trim().toLowerCase() : '';
+    return /^[a-z0-9][a-z0-9_-]{0,63}$/.test(text) ? text : fallback;
+}
+
+function randomSeedHex() {
+    const seed = generateSeed();
+    try {
+        return toHex(seed);
+    } finally {
+        cleanBytes(seed);
+    }
+}
+
+function randomEntropyHex() {
+    const entropy = randomBytes(WALLET_MNEMONIC_ENTROPY_BYTES);
+    try {
+        return toHex(entropy);
+    } finally {
+        cleanBytes(entropy);
+    }
+}
+
+function entropyHexFromOption(value) {
+    if (value == null) {
+        return randomEntropyHex();
+    }
+    const bytes = toBytes(value, 'wallet entropy');
+    if (bytes.length !== WALLET_MNEMONIC_ENTROPY_BYTES) {
+        throw new Error('wallet entropy required');
+    }
+    return cleanEntropyHex(toHex(bytes), 'wallet');
+}
+
+function cleanEntropyHex(value, label) {
+    const text = typeof value === 'string' ? value.trim().toLowerCase() : '';
+    if (!ENTROPY_HEX_RE.test(text)) {
+        throw new Error(`${label} entropy required`);
+    }
+    return text;
+}
+
+function entropyBytes(value, label) {
+    return fromHexBytes(cleanEntropyHex(value, label), label);
+}
+
+function cleanSeedHex(value, label) {
+    const text = typeof value === 'string' ? value.trim().toLowerCase() : '';
+    if (!SEED_HEX_RE.test(text)) {
+        throw new Error(`${label} seed required`);
+    }
+    return text;
+}
+
+function seedBytes(value, label) {
+    return fromHex(cleanSeedHex(value, label), label);
+}
+
+function seedHexFromOption(value, label) {
+    if (value == null) {
+        return randomSeedHex();
+    }
+    const bytes = toBytes(value, `${label} seed`);
+    if (bytes.length !== 32) {
+        throw new Error(`${label} seed required`);
+    }
+    return cleanSeedHex(toHex(bytes), label);
+}
+
+function normalizeWallets(wallets, defaultWalletId) {
+    const input = wallets && typeof wallets === 'object' && !Array.isArray(wallets) ? wallets : {};
+    const out = {};
+    for (const [rawId, wallet] of Object.entries(input)) {
+        const id = cleanId(wallet?.id || rawId, '');
+        if (!id) {
+            continue;
+        }
+        const kind = typeof wallet?.kind === 'string' && wallet.kind.trim() ? wallet.kind.trim().toLowerCase() : DEFAULT_WALLET_KIND;
+        if (kind !== DEFAULT_WALLET_KIND) {
+            throw new Error(`unsupported wallet ${id} secret`);
+        }
+        out[id] = {
+            id,
+            v: SECRET_REGISTRY_VERSION,
+            kind,
+            entropy: cleanEntropyHex(wallet?.entropy, `wallet ${id}`),
+            status: wallet?.status === 'archived' ? 'archived' : 'active',
+            createdAt: nowMs(wallet?.createdAt),
+        };
+    }
+
+    if (!out[defaultWalletId]) {
+        throw new Error('default wallet missing');
+    }
+    return out;
+}
+
+export function createSecretRegistry(options = {}) {
+    const createdAt = nowMs(options.createdAt);
+    return {
+        v: SECRET_REGISTRY_VERSION,
+        defaultWalletId: DEFAULT_WALLET_ID,
+        wallets: {
+            [DEFAULT_WALLET_ID]: {
+                id: DEFAULT_WALLET_ID,
+                v: SECRET_REGISTRY_VERSION,
+                kind: DEFAULT_WALLET_KIND,
+                entropy: entropyHexFromOption(options.walletEntropy),
+                status: 'active',
+                createdAt,
+            },
+        },
+        chat: {
+            id: 'primary',
+            v: SECRET_REGISTRY_VERSION,
+            seed: seedHexFromOption(options.chatSeed, 'chat'),
+            status: 'active',
+            createdAt,
+        },
+        cache: {
+            v: SECRET_REGISTRY_VERSION,
+            seed: seedHexFromOption(options.cacheSeed, 'cache'),
+            createdAt,
+        },
+    };
+}
+
+export function normalizeSecretRegistry(registry) {
+    if (!registry || typeof registry !== 'object' || Array.isArray(registry) || registry.v !== SECRET_REGISTRY_VERSION) {
+        throw vaultIncompatibleError('unsupported secret registry');
+    }
+
+    const defaultWalletId = cleanId(registry.defaultWalletId, DEFAULT_WALLET_ID);
+    return {
+        v: SECRET_REGISTRY_VERSION,
+        defaultWalletId,
+        wallets: normalizeWallets(registry.wallets, defaultWalletId),
+        chat: {
+            id: cleanId(registry.chat?.id, 'primary'),
+            v: SECRET_REGISTRY_VERSION,
+            seed: cleanSeedHex(registry.chat?.seed, 'chat'),
+            status: registry.chat?.status === 'archived' ? 'archived' : 'active',
+            createdAt: nowMs(registry.chat?.createdAt),
+        },
+        cache: {
+            v: SECRET_REGISTRY_VERSION,
+            seed: cleanSeedHex(registry.cache?.seed, 'cache'),
+            createdAt: nowMs(registry.cache?.createdAt),
+        },
+    };
+}
+
+function secretRegistryKey(masterSeed) {
+    return deriveSeed(masterSeed, 'secret-registry-wrap-v1');
+}
+
+export async function sealSecretRegistry(masterSeed, registry) {
+    const key = secretRegistryKey(masterSeed);
+    try {
+        const body = encoder.encode(JSON.stringify(normalizeSecretRegistry(registry)));
+        const { iv, ct } = await sealAes(key, body, SECRET_REGISTRY_AAD);
+        return {
+            v: SECRET_REGISTRY_ENVELOPE_VERSION,
+            iv,
+            ct,
+        };
+    } finally {
+        cleanBytes(key);
+    }
+}
+
+export async function openSecretRegistry(masterSeed, envelope) {
+    if (envelope?.v !== SECRET_REGISTRY_ENVELOPE_VERSION || !envelope?.iv || !envelope?.ct) {
+        throw vaultIncompatibleError('secret registry required');
+    }
+    const key = secretRegistryKey(masterSeed);
+    try {
+        const body = await openAes(key, envelope.iv, envelope.ct, SECRET_REGISTRY_AAD);
+        return normalizeSecretRegistry(JSON.parse(decoder.decode(body)));
+    } finally {
+        cleanBytes(key);
+    }
+}
+
+export function getDefaultWalletEntropy(registry) {
+    const secrets = normalizeSecretRegistry(registry);
+    const wallet = secrets.wallets[secrets.defaultWalletId];
+    if (!wallet || wallet.status !== 'active') {
+        throw new Error('active wallet entropy required');
+    }
+    return entropyBytes(wallet.entropy, `wallet ${wallet.id}`);
+}
+
+export function getChatSeed(registry) {
+    const secrets = normalizeSecretRegistry(registry);
+    if (secrets.chat.status !== 'active') {
+        throw new Error('active chat seed required');
+    }
+    return seedBytes(secrets.chat.seed, 'chat');
+}
+
+export function getCacheSeed(registry) {
+    const secrets = normalizeSecretRegistry(registry);
+    return seedBytes(secrets.cache.seed, 'cache');
+}
+
+export function deriveDeviceCacheKey(cacheSeed, deviceSecret, uid = '', network = '') {
+    const cacheBytes = toBytes(cacheSeed, 'cache seed');
+    const deviceBytes = toBytes(deviceSecret, 'device cache secret');
+    if (cacheBytes.length !== 32 || deviceBytes.length !== 32) {
+        throw new Error('cache key material required');
+    }
+
+    const input = new Uint8Array(64);
+    input.set(cacheBytes, 0);
+    input.set(deviceBytes, 32);
+    try {
+        return hkdf(sha256, input, VAULT_SALT, encoder.encode(JSON.stringify(['local-cache-device-v1', String(uid || ''), String(network || '')])), 32);
+    } finally {
+        cleanBytes(input);
+    }
 }
 
 // encrypt a given seed with password
@@ -46,10 +291,12 @@ export async function encryptSeedWithPassword(seed, pwd, options = {}) {
     const salt = randomBytes(SALT_BYTES);
     const params = normalizeVaultKdf(options.params);
     const deriveKey = getVaultDeriveKey(options);
+    const registry = normalizeSecretRegistry(options.registry || createSecretRegistry());
+    const sealedRegistry = await sealSecretRegistry(seed, registry);
     const key = await deriveKey(pwd, salt, params);
     const { iv, ct } = await sealAes(key, seed);
     key.fill(0);
-    return { crypto: VAULT_CRYPTO, kdf: params, ciphertext: ct, salt, iv };
+    return { crypto: VAULT_CRYPTO, kdf: params, ciphertext: ct, salt, iv, registry: sealedRegistry };
 }
 
 export async function encryptSeed(pwd, options = {}) {
@@ -75,12 +322,27 @@ export function deriveSeed(seed, label) {
     return hkdf(sha256, seed, VAULT_SALT, encoder.encode(label), 32);
 }
 
-export function deriveWalletMnemonic(seed) {
+export function mnemonicFromWalletEntropy(entropy) {
+    const entropyBytesValue = toBytes(entropy, 'wallet entropy');
+    if (entropyBytesValue.length !== WALLET_MNEMONIC_ENTROPY_BYTES) {
+        throw new Error('wallet entropy required');
+    }
+    return entropyToMnemonic(entropyBytesValue, wordlist);
+}
+
+export function deriveLegacyWalletEntropy(seed) {
     const entropy = deriveSeed(seed, 'wallet-mnemonic');
+    const out = new Uint8Array(entropy.subarray(0, WALLET_MNEMONIC_ENTROPY_BYTES));
+    cleanBytes(entropy);
+    return out;
+}
+
+export function deriveWalletMnemonic(seed) {
+    const entropy = deriveLegacyWalletEntropy(seed);
     try {
-        return entropyToMnemonic(entropy.subarray(0, WALLET_MNEMONIC_ENTROPY_BYTES), wordlist);
+        return mnemonicFromWalletEntropy(entropy);
     } finally {
-        entropy.fill(0);
+        cleanBytes(entropy);
     }
 }
 

@@ -6,7 +6,7 @@ import { toHex } from '../crypto/core.js';
 import { sleep } from '../utils/async.js';
 import { markDiag, markDone, markError } from '../utils/diagnostics.js';
 import { lowerText } from '../utils/text.js';
-import { isPendingTransfer, transferBelongsToWallet, txCreatedMs, txUpdatedMs } from './tx.js';
+import { isClaimablePendingTransfer, isPendingTransfer, transferBelongsToWallet, txCreatedMs, txUpdatedMs } from './tx.js';
 
 export const RECENT_TRANSFER_LIMIT = WALLET_RECENT_TRANSFER_LIMIT;
 export const TRANSFER_PAGE_LIMIT = WALLET_TRANSFER_PAGE_LIMIT;
@@ -232,8 +232,9 @@ async function getPendingIncomingTransfers(wallet, diag) {
             markDone(diag, 'wallet.pendingTxs', startedAt, { count: 0 });
             return [];
         }
-        const transfers = sortRecentTransfers(rawTransfers.map((tx) => compactTransfer(tx, { incoming: true })).filter(Boolean));
-        markDone(diag, 'wallet.pendingTxs', startedAt, { count: transfers.length });
+        const claimableTransfers = rawTransfers.filter((tx) => isClaimablePendingTransfer(tx));
+        const transfers = sortRecentTransfers(claimableTransfers.map((tx) => compactTransfer(tx, { incoming: true })).filter(Boolean));
+        markDone(diag, 'wallet.pendingTxs', startedAt, { count: transfers.length, rawCount: rawTransfers.length });
         return transfers;
     } catch (error) {
         markError(diag, 'wallet.pendingTxs', startedAt, error);

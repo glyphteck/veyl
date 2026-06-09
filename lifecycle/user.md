@@ -1,6 +1,6 @@
 # User Lifecycle
 
-Use this guide when changing account creation, onboarding, vault unlock/lock, local cache lifetime, user-private chat state, push routing, blocking, or account deletion. Chat instance behavior lives in [chat.md](chat.md), message behavior lives in [msg.md](msg.md), and message batch behavior lives in [batches.md](batches.md).
+Use this guide when changing account creation, onboarding, vault unlock/lock, local cache lifetime, user-private chat state, push routing, blocking, or account deletion. Secret derivation lives in [secrets.md](secrets.md), chat instance behavior lives in [chat.md](chat.md), message behavior lives in [msg.md](msg.md), and message batch behavior lives in [batches.md](batches.md).
 
 ## Account And Vault
 
@@ -19,7 +19,7 @@ flowchart TD
     G --> J["Client-only wallet operations"]
 ```
 
-Glyphteck stores encrypted app data and public profile metadata. Vault password, decrypted seed, wallet secrets, chat private keys, and derived local cache keys stay client-side.
+Glyphteck stores encrypted app data and public profile metadata. Vault password, decrypted seed, wallet secrets, chat private keys, and derived local cache keys stay client-side. The full seed-to-message derivation chain is documented in [secrets.md](secrets.md).
 
 ## Unlock And Lock
 

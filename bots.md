@@ -82,11 +82,11 @@ Starts the runtime process. Uses an atomic `.bot.lock` directory with a PID file
 
 ### Secrets (`apps/bot/src/secrets.js`)
 
-Reads and writes bot seed material to Google Cloud Secret Manager. All bot seeds live in the single `veyl-bot-seeds` secret as a JSON `seeds` object keyed by username with base64-encoded seed bytes. Provides:
+Reads and writes bot seed material to Google Cloud Secret Manager. All bot secrets live in the single `veyl-bot-seeds` secret as a JSON `seeds` object keyed by username. Each entry is a v3 bot secret containing a base64 master seed plus the sealed secret registry, so bot wallet/chat derivation uses the same registry shape as user vaults after unlock. Provides:
 
-- `readBotSeed` — fetch the seed for a running bot
-- `writeBotSeed` — store a new seed
-- `ensureBotSeed` — read-or-create for provisioning
+- `readBotSecret` — fetch the v3 bot secret for a running bot
+- `writeBotSecret` — store a v3 bot secret
+- `ensureBotSecret` — read-or-create for provisioning
 - `deleteBotSeed` — remove the username's seed entry from the bundle
 
 ### Admin / Firebase (`apps/bot/src/admin.js`)
@@ -95,13 +95,13 @@ Initializes `firebase-admin` for the bot process from platform/default credentia
 
 ### Provisioning (`apps/bot/src/newbot.js`)
 
-One-time bot account setup. Creates or reuses the Auth user, writes all Firestore identity records (`users`, `profiles`, `usernames`, `bots`), and stores the seed in Secret Manager.
+One-time bot account setup. Creates or reuses the Auth user, writes all Firestore identity records (`users`, `profiles`, `usernames`, `bots`), and stores the v3 bot secret in Secret Manager.
 
 When no username is provided, generates a random 12-character lowercase alphanumeric username and verifies uniqueness against the `usernames` collection before reserving it.
 
 ### Shared Bot Modules (`shared/bot/`)
 
-- `account.js` — derives wallet and chat keys from a master seed, boots SparkWallet
+- `account.js` — opens the sealed registry, derives wallet and chat keys, boots SparkWallet
 - `chat.js` — encrypt/decrypt bot messages, send/update messages, handle attachment upload/download with a pair cache
 - `wallet.js` — balance queries and outgoing transfers
 - `events.js` — constants (`BOT_MODE`, `BOT_UNDERFUNDED_TEXT`, `BOT_SEEDS_SECRET_ID`), bot marker factory, seed key helpers
@@ -122,7 +122,7 @@ Bots that have no custom avatar show a bot icon instead of the default user silh
 - `users/{uid}` — standard account doc, block lists under `users/{uid}/blocked/{peerUid}`
 - `profiles/{uid}` — public identity, avatar, network-scoped `walletPKs`, `chatPK`, presence, `bot` marker
 - `usernames/{username}` — username reservation
-- no `seeds/{uid}` — bot seeds are in Secret Manager
+- no `seeds/{uid}` — bot secrets are in Secret Manager
 
 ### Bot control record
 
@@ -162,7 +162,8 @@ The CLI can do the same:
 - `bun bot traffic mixed [@username/uid] [fast/slow]` — queue message and 1-sat transfer traffic in parallel
 - `bun bot traffic msg [@username/uid] [fast/slow] [--solo] [--source @botname]` — send message traffic only, optionally pinned to one bot-owned chat
 - `bun bot traffic tx [@username/uid] [fast/slow]` — send 1-sat transfer traffic only
-- `bun bot traffic fund [--source @review] [--target 1000]` — send a flat funding transfer to each enabled non-`review` traffic bot
+- `bun bot traffic fund [--source @review] [--target 1000]` — send a flat funding transfer to each enabled traffic-group bot
+- `bun bot traffic label [@username|uid|all] [on|off]` — set the internal `groups.traffic` marker used by traffic commands
 - `bun bot traffic stop` — request cancellation for queued/running traffic actions; restarted runtimes also cancel stale queued/running traffic actions before accepting new work
 - `bun bot kill <@username|uid>` — fully delete the bot account
 - `bun bot kill all` — delete every bot
@@ -200,7 +201,7 @@ bun bot power @mybot off
 
 ### Traffic load testing
 
-Traffic commands are for client load testing. The bot runtime must already be running. The runtime uses every enabled bot except `review` as the traffic fleet.
+Traffic commands are for client load testing. The bot runtime must already be running. The runtime uses enabled bots whose `bots/{uid}.groups.traffic` marker is `true`. The `review` bot is a funding source by convention and should not be in the traffic group.
 
 Start verbose runtimes before observing clients:
 
@@ -213,11 +214,12 @@ Open and unlock web and iOS as `@zxrl`, then keep the relevant surface in view. 
 Fund the traffic fleet from `review`:
 
 ```bash
+bun bot traffic label all
 bun bot traffic fund
 bun bot traffic fund --target 1000 --source @review
 ```
 
-Funding sends the flat target amount to each enabled non-`review` bot. It does not inspect balances or top up to a threshold. `--amount` is accepted as the same per-bot amount when that reads more clearly. Use it before transfer traffic when the fleet needs sats.
+`traffic label all` marks every bot except `review` as traffic and explicitly leaves `review` out. Funding sends the flat target amount to each enabled traffic-group bot. It does not inspect balances or top up to a threshold. `--amount` is accepted as the same per-bot amount when that reads more clearly. Use it before transfer traffic when the fleet needs sats.
 
 Queue mixed traffic:
 
@@ -227,7 +229,7 @@ bun bot traffic mixed @alice fast --count 50
 bun bot traffic mixed @alice slow --duration 10m --no-wait
 ```
 
-`fast` uses a 500ms delay and `slow` uses a 5s delay. Without a speed preset, traffic uses the default 3s delay. Message traffic randomly picks from the non-`review` enabled bot sessions, then uses shared text-vs-request weights. Text messages come from the shared 100-item traffic-msg pool. Requests use weighted amount buckets from 1,000 to 1,000,000 sats, with most requests in the 10,000-99,999 sat range and fewer larger asks. The runtime still tries one final encrypted read receipt per bot chat when there is a recent user-authored message to acknowledge.
+`fast` uses a 500ms delay and `slow` uses a 5s delay. Without a speed preset, traffic uses the default 3s delay. Message traffic randomly picks from enabled traffic-group bot sessions, then uses shared text-vs-request weights. Text messages come from the shared 100-item traffic-msg pool. Requests use weighted amount buckets from 1,000 to 1,000,000 sats, with most requests in the 10,000-99,999 sat range and fewer larger asks. The runtime still tries one final encrypted read receipt per bot chat when there is a recent user-authored message to acknowledge.
 
 Queue focused traffic:
 
@@ -255,7 +257,7 @@ Agent checklist:
 
 1. Start `bun dev -v` and wait for web, iOS Metro, and bot runtime readiness.
 2. Ask the human to unlock web and iOS as the target account before judging client logs.
-3. Use `bun bot traffic fund --target 1000` before transfer traffic if the fleet may be low.
+3. Use `bun bot traffic label all` after provisioning or renaming bots, then `bun bot traffic fund --target 1000` before transfer traffic if the fleet may be low.
 4. Use `mixed` for combined chat/wallet pressure, `msg --solo` for single-chat pressure, `msg` for chat-list behavior, and `tx` for wallet-list behavior.
 5. Prefer `--no-wait` only when deliberately overlapping traffic or leaving a long observation run active.
 6. Use `bun bot traffic stop` before changing shape, restarting runtimes, or handing off.

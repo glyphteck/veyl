@@ -5,11 +5,15 @@ import { ArrowRightCircle, AudioLines, File, Film, HandCoins, Image as ImageIcon
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { useTheme } from '@/providers/themeprovider';
+import { useBitcoin } from '@/providers/bitcoinprovider';
+import { useTxData } from '@/providers/txdataprovider';
+import { useUser } from '@/providers/userprovider';
 import { useTap } from '@/lib/tap';
 import GlassView from '@/components/glass/glassview';
 import Icon from '@/components/icon';
 import { mark } from '@/lib/diagnostics';
 import { parseCommand } from '@veyl/shared/commands';
+import { getRequestContext } from '@veyl/shared/chat/messages';
 
 const INACTIVE_OPACITY = 0.32;
 const COMPOSER_POP_MS = 80;
@@ -149,12 +153,12 @@ function getAttachmentDraftTitle(msg) {
     }
 }
 
-function getDraftPreview(msg) {
+function getDraftPreview(msg, context) {
     if (!msg) {
         return '';
     }
     if (msg?.t === 'req') {
-        return 'payment request';
+        return getRequestContext(msg, context).text;
     }
     const attachmentTitle = getAttachmentDraftTitle(msg);
     if (attachmentTitle) {
@@ -183,8 +187,11 @@ function getDraftTypeIcon(msg) {
     }
 }
 
-export function DraftBar({ draft, onClear, onHidden }) {
+export function DraftBar({ draft, peerDisplayName, onClear, onHidden }) {
     const { theme } = useTheme();
+    const { settings } = useUser();
+    const bitcoin = useBitcoin();
+    const { getTxById } = useTxData();
     const [mounted, setMounted] = useState(!!draft);
     const [visibleDraft, setVisibleDraft] = useState(draft);
     const clearTap = useTap({
@@ -232,7 +239,7 @@ export function DraftBar({ draft, onClear, onHidden }) {
                 {DraftTypeIcon ? <Icon icon={DraftTypeIcon} color={theme.muted} size={18} /> : null}
                 <Animated.View style={{ flex: 1 }}>
                     <Animated.Text numberOfLines={1} ellipsizeMode="tail" style={{ color: theme.foreground, fontSize: 15, fontWeight: '800' }}>
-                        {getDraftPreview(shownDraft.msg)}
+                        {getDraftPreview(shownDraft.msg, { fromPeer: shownDraft.fromPeer, peerDisplayName, moneyFormat: settings?.moneyFormat, btcPrice: bitcoin?.price, getTxById })}
                     </Animated.Text>
                 </Animated.View>
                 <Pressable {...clearTap.props} hitSlop={10}>

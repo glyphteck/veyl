@@ -5,7 +5,6 @@ import { cleanText } from '../../utils/text.js';
 import { makeTimestamp, timestampMs } from '../../utils/time.js';
 
 export const LOCAL_DATA_CACHE_VERSION = 2;
-export const LOCAL_DATA_CACHE_LABEL = 'local-cache-v2';
 
 export function emptyPayload() {
     return {

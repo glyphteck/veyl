@@ -25,13 +25,14 @@ bun dev -v
 
 2. Ask the human to open and unlock web and iOS as the target user, usually `@zxrl`.
 
-3. Fund the traffic fleet before transfer tests:
+3. Label and fund the traffic fleet before transfer tests:
 
 ```bash
+bun bot traffic label all
 bun bot traffic fund --target 1000
 ```
 
-`traffic fund` sends the flat target amount from `@review` by default to each enabled bot except `review`. It is not a balance top-up calculation. Use `--source @botname` for another funding source and `--amount` as an alias for the per-bot amount.
+`traffic label all` sets `bots/{uid}.groups.traffic` for every bot except `review`, which stays outside the traffic fleet. `traffic fund` sends the flat target amount from `@review` by default to each enabled traffic-group bot. It is not a balance top-up calculation. Use `--source @botname` for another funding source and `--amount` as an alias for the per-bot amount.
 
 4. Run mixed and message traffic while the chat list is visible:
 

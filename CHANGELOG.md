@@ -2,6 +2,14 @@
 
 Repo-level changes are listed newest first. Keep entries short and concrete. Broad pushes get grouped bullets, while narrow fixes can use one concise bugfix or cleanup bullet that still names the actual change.
 
+## 0.14.10 - 2026-06-09
+
+- Added the current vault secret registry shape with guarded `replaceVault` migration, device-mixed local cache keys, and secret lifecycle documentation.
+- Scoped chat pair and message crypto to active chat ids with separate link roots, updated ping proofs, and shared request-message ownership.
+- Hardened web headers with nonce-based CSP in the Next proxy, removed app-authored inline scripts, and added browser security headers.
+- Tightened wallet transfer cache reads by ignoring pending transfers and clamping cached history offsets.
+- Updated bot secret boot/runtime handling and related admin docs.
+
 ## 0.14.8 - 2026-06-09
 
 - Removed unlock icon animation waits from the vault unlock critical path and documented real-build validation for iOS load-time measurements.

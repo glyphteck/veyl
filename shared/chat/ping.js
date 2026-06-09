@@ -7,7 +7,7 @@ import { canonicalBytes } from '../crypto/canonical.js';
 import { cleanBytes, fromHex, randomBytes, toBytes32, toHex } from '../crypto/core.js';
 import { deriveKey } from '../crypto/kdf.js';
 import { getKeyPair } from '../crypto/seed.js';
-import { openChatPair } from '../crypto/chat.js';
+import { closeChatPair, openChatPair } from '../crypto/chat.js';
 import { openJson, sealJson } from '../crypto/box.js';
 import { packBodyData, unpackBodyData } from '../crypto/pack.js';
 import { cleanText } from '../utils/text.js';
@@ -33,13 +33,20 @@ function pingProof(root, payload) {
 }
 
 export async function sealPing(senderChatPK, senderPrivKey, recipientChatPK, fields = {}) {
-    const pair = await openChatPair(senderChatPK, senderPrivKey, recipientChatPK, { chatId: fields.chatId });
-    const eph = getKeyPair(randomBytes(32));
-    const recipientPK = fromHex(recipientChatPK, 'recipient chat public key');
-    const shared = x25519.getSharedSecret(eph.priv, recipientPK);
-    const epk = toHex(eph.pub);
-    const key = deriveKey(shared.subarray(0, 32), 'chat-inbox-ping-v1', [epk, recipientChatPK]);
+    let pair = null;
+    let eph = null;
+    let shared = null;
+    let key = null;
     try {
+        pair = await openChatPair(senderChatPK, senderPrivKey, recipientChatPK, { chatId: fields.chatId });
+        if (!pair?.chatId || !pair?.actor?.publicKey || !pair?.linkRoot) {
+            throw new Error('chat ping pair required');
+        }
+        eph = getKeyPair(randomBytes(32));
+        const recipientPK = fromHex(recipientChatPK, 'recipient chat public key');
+        shared = x25519.getSharedSecret(eph.priv, recipientPK);
+        const epk = toHex(eph.pub);
+        key = deriveKey(shared.subarray(0, 32), 'chat-inbox-ping-v1', [epk, recipientChatPK]);
         const payload = {
             v: CHAT_PING_VERSION,
             kind: cleanText(fields.kind) || 'ping',
@@ -53,7 +60,7 @@ export async function sealPing(senderChatPK, senderPrivKey, recipientChatPK, fie
         };
         const sealedPayload = {
             ...payload,
-            proof: pingProof(pair.root, payload),
+            proof: pingProof(pair.linkRoot, payload),
         };
         const { nonce, ct } = await sealJson(key, sealedPayload, canonicalBytes({ v: CHAT_PING_VERSION, epk }, 'chat ping aad'));
         return {
@@ -62,7 +69,8 @@ export async function sealPing(senderChatPK, senderPrivKey, recipientChatPK, fie
             body: packBodyData(nonce, ct),
         };
     } finally {
-        cleanBytes(pair.root, pair.actor?.secret, eph.priv, shared, key);
+        closeChatPair(pair);
+        cleanBytes(eph?.priv, shared, key);
     }
 }
 
@@ -70,6 +78,7 @@ export async function openPing(chatPK, chatPrivKey, ping) {
     if (ping?.v !== CHAT_PING_VERSION || !ping?.epk || !ping?.body) {
         throw new Error('invalid chat ping');
     }
+    let linkPair = null;
     const priv = toBytes32(chatPrivKey, 'chat private key');
     const epk = cleanText(ping.epk);
     const shared = x25519.getSharedSecret(priv, fromHex(epk, 'chat ping public key'));
@@ -81,11 +90,15 @@ export async function openPing(chatPK, chatPrivKey, ping) {
         if (!senderChatPK || payload?.v !== CHAT_PING_VERSION) {
             throw new Error('invalid chat ping payload');
         }
-        const linkPair = await openChatPair(chatPK, chatPrivKey, senderChatPK);
-        if (payload.linkId !== linkPair.linkId || payload.proof !== pingProof(linkPair.root, payload)) {
+        linkPair = await openChatPair(chatPK, chatPrivKey, senderChatPK);
+        if (payload.linkId !== linkPair.linkId || payload.proof !== pingProof(linkPair.linkRoot, payload)) {
             throw new Error('invalid chat ping proof');
         }
         const pair = await openChatPair(chatPK, chatPrivKey, senderChatPK, { chatId: payload.chatId });
+        if (!pair?.chatId || !pair?.actor?.publicKey) {
+            closeChatPair(pair);
+            throw new Error('invalid chat ping chat');
+        }
         return {
             pair,
             payload: {
@@ -95,6 +108,7 @@ export async function openPing(chatPK, chatPrivKey, ping) {
             },
         };
     } finally {
+        closeChatPair(linkPair);
         cleanBytes(shared, key);
     }
 }

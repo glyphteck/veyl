@@ -13,6 +13,7 @@ export { setWalletPK, setChatPK } from './user/onboarding/setpks.js';
 export { deleteAccount } from './user/actions/deleteaccount.js';
 export { setPush, dropPush } from './user/actions/push.js';
 export { reserveReportEvidenceUpload, submitReport } from './user/actions/report.js';
+export { replaceVault } from './user/actions/vault.js';
 
 // chat functions
 export { reserveSharedMediaUpload, setChatMediaHold } from './chat/media.js';

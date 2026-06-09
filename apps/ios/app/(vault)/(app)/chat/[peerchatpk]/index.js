@@ -22,7 +22,7 @@ import { formatUserDisplay } from '@veyl/shared/profile';
 import { getChatPeerPK } from '@veyl/shared/chat/ids';
 import { chatUploadErrorMessage } from '@veyl/shared/chat/attachments';
 import { getMessageKey } from '@veyl/shared/chat/state';
-import { canReplyToMsg, makeReq, makeTxt, setReply, setTxt } from '@veyl/shared/chat/messages';
+import { canReplyToMsg, isPeerMsg, makeReq, makeTxt, setReply, setTxt } from '@veyl/shared/chat/messages';
 import { useTap } from '@/lib/tap';
 import { getCommandContext, parseCommandAmountSats } from '@veyl/shared/commands';
 import { firstRouteParam } from '@veyl/shared/navigation/params';
@@ -349,8 +349,8 @@ export default function PeerChatRoute() {
         if (!canReplyToMsg(msg)) {
             return;
         }
-        setDraft({ mode: 'reply', msg });
-    }, []);
+        setDraft({ mode: 'reply', msg, fromPeer: isPeerMsg(msg, chatPK) });
+    }, [chatPK]);
 
     const handleEdit = useCallback((msg) => {
         setDraft({ mode: 'edit', msg });
@@ -528,7 +528,7 @@ export default function PeerChatRoute() {
                                 style={{ gap: COMPOSER_OVERLAY_GAP, paddingBottom: composerOverlayMounted ? COMPOSER_OVERLAY_GAP : 0 }}
                             >
                                 <CommandBubbles items={commandContext.items} onSelect={handleCommandBubblePress} interactive={commandContext.kind === 'pick'} />
-                                <DraftBar draft={draft} onClear={handleClearDraft} onHidden={handleDraftHidden} />
+                                <DraftBar draft={draft} peerDisplayName={chatTitle} onClear={handleClearDraft} onHidden={handleDraftHidden} />
                             </Reanimated.View>
                             {ENABLE_CHAT_INPUT ? (
                                 <ChatInput

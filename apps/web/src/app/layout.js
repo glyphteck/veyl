@@ -3,6 +3,7 @@ import { Notifications } from '@/components/notifications';
 import { ThemeProvider } from '@/components/themeprovider';
 import { links } from '@veyl/shared/links';
 import { walletLogoSrc } from '@/lib/brand';
+import { headers } from 'next/headers';
 
 export const metadata = {
     metadataBase: new URL(links.veyl),
@@ -36,11 +37,13 @@ export const metadata = {
     },
 };
 
-export default function RootLayout({ children }) {
+export default async function RootLayout({ children }) {
+    const nonce = (await headers()).get('x-nonce');
+
     return (
         <html lang="en" suppressHydrationWarning>
             <body suppressHydrationWarning className="select-none font-bold antialiased">
-                <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+                <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange nonce={nonce}>
                     {children}
                     <Notifications position="bottom-left" />
                 </ThemeProvider>

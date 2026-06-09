@@ -11,7 +11,7 @@ import { useTxData } from '@/providers/txdataprovider';
 import { useUser } from '@/providers/userprovider';
 import { useWallet } from '@/providers/walletprovider';
 import { bubbleTint } from '@/lib/chat/messages';
-import { renderMoney } from '@veyl/shared/money';
+import { getRequestContext } from '@veyl/shared/chat/messages';
 import { useGestureBlockers } from './gesturecontext';
 import GlassView from '@/components/glass/glassview';
 import Icon from '@/components/icon';
@@ -134,13 +134,11 @@ export default function RequestMessage({ msg, fromPeer = false, peerDisplayName,
     const bitcoin = useBitcoin();
     const { balance } = useWallet();
     const { getTxById } = useTxData();
-    const msgTx = msg.tx ? getTxById?.(msg.tx) : null;
-    const displayAmount = msgTx ? Math.abs(Number(msgTx.amount)) : Number(msg.a);
-    const formattedAmount = renderMoney(displayAmount, settings?.moneyFormat, bitcoin?.price);
+    const { amount: formattedAmount, label, tx: msgTx } = getRequestContext(msg, { fromPeer, peerDisplayName, moneyFormat: settings?.moneyFormat, btcPrice: bitcoin?.price, getTxById });
     const isTransactionPending = msg.tx && (!msgTx || msgTx.pending !== false);
-    const label = fromPeer ? (isPaying ? 'sending' : msg.tx ? 'You sent' : `${peerDisplayName} requested`) : msg.tx ? 'You received' : 'You requested';
+    const cardLabel = isPaying ? 'sending' : label;
     const amountColor = !msg.tx ? theme.foreground : fromPeer ? (isTransactionPending ? `${theme.outflow}80` : theme.outflow) : isTransactionPending ? `${theme.inflow}80` : theme.inflow;
-    const card = { fromPeer, formattedAmount, label, amountColor, isPaying, theme };
+    const card = { fromPeer, formattedAmount, label: cardLabel, amountColor, isPaying, theme };
     const payBlockers = useGestureBlockers({ includeLike: true });
 
     if (fromPeer) {

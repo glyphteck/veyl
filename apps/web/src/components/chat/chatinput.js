@@ -1,11 +1,15 @@
 'use client';
 
 import { Button } from '@/components/button';
+import { useBitcoin } from '@/components/providers/bitcoinprovider';
+import { useTxData } from '@/components/providers/txdataprovider';
+import { useUser } from '@/components/providers/userprovider';
 import { cn } from '@/lib/classes';
 import { AudioLines, CircleArrowRight, File, Film, HandCoins, Image as ImageIcon, Paperclip, Reply, SquarePen, X } from 'lucide-react';
 import { useCloak } from '@veyl/shared/providers/cloakprovider';
 import { forwardRef, useEffect, useRef, useState } from 'react';
 import { getCommandContext, parseCommand } from '@veyl/shared/commands';
+import { getRequestContext } from '@veyl/shared/chat/messages';
 
 const ChatTextarea = forwardRef(function ChatTextarea({ className, maxRows = Infinity, onInput, ...props }, ref) {
     const handleInput = (event) => {
@@ -60,12 +64,12 @@ function getAttachmentDraftTitle(msg) {
     }
 }
 
-function getDraftPreview(msg) {
+function getDraftPreview(msg, context) {
     if (!msg) {
         return '';
     }
     if (msg?.t === 'req') {
-        return 'payment request';
+        return getRequestContext(msg, context).text;
     }
     const attachmentTitle = getAttachmentDraftTitle(msg);
     if (attachmentTitle) {
@@ -94,7 +98,11 @@ function getDraftTypeIcon(msg) {
     }
 }
 
-function DraftBar({ draft, onClear }) {
+function DraftBar({ draft, peerDisplayName, onClear }) {
+    const { settings } = useUser();
+    const bitcoin = useBitcoin();
+    const { getTxById } = useTxData();
+
     if (!draft) {
         return null;
     }
@@ -107,7 +115,7 @@ function DraftBar({ draft, onClear }) {
             <DraftIcon className="size-5 shrink-0" />
             {DraftTypeIcon ? <DraftTypeIcon className="size-4.5 shrink-0 text-muted" /> : null}
             <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-black text-foreground">{getDraftPreview(draft.msg)}</p>
+                <p className="truncate text-sm font-black text-foreground">{getDraftPreview(draft.msg, { fromPeer: draft.fromPeer, peerDisplayName, moneyFormat: settings?.moneyFormat, btcPrice: bitcoin?.price, getTxById })}</p>
             </div>
             <Button onClick={onClear} className="grower size-4.5 text-muted" tabbable={false}>
                 <X className="size-4.5" />
@@ -174,6 +182,7 @@ export function ChatInput({
     attachmentButtonRef,
     moneyButtonRef,
     draft,
+    peerDisplayName,
     onClearDraft,
     onEscape,
 }) {
@@ -292,7 +301,7 @@ export function ChatInput({
     return (
         <div ref={containerRef} className="pointer-events-none z-35 absolute inset-x-0 bottom-0 mx-auto mb-6 w-[calc(100%-6rem)] max-w-3xl">
             <CommandBubbles items={commandContext.items} onSelect={applyCommandPrefix} interactive={commandContext.kind === 'pick'} />
-            <DraftBar draft={draft} onClear={onClearDraft} />
+            <DraftBar draft={draft} peerDisplayName={peerDisplayName} onClear={onClearDraft} />
             <div className="pointer-events-auto flex items-end gap-2 bg-background/70 px-2.5 pt-0.5 shadow backdrop-blur-sm rounded-round">
                 <input ref={fileRef} type="file" hidden multiple onChange={handleFileChange} disabled={disabled} />
                 <ChatTextarea

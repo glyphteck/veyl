@@ -1,19 +1,61 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import { File } from 'expo-file-system';
+import * as SecureStore from 'expo-secure-store';
 import { Buffer } from 'buffer';
 import { AESEncryptionKey, AESSealedData, aesDecryptAsync, aesEncryptAsync } from 'expo-crypto';
 
 import { openVaultCache } from '@veyl/shared/cache/localdata';
 import { resolveNetwork } from '@veyl/shared/network';
-import { cleanBytes, randomBytes, toBytes } from '@veyl/shared/crypto/core';
+import { cleanBytes, fromHexBytes, randomBytes, toBytes, toHex } from '@veyl/shared/crypto/core';
+import { deriveDeviceCacheKey } from '@veyl/shared/crypto/seed';
 import { safeFilePart } from '@veyl/shared/utils/filename';
 import { ensureDirectory } from '@/lib/file';
 
 const CACHE_ROOT = FileSystem.documentDirectory ? `${FileSystem.documentDirectory}vault-local-cache/` : null;
+const CACHE_SECRET_SERVICE = 'veyl.localcache';
+const INSTALL_SECRET_BYTES = 32;
 const MEDIA_TAG_BYTES = 16;
+const STORE_OPTS = {
+    keychainService: CACHE_SECRET_SERVICE,
+    keychainAccessible: SecureStore.WHEN_PASSCODE_SET_THIS_DEVICE_ONLY,
+};
 
 function storageScope(uid, network) {
     return `${safeFilePart(network)}-${safeFilePart(uid)}`;
+}
+
+function installSecretKey(uid, network) {
+    return `veyl_local_cache_${safeFilePart(network)}_${safeFilePart(uid)}`;
+}
+
+function parseInstallSecret(value) {
+    if (typeof value !== 'string' || !/^[0-9a-f]{64}$/i.test(value)) {
+        return null;
+    }
+    return fromHexBytes(value, 'local cache install secret');
+}
+
+async function readOrCreateInstallSecret(uid, network) {
+    const key = installSecretKey(uid, network);
+    const existing = parseInstallSecret(await SecureStore.getItemAsync(key, { keychainService: CACHE_SECRET_SERVICE }).catch(() => null));
+    if (existing) {
+        return existing;
+    }
+
+    const secret = randomBytes(INSTALL_SECRET_BYTES);
+    try {
+        await SecureStore.setItemAsync(key, toHex(secret), STORE_OPTS);
+    } catch {}
+    return secret;
+}
+
+async function localCacheKey(rootKey, { uid, network }) {
+    const installSecret = await readOrCreateInstallSecret(uid, network);
+    try {
+        return deriveDeviceCacheKey(rootKey, installSecret, uid, network);
+    } finally {
+        cleanBytes(installSecret);
+    }
 }
 
 function cacheDir(scope) {
@@ -192,12 +234,17 @@ function makeStorage({ uid, network }) {
     };
 }
 
-export function openLocalDataCache(key, { uid } = {}) {
+export async function openLocalDataCache(key, { uid } = {}) {
     const network = resolveNetwork(globalThis?.process?.env ?? {});
-    return openVaultCache({
-        key,
-        storage: makeStorage({ uid, network }),
-        uid,
-        network,
-    });
+    const cacheKey = await localCacheKey(key, { uid, network });
+    try {
+        return await openVaultCache({
+            key: cacheKey,
+            storage: makeStorage({ uid, network }),
+            uid,
+            network,
+        });
+    } finally {
+        cleanBytes(cacheKey);
+    }
 }

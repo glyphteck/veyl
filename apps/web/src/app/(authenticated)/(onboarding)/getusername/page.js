@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { useRouter } from 'next/navigation';
 import { cloud } from '@/lib/cloud';
+import { refreshOnboardingState } from '@/lib/routeguards';
 import { Input } from '@/components/input';
 import { Controller, useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -15,7 +15,6 @@ const usernameSchema = z.object({
 });
 
 const GetUsername = () => {
-    const router = useRouter();
     const resetRef = useRef(null);
 
     // state for loading and error
@@ -59,7 +58,7 @@ const GetUsername = () => {
 
         try {
             await cloud.user.username.get(username);
-            router.refresh();
+            refreshOnboardingState();
         } catch (err) {
             form.reset({ username: '' });
             setStatus(isUsernameTakenError(err) ? 'taken' : 'unavailable');

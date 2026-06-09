@@ -2,13 +2,13 @@
 
 Use this guide for any change to encrypted chat, chat entries, message payloads, retention, reactions, read receipts, media messages, warming, compaction, push routing, or bot chat behavior.
 
-For lifecycle diagrams and ownership, read [lifecycle/msg.md](../lifecycle/msg.md), [lifecycle/chat.md](../lifecycle/chat.md), [lifecycle/batches.md](../lifecycle/batches.md), and [lifecycle/user.md](../lifecycle/user.md). [chat-message-flow.md](chat-message-flow.md) is only a compatibility pointer.
+For lifecycle diagrams and ownership, read [lifecycle/secrets.md](../lifecycle/secrets.md), [lifecycle/msg.md](../lifecycle/msg.md), [lifecycle/chat.md](../lifecycle/chat.md), [lifecycle/batches.md](../lifecycle/batches.md), and [lifecycle/user.md](../lifecycle/user.md). [chat-message-flow.md](chat-message-flow.md) is only a compatibility pointer.
 
 ## Contract
 
 - Chat is custom encrypted 1:1 messaging over Firestore. The server sees an opaque pair-derived link id, an active backend-issued chat id, owner paths, encrypted message envelopes, timestamps, TTL metadata, chat-scoped media paths, and sealed inbox ping envelopes; it does not know participants from the canonical chat document, plaintext sender, message type, text, read state, reactions, retention mode, or hidden state.
 - The architecture principle is dumb server, smart client powered by cryptography. The server validates only auth, ban state, path ownership, and bounded document shapes. Clients derive link ids, decrypt owner entries, pin per-chat actor keys, verify signed actions, and ignore anything that fails cryptographic verification.
-- Link ids are derived from the X25519 pair secret plus the ordered chat public keys. Active chat ids live at `links/{linkId}.chat.id`; the backend can issue a fresh active chat id after whole-chat delete without changing the pair-derived link.
+- Link ids are derived from the X25519 pair secret plus the ordered chat public keys. Active chat ids live at `links/{linkId}.chat.id`; the backend can issue a fresh active chat id after whole-chat delete without changing the pair-derived link. Message roots, action authenticators, and actor keys are scoped by active `chatId`, not by `linkId`.
 - User chat entries live in owner-only encrypted entries at `users/{uid}/chats/{entryId}`. `entryId` is derived from the owner's chat private material plus the active `chatId`, so a recreated chat with the same peer gets a fresh owner entry.
 - Owner entry `ts` plus the owner entry id is the plaintext owner-visible list marker for queries and pagination. It is not canonical message order; clients repair stale order after decrypting inbox pings and message actions.
 - Message docs live at `chats/{chatId}/messages/{messageId}` and carry only `{ head, body, ts, ttl }`.
@@ -39,6 +39,7 @@ Delete is also chat-visible global state. Either participant may hard-delete any
 
 ## Lifecycle Index
 
+- Vault seed, public key, pair link, chat root, actor key, owner-entry, ping, and message-key derivation: [lifecycle/secrets.md](../lifecycle/secrets.md).
 - Message send, media upload, save/unsave, explicit message delete, and shared media: [lifecycle/msg.md](../lifecycle/msg.md).
 - Active chat ids, owner entries, parent delete markers, whole-chat delete, and recreation: [lifecycle/chat.md](../lifecycle/chat.md).
 - Latest batches, warming, mounted route behavior, read receipts, hidden checkpoints, and maintenance: [lifecycle/batches.md](../lifecycle/batches.md).
@@ -49,6 +50,7 @@ Keep this file focused on the chat contract, payload model, ownership map, and i
 ## Module Ownership
 
 - Provider orchestration: `shared/providers/chatprovider.js`.
+- Secret and pair derivation: `shared/crypto/seed.js`, `shared/crypto/pair.js`, `shared/crypto/sign.js`, and `lifecycle/secrets.md`.
 - Chat list and previews: `shared/chat/usechatlist.js`, `shared/chat/chats.js`, `shared/chat/list.js`.
 - Message query/decrypt/windowing: `shared/chat/messages/query.js`, `shared/chat/usemessages.js`, `shared/chat/messages/window.js`.
 - Owner entries and inbox pings: `shared/chat/entry.js` and `shared/chat/ping.js`.
@@ -68,6 +70,7 @@ Keep this file focused on the chat contract, payload model, ownership map, and i
 
 - Keep the server dumb about encrypted message semantics.
 - Prefer client-verifiable cryptographic ownership for chat-visible actions over server-readable author or participant checks when moving toward opaque chat.
+- Keep `linkId` as a private rendezvous id. Do not derive message roots, action authenticators, or actor keys from `linkId`.
 - Do not add participants, plaintext sender keys, plaintext previews, read state, reaction state, retention mode, hidden state, or "currently in chat" state to `chats/{chatId}` docs.
 - Do not reintroduce read-time plaintext TTL shortening.
 - Do not reintroduce per-user saved-message records, saved-message overlay listeners, saved-media hold docs, save refcounts, or plaintext save intent. Saved v1 is only shared message `ttl: null` plus the projected Storage temporary hold for chat media.

@@ -9,3 +9,4 @@ export * from './messages/autodelete.js';
 export * from './messages/compact.js';
 export * from './messages/compose.js';
 export * from './messages/preview.js';
+export * from './messages/request.js';

@@ -17,6 +17,7 @@ import { Button } from '@/components/button';
 import { logout } from '@/lib/user/actions';
 import { yieldToUi } from '@veyl/shared/utils/async';
 import { isPassword, MAX_PASSWORD, normalizePassword } from '@veyl/shared/password';
+import { isVaultIncompatibleError } from '@veyl/shared/crypto/seed';
 import RegtestTag from '@/components/regtesttag';
 import UserMenu from '@/components/usermenu';
 
@@ -28,6 +29,7 @@ const lockLabels = {
     unlocking: 'unlocking',
     decrypting: 'decrypting vault',
     'seed-decrypted': 'vault decrypted',
+    migrating: 'migrating vault',
     deriving: 'deriving keys',
     wallet: 'opening wallet',
     chat: 'opening chat',
@@ -67,11 +69,12 @@ export default function UnlockPage() {
     const lockLabel = lockLabels[lockState];
     const lockPending = !!lockLabel || isUnlocked;
     const disabled = status === 'loading' || status === 'error' || lockPending;
-    const showError = status === 'error';
+    const showError = status === 'error' || status === 'incompatible';
     const showPending = !showError && (status === 'loading' || lockPending);
     let labelText = lockLabel || (status === 'loading' ? 'unlocking' : 'unlock your vault');
     if (isUnlocked) labelText = isOpeningChats ? 'opening chats' : 'launching app';
     if (status === 'error') labelText = 'wrong password';
+    if (status === 'incompatible') labelText = 'vault reset required';
 
     const form = useForm({
         resolver: zodResolver(passwordSchema),
@@ -129,8 +132,13 @@ export default function UnlockPage() {
         if (!cloud.auth.user?.uid) return;
         try {
             await unlock(password, { onSeedDecrypted: animateUnlockIcon });
-        } catch {
+        } catch (error) {
             setSeedDecrypted(false);
+            if (isVaultIncompatibleError(error)) {
+                setStatus('incompatible');
+                form.reset({ password: '' });
+                return;
+            }
             setStatus('error');
             setTimeout(() => {
                 setStatus('idle');

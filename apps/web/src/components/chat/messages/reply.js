@@ -8,8 +8,7 @@ import { useChat } from '@/components/providers/chatprovider';
 import { useTxData } from '@/components/providers/txdataprovider';
 import { useUser } from '@/components/providers/userprovider';
 import { bubbleBg, imageWidth } from '@/lib/chat/messages';
-import { renderMoney } from '@veyl/shared/money';
-import { UNAVAILABLE_REPLY_MSG_TYPE, getAttachmentCaption, getAttachmentTitle, getImageAspect, isExpiredAttachmentMsg, makeUnavailableReply } from '@veyl/shared/chat/messages';
+import { UNAVAILABLE_REPLY_MSG_TYPE, getAttachmentCaption, getAttachmentTitle, getImageAspect, getRequestContext, isExpiredAttachmentMsg, makeUnavailableReply } from '@veyl/shared/chat/messages';
 import { getMessagePreviewCacheKey } from '@veyl/shared/chat/previews';
 import { useCloak } from '@veyl/shared/providers/cloakprovider';
 import { useMsgImage } from '@/lib/chat/useimage';
@@ -58,10 +57,7 @@ function ReplyRequest({ reply, replyFromPeer, peerDisplayName, onReplyPress }) {
     const { settings } = useUser();
     const bitcoin = useBitcoin();
     const { getTxById } = useTxData();
-    const msgTx = reply.tx ? getTxById?.(reply.tx) : null;
-    const displayAmount = msgTx ? Math.abs(Number(msgTx.amount)) : Number(reply.a);
-    const amount = renderMoney(displayAmount, settings?.moneyFormat, bitcoin?.price);
-    const label = reply.tx ? (replyFromPeer ? 'You sent' : 'You received') : replyFromPeer ? `${peerDisplayName || 'They'} requested` : 'You requested';
+    const { amount, label } = getRequestContext(reply, { fromPeer: replyFromPeer, peerDisplayName, moneyFormat: settings?.moneyFormat, btcPrice: bitcoin?.price, getTxById });
 
     return (
         <ReplyButton onReplyPress={onReplyPress}>

@@ -1,15 +1,14 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { Button } from '@/components/button';
 import { skipAvatar, uploadAvatar } from '@/lib/user/actions';
 import { useUser } from '@/components/providers/userprovider';
+import { refreshOnboardingState } from '@/lib/routeguards';
 import UpdateAvatar from '@/components/updateavatar';
 import { ImageUp, Loader } from 'lucide-react';
 
 export default function GetAvatar() {
-    const router = useRouter();
     const { avatarBanned, refetchAvatar } = useUser();
     const [selectedImage, setSelectedImage] = useState(null);
     const [status, setStatus] = useState('idle');
@@ -27,7 +26,7 @@ export default function GetAvatar() {
                 return;
             }
             await refetchAvatar?.({ optimistic: true });
-            router.refresh();
+            refreshOnboardingState();
         } catch {
             setStatus('idle');
         }
@@ -41,7 +40,7 @@ export default function GetAvatar() {
             setStatus('idle');
             return;
         }
-        router.refresh();
+        refreshOnboardingState();
     };
 
     const handleRemoveAvatar = () => {

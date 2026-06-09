@@ -217,6 +217,10 @@ async function nukeStorage() {
         if (!files.length) break;
 
         await mapLimit(files, 20, async (file) => {
+            await file.setMetadata({ temporaryHold: false }).catch((error) => {
+                if (isMissingError(error)) return;
+                throw error;
+            });
             await file.delete({ ignoreNotFound: true });
             deleted += 1;
         });

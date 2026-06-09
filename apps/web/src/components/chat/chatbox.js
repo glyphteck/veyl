@@ -13,7 +13,7 @@ import { useWallet } from '@/components/providers/walletprovider';
 import { formatUserDisplay } from '@veyl/shared/profile';
 import { renderMoney } from '@veyl/shared/money';
 import { chatUploadErrorMessage, queueMessages } from '@/lib/chat/files';
-import { canReplyToMsg, makeReq, makeTxt, setReply, setTxt } from '@veyl/shared/chat/messages';
+import { canReplyToMsg, isPeerMsg, makeReq, makeTxt, setReply, setTxt } from '@veyl/shared/chat/messages';
 import { parseCommandAmountSats } from '@veyl/shared/commands';
 import { MessageCirclePlus } from 'lucide-react';
 import { toast } from 'sonner';
@@ -191,10 +191,10 @@ export function Chatbox() {
             if (!canReplyToMsg(msg)) {
                 return;
             }
-            setDraft({ mode: 'reply', msg });
+            setDraft({ mode: 'reply', msg, fromPeer: isPeerMsg(msg, chatPK) });
             focusChatInput();
         },
-        [focusChatInput]
+        [chatPK, focusChatInput]
     );
 
     const handleEdit = useCallback(
@@ -371,6 +371,7 @@ export function Chatbox() {
                 onCommand={handleCommand}
                 onHeightChange={setInputH}
                 draft={draft}
+                peerDisplayName={peerDisplayName}
                 onClearDraft={handleClearDraft}
                 onEscape={focusSelectedChat}
                 hidden={!selectedChatId || !currentChat}

@@ -1,6 +1,6 @@
 # Chat Lifecycle
 
-Use this guide when changing chat creation, link state, owner entries, delete markers, whole-chat delete, chat recreation, or chat-list availability checks. Message behavior lives in [msg.md](msg.md), message batch loading lives in [batches.md](batches.md), and account cleanup lives in [user.md](user.md).
+Use this guide when changing chat creation, link state, owner entries, delete markers, whole-chat delete, chat recreation, or chat-list availability checks. Secret derivation lives in [secrets.md](secrets.md), message behavior lives in [msg.md](msg.md), message batch loading lives in [batches.md](batches.md), and account cleanup lives in [user.md](user.md).
 
 ## Instance Creation
 
@@ -18,7 +18,7 @@ flowchart TD
     H --> F
 ```
 
-The server can see `linkId` and active `chatId`, but not the plaintext participants from the parent chat document. Clients verify pair ownership after decrypting owner entries and inbox pings.
+The server can see `linkId` and active `chatId`, but not the plaintext participants from the parent chat document. `linkId` is only the rendezvous id; message roots and actor keys are scoped by the active `chatId`. Clients verify pair ownership after decrypting owner entries and inbox pings.
 
 ## Owner Entries
 

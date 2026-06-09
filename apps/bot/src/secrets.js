@@ -50,18 +50,66 @@ function encodeSeed(seed) {
     return Buffer.from(seed).toString('base64');
 }
 
-function decodeSeed(username, value) {
+function decodeBytes(username, value, label) {
     const encoded = String(value || '').trim();
     if (!encoded || !/^[A-Za-z0-9+/]+={0,2}$/.test(encoded)) {
-        throw new Error(`invalid bot seed for @${username}`);
+        throw new Error(`invalid bot ${label} for @${username}`);
     }
 
-    const seed = Buffer.from(encoded, 'base64');
-    if (!seed.length) {
-        throw new Error(`empty bot seed for @${username}`);
+    const bytes = Buffer.from(encoded, 'base64');
+    if (!bytes.length) {
+        throw new Error(`empty bot ${label} for @${username}`);
     }
 
-    return new Uint8Array(seed);
+    return new Uint8Array(bytes);
+}
+
+function encodeRegistry(registry) {
+    if (registry?.v !== 1 || !registry?.iv || !registry?.ct) {
+        throw new Error('invalid bot registry');
+    }
+    return {
+        v: registry.v,
+        iv: encodeSeed(registry.iv),
+        ct: encodeSeed(registry.ct),
+    };
+}
+
+function decodeRegistry(username, value) {
+    if (value?.v !== 1 || !value?.iv || !value?.ct) {
+        throw new Error(`invalid bot registry for @${username}`);
+    }
+    return {
+        v: value.v,
+        iv: decodeBytes(username, value.iv, 'registry iv'),
+        ct: decodeBytes(username, value.ct, 'registry ciphertext'),
+    };
+}
+
+function encodeBotSecret(secret) {
+    if (secret?.v !== 3 || !secret?.masterSeed || !secret?.registry) {
+        throw new Error('invalid bot secret');
+    }
+    return {
+        v: 3,
+        masterSeed: encodeSeed(secret.masterSeed),
+        registry: encodeRegistry(secret.registry),
+    };
+}
+
+function decodeBotSecret(username, value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value) || value.v !== 3) {
+        throw new Error(`invalid bot secret for @${username}`);
+    }
+    const masterSeed = decodeBytes(username, value.masterSeed, 'master seed');
+    if (masterSeed.length !== 32) {
+        throw new Error(`invalid bot master seed for @${username}`);
+    }
+    return {
+        v: 3,
+        masterSeed,
+        registry: decodeRegistry(username, value.registry),
+    };
 }
 
 async function ensureSecret(client, projectId) {
@@ -161,28 +209,28 @@ export async function loadProcessSecrets(client, projectId, secretIds) {
     return { loaded, missing };
 }
 
-export async function readBotSeed(client, projectId, username) {
+export async function readBotSecret(client, projectId, username) {
     const key = botSeedKey(username);
     const bundle = await readBundle(client, projectId);
-    const encoded = bundle.seeds[key];
-    if (!encoded) {
+    const entry = bundle.seeds[key];
+    if (!entry) {
         throw notFound(`bot seed not found for @${key}`);
     }
 
-    return decodeSeed(key, encoded);
+    return decodeBotSecret(key, entry);
 }
 
-export async function writeBotSeed(client, projectId, username, seed) {
+export async function writeBotSecret(client, projectId, username, secret) {
     const key = botSeedKey(username);
     const bundle = await readBundle(client, projectId, { emptyOnMissing: true });
-    bundle.seeds[key] = encodeSeed(seed);
+    bundle.seeds[key] = encodeBotSecret(secret);
     await writeBundle(client, projectId, bundle);
 }
 
-export async function ensureBotSeed(client, projectId, username, seed) {
+export async function ensureBotSecret(client, projectId, username, secret) {
     try {
         return {
-            seed: await readBotSeed(client, projectId, username),
+            secret: await readBotSecret(client, projectId, username),
             created: false,
         };
     } catch (error) {
@@ -190,9 +238,17 @@ export async function ensureBotSeed(client, projectId, username, seed) {
             throw error;
         }
 
-        await writeBotSeed(client, projectId, username, seed);
+        await writeBotSecret(client, projectId, username, secret);
         return {
-            seed: new Uint8Array(seed),
+            secret: {
+                v: 3,
+                masterSeed: new Uint8Array(secret.masterSeed),
+                registry: {
+                    v: secret.registry.v,
+                    iv: new Uint8Array(secret.registry.iv),
+                    ct: new Uint8Array(secret.registry.ct),
+                },
+            },
             created: true,
         };
     }

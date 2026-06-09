@@ -16,7 +16,7 @@ import {
     BOT_RUNTIME_DOC_ID,
     BOT_RUNTIME_LEASE_MS,
 } from '@veyl/shared/bot/events';
-import { cleanTrafficCount, cleanTrafficDelayMs } from '@veyl/shared/bot/traffic';
+import { BOT_TRAFFIC_GROUP, botTrafficGroups, cleanTrafficCount, cleanTrafficDelayMs } from '@veyl/shared/bot/traffic';
 import { BOT_TRAFFIC_TRANSFER_AMOUNT_SATS } from '@veyl/shared/bot/traffic/transfers';
 import {
     BOT_TRAFFIC_DEFAULT_COUNT,
@@ -30,11 +30,12 @@ import { createSecretClient, deleteBotSeed } from '../../apps/bot/src/secrets.js
 import { cliArgs, resolveUid } from './cli.mjs';
 import { timestampMs } from '@veyl/shared/utils/time';
 import { sleep } from '@veyl/shared/utils/async';
-import { cleanText, lowerText } from '@veyl/shared/utils/text';
+import { cleanText, lowerText, sameText } from '@veyl/shared/utils/text';
 
 const DEFAULT_TRAFFIC_TARGET = '@zxrl';
 const DEFAULT_FUND_BOT_AMOUNT_SATS = 1000;
 const DEFAULT_FUND_BOT_SOURCE = '@review';
+const REVIEW_BOT_USERNAME = DEFAULT_FUND_BOT_SOURCE.replace(/^@/, '');
 const TRAFFIC_WAIT_POLL_MS = 2000;
 const TRAFFIC_WAIT_GRACE_MS = 60000;
 const TRAFFIC_WAIT_SEND_GRACE_MS = 2500;
@@ -50,6 +51,7 @@ function usage() {
     console.error('usage: bun bot traffic [mixed/tx/msg] [@username/uid] [fast/slow] [--count 60] [--duration 10m] [--delay 3s] [--no-wait]');
     console.error('usage: bun bot traffic msg [@username/uid] [fast/slow] [--solo] [--source @botname]');
     console.error('usage: bun bot traffic fund [--source @review] [--target 1000] [--amount 1000] [--delay 250ms] [--no-wait]');
+    console.error('usage: bun bot traffic label [@username|uid|all] [on|off]');
     console.error('usage: bun bot traffic stop');
     process.exit(1);
 }
@@ -117,6 +119,10 @@ function parseAmountSats(value, fallback) {
         throw new Error('amount must be a positive integer sat amount');
     }
     return amount;
+}
+
+function defaultTrafficGroupForUsername(username) {
+    return !sameText(username, REVIEW_BOT_USERNAME);
 }
 
 function splitOption(arg) {
@@ -374,6 +380,9 @@ function parseTrafficCommand(args) {
     if (first === 'fund') {
         return { mode: 'fund', args: args.slice(1) };
     }
+    if (first === 'label' || first === 'group') {
+        return { mode: 'label', args: args.slice(1) };
+    }
     if (first === 'stop') {
         if (args.length > 1) {
             usage();
@@ -382,6 +391,22 @@ function parseTrafficCommand(args) {
     }
 
     return { mode: 'mixed', args };
+}
+
+function parseTrafficLabelArgs(args) {
+    if (args.length > 2) {
+        usage();
+    }
+
+    const enabled = args[1] == null ? null : normalizePower(args[1]);
+    if (args[1] != null && enabled == null) {
+        usage();
+    }
+
+    return {
+        target: args[0] || 'all',
+        enabled,
+    };
 }
 
 async function deleteBotChats(chatPK) {
@@ -501,6 +526,32 @@ export async function addBot(target) {
     return result;
 }
 
+export async function labelTrafficBots(target = 'all', enabled = null) {
+    const targets = await resolveBotTargets(target);
+    const labelled = [];
+
+    for (const entry of targets) {
+        const botRef = db.collection('bots').doc(entry.uid);
+        const profileRef = db.collection('profiles').doc(entry.uid);
+        const [botSnap, profileSnap] = await Promise.all([botRef.get(), profileRef.get()]);
+        const username = lowerText(botSnap.data()?.username || profileSnap.data()?.username || entry.username);
+        const traffic = enabled == null ? defaultTrafficGroupForUsername(username) : enabled;
+        await botRef.set(
+            {
+                groups: botTrafficGroups({ traffic }),
+            },
+            { merge: true }
+        );
+        labelled.push({ uid: entry.uid, username, traffic });
+    }
+
+    return {
+        count: labelled.length,
+        group: BOT_TRAFFIC_GROUP,
+        labelled,
+    };
+}
+
 export async function queueTrafficMessageAction(options = {}) {
     await requireRuntimeAction(BOT_ACTION_TYPE_TRAFFIC_MSG);
 
@@ -517,6 +568,7 @@ export async function queueTrafficMessageAction(options = {}) {
         targetUsername: target.username || null,
         sourceUid: source?.uid || null,
         sourceUsername: source?.username || null,
+        trafficGroup: BOT_TRAFFIC_GROUP,
         solo: options.solo === true,
         count,
         delayMs,
@@ -554,6 +606,7 @@ export async function queueTrafficFundAction(options = {}) {
         amountSats,
         sourceUid: source.uid,
         sourceUsername: source.username || null,
+        trafficGroup: BOT_TRAFFIC_GROUP,
         delayMs,
         requestedBy: 'cli',
         createdAt: FieldValue.serverTimestamp(),
@@ -587,6 +640,7 @@ export async function queueTrafficTransferAction(options = {}) {
         delayMs,
         durationMs: Number.isFinite(options.durationMs) ? options.durationMs : null,
         amountSats,
+        trafficGroup: BOT_TRAFFIC_GROUP,
         speed: options.speed || null,
         requestedBy: 'cli',
         createdAt: FieldValue.serverTimestamp(),
@@ -796,6 +850,12 @@ function printTrafficStopResult(result) {
     console.log(`requested stop for ${plural(result.total, 'bot action')}${details ? `: ${details}` : ''}`);
 }
 
+function printTrafficLabelResult(result) {
+    const on = result.labelled.filter((entry) => entry.traffic).length;
+    const off = result.labelled.length - on;
+    console.log(`labelled ${plural(result.count, 'bot')} for ${result.group}: ${on} on, ${off} off`);
+}
+
 async function waitForAction(actionRef, timeoutMs) {
     const startedAt = Date.now();
     const deadline = startedAt + timeoutMs;
@@ -899,6 +959,13 @@ async function main() {
             }
             const result = await waitForAction(action.ref, 300000);
             printTrafficFundResult(result);
+            return;
+        }
+
+        if (traffic.mode === 'label') {
+            const options = parseTrafficLabelArgs(traffic.args);
+            const result = await labelTrafficBots(options.target, options.enabled);
+            printTrafficLabelResult(result);
             return;
         }
 
