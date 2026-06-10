@@ -5,10 +5,10 @@ import { createSecretRegistry, generateSeed, sealSecretRegistry } from '@veyl/sh
 import { resolveNetwork } from '@veyl/shared/network';
 import { normalizeWalletNetwork, resolveWalletPK, walletPKPatch } from '@veyl/shared/wallet/keys';
 import { BOT_MODE } from '@veyl/shared/bot/events';
-import { botTrafficGroups } from '@veyl/shared/bot/traffic';
+import { defaultBotBehaviors, defaultBotGroups } from '@veyl/shared/bot/groups';
 import { bootRegistryBotAccount, closeBotAccount } from '@veyl/shared/bot/account';
 import { MAX_USERNAME, isUsername, normalizeUsername } from '@veyl/shared/username';
-import { cleanText, sameText } from '@veyl/shared/utils/text';
+import { cleanText } from '@veyl/shared/utils/text';
 import { cleanBytes } from '@veyl/shared/crypto/core';
 import admin, { db, projectId } from './admin.js';
 import { createSecretClient, ensureBotSecret } from './secrets.js';
@@ -51,11 +51,7 @@ async function ensureAuthUser(uid, username) {
     ).uid;
 }
 
-function defaultBotGroups(username) {
-    return botTrafficGroups({ traffic: !sameText(username, 'review') });
-}
-
-async function syncDocs({ uid, username, walletPK, chatPK, network, groups = defaultBotGroups(username) }) {
+async function syncDocs({ uid, username, walletPK, chatPK, network, groups = defaultBotGroups(username), behaviors = defaultBotBehaviors(username) }) {
     const walletNetwork = normalizeWalletNetwork(network);
     const botRef = db.collection('bots').doc(uid);
     const profileRef = db.collection('profiles').doc(uid);
@@ -109,6 +105,7 @@ async function syncDocs({ uid, username, walletPK, chatPK, network, groups = def
                 lastError: null,
                 resumeAt: botData?.resumeAt ?? null,
                 groups,
+                behaviors,
                 ...walletPKPatch(walletPK, walletNetwork),
                 chatPK,
             },

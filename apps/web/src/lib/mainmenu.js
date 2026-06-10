@@ -267,6 +267,7 @@ function buildSlashSections({ searchValue, searchState, matchedPeers }) {
 
 function chatPreview({ lastChat, peerByChatPK, chatPK, settings, bitcoin }) {
     if (!lastChat) return '';
+    if (settings?.showChatPreviews === false) return '';
     const profile = peerByChatPK?.get?.(lastChat.peerChatPK) ?? null;
     const displayName = formatUserDisplay(
         {
@@ -276,6 +277,7 @@ function chatPreview({ lastChat, peerByChatPK, chatPK, settings, bitcoin }) {
         true
     );
     const lastMessage = displayPreview(lastChat.preview, chatPK, settings, bitcoin?.price);
+    if (!lastMessage) return displayName;
     const truncatedMessage = lastMessage.length > 24 ? `${lastMessage.slice(0, 24)}...` : lastMessage;
     return `${displayName}: ${truncatedMessage}`;
 }

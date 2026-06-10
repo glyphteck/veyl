@@ -13,7 +13,7 @@ import { cleanText } from '../utils/text.js';
 
 const pairCache = new Map();
 const MAX_PAIR_CACHE = CHAT_PAIR_CACHE_LIMIT;
-const VERBOSE = typeof process !== 'undefined' && process.env?.VEYL_VERBOSE === '1';
+const VERBOSE = typeof process !== 'undefined' && process.env?.VEYL_VERBOSE === '1' && process.env?.NODE_ENV !== 'production';
 const CHAT_ID_RE = /^[0-9a-f]{64}$/i;
 
 function safeLogId(value) {

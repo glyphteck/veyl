@@ -204,6 +204,7 @@ export async function sendMsg(cloud, senderPubkey, senderPrivkey, receiverChatPK
               peerUid: recipientProfile?.uid || cleanText(options?.receiverUid),
               peerActorPK: recipientProfile?.actorPK,
               entry: options?.ownEntry,
+              settings: options?.chatSettings,
               preview,
               ts: tsMs,
           })
@@ -235,7 +236,7 @@ export async function sendReadReceipt(cloud, senderPubkey, senderPrivkey, receiv
         cid: makeCid(),
         s: senderPubkey,
     };
-    return sendMsg(cloud, senderPubkey, senderPrivkey, receiverChatPK, receipt, { updatePreview: false, ...options });
+    return sendMsg(cloud, senderPubkey, senderPrivkey, receiverChatPK, receipt, { ...options, updatePreview: false, ping: false });
 }
 
 export async function sendReaction(cloud, senderPubkey, senderPrivkey, receiverChatPK, target, emoji, options = {}) {
@@ -244,7 +245,7 @@ export async function sendReaction(cloud, senderPubkey, senderPrivkey, receiverC
         cid: makeCid(),
         s: senderPubkey,
     };
-    return sendMsg(cloud, senderPubkey, senderPrivkey, receiverChatPK, reaction, { updatePreview: false, ...options });
+    return sendMsg(cloud, senderPubkey, senderPrivkey, receiverChatPK, reaction, { ...options, updatePreview: false, ping: false });
 }
 
 export async function sendHiddenCheckpoint(cloud, senderPubkey, senderPrivkey, receiverChatPK, target, options = {}) {
@@ -329,17 +330,15 @@ export async function setChatRetention(cloud, chatId, senderPubkey, senderPrivke
         cid: makeCid(),
         s: senderPubkey,
     };
-    const ownerEntry = await ownEntryWrite(cloud, cleanText(options?.senderUid), senderPrivkey, pair, { settings: { retention: nextRetention }, entry: options?.ownEntry });
-    if (ownerEntry) {
-        await cloud.user.chats.write(ownerEntry.uid, ownerEntry.entryId, ownerEntry.record);
-    }
     await sendMsg(cloud, senderPubkey, senderPrivkey, peerChatPK, systemMessage, {
         chatId,
         linkId: pair.linkId,
-        updatePreview: false,
+        updatePreview: true,
         retention: nextRetention,
         chatExists: true,
         senderUid: options?.senderUid,
+        ownEntry: options?.ownEntry,
+        chatSettings: { retention: nextRetention },
     });
     return nextRetention;
 }

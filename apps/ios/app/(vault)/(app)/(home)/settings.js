@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Animated, AppState, Linking, Pressable, ScrollView, Switch, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { CircleDollarSign, FileText, KeyRound, Lock, LogOut, QrCode, ScanQrCode, Settings, Shield, Timer, Trash2, UserX } from 'lucide-react-native';
+import { CircleDollarSign, FileText, KeyRound, Lock, LogOut, MessageCircle, QrCode, ScanQrCode, Settings, Shield, Timer, Trash2, UserX } from 'lucide-react-native';
 import { useIsFocused, useNavigation, useRouter } from 'expo-router';
 
 import AvatarPicker from '@/components/avatarpicker';
@@ -56,6 +56,9 @@ function buildPatch(next, prev) {
 
     if (next.moneyFormat !== prev.moneyFormat) {
         patch.moneyFormat = next.moneyFormat;
+    }
+    if (next.showChatPreviews !== prev.showChatPreviews) {
+        patch.showChatPreviews = next.showChatPreviews;
     }
     if (next.ghostWallet !== prev.ghostWallet) {
         patch.ghostWallet = next.ghostWallet;
@@ -366,6 +369,7 @@ export default function SettingsScreen() {
     }, []);
 
     const moneyFormat = settings.moneyFormat;
+    const showChatPreviews = settings.showChatPreviews !== false;
     const sendOnScan = SEND_ON_SCAN_ENABLED && settings.sendOnScan === true;
     const faceIDEnabled = settings.faceID === true;
     const autolock = settings.autolock;
@@ -392,6 +396,13 @@ export default function SettingsScreen() {
         (value) => {
             if (!SEND_ON_SCAN_ENABLED) return;
             applySettings((current) => ({ ...current, sendOnScan: typeof value === 'boolean' ? value : !current.sendOnScan }));
+        },
+        [applySettings]
+    );
+
+    const handleChatPreviews = useCallback(
+        (value) => {
+            applySettings((current) => ({ ...current, showChatPreviews: typeof value === 'boolean' ? value : current.showChatPreviews === false }));
         },
         [applySettings]
     );
@@ -545,6 +556,7 @@ export default function SettingsScreen() {
     );
     const match = (...terms) => !search || terms.some((term) => lowerText(term).includes(search));
     const showMoney = match('display currency', 'money format', 'btc sats usd');
+    const showChatPreviewSetting = match('chat previews', 'message previews', 'preview text');
     const showAutoSend = PAYMENT_BEHAVIOR_SETTINGS_VISIBLE && SEND_ON_SCAN_ENABLED && match('auto send on scan', 'qr payment behaviour', 'send immediately');
     const showLockTimer = match('lock timeout', 'autolock timer');
     const showLockBackground = match('lock on app background', 'background lock');
@@ -557,14 +569,14 @@ export default function SettingsScreen() {
     const showExportWallet = match('export wallet', 'seed backup key');
     const showLogout = match('logout', 'sign out');
     const showDeleteAccount = match('delete account', 'remove account');
-    const paymentRows = showMoney || showAutoSend;
+    const preferenceRows = showMoney || showChatPreviewSetting || showAutoSend;
     const lockRows = showLockTimer || showLockBackground;
     const deviceRows = showFaceID;
     const cacheRows = showCache;
     const supportRows = showPermissions || showLegal || showCommunity;
     const accountRows = showBlocked || showExportWallet || showLogout;
     const dangerRows = showDeleteAccount;
-    const hasSettingsRows = paymentRows || lockRows || deviceRows || cacheRows || supportRows || accountRows || dangerRows;
+    const hasSettingsRows = preferenceRows || lockRows || deviceRows || cacheRows || supportRows || accountRows || dangerRows;
 
     return (
         <View style={{ flex: 1, overflow: 'hidden' }}>
@@ -588,9 +600,18 @@ export default function SettingsScreen() {
                     </>
                 ) : null}
 
-                {paymentRows ? (
+                {preferenceRows ? (
                     <>
                         {showMoney ? <Row icon={CircleDollarSign} label="display currency" onPress={cycleMoneyFormat} right={<ValuePill label={MONEY_LABELS[moneyFormat]} />} animateRight disabled={isBusy} /> : null}
+                        {showChatPreviewSetting ? (
+                            <Row
+                                icon={MessageCircle}
+                                label="chat previews"
+                                onPress={() => handleChatPreviews(!showChatPreviews)}
+                                right={<Switch value={showChatPreviews} onValueChange={handleChatPreviews} {...switchProps} />}
+                                disabled={isBusy}
+                            />
+                        ) : null}
                         {showAutoSend ? (
                             <Row
                                 icon={ScanQrCode}
@@ -604,7 +625,7 @@ export default function SettingsScreen() {
                     </>
                 ) : null}
 
-                {paymentRows && (lockRows || deviceRows || cacheRows || supportRows || accountRows || dangerRows) ? <SectionDivider /> : null}
+                {preferenceRows && (lockRows || deviceRows || cacheRows || supportRows || accountRows || dangerRows) ? <SectionDivider /> : null}
 
                 {lockRows ? (
                     <>

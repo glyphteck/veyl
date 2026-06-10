@@ -1,3 +1,4 @@
+import '@/lib/console';
 import '@/lib/polyfills';
 import { useEffect, useState } from 'react';
 import { View } from 'react-native';

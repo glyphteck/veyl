@@ -1,6 +1,9 @@
 import { cleanText, lowerText } from '../utils/text.js';
 
 export const BOT_MODE = 'mirror';
+export const BOT_FAUCET_USERNAME = 'faucet';
+export const BOT_ECHO_USERNAME = 'echo';
+export const BOT_REVIEW_USERNAME = 'review';
 export const BOT_UNDERFUNDED_TEXT = 'not enough balance right now';
 export const BOT_SEEDS_SECRET_ID = 'veyl-bot-seeds';
 export const BOT_RUNTIME_DOC_ID = 'bot';

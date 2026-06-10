@@ -14,7 +14,7 @@ A visible message send is the normal encrypted chat send path from [server-actio
 
 This rate model excludes media upload/storage/download bytes, live listener fanout, stale push token cleanup writes, message-maintenance compaction/autodelete deletes, Spark/payment costs, saved-message retention, Cloud Functions CPU/memory duration, outbound network, and moderation labor.
 
-Read receipts are optional in the table because a sent message and a later recipient read are separate encrypted events. If every sent message is read, add one read receipt per visible message: 1 Firestore rules read plus 1 Firestore write.
+Read receipts are optional in the table because a sent message and a later recipient read are separate encrypted events. If every sent message is read, add one stream-only read receipt per visible message: 1 Firestore rules read plus 1 Firestore write.
 
 This is billing math only. Sustained high MPS spread across many chats is different from high MPS concentrated in one chat because the send queue coalesces entry/ping updates: only the latest queued visible send per chat writes the owner entry and calls `push`.
 
@@ -34,7 +34,7 @@ visible_send_gross =
   )
 ```
 
-That makes one active-notification established visible send about `$0.0000112` before free quotas. If every sent message emits a read receipt, the gross cost becomes about `$0.0000136` per message.
+That makes one active-notification established visible send about `$0.0000112` before free quotas. If every sent message emits a stream-only read receipt, the gross cost becomes about `$0.0000136` per message.
 
 If the receiver has no active push route, the callable still writes the inbox ping but stops after the private empty push-doc query minimum. That path is 5 read-equivalent operations because it does not read the sender profile username.
 
@@ -85,7 +85,7 @@ The message-rate inputs are:
 | `MESSAGE_SEND_READS` | `6` | Firestore reads per solo/latest established active-notification visible send through the block-enforcing push callable plus chat deletion gate. Use `5` for no-active-route delivery-only traffic. |
 | `MESSAGE_SEND_WRITES` | `4` | Firestore writes per solo/latest visible send through the block-enforcing push callable. |
 | `MESSAGE_SEND_FUNCTIONS` | `1` | Function invocations per visible send. |
-| `READ_RECEIPT_READS` | `1` | Firestore rules chat deletion gate read per read receipt. |
-| `READ_RECEIPT_WRITES` | `1` | Firestore writes per read receipt. |
+| `READ_RECEIPT_READS` | `1` | Firestore rules chat deletion gate read per stream-only read receipt. |
+| `READ_RECEIPT_WRITES` | `1` | Firestore writes per stream-only read receipt. |
 
 If a receiver has more than one active push device document, add one Firestore read per extra push document per `push` call. The same adjustment applies to extra live listener copies: each listener delivery is another Firestore read. At 1 msg/s, one additional read per visible message is about `$1.56/month` gross before free quotas.

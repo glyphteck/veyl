@@ -2,9 +2,11 @@ import { AppState, Platform } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import Constants from 'expo-constants';
 import { ensureDirectory } from '@/lib/file';
+import { verboseConsoleEnabled } from '@/lib/console';
 
 const DIR = FileSystem.documentDirectory ? `${FileSystem.documentDirectory}diagnostics/` : null;
 const FILE = DIR ? `${DIR}breadcrumbs.log` : null;
+const ENABLED = verboseConsoleEnabled;
 const MAX_LINES = 120;
 const SAFE_STRING_KEYS = new Set([
     'accessPrivileges',
@@ -73,7 +75,7 @@ function line(label, data) {
 }
 
 function flushPersist() {
-    if (!FILE) return;
+    if (!ENABLED || !FILE) return;
     const payload = `${lines.join('\n')}\n`;
     writeChain = writeChain
         .then(async () => {
@@ -84,7 +86,7 @@ function flushPersist() {
 }
 
 function persist(nextLine) {
-    if (!FILE) return;
+    if (!ENABLED || !FILE) return;
     lines = [...lines, nextLine].slice(-MAX_LINES);
     if (persistTimer) return;
     persistTimer = setTimeout(() => {
@@ -94,18 +96,20 @@ function persist(nextLine) {
 }
 
 function clearConsoleForBundleReload() {
+    if (!ENABLED) return;
     if (Platform.OS !== 'ios') return;
     console.clear?.();
 }
 
 export function mark(label, data) {
+    if (!ENABLED) return;
     const nextLine = line(label, data);
     console.log(`[diag] ${nextLine}`);
     persist(nextLine);
 }
 
 async function clearPrevious() {
-    if (!FILE) return;
+    if (!ENABLED || !FILE) return;
     await ensureDirectory(DIR, { quiet: true });
     lines = [];
     await FileSystem.deleteAsync(FILE, { idempotent: true }).catch(() => {});
@@ -137,6 +141,7 @@ function installErrorHandler() {
 }
 
 export function installDiagnostics() {
+    if (!ENABLED) return;
     if (installed) return;
     installed = true;
     clearConsoleForBundleReload();

@@ -4,6 +4,7 @@ const defaultSettings = {
     glass: true,
     moneyFormat: 'usd',
     ghostWallet: true,
+    showChatPreviews: true,
     sendOnScan: false,
     confirmSend: false,
     faceID: null,

@@ -1,6 +1,8 @@
 'use client';
 
-const ENABLED = process.env.NEXT_PUBLIC_VEYL_VERBOSE === '1';
+import { verboseConsoleEnabled } from '@/lib/console';
+
+const ENABLED = verboseConsoleEnabled;
 
 const SAFE_STRING_KEYS = new Set([
     'code',

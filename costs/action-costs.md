@@ -20,8 +20,8 @@ For sustained app-wide messages-per-second costs, use [message-rate-costs.md](me
 | Send payment request | Same server cost as text message | same as text message |
 | Send media or long text | Text-message cost plus direct chat-media Storage upload and one Storage-rules deletion-gate read | ~$0.000017 before stored bytes on active-notification path |
 | Share same media to 5 people | One signed shared upload reused across five established message sends | ~$0.000072 before stored bytes on active-notification paths |
-| Recipient reads message | Encrypted read receipt action doc plus chat deletion-gate rules read | ~$0.000002 |
-| React to message | Encrypted reaction action doc plus chat deletion-gate rules read | ~$0.000002 |
+| Recipient reads message | Encrypted read receipt action doc plus chat deletion-gate rules read; loaded clients can derive "saw your message" previews from the stream | ~$0.000002 |
+| React to message | Encrypted reaction action doc plus chat deletion-gate rules read; loaded clients can derive "liked your message" previews from the stream | ~$0.000002 |
 | Hidden-message checkpoint | Encrypted hidden checkpoint action doc plus chat deletion-gate rules read after client UI releases hidden messages | ~$0.000002 |
 | Control-message compaction delete | Client batch delete of obsolete encrypted controls after decrypting the stream | ~$0.0000002 to ~$0.000002 per doc |
 | Pay a chat request | Spark payment external, then payer-signed `pay_confirm` action doc | ~$0.000002 + Spark cost |

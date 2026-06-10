@@ -36,8 +36,8 @@ export default function ChatTitleLayout({ children }) {
             chatPK: peerChatPK,
         });
         const preview = displayPreview(selectedChat.preview, chatPK, settings, bitcoin.price);
-        document.title = `${displayName}: ${preview}`;
-    }, [chats, selectedChatId, isChatDataReady, chatPK, peerByChatPK, settings.moneyFormat, bitcoin.price, cloaked]);
+        document.title = preview ? `${displayName}: ${preview}` : displayName;
+    }, [chats, selectedChatId, isChatDataReady, chatPK, peerByChatPK, settings, bitcoin.price, cloaked]);
 
     return children;
 }

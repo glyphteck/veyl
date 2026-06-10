@@ -2,6 +2,12 @@
 
 Repo-level changes are listed newest first. Keep entries short and concrete. Broad pushes get grouped bullets, while narrow fixes can use one concise bugfix or cleanup bullet that still names the actual change.
 
+## 0.14.12 - 2026-06-10
+
+- Added chat-preview privacy controls across web and iOS while keeping read-receipt and reaction controls stream-only without inbox pings.
+- Hardened push privacy with generic callable responses and verbose-dev-only app/server logging.
+- Added attacker-perspective vulnerability notes and refreshed security/cost docs for accepted profile search, chat-id capability scope, and current control-message costs.
+
 ## 0.14.10 - 2026-06-09
 
 - Added the current vault secret registry shape with guarded migration plumbing, device-mixed local cache keys, and secret lifecycle documentation.

@@ -195,7 +195,7 @@ export function createUseChatMessages({ useChat, useUser, useVault, appState, pa
                     dropMessageMedia(localCache, message);
                 }
                 deletedMessageKeysRef.current = result.deletedKeys;
-                ackMessages(chatId, [...result.deletedKeys]);
+                ackMessages(chatId, [...result.deletedKeys], { remove: true });
                 if (result.olderChanged) {
                     olderRef.current = result.older;
                     setOlder(result.older);
@@ -321,7 +321,7 @@ export function createUseChatMessages({ useChat, useUser, useVault, appState, pa
                             deletedKeys.add(key);
                         }
                         deletedMessageKeysRef.current = deletedKeys;
-                        ackMessages(chatId, [...deletedKeys]);
+                        ackMessages(chatId, [...deletedKeys], { remove: true });
                         const keepKeys = new Set();
                         for (const message of liveRef.current || []) {
                             addMessageKeys(keepKeys, message);
@@ -603,7 +603,7 @@ export function createUseChatMessages({ useChat, useUser, useVault, appState, pa
             }
             if (deletedKeysChanged) {
                 deletedMessageKeysRef.current = nextDeletedKeys;
-                ackMessages(chatId, [...nextDeletedKeys]);
+                ackMessages(chatId, [...nextDeletedKeys], { remove: true });
                 setServerBatch((prev) => ({ ...(prev || {}), deletedKeys: nextDeletedKeys }));
             }
 

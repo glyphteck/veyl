@@ -317,6 +317,7 @@ export function createChatProvider({ cloud, media = {}, useUser, useVault, readR
             selectedChatId,
             selectedChatIdRef,
             setSelectedChat,
+            setLocalByChat,
             localByChatRef,
             pendingDeleteIdsRef,
             keepSelectedDeletedChatIdsRef,

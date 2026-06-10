@@ -1,4 +1,4 @@
-import { canShowMsg, canStoreMsg, isControlMsg } from './messages.js';
+import { canRenderChatPreview, canStoreMsg } from './messages.js';
 import { makeOwnChatEntry, openOwnChatEntry, ownChatEntryId, sealOwnChatEntry } from './entry.js';
 import { openPing } from './ping.js';
 import { decryptMsg } from './messages/query.js';
@@ -100,7 +100,7 @@ async function readPingMsg(cloud, userChatPK, userPrivKey, ping, actors) {
     }
     const message = await decryptMsg(data, userChatPK, userPrivKey, peerChatPK, { actors, chatId }).catch(() => null);
     const preview = normalizeChatPreview(data, message ? { ...message, id: data.id } : null);
-    return preview && canShowMsg(preview) && !isControlMsg(preview) ? preview : null;
+    return preview && canRenderChatPreview(preview) ? preview : null;
 }
 
 async function savePing(cloud, uid, userChatPK, userPrivKey, ping, options = {}) {

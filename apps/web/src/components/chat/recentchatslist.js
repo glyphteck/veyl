@@ -63,6 +63,11 @@ function samePreviewMsg(a, b) {
         a.paidBy === b.paidBy &&
         a.sys === b.sys &&
         a.retention === b.retention &&
+        a.target === b.target &&
+        a.upto === b.upto &&
+        a.emoji === b.emoji &&
+        a.actionOp === b.actionOp &&
+        a.actionTarget === b.actionTarget &&
         timestampMs(a.ttl) === timestampMs(b.ttl) &&
         timestampMs(a.editedAt) === timestampMs(b.editedAt) &&
         timestampMs(a.paidAt) === timestampMs(b.paidAt) &&
@@ -123,6 +128,8 @@ const RecentChatRow = memo(function RecentChatRow({
         username: profile?.username,
         chatPK: peerChatPK,
     });
+    const previewText = displayPreview(chat.preview, chatPK, settings, bitcoinPrice);
+    const hasPreview = !!previewText.trim();
 
     return (
         <div className={cn(rowMotion.row, rowMotion.divided, isLast && rowMotion.last, mode && rowMotion[mode])}>
@@ -167,9 +174,11 @@ const RecentChatRow = memo(function RecentChatRow({
                                 <span className="min-w-0 flex-1 truncate font-black leading-5">{displayName}</span>
                                 <span className="shrink-0 whitespace-nowrap text-sm leading-4 font-black text-muted">{chat.ts ? formatFullDateTime(chat.ts) : ''}</span>
                             </div>
-                            <div className={`mt-0.5 truncate text-sm leading-4 ${chat.unseen ? 'text-foreground' : 'text-muted'} ${cloaked ? 'cloaked' : ''}`}>
-                                {displayPreview(chat.preview, chatPK, settings, bitcoinPrice)}
-                            </div>
+                            {hasPreview ? (
+                                <div className={`mt-0.5 truncate text-sm leading-4 ${chat.unseen ? 'text-foreground' : 'text-muted'} ${cloaked ? 'cloaked' : ''}`}>
+                                    {previewText}
+                                </div>
+                            ) : null}
                         </div>
                     </div>
                 </Button>

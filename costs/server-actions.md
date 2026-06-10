@@ -705,12 +705,13 @@ Push:
 
 Code: `sendReaction`.
 
-Same as read receipt:
+Same stream-only shape as read receipt:
 
-- 1 `FW`.
-- about 1 `RR` on the chat deletion gate.
-- no `FN`.
-- no push-trigger reads.
+- writes the encrypted reaction message doc: 1 `FW`.
+- message create rules check the chat deletion gate: about 1 `RR`.
+- no owner entry or inbox ping write.
+- does not run `push`.
+- loaded clients can derive reaction chat-list preview text from the message stream without adding delivery work to the send path.
 
 ### Chat retention change
 

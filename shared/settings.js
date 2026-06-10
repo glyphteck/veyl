@@ -7,6 +7,7 @@ export const defaultSettings = {
     glass: true,
     moneyFormat: 'usd',
     ghostWallet: true,
+    showChatPreviews: true,
     sendOnScan: false,
     confirmSend: false,
     faceID: null,
@@ -79,6 +80,9 @@ export function normalizeSettings(settings, base = defaultSettings) {
     }
     if (typeof next.ghostWallet !== 'boolean') {
         throw new Error('ghostWallet must be boolean');
+    }
+    if (typeof next.showChatPreviews !== 'boolean') {
+        throw new Error('showChatPreviews must be boolean');
     }
     if (typeof next.sendOnScan !== 'boolean') {
         throw new Error('sendOnScan must be boolean');

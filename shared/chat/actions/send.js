@@ -325,11 +325,12 @@ export function useChatSend({ cloud, media = {}, uid, chatBanned, chatPK, chatPr
     }, [resetPendingSendQueue]);
 
     const ackMessages = useCallback(
-        (chatId, messages) => {
+        (chatId, messages, options = {}) => {
             const acked = new Set((messages || []).map((message) => (typeof message === 'string' ? message : getMessageKey(message))).filter(Boolean));
             if (!chatId || !acked.size) {
                 return;
             }
+            const remove = options?.remove === true;
 
             setLocalByChat((prev) => {
                 const locals = prev.get(chatId);
@@ -337,8 +338,23 @@ export function useChatSend({ cloud, media = {}, uid, chatBanned, chatPK, chatPr
                     return prev;
                 }
 
-                const nextLocals = locals.filter((message) => !message.cid || !acked.has(message.cid));
-                if (nextLocals.length === locals.length) {
+                let changed = false;
+                const nextLocals = [];
+                for (const message of locals) {
+                    if (message?.cid && acked.has(message.cid)) {
+                        if (remove) {
+                            changed = true;
+                            continue;
+                        }
+                        if (message.pending || message.failed) {
+                            changed = true;
+                            nextLocals.push({ ...message, pending: false, failed: false });
+                            continue;
+                        }
+                    }
+                    nextLocals.push(message);
+                }
+                if (!changed) {
                     return prev;
                 }
 

@@ -7,9 +7,10 @@ import { getAuth } from 'firebase/auth';
 import { getFunctions as getFirebaseFunctions } from 'firebase/functions';
 import { getStorage as getFirebaseStorage } from 'firebase/storage';
 import { firebaseConfig, firebaseWebAppCheckConfig } from '@veyl/shared/firebaseconfig';
+import { verboseConsoleEnabled } from '@/lib/console';
 
 const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
-const verbose = process.env.NEXT_PUBLIC_VEYL_VERBOSE === '1';
+const verbose = verboseConsoleEnabled;
 
 if (verbose) {
     setFirebaseLogLevel('debug');

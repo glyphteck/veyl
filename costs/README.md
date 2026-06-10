@@ -13,7 +13,7 @@ Source of truth: [model.mjs](model.mjs). Defaults: 30-day month, 360 retained sa
 | 1M DAU monthly run-rate | ~$19,523/month |
 | 1M DAU default throughput | ~289 visible messages/s and ~1.2 wallet tx/s |
 
-The default active-user bundle assumes 25 visible sends per active user/day, based on broad messaging-app and SMS benchmarks. Wallet tx/s is expected Spark/network throughput; Spark vendor cost stays in the zero-dollar extras until real rates are known.
+The default active-user bundle assumes 25 visible sends per active user/day, based on broad messaging-app and SMS benchmarks. Read receipts and reactions are encrypted stream-only controls: they can update client-derived previews after the message stream is loaded, but they do not write owner-entry previews or inbox pings on send. Wallet tx/s is expected Spark/network throughput; Spark vendor cost stays in the zero-dollar extras until real rates are known.
 
 ## 100k DAU month
 

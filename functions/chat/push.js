@@ -29,6 +29,6 @@ export const push = onCall({ secrets: pushSecrets }, loggedCall('push', async (c
         windowMs: HOUR_MS,
     });
 
-    const result = await sendPush({ senderUid, recipientUid, ping });
-    return { success: true, ...result };
+    await sendPush({ senderUid, recipientUid, ping });
+    return { success: true };
 }));

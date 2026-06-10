@@ -387,6 +387,8 @@ function cliOptions() {
             mediaStorageRulesReadsPerMessage: readNumberEnv('MEDIA_STORAGE_RULE_READS', DEFAULT_ASSUMPTIONS.mediaStorageRulesReadsPerMessage),
             readReceiptFirestoreReadsPerMessage: readNumberEnv('READ_RECEIPT_READS', DEFAULT_ASSUMPTIONS.readReceiptFirestoreReadsPerMessage),
             readReceiptFirestoreWritesPerMessage: readNumberEnv('READ_RECEIPT_WRITES', DEFAULT_ASSUMPTIONS.readReceiptFirestoreWritesPerMessage),
+            reactionFirestoreReadsPerReaction: readNumberEnv('REACTION_READS', DEFAULT_ASSUMPTIONS.reactionFirestoreReadsPerReaction),
+            reactionFirestoreWritesPerReaction: readNumberEnv('REACTION_WRITES', DEFAULT_ASSUMPTIONS.reactionFirestoreWritesPerReaction),
         },
         rates: {
             mediaDownloadGiB: readNumberEnv('MEDIA_DOWNLOAD_GIB_COST', DEFAULT_RATES.mediaDownloadGiB),

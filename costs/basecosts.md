@@ -1,6 +1,6 @@
 # Firebase base costs
 
-Prices were checked against official Firebase/Google docs on 2026-05-29.
+Prices were checked against official Firebase/Google docs on 2026-06-10.
 
 Sources:
 

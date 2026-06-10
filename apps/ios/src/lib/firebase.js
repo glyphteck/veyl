@@ -4,9 +4,10 @@ import { getAuth, getReactNativePersistence, initializeAuth } from 'firebase/aut
 import { getFunctions } from 'firebase/functions';
 import { getStorage } from 'firebase/storage';
 import { firebaseConfig } from '@veyl/shared/firebaseconfig';
+import { verboseConsoleEnabled } from '@/lib/console';
 
 const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
-const verbose = process.env.VEYL_VERBOSE === '1' || process.env.EXPO_PUBLIC_VEYL_VERBOSE === '1';
+const verbose = verboseConsoleEnabled;
 
 if (verbose) {
     setFirebaseLogLevel('debug');

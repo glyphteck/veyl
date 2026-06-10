@@ -175,7 +175,6 @@ async function sendApns(uid, docs, body) {
 
     const token = apnsToken();
     if (!token) {
-        console.warn('push apns skipped: credentials missing', { uid, devices: docs.length });
         return { configured: false, sent: 0 };
     }
 
@@ -186,28 +185,17 @@ async function sendApns(uid, docs, body) {
         groups.set(host, [...(groups.get(host) || []), item]);
     });
     let sent = 0;
-    let ok = 0;
-    const errors = [];
 
     for (const [host, group] of groups) {
         const client = http2.connect(`https://${host}`);
         try {
             const results = await Promise.all(group.map((item) => sendApnsOne(client, token, item, body)));
             sent += results.length;
-            ok += results.filter((result) => result.ok).length;
-            errors.push(...results.filter((result) => !result.ok).map((result) => result.reason || `status:${result.status}`));
             stale.push(...results.filter((result) => ['BadDeviceToken', 'DeviceTokenNotForTopic', 'Unregistered'].includes(result.reason)).map((result) => result.item));
         } finally {
             client.close();
         }
     }
-
-    console.info('push apns results', {
-        uid,
-        sent,
-        ok,
-        errors,
-    });
 
     if (stale.length) {
         await markDead(uid, stale, 'Unregistered');
@@ -250,12 +238,6 @@ async function sendExpo(uid, docs, body) {
             throw new Error(`expo push request error: ${JSON.stringify(json.errors[0])}`);
         }
         const data = Array.isArray(json?.data) ? json.data : [];
-        console.info('push expo tickets', {
-            uid,
-            sent: group.length,
-            ok: data.filter((ticket) => ticket?.status === 'ok').length,
-            errors: data.filter((ticket) => ticket?.status === 'error').map((ticket) => ticket?.details?.error || 'unknown'),
-        });
 
         data.forEach((ticket, index) => {
             if (ticket?.status === 'error' && ticket?.details?.error === 'DeviceNotRegistered' && group[index]) {

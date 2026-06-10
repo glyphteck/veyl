@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { z } from 'zod';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { ArrowUpRight, CircleDollarSign, CircleUserRound, EyeOff, Focus, Lock, LockOpen, ScanQrCode, Settings2, ShieldCheck, Timer, UserRoundCog } from 'lucide-react';
+import { ArrowUpRight, CircleDollarSign, CircleUserRound, Eye, EyeOff, Focus, Lock, LockOpen, MessageCircle, ScanQrCode, Settings2, ShieldCheck, Timer, UserRoundCog } from 'lucide-react';
 
 import { Button } from '@/components/button';
 import { Card } from '@/components/card';
@@ -16,6 +16,7 @@ import { PAYMENT_BEHAVIOR_SETTINGS_VISIBLE, SEND_ON_SCAN_ENABLED } from '@veyl/s
 
 const settingsSchema = z.object({
     moneyFormat: z.enum(['btc', 'usd', 'sats']),
+    showChatPreviews: z.boolean(),
     sendOnScan: z.boolean(),
     confirmSend: z.boolean(),
     autolock: z.object({
@@ -45,6 +46,7 @@ export default function Settings({ data, close }) {
         resolver: zodResolver(settingsSchema),
         defaultValues: {
             moneyFormat: settings.moneyFormat,
+            showChatPreviews: settings.showChatPreviews,
             sendOnScan: SEND_ON_SCAN_ENABLED && settings.sendOnScan,
             confirmSend: settings.confirmSend,
             autolock: {
@@ -58,6 +60,7 @@ export default function Settings({ data, close }) {
     useEffect(() => {
         form.reset({
             moneyFormat: settings.moneyFormat,
+            showChatPreviews: settings.showChatPreviews,
             sendOnScan: SEND_ON_SCAN_ENABLED && settings.sendOnScan,
             confirmSend: settings.confirmSend,
             autolock: {
@@ -119,6 +122,7 @@ export default function Settings({ data, close }) {
         const values = form.getValues();
         await updateSettings({
             moneyFormat: values.moneyFormat,
+            showChatPreviews: values.showChatPreviews,
             sendOnScan: SEND_ON_SCAN_ENABLED && values.sendOnScan,
             confirmSend: values.confirmSend,
             autolock: {
@@ -209,8 +213,37 @@ export default function Settings({ data, close }) {
                                 )}
                             />
 
+                            <Field
+                                control={form.control}
+                                name="showChatPreviews"
+                                render={({ field, labelProps, controlProps }) => (
+                                    <div className="flex items-center justify-between gap-4 py-4">
+                                        <label {...labelProps} className="pl-[5px] flex items-center gap-2 text-lg font-black leading-none select-none">
+                                            <MessageCircle />
+                                            <span className="hidden sm:inline">chat previews</span>
+                                        </label>
+                                        <ToggleGroup
+                                            {...controlProps}
+                                            type="single"
+                                            value={field.value ? 'show' : 'hide'}
+                                            onValueChange={(v) => {
+                                                if (v) field.onChange(v === 'show');
+                                            }}
+                                            required
+                                        >
+                                            <ToggleGroupItem value="show" onMouseEnter={() => setTooltip('show chat preview text')} onMouseLeave={() => setTooltip('save')}>
+                                                <Eye />
+                                            </ToggleGroupItem>
+                                            <ToggleGroupItem value="hide" onMouseEnter={() => setTooltip('hide chat preview text')} onMouseLeave={() => setTooltip('save')}>
+                                                <EyeOff />
+                                            </ToggleGroupItem>
+                                        </ToggleGroup>
+                                    </div>
+                                )}
+                            />
+
                             {PAYMENT_BEHAVIOR_SETTINGS_VISIBLE ? (
-                                <div className="flex items-center justify-between gap-4 py-4">
+                                <div className="flex items-center justify-between gap-4 py-1">
                                     <div className="pl-0.75 flex items-center gap-2 text-lg leading-none select-none">
                                         <ArrowUpRight className="size-6" />
                                         <span>payment behaviour</span>

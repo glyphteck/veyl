@@ -17,6 +17,7 @@ import {
     getPeersFromChats,
     mergeChatPreviewDrop,
     nextChatPreviewExpiryMs,
+    pruneLocalChats,
     replaceChatPreview,
     sameChats,
     sameLastChat,
@@ -73,6 +74,7 @@ export function useChatList({
     selectedChatId,
     selectedChatIdRef,
     setSelectedChat,
+    setLocalByChat,
     localByChatRef,
     pendingDeleteIdsRef,
     keepSelectedDeletedChatIdsRef,
@@ -283,6 +285,11 @@ export function useChatList({
     const commitServerChats = useCallback(
         (nextChats, options = {}) => {
             const sorted = sortedChats(nextChats);
+            const nextLocalByChat = pruneLocalChats(localByChatRef.current, sorted);
+            if (nextLocalByChat !== localByChatRef.current) {
+                localByChatRef.current = nextLocalByChat;
+                setLocalByChat(nextLocalByChat);
+            }
             hydrateReadCache(sorted, readCacheRef.current);
             const nextServerChats = applyChatPreviewOverrides(sorted, chatPreviewOverridesRef.current, chatPK, readCacheRef.current);
             lastServerChatsRef.current = nextServerChats;
@@ -297,7 +304,7 @@ export function useChatList({
             }
             return shownChats;
         },
-        [chatPK, chatPreviewOverridesRef, lastServerChatsRef, queueChatCacheWrite, readCacheRef, updatePeers, updateRenderedChats, updateServerChatIds, warmChats]
+        [chatPK, chatPreviewOverridesRef, lastServerChatsRef, localByChatRef, queueChatCacheWrite, readCacheRef, setLocalByChat, updatePeers, updateRenderedChats, updateServerChatIds, warmChats]
     );
 
     const resetChatList = useCallback(

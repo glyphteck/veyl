@@ -1,5 +1,6 @@
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { db, FieldValue } from '../lib/admin.js';
+import { devError, devWarn } from '../lib/devlog.js';
 
 const FETCH_TIMEOUT_MS = 8000;
 
@@ -127,7 +128,7 @@ async function getBTCprice() {
     }
 
     if (errors.length > 0) {
-        console.warn('BTC price source failures:', errors.join('; '));
+        devWarn('BTC price source failures:', errors.join('; '));
     }
 
     return {
@@ -144,19 +145,19 @@ export const getBTCdata = onSchedule({ schedule: '* * * * *', timeZone: 'America
         payload.price = btcResult.value.price;
         payload.sources = btcResult.value.sources;
     } else {
-        console.error('Error fetching BTC price:', btcResult.reason);
+        devError('Error fetching BTC price:', btcResult.reason);
     }
 
     if (blockResult.status === 'fulfilled') {
         payload.block = blockResult.value;
     } else {
-        console.error('Error fetching block height:', blockResult.reason);
+        devError('Error fetching block height:', blockResult.reason);
     }
 
     if (feeResult.status === 'fulfilled') {
         payload.fees = feeResult.value;
     } else {
-        console.error('Error fetching Bitcoin fee data:', feeResult.reason);
+        devError('Error fetching Bitcoin fee data:', feeResult.reason);
     }
 
     if (Object.keys(payload).length) {

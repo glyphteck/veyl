@@ -1,5 +1,5 @@
 import { CHAT_LIST_PAGE_SIZE, CHAT_LIST_SNAPSHOT_COALESCE_MS } from '../config.js';
-import { canShowMsg, canStoreMsg, isControlMsg } from './messages.js';
+import { canRenderChatPreview, canStoreMsg } from './messages.js';
 import { openOwnChatEntry, ownChatEntryId, sealOwnChatEntry } from './entry.js';
 import { processInbox } from './inbox.js';
 import { canonicalChatVersions, isChatUnseenForUser, isCurrentUserChatEntry } from './chats.js';
@@ -371,7 +371,7 @@ async function decryptChatEntry(entryRecord, userChatPK, userPrivKey) {
     const data = entryRecord;
     const entry = await openOwnChatEntry(userPrivKey, entryRecord.id, data?.body);
     const preview = normalizeChatPreview({ ts: data?.ts ?? null, ttl: entry?.preview?.ttl ?? null }, entry?.preview);
-    const visiblePreview = preview && canShowMsg(preview) && !isControlMsg(preview) ? preview : null;
+    const visiblePreview = preview && canRenderChatPreview(preview) ? preview : null;
     const ts = timestampMs(data?.ts, null) ?? 0;
     const readMs = timestampMs(entry.readMs, null);
     if (!ts) {

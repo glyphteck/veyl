@@ -4,12 +4,12 @@ import { getPushDocs, sendPush as notifyPush } from './push.js';
 import { isChatBanned } from './moderation.js';
 import { DAY_MS } from './ratelimit.js';
 import { isUsername, normalizeUsername } from './regex.js';
+import { devLog } from './devlog.js';
 
 const UID_RE = /^[^/]{1,128}$/;
 const PING_BODY_MAX_BYTES = 64 * 1024;
 const INBOX_PING_TTL_MS = 21 * DAY_MS;
 const INBOX = 'inbox';
-const VERBOSE = typeof process !== 'undefined' && process.env?.VEYL_VERBOSE === '1';
 
 function safeLogId(value) {
     const text = cleanString(value);
@@ -17,9 +17,7 @@ function safeLogId(value) {
 }
 
 function inboxLog(op, fields = {}) {
-    if (VERBOSE) {
-        console.log('[inbox]', op, fields);
-    }
+    devLog('[inbox]', op, fields);
 }
 
 function cleanUid(value, message = 'bad uid') {
@@ -126,7 +124,7 @@ export async function sendPush({ senderUid, recipientUid, ping, now = Timestamp.
 
     const username = await readSenderUsername(sender);
     if (!username) {
-        console.warn('push notification skipped: sender username missing', { senderUid: safeLogId(sender), recipientUid: safeLogId(recipient) });
+        inboxLog('skip notification sender username missing', { senderUid: safeLogId(sender), recipientUid: safeLogId(recipient) });
         return { pingId: pingRef.id, sent: 0 };
     }
 

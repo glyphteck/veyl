@@ -1,3 +1,5 @@
+import { devError, devLog } from './devlog.js';
+
 function safeUid(uid) {
     if (typeof uid !== 'string' || !uid) {
         return 'anon';
@@ -24,13 +26,13 @@ export function loggedCall(name, handler) {
     return async (context) => {
         const startedAt = Date.now();
         const auth = safeUid(context?.auth?.uid);
-        console.log('[fn] start', { name, auth, keys: dataKeys(context?.data) });
+        devLog('[fn] start', { name, auth, keys: dataKeys(context?.data) });
         try {
             const result = await handler(context);
-            console.log('[fn] done', { name, auth, elapsedMs: Date.now() - startedAt });
+            devLog('[fn] done', { name, auth, elapsedMs: Date.now() - startedAt });
             return result;
         } catch (error) {
-            console.error('[fn] error', {
+            devError('[fn] error', {
                 name,
                 auth,
                 elapsedMs: Date.now() - startedAt,

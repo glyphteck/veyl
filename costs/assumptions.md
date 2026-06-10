@@ -29,7 +29,7 @@ One active user over one day is modeled as:
 | Username/profile searches | 1 search returning about 10 profiles |
 | Push registration refreshes | 0 normal daily cost; only when token/device state changes |
 
-That bundle is about 325 Firestore read-equivalent ops, 132 Firestore writes, 26 function invocations, and 1 Storage Class A operation per active user/day. The default send cost assumes active OS-notification routes; no-active-route or bot-heavy traffic is one read cheaper per visible send. Media or long-text sends add one direct Storage upload and one Storage-rules deletion-gate read. At 1M DAU, the default bundle implies about 289 visible messages/s and 1.2 wallet tx/s.
+That bundle is about 325 Firestore read-equivalent ops, 132 Firestore writes, 26 function invocations, and 1 Storage Class A operation per active user/day. The default send cost assumes active OS-notification routes; no-active-route or bot-heavy traffic is one read cheaper per visible send. Read receipts and reactions are stream-only controls, so they do not add inbox/push functions. Media or long-text sends add one direct Storage upload and one Storage-rules deletion-gate read. At 1M DAU, the default bundle implies about 289 visible messages/s and 1.2 wallet tx/s.
 
 The 25 visible-send default is a neutral planning midpoint. It is lower than WhatsApp-heavy young-adult device logs, close to WhatsApp's broad platform-per-user scale after accounting for the difference between monthly users, daily users, and delivered/group messages, and higher than population-wide SMS/MMS use. The model counts user-generated visible sends, not received delivery fanout.
 
@@ -109,5 +109,7 @@ Sustained app-wide throughput is separate from DAU scale. See [message-rate-cost
 | `MESSAGE_SEND_WRITES` | 4 | Firestore writes per solo visible send through the block-enforcing push callable. |
 | `MESSAGE_SEND_FUNCTIONS` | 1 | Function invocations per visible send. |
 | `MEDIA_STORAGE_RULE_READS` | 1 | Storage-rules chat deletion-gate reads per direct chat-media or long-text upload. |
-| `READ_RECEIPT_READS` | 1 | Firestore rules chat deletion gate read per read receipt. |
-| `READ_RECEIPT_WRITES` | 1 | Firestore writes per read receipt. |
+| `READ_RECEIPT_READS` | 1 | Firestore rules chat deletion gate read per stream-only read receipt. |
+| `READ_RECEIPT_WRITES` | 1 | Firestore writes per stream-only read receipt action doc. |
+| `REACTION_READS` | 1 | Firestore rules chat deletion gate read per stream-only reaction. |
+| `REACTION_WRITES` | 1 | Firestore writes per stream-only reaction action doc. |

@@ -145,10 +145,11 @@ service cloud.firestore {
       let faceID = mapGet(settings, 'faceID');
 
       return settings is map
-        && settings.keys().hasOnly(['glass', 'moneyFormat', 'ghostWallet', 'sendOnScan', 'confirmSend', 'faceID', 'autolock'])
+        && settings.keys().hasOnly(['glass', 'moneyFormat', 'ghostWallet', 'showChatPreviews', 'sendOnScan', 'confirmSend', 'faceID', 'autolock'])
         && mapGet(settings, 'glass') is bool
         && mapGet(settings, 'moneyFormat') in ['btc', 'usd', 'sats']
         && mapGet(settings, 'ghostWallet') is bool
+        && mapGet(settings, 'showChatPreviews') is bool
         && mapGet(settings, 'sendOnScan') is bool
         && mapGet(settings, 'confirmSend') is bool
         && (faceID == null || faceID is bool)

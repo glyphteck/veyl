@@ -286,6 +286,11 @@ function samePreviewMsg(a, b) {
         a.paidBy === b.paidBy &&
         a.sys === b.sys &&
         a.retention === b.retention &&
+        a.target === b.target &&
+        a.upto === b.upto &&
+        a.emoji === b.emoji &&
+        a.actionOp === b.actionOp &&
+        a.actionTarget === b.actionTarget &&
         timestampMs(a.ttl) === timestampMs(b.ttl) &&
         timestampMs(a.editedAt) === timestampMs(b.editedAt) &&
         timestampMs(a.paidAt) === timestampMs(b.paidAt) &&
@@ -327,12 +332,12 @@ function profileSignature(profile) {
     return [profile.uid || '', profile.username || '', profile.avatar || '', profile.active ? '1' : '0', profile.bot || '', profile.chatPK || ''].join(':');
 }
 
-const ChatListChatRow = memo(function ChatListChatRow({ animationKey = '', chat, chatPK, handleDeleteChat, isLast, mode = null, openChat, peerByChatPK }) {
+const ChatListChatRow = memo(function ChatListChatRow({ animationKey = '', chat, chatPK, handleDeleteChat, isLast, mode = null, openChat, peerByChatPK, settings }) {
     const { contentStyle, slotStyle } = useRowMoveStyles(animationKey, mode);
     const peerChatPK = getChatPeerPK(chat, chatPK);
     const profile = peerChatPK ? peerByChatPK?.get(peerChatPK) : null;
     const title = formatUserDisplay({ username: profile?.username, chatPK: peerChatPK });
-    const subtitle = getMsgPreview(chat?.preview, chatPK, null, null);
+    const subtitle = getMsgPreview(chat?.preview, chatPK, settings, null);
     const lastMs = chat?.ts || null;
     const rightLabel = lastMs ? formatFullDateTime(lastMs) : '';
 
@@ -357,6 +362,7 @@ const ChatListChatRow = memo(function ChatListChatRow({ animationKey = '', chat,
     prev.mode === next.mode &&
     prev.isLast === next.isLast &&
     prev.chatPK === next.chatPK &&
+    prev.settings === next.settings &&
     sameChatRow(prev.chat, next.chat) &&
     samePeerProfile(prev, next)
 ));
@@ -366,7 +372,7 @@ export default function ChatList() {
     const router = useRouter();
     const insets = useSafeAreaInsets();
     const { chats, isChatDataReady, hasMoreChats, loadingMoreChats, loadMoreChats, deleteChat, restoreDeletedChat } = useChat();
-    const { chatPK, blockedSet, chatBanned } = useUser();
+    const { chatPK, blockedSet, chatBanned, settings } = useUser();
     const { peers, peerByChatPK, isBlockedChatPK, isPeerDataReady } = usePeer() || {};
     const { searching, results, query, search: runSearch, clearSearch } = useSearch('profiles');
     const { lockRoute } = useRouteLock();
@@ -402,13 +408,13 @@ export default function ChatList() {
             const title = lowerText(formatUserDisplay({ username: profile?.username, chatPK: peerChatPK }));
             const username = lowerText(profile?.username);
             const atUsername = username ? `@${username}` : '';
-            const preview = lowerText(getMsgPreview(chat?.preview, chatPK, null, null));
+            const preview = lowerText(getMsgPreview(chat?.preview, chatPK, settings, null));
             const peerKey = lowerText(peerChatPK);
             const usernameMatch = usernameQuery ? (usernamePrefixSearch ? username.startsWith(usernameQuery) : username.includes(usernameQuery)) : false;
 
             return title.includes(chatQuery) || usernameMatch || atUsername.includes(chatQuery) || preview.includes(chatQuery) || peerKey.includes(chatQuery);
         });
-    }, [chatPK, chatQuery, chats, hasBlockedUsers, isBlockedChatPK, isPeerDataReady, peerByChatPK, usernamePrefixSearch, usernameQuery]);
+    }, [chatPK, chatQuery, chats, hasBlockedUsers, isBlockedChatPK, isPeerDataReady, peerByChatPK, settings, usernamePrefixSearch, usernameQuery]);
 
     const chatPeerPKs = useMemo(() => new Set((Array.isArray(chats) ? chats : []).map((chat) => chat?.peerChatPK).filter(Boolean)), [chats]);
 
@@ -442,6 +448,7 @@ export default function ChatList() {
                 .join('|'),
         [chatPK, items, peerByChatPK]
     );
+    const listExtraData = `${peerListSignature}:${settings?.moneyFormat || ''}:${settings?.showChatPreviews === false ? 'hide' : 'show'}`;
 
     const createRowMove = useCallback((previousItems, nextItems) => {
         const previousIds = getItemIds(previousItems);
@@ -664,10 +671,11 @@ export default function ChatList() {
                     mode={item.type === 'moving-chat-in' ? 'in' : item.type === 'moving-chat-out' ? 'out' : null}
                     openChat={openChat}
                     peerByChatPK={peerByChatPK}
+                    settings={settings}
                 />
             );
         },
-        [chatPK, displayItems.length, handleDeleteChat, openChat, peerByChatPK]
+        [chatPK, displayItems.length, handleDeleteChat, openChat, peerByChatPK, settings]
     );
 
     const renderScrollComponent = useCallback(
@@ -707,7 +715,7 @@ export default function ChatList() {
                 keyboardShouldPersistTaps="handled"
                 contentContainerStyle={{ flexGrow: 1, paddingTop: headerHeight, paddingBottom: mainMenuHeight }}
                 renderItem={renderItem}
-                extraData={peerListSignature}
+                extraData={listExtraData}
                 getItemLayout={getItemLayout}
                 initialNumToRender={16}
                 maxToRenderPerBatch={12}
