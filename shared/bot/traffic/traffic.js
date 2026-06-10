@@ -4,14 +4,14 @@ import {
     BOT_TRAFFIC_MAX_COUNT,
     BOT_TRAFFIC_MIN_DELAY_MS,
 } from '../../config.js';
-import { BOT_GROUP_TRAFFIC, botGroups } from '../groups.js';
+import { BOT_GROUP_TRAFFIC } from '../groups.js';
 import { lowerText } from '../../utils/text.js';
 
 export const BOT_TRAFFIC_GROUP = BOT_GROUP_TRAFFIC;
 export { hasBotTrafficGroup } from '../groups.js';
 
 export function botTrafficGroups({ traffic = false } = {}) {
-    return botGroups({ [BOT_TRAFFIC_GROUP]: traffic === true });
+    return { [BOT_TRAFFIC_GROUP]: traffic === true };
 }
 
 export function cleanTrafficCount(value, name = 'traffic count') {

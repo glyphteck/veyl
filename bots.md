@@ -24,17 +24,27 @@ The only differences:
 
 ## Current Bot Behavior
 
-When enabled, a bot:
+When enabled, every bot:
 
-- mirrors all incoming chat messages (text, attachments) back to the sender
-- pays any incoming payment request if funded, then sends a mirrored request back for the same amount
-- replies with an underfunded message if it can't afford a request
-- appends encrypted read receipt and hidden-message checkpoint controls for the latest processed peer message before sending its mirrored reply, without changing the chat preview
+- reads incoming chat messages by default, even when it does not send a visible reply
+- appends encrypted read receipt and hidden-message checkpoint controls for the latest processed peer message without changing the chat preview
 - adopts peer retention system messages and peer-stamped message retention before writing replies
 - uses peer read receipts only to append preview-neutral hidden-message checkpoints for bot-authored messages
 - ignores other encrypted control payloads such as reactions and incoming hidden-message checkpoints
 - keeps message TTL dumb like the clients: new messages use the standard 21-day TTL, saved messages use `ttl: null`, and the runtime does not shorten TTL after read handling
 - accepts incoming transfers passively (balance updates automatically via Spark events)
+
+Bots subscribed to the `echo` group mirror visible peer messages after the read receipt. `@echo` always mirrors, even if its group field is accidentally changed. Echo behavior:
+
+- mirrors incoming text messages and attachments back to the sender
+- pays any incoming payment request if funded, then sends a mirrored request back for the same amount
+- replies with an underfunded message if it can't afford a request
+
+Canonical bots:
+
+- `@faucet` is the canonical funding bot for other bots. Traffic funding uses it by default.
+- `@echo` is the dedicated echo bot and always mirrors messages.
+- `@review` has the `review` behavior tag and also subscribes to `echo` for now, so review-specific behavior has a separate owner while the current visible behavior stays deterministic.
 
 Guardrails:
 
@@ -62,19 +72,20 @@ The core bot loop. `BotRuntime` is a long-lived process that:
 2. for each enabled bot, reads its profile for the active network wallet key and `chatPK`, boots a Spark wallet session, and subscribes to its chats
 3. listens for Spark `transfer:claimed` and `balance:update` events to keep the admin-facing balance snapshot current
 4. watches bot-owned chats plus their latest message docs, then processes new peer messages and preview-neutral controls by comparing timestamps against `seen` and `resumeAt`
+5. applies changed `groups`, `behaviors`, and `restartAt` fields from the live bot subscription without restarting the whole runtime
 
 Message handling:
 
-- text messages: decrypted and mirrored back
-- attachments: decrypted, re-encrypted under the bot's keys, uploaded as a fresh copy, and sent back
-- payment requests: paid if the bot has sufficient balance, original request patched with the tx id, then a mirrored request sent back for the same amount
+- text messages: decrypted, read, and mirrored back only when the bot is subscribed to echo behavior
+- attachments: decrypted, read, and mirrored as a fresh encrypted upload only when the bot is subscribed to echo behavior
+- payment requests: read by every bot; echo bots pay if funded, patch the original request with the tx id, then send a mirrored request for the same amount
 - retention: peer retention system messages and peer-stamped message retention update the bot-owned chat entry, so bot replies use the same delete-after-seen mode as the peer side
-- read receipts: appended as encrypted `t: 'rr'` control messages before mirrored replies and sent without updating the chat preview
+- read receipts: appended as encrypted `t: 'rr'` control messages for readable peer messages and sent without updating the chat preview
 - hidden checkpoints: appended as encrypted `t: 'hid'` control messages with the bot read receipt, and again when a peer read receipt covers bot-authored messages, because the headless runtime has no chat UI to keep those messages visible
 - reactions and incoming hidden checkpoints: encrypted control messages; skipped by the bot runtime instead of mirrored
 - incoming transfers: accepted passively — Spark claims them automatically and the runtime refreshes the balance snapshot
 
-Job serialization uses `queueMapJob` to ensure per-chat and per-wallet work runs sequentially without blocking other chats. The runtime also stores per-chat read checkpoints under `bots/{uid}/reads/{chatId}` and writes bot replies and bot-authored controls with deterministic message IDs derived from the source message, so a restart or retry cannot mirror the same source message into duplicate bot texts or duplicate bot read controls.
+Job serialization uses `queueMapJob` to ensure per-chat and per-wallet work runs sequentially without blocking other chats. The runtime also stores per-chat read checkpoints under `bots/{uid}/reads/{chatId}` and writes bot replies and bot-authored controls with deterministic message IDs derived from the source message, so a restart or retry cannot mirror the same source message into duplicate bot texts or duplicate bot read controls. `restartAt` is part of the live session key, so `bun bot restart ...` restarts selected bot sessions without power-cycling the whole runtime.
 
 ### Entry Point (`apps/bot/src/index.js`)
 
@@ -105,6 +116,7 @@ When no username is provided, generates a random 12-character lowercase alphanum
 - `chat.js` — encrypt/decrypt bot messages, send/update messages, handle attachment upload/download with a pair cache
 - `wallet.js` — balance queries and outgoing transfers
 - `events.js` — constants (`BOT_MODE`, `BOT_UNDERFUNDED_TEXT`, `BOT_SEEDS_SECRET_ID`), bot marker factory, seed key helpers
+- `groups.js` — canonical bot usernames, group tags, behavior tags, default memberships, and runtime predicates
 - `storage.js` — encrypted attachment read/write against Cloud Storage
 
 ### Wallet Environment
@@ -130,10 +142,13 @@ Bots that have no custom avatar show a bot icon instead of the default user silh
     - `uid`, `username`
     - `enabled` — power state
     - `mode` — behavior mode (`mirror`)
+    - `groups` — runtime subscriptions such as `traffic` and `echo`
+    - `behaviors` — bot-specific behavior tags such as `review`
     - `status` — admin-readable runtime state
     - `balance` — admin-facing balance snapshot
     - `lastBootAt`, `lastRunAt`, `lastError`
     - `resumeAt` — replay cutoff when re-enabling
+    - `restartAt` — session restart token for one bot, a group, or a behavior cohort
     - network-scoped `walletPKs`, `chatPK` — copied from the profile for runtime seed verification (avoids an extra Firestore read per boot)
 
 ### Moderation
@@ -158,11 +173,16 @@ The CLI can do the same:
 - `bun bot add <count>` — provision N bots with random usernames
 - `bun bot power <@username|uid> on`
 - `bun bot power <@username|uid> off`
+- `bun bot group <@username|uid|all|group:name> <traffic|echo> <on|off>` — subscribe or unsubscribe bot groups during a live runtime
+- `bun bot behavior <@username|uid|all|group:name> <review> <on|off>` — subscribe or unsubscribe bot behavior tags during a live runtime
+- `bun bot sub <@username|uid|all|group:name> <traffic|echo|review>` — short form for enabling a group or behavior
+- `bun bot unsub <@username|uid|all|group:name> <traffic|echo|review>` — short form for disabling a group or behavior
+- `bun bot restart <@username|uid|all|group:name|behavior:name>` — restart selected bot sessions without stopping the runtime
 - `bun bot traffic [mixed/tx/msg] [@username/uid] [fast/slow]` — queue runtime-owned client load traffic; defaults to mixed message/transfer traffic for `@zxrl`
 - `bun bot traffic mixed [@username/uid] [fast/slow]` — queue message and 1-sat transfer traffic in parallel
 - `bun bot traffic msg [@username/uid] [fast/slow] [--solo] [--source @botname]` — send message traffic only, optionally pinned to one bot-owned chat
 - `bun bot traffic tx [@username/uid] [fast/slow]` — send 1-sat transfer traffic only
-- `bun bot traffic fund [--source @review] [--target 1000]` — send a flat funding transfer to each enabled traffic-group bot
+- `bun bot traffic fund [--source @faucet] [--target 1000]` — send a flat funding transfer to each enabled traffic-group bot
 - `bun bot traffic label [@username|uid|all] [on|off]` — set the internal `groups.traffic` marker used by traffic commands
 - `bun bot traffic stop` — request cancellation for queued/running traffic actions; restarted runtimes also cancel stale queued/running traffic actions before accepting new work
 - `bun bot kill <@username|uid>` — fully delete the bot account
@@ -201,7 +221,7 @@ bun bot power @mybot off
 
 ### Traffic load testing
 
-Traffic commands are for client load testing. The bot runtime must already be running. The runtime uses enabled bots whose `bots/{uid}.groups.traffic` marker is `true`. The `review` bot is a funding source by convention and should not be in the traffic group.
+Traffic commands are for client load testing. The bot runtime must already be running. The runtime uses enabled bots whose `bots/{uid}.groups.traffic` marker is `true`. `@faucet`, `@echo`, and `@review` stay out of the traffic group by default. Traffic bots also get `groups.echo = true` for now.
 
 Start verbose runtimes before observing clients:
 
@@ -211,15 +231,15 @@ bun dev -v
 
 Open and unlock web and iOS as `@zxrl`, then keep the relevant surface in view. Use the chat list for message traffic and the wallet transfer list for transfer traffic. Web may lock again after reload, so unlock it again before judging logs.
 
-Fund the traffic fleet from `review`:
+Fund the traffic fleet from `@faucet`:
 
 ```bash
 bun bot traffic label all
 bun bot traffic fund
-bun bot traffic fund --target 1000 --source @review
+bun bot traffic fund --target 1000 --source @faucet
 ```
 
-`traffic label all` marks every bot except `review` as traffic and explicitly leaves `review` out. Funding sends the flat target amount to each enabled traffic-group bot. It does not inspect balances or top up to a threshold. `--amount` is accepted as the same per-bot amount when that reads more clearly. Use it before transfer traffic when the fleet needs sats.
+`traffic label all` applies the canonical defaults: ordinary bots become traffic+echo bots, `@review` keeps echo+review behavior, `@echo` keeps echo-only behavior, and `@faucet` stays outside traffic and echo. Funding sends the flat target amount from `@faucet` to each enabled traffic-group bot. It does not inspect balances or top up to a threshold. `--amount` is accepted as the same per-bot amount when that reads more clearly. Use it before transfer traffic when the fleet needs sats.
 
 Queue mixed traffic:
 

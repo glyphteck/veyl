@@ -69,7 +69,7 @@ export function hasBotEchoGroup(value) {
 }
 
 export function hasBotReviewBehavior(value) {
-    return sameText(value?.username, BOT_REVIEW_USERNAME) || hasBotBehavior(value, BOT_BEHAVIOR_REVIEW);
+    return hasBotBehavior(value, BOT_BEHAVIOR_REVIEW);
 }
 
 export function isCanonicalBotUsername(username) {

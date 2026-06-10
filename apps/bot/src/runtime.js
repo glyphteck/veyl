@@ -7,6 +7,7 @@ import {
     BOT_ACTION_TYPE_TRAFFIC_MSG,
     BOT_ACTION_TYPE_TRAFFIC_FUND,
     BOT_ACTION_TYPE_TRAFFIC_TX,
+    BOT_FAUCET_USERNAME,
     BOT_MODE,
     BOT_RUNTIME_ACTIONS,
     BOT_RUNTIME_DOC_ID,
@@ -17,8 +18,8 @@ import { bootRegistryBotAccount, closeBotAccount } from '@veyl/shared/bot/accoun
 import {
     cleanTrafficCount,
     cleanTrafficDelayMs,
-    hasBotTrafficGroup,
 } from '@veyl/shared/bot/traffic';
+import { hasBotEchoGroup, hasBotReviewBehavior, hasBotTrafficGroup } from '@veyl/shared/bot/groups';
 import {
     BOT_TRAFFIC_MESSAGES,
     BOT_TRAFFIC_REQUEST_AMOUNT_BUCKETS,
@@ -63,7 +64,6 @@ const REPLACE_EXISTING_RUNTIME = process.env.VEYL_REPLACE_BOT_RUNTIME === '1';
 const APNS_SECRET_IDS = Object.freeze(['APNS_KEY_ID', 'APNS_TEAM_ID', 'APNS_PRIVATE_KEY_BASE64']);
 const MAX_BOT_PEER_CACHE = 512;
 const MAX_BOT_READ_CACHE = 2048;
-const REVIEW_BOT_USERNAME = 'review';
 const DEFAULT_FUND_BOT_AMOUNT_SATS = 1000;
 const BOT_READS = 'reads';
 const RUNTIME_HEARTBEAT_MS = 15000;
@@ -293,6 +293,10 @@ function incrementSender(map, session) {
 
 function senderCounts(map) {
     return Object.fromEntries([...map.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])));
+}
+
+function botSessionKey(bot) {
+    return [bot?.uid, bot?.chatPK, bot?.walletPK, timestampMs(bot?.restartAt, 0)].join(':');
 }
 
 function pickWeighted(items) {
@@ -738,7 +742,6 @@ export class BotRuntime {
         return [...this.sessions.values()].filter((session) => (
             session?.started &&
             !session.closing &&
-            (!session.mode || session.mode === BOT_MODE) &&
             hasBotTrafficGroup(session) &&
             session.chatJobs &&
             session.chatPK &&
@@ -748,7 +751,7 @@ export class BotRuntime {
 
     fundingSourceSession(action) {
         const uid = cleanText(action?.sourceUid);
-        const username = lowerText(action?.sourceUsername || REVIEW_BOT_USERNAME);
+        const username = lowerText(action?.sourceUsername || BOT_FAUCET_USERNAME);
         return [...this.sessions.values()].find((session) => {
             if (!session?.started || session.closing || !session.wallet || !session.chatJobs) {
                 return false;
@@ -815,7 +818,7 @@ export class BotRuntime {
             await sleep(250);
         }
 
-        const label = action?.sourceUsername ? `@${action.sourceUsername}` : action?.sourceUid || `@${REVIEW_BOT_USERNAME}`;
+        const label = action?.sourceUsername ? `@${action.sourceUsername}` : action?.sourceUid || `@${BOT_FAUCET_USERNAME}`;
         throw new Error(`funding bot session is not active: ${label}`);
     }
 
@@ -1201,15 +1204,17 @@ export class BotRuntime {
     }
 
     async runBot(bot) {
-        const sessionKey = [bot.uid, bot.chatPK, bot.walletPK].join(':');
+        const sessionKey = botSessionKey(bot);
         const current = this.sessions.get(bot.uid);
 
         if (current?.key === sessionKey) {
             current.ref = bot.ref;
             current.username = bot.username;
             current.resumeAtMs = timestampMs(bot.resumeAt, 0);
+            current.restartAtMs = timestampMs(bot.restartAt, 0);
             current.mode = bot.mode || BOT_MODE;
             current.groups = bot.groups || {};
+            current.behaviors = bot.behaviors || {};
             return;
         }
 
@@ -1240,7 +1245,10 @@ export class BotRuntime {
         session.ref = bot.ref;
         session.username = bot.username;
         session.resumeAtMs = timestampMs(bot.resumeAt, 0);
+        session.restartAtMs = timestampMs(bot.restartAt, 0);
         session.mode = bot.mode || BOT_MODE;
+        session.groups = bot.groups || {};
+        session.behaviors = bot.behaviors || {};
 
         if (session.started) {
             return;
@@ -1552,13 +1560,15 @@ export class BotRuntime {
         }
 
         const current = this.sessions.get(bot.uid);
-        const sessionKey = [bot.uid, bot.chatPK, bot.walletPK].join(':');
+        const sessionKey = botSessionKey(bot);
         if (current?.key === sessionKey) {
             current.ref = bot.ref;
             current.username = bot.username;
             current.resumeAtMs = timestampMs(bot.resumeAt, 0);
+            current.restartAtMs = timestampMs(bot.restartAt, 0);
             current.mode = bot.mode || BOT_MODE;
             current.groups = bot.groups || {};
+            current.behaviors = bot.behaviors || {};
             return current;
         }
 
@@ -1583,8 +1593,10 @@ export class BotRuntime {
                 key: sessionKey,
                 ref: bot.ref,
                 resumeAtMs: timestampMs(bot.resumeAt, 0),
+                restartAtMs: timestampMs(bot.restartAt, 0),
                 mode: bot.mode || BOT_MODE,
                 groups: bot.groups || {},
+                behaviors: bot.behaviors || {},
                 started: false,
                 closing: false,
                 balance: null,
@@ -1680,7 +1692,7 @@ export class BotRuntime {
     }
 
     async processChat(session, chat) {
-        if (session.closing || (session.mode && session.mode !== BOT_MODE)) {
+        if (session.closing) {
             return;
         }
 
@@ -1800,14 +1812,14 @@ export class BotRuntime {
             });
         }
 
-        if (!replies.length && !peerReadReceipt) {
+        if (!replies.length && !peerReadReceipt && !receipt) {
             await this.ackChat(session, chat.id, readMs);
             return;
         }
 
         const peer = await this.resolvePeerByChatPK(peerChatPK);
         if (!peer?.uid) {
-            if (!replies.length) {
+            if (!replies.length && !receipt) {
                 await this.ackChat(session, chat.id, readMs);
             }
             return;
@@ -1831,11 +1843,6 @@ export class BotRuntime {
             });
         }
 
-        if (!replies.length) {
-            await this.ackChat(session, chat.id, readMs);
-            return;
-        }
-
         if (receipt) {
             await this.sendReadReceipt(session, peerChatPK, receipt.target, receipt.context.retention, receipt.context).catch((error) => {
                 console.warn('bot read receipt failed', chat.id, statusMessage(error));
@@ -1843,6 +1850,11 @@ export class BotRuntime {
             await this.sendHiddenCheckpoint(session, peerChatPK, receipt.target, receipt.context.retention, receipt.context).catch((error) => {
                 console.warn('bot hidden checkpoint failed', chat.id, statusMessage(error));
             });
+        }
+
+        if (!replies.length || !hasBotEchoGroup(session)) {
+            await this.ackChat(session, chat.id, readMs);
+            return;
         }
 
         if (BOT_REPLY_AFTER_READ_DELAY_MS > 0) {
@@ -1869,6 +1881,18 @@ export class BotRuntime {
     }
 
     async replyToChatMessage(session, context, msg) {
+        if (hasBotReviewBehavior(session)) {
+            await this.replyAsReviewBot(session, context, msg);
+            return;
+        }
+        await this.echoChatMessage(session, context, msg);
+    }
+
+    async replyAsReviewBot(session, context, msg) {
+        await this.echoChatMessage(session, context, msg);
+    }
+
+    async echoChatMessage(session, context, msg) {
         if (msg.t === 'req') {
             await this.handleRequest(session, context, msg);
             return;

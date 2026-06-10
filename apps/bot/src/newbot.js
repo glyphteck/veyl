@@ -8,7 +8,7 @@ import { BOT_MODE } from '@veyl/shared/bot/events';
 import { defaultBotBehaviors, defaultBotGroups } from '@veyl/shared/bot/groups';
 import { bootRegistryBotAccount, closeBotAccount } from '@veyl/shared/bot/account';
 import { MAX_USERNAME, isUsername, normalizeUsername } from '@veyl/shared/username';
-import { cleanText } from '@veyl/shared/utils/text';
+import { cleanText, sameText } from '@veyl/shared/utils/text';
 import { cleanBytes } from '@veyl/shared/crypto/core';
 import admin, { db, projectId } from './admin.js';
 import { createSecretClient, ensureBotSecret } from './secrets.js';

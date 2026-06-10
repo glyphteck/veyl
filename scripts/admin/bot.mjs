@@ -11,12 +11,14 @@ import {
     BOT_ACTION_TYPE_TRAFFIC_MSG,
     BOT_ACTION_TYPE_TRAFFIC_FUND,
     BOT_ACTION_TYPE_TRAFFIC_TX,
+    BOT_FAUCET_USERNAME,
     BOT_MODE,
     BOT_RUNTIME_ACTIONS,
     BOT_RUNTIME_DOC_ID,
     BOT_RUNTIME_LEASE_MS,
 } from '@veyl/shared/bot/events';
-import { BOT_TRAFFIC_GROUP, botTrafficGroups, cleanTrafficCount, cleanTrafficDelayMs } from '@veyl/shared/bot/traffic';
+import { BOT_TRAFFIC_GROUP, cleanTrafficCount, cleanTrafficDelayMs } from '@veyl/shared/bot/traffic';
+import { BOT_GROUP_ECHO, botBehaviorPatch, botGroupPatch, cleanBotBehavior, cleanBotGroup, defaultBotGroups } from '@veyl/shared/bot/groups';
 import { BOT_TRAFFIC_TRANSFER_AMOUNT_SATS } from '@veyl/shared/bot/traffic/transfers';
 import {
     BOT_TRAFFIC_DEFAULT_COUNT,
@@ -30,12 +32,11 @@ import { createSecretClient, deleteBotSeed } from '../../apps/bot/src/secrets.js
 import { cliArgs, resolveUid } from './cli.mjs';
 import { timestampMs } from '@veyl/shared/utils/time';
 import { sleep } from '@veyl/shared/utils/async';
-import { cleanText, lowerText, sameText } from '@veyl/shared/utils/text';
+import { cleanText, lowerText } from '@veyl/shared/utils/text';
 
 const DEFAULT_TRAFFIC_TARGET = '@zxrl';
 const DEFAULT_FUND_BOT_AMOUNT_SATS = 1000;
-const DEFAULT_FUND_BOT_SOURCE = '@review';
-const REVIEW_BOT_USERNAME = DEFAULT_FUND_BOT_SOURCE.replace(/^@/, '');
+const DEFAULT_FUND_BOT_SOURCE = `@${BOT_FAUCET_USERNAME}`;
 const TRAFFIC_WAIT_POLL_MS = 2000;
 const TRAFFIC_WAIT_GRACE_MS = 60000;
 const TRAFFIC_WAIT_SEND_GRACE_MS = 2500;
@@ -50,9 +51,14 @@ function usage() {
     console.error('usage: bun bot kill <@username|uid|all>');
     console.error('usage: bun bot traffic [mixed/tx/msg] [@username/uid] [fast/slow] [--count 60] [--duration 10m] [--delay 3s] [--no-wait]');
     console.error('usage: bun bot traffic msg [@username/uid] [fast/slow] [--solo] [--source @botname]');
-    console.error('usage: bun bot traffic fund [--source @review] [--target 1000] [--amount 1000] [--delay 250ms] [--no-wait]');
+    console.error('usage: bun bot traffic fund [--source @faucet] [--target 1000] [--amount 1000] [--delay 250ms] [--no-wait]');
     console.error('usage: bun bot traffic label [@username|uid|all] [on|off]');
     console.error('usage: bun bot traffic stop');
+    console.error('usage: bun bot group <@username|uid|all|group:name> <traffic|echo> <on|off>');
+    console.error('usage: bun bot behavior <@username|uid|all|group:name> <review> <on|off>');
+    console.error('usage: bun bot sub <@username|uid|all|group:name> <traffic|echo|review>');
+    console.error('usage: bun bot unsub <@username|uid|all|group:name> <traffic|echo|review>');
+    console.error('usage: bun bot restart <@username|uid|all|group:name|behavior:name>');
     process.exit(1);
 }
 
@@ -122,7 +128,7 @@ function parseAmountSats(value, fallback) {
 }
 
 function defaultTrafficGroupForUsername(username) {
-    return !sameText(username, REVIEW_BOT_USERNAME);
+    return defaultBotGroups(username)[BOT_TRAFFIC_GROUP] === true;
 }
 
 function splitOption(arg) {
@@ -298,6 +304,33 @@ async function requireRuntimeAction(actionType) {
 }
 
 async function resolveBotTargets(target) {
+    const rawTarget = cleanText(target || '');
+    const selector = lowerText(rawTarget.replace(/^@/, ''));
+
+    if (selector.startsWith('group:')) {
+        const group = cleanBotGroup(selector.slice('group:'.length));
+        if (!group) {
+            throw new Error(`unknown bot group: ${rawTarget}`);
+        }
+        const snap = await db.collection('bots').where(`groups.${group}`, '==', true).get();
+        return snap.docs.map((docSnap) => ({
+            uid: docSnap.id,
+            username: lowerText(docSnap.data()?.username) || null,
+        }));
+    }
+
+    if (selector.startsWith('behavior:')) {
+        const behavior = cleanBotBehavior(selector.slice('behavior:'.length));
+        if (!behavior) {
+            throw new Error(`unknown bot behavior: ${rawTarget}`);
+        }
+        const snap = await db.collection('bots').where(`behaviors.${behavior}`, '==', true).get();
+        return snap.docs.map((docSnap) => ({
+            uid: docSnap.id,
+            username: lowerText(docSnap.data()?.username) || null,
+        }));
+    }
+
     const nextTarget = normalizeTarget(target);
 
     if (nextTarget === 'all') {
@@ -407,6 +440,45 @@ function parseTrafficLabelArgs(args) {
         target: args[0] || 'all',
         enabled,
     };
+}
+
+function parseGroupArgs(args) {
+    if (args.length !== 3) {
+        usage();
+    }
+    const group = cleanBotGroup(args[1]);
+    const enabled = normalizePower(args[2]);
+    if (!group || enabled == null) {
+        usage();
+    }
+    return { target: args[0], group, enabled };
+}
+
+function parseBehaviorArgs(args) {
+    if (args.length !== 3) {
+        usage();
+    }
+    const behavior = cleanBotBehavior(args[1]);
+    const enabled = normalizePower(args[2]);
+    if (!behavior || enabled == null) {
+        usage();
+    }
+    return { target: args[0], behavior, enabled };
+}
+
+function parseSubArgs(args, enabled) {
+    if (args.length !== 2) {
+        usage();
+    }
+    const group = cleanBotGroup(args[1]);
+    if (group) {
+        return { kind: 'group', target: args[0], name: group, enabled };
+    }
+    const behavior = cleanBotBehavior(args[1]);
+    if (behavior) {
+        return { kind: 'behavior', target: args[0], name: behavior, enabled };
+    }
+    usage();
 }
 
 async function deleteBotChats(chatPK) {
@@ -535,14 +607,19 @@ export async function labelTrafficBots(target = 'all', enabled = null) {
         const profileRef = db.collection('profiles').doc(entry.uid);
         const [botSnap, profileSnap] = await Promise.all([botRef.get(), profileRef.get()]);
         const username = lowerText(botSnap.data()?.username || profileSnap.data()?.username || entry.username);
+        const defaults = defaultBotGroups(username);
         const traffic = enabled == null ? defaultTrafficGroupForUsername(username) : enabled;
+        const groups = {
+            [BOT_TRAFFIC_GROUP]: traffic,
+            ...(enabled == null ? { [BOT_GROUP_ECHO]: defaults[BOT_GROUP_ECHO] === true } : traffic ? { [BOT_GROUP_ECHO]: true } : {}),
+        };
         await botRef.set(
             {
-                groups: botTrafficGroups({ traffic }),
+                groups,
             },
             { merge: true }
         );
-        labelled.push({ uid: entry.uid, username, traffic });
+        labelled.push({ uid: entry.uid, username, traffic, echo: groups[BOT_GROUP_ECHO] });
     }
 
     return {
@@ -550,6 +627,52 @@ export async function labelTrafficBots(target = 'all', enabled = null) {
         group: BOT_TRAFFIC_GROUP,
         labelled,
     };
+}
+
+export async function setBotGroup(target, group, enabled) {
+    const targets = await resolveBotTargets(target);
+    const patch = botGroupPatch(group, enabled);
+    const name = cleanBotGroup(group);
+    const updated = [];
+
+    for (const entry of targets) {
+        await db.collection('bots').doc(entry.uid).set(patch, { merge: true });
+        updated.push({ ...entry, group: name, enabled });
+    }
+
+    return { count: updated.length, group: name, enabled, updated };
+}
+
+export async function setBotBehavior(target, behavior, enabled) {
+    const targets = await resolveBotTargets(target);
+    const patch = botBehaviorPatch(behavior, enabled);
+    const name = cleanBotBehavior(behavior);
+    const updated = [];
+
+    for (const entry of targets) {
+        await db.collection('bots').doc(entry.uid).set(patch, { merge: true });
+        updated.push({ ...entry, behavior: name, enabled });
+    }
+
+    return { count: updated.length, behavior: name, enabled, updated };
+}
+
+export async function restartBots(target) {
+    const targets = await resolveBotTargets(target);
+    const restarted = [];
+
+    for (const entry of targets) {
+        await db.collection('bots').doc(entry.uid).set(
+            {
+                restartAt: FieldValue.serverTimestamp(),
+                lastError: null,
+            },
+            { merge: true }
+        );
+        restarted.push(entry);
+    }
+
+    return { count: restarted.length, restarted };
 }
 
 export async function queueTrafficMessageAction(options = {}) {
@@ -853,7 +976,30 @@ function printTrafficStopResult(result) {
 function printTrafficLabelResult(result) {
     const on = result.labelled.filter((entry) => entry.traffic).length;
     const off = result.labelled.length - on;
-    console.log(`labelled ${plural(result.count, 'bot')} for ${result.group}: ${on} on, ${off} off`);
+    const echo = result.labelled.filter((entry) => entry.echo).length;
+    console.log(`labelled ${plural(result.count, 'bot')} for ${result.group}: ${on} on, ${off} off, ${echo} echo`);
+}
+
+function namesList(items) {
+    return items.map((entry) => entry.username ? `@${entry.username}` : entry.uid).join(', ');
+}
+
+function printGroupResult(result) {
+    const names = namesList(result.updated);
+    const suffix = names ? `: ${names}` : '';
+    console.log(`${result.enabled ? 'subscribed' : 'unsubscribed'} ${plural(result.count, 'bot')} ${result.enabled ? 'to' : 'from'} ${result.group} group${suffix}`);
+}
+
+function printBehaviorResult(result) {
+    const names = namesList(result.updated);
+    const suffix = names ? `: ${names}` : '';
+    console.log(`${result.enabled ? 'subscribed' : 'unsubscribed'} ${plural(result.count, 'bot')} ${result.enabled ? 'to' : 'from'} ${result.behavior} behavior${suffix}`);
+}
+
+function printRestartResult(result) {
+    const names = namesList(result.restarted);
+    const suffix = names ? `: ${names}` : '';
+    console.log(`requested restart for ${plural(result.count, 'bot')}${suffix}`);
 }
 
 async function waitForAction(actionRef, timeoutMs) {
@@ -939,6 +1085,43 @@ async function main() {
 
         const result = await killBots(arg1);
         printKillResult(result);
+        return;
+    }
+
+    if (cmd === 'group') {
+        const options = parseGroupArgs(cliArgs().slice(1));
+        const result = await setBotGroup(options.target, options.group, options.enabled);
+        printGroupResult(result);
+        return;
+    }
+
+    if (cmd === 'behavior' || cmd === 'behaviour') {
+        const options = parseBehaviorArgs(cliArgs().slice(1));
+        const result = await setBotBehavior(options.target, options.behavior, options.enabled);
+        printBehaviorResult(result);
+        return;
+    }
+
+    if (cmd === 'sub' || cmd === 'unsub') {
+        const options = parseSubArgs(cliArgs().slice(1), cmd === 'sub');
+        const result = options.kind === 'group'
+            ? await setBotGroup(options.target, options.name, options.enabled)
+            : await setBotBehavior(options.target, options.name, options.enabled);
+        if (options.kind === 'group') {
+            printGroupResult(result);
+        } else {
+            printBehaviorResult(result);
+        }
+        return;
+    }
+
+    if (cmd === 'restart') {
+        if (!arg1) {
+            usage();
+        }
+
+        const result = await restartBots(arg1);
+        printRestartResult(result);
         return;
     }
 
