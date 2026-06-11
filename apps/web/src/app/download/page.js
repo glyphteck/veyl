@@ -3,6 +3,10 @@ import { walletLogoSrc } from '@/lib/brand';
 
 export const metadata = {
     title: 'Download veyl',
+    description: 'Download Veyl, the private Bitcoin wallet and encrypted chat app from Glyphteck Corp.',
+    alternates: {
+        canonical: '/download',
+    },
 };
 
 export default function DownloadPage() {

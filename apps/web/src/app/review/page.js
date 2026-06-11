@@ -3,6 +3,10 @@ import { links } from '@veyl/shared/links';
 export const metadata = {
     title: 'veyl App Review',
     description: 'veyl review information for Apple App Review.',
+    robots: {
+        index: false,
+        follow: false,
+    },
 };
 
 const features = [

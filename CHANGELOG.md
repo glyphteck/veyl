@@ -2,6 +2,10 @@
 
 Repo-level changes are listed newest first. Keep entries short and concrete. Broad pushes get grouped bullets, while narrow fixes can use one concise bugfix or cleanup bullet that still names the actual change.
 
+## 0.14.18 - 2026-06-11
+
+- Added public Veyl and Glyphteck search metadata, crawler-visible join content, robots files, and sitemaps for app discovery.
+
 ## 0.14.17 - 2026-06-11
 
 - Aligned invite preview support copy with the `/join` slogan and simplified redundant product naming around slogan and variant helpers.

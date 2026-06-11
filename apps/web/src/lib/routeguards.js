@@ -118,7 +118,7 @@ export function GuestGate({ children }) {
         }
     }, [ready, user]);
 
-    if (!ready || user) return <Loading />;
+    if (ready && user) return <Loading />;
     return children;
 }
 

@@ -14,9 +14,26 @@ import { Graph } from './graph';
 
 export const metadata = {
     title: {
-        absolute: 'veyl',
+        absolute: 'veyl by Glyphteck',
     },
-    description: 'veyl is private communication and fast, secure Bitcoin payments in one app.',
+    description: 'Veyl is a passkey-first Bitcoin wallet and end-to-end encrypted chat app from Glyphteck Corp.',
+    alternates: {
+        canonical: '/join',
+    },
+    openGraph: {
+        title: 'veyl by Glyphteck',
+        description: 'A private Bitcoin wallet and encrypted chat app from Glyphteck Corp.',
+        url: '/join',
+        siteName: 'veyl',
+        images: [{ url: walletLogoSrc, width: 512, height: 512, alt: 'veyl wallet' }],
+        type: 'website',
+    },
+    twitter: {
+        card: 'summary',
+        title: 'veyl by Glyphteck',
+        description: 'A private Bitcoin wallet and encrypted chat app from Glyphteck Corp.',
+        images: [walletLogoSrc],
+    },
 };
 
 const points = [

@@ -83,7 +83,7 @@ export function proxy(request) {
 
     const isMobile = ['mobile', 'tablet'].includes(userAgent(request).device.type);
 
-    if (pathname === '/join') {
+    if (pathname === '/join' || pathname === '/legal') {
         return secureNext(request);
     }
 

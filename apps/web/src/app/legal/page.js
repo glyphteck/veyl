@@ -3,6 +3,9 @@ import { COMPANY_NAME, LEGAL_EFFECTIVE_DATE, LEGAL_NOTICES, LEGAL_SECTION_ORDER,
 export const metadata = {
     title: 'veyl Legal',
     description: 'Privacy, terms, safety, and support information for veyl.',
+    alternates: {
+        canonical: '/legal',
+    },
 };
 
 function TextBlock({ lines }) {
