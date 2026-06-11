@@ -4,6 +4,7 @@ import { headers } from 'next/headers';
 import { userAgent } from 'next/server';
 import { ArrowRight, HatGlasses, KeyRound, Lock, MessageCircle, Smartphone, Wallet } from 'lucide-react';
 import { btclogo, gtlogo, usdblogo } from '@veyl/shared/logos';
+import { slogan } from '@veyl/shared/product';
 import { Button } from '@/components/button';
 import { Card } from '@/components/card';
 import { walletLogoSrc } from '@/lib/brand';
@@ -198,7 +199,7 @@ export default async function JoinPage() {
                 <div className="relative z-10 flex w-full max-w-3xl flex-col items-center pt-[14vh] md:pt-[16vh]">
                     <Image src={walletLogoSrc} alt="" width={160} height={160} className="pointer-events-none mb-7 size-32 select-none md:size-40" loading="eager" unoptimized />
                     <h1 className="text-6xl font-black leading-none md:text-8xl">veyl</h1>
-                    <p className="mt-5 max-w-2xl text-2xl font-black leading-tight">own your money. chat privately.</p>
+                    <p className="mt-5 max-w-2xl text-2xl font-black leading-tight">{slogan}</p>
 
                     <Button asChild className="button-fill shrinker mt-8 px-5 py-3 text-base md:px-6 md:text-lg">
                         <Link href={cta.href}>

@@ -60,7 +60,7 @@ Preferred headlines live in `shared/invite.js`:
 
 Support copy:
 
-> Private chat. Bitcoin payments.
+> own your money. chat privately.
 
 Short hook where space allows:
 

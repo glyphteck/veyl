@@ -3,7 +3,7 @@ import Constants from 'expo-constants';
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import { randomBytes, toHex } from '@veyl/shared/crypto/core';
-import { normalizeVeylVariant } from '@veyl/shared/variant';
+import { normalizeVariant } from '@veyl/shared/variant';
 import { cloud } from '@/lib/cloud';
 
 const DID_KEY = 'push.did';
@@ -54,7 +54,7 @@ export async function getDid() {
 }
 
 function getPushMeta() {
-    const appVariant = normalizeVeylVariant(Constants?.expoConfig?.extra?.variant, 'dev');
+    const appVariant = normalizeVariant(Constants?.expoConfig?.extra?.variant, 'dev');
     return pushVariants[appVariant] || pushVariants.dev;
 }
 

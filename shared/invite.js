@@ -1,5 +1,6 @@
 import { origins } from './links.js';
 import { getRouteParam } from './navigation/params.js';
+import { slogan } from './product.js';
 import { qr, readQr } from './qr.js';
 import { isUsername, normalizeUsername } from './username.js';
 import { cleanText, lowerText } from './utils/text.js';
@@ -279,7 +280,7 @@ function amountLabel(data) {
 }
 
 export const inviteText = Object.freeze({
-    body: 'Private chat. Bitcoin payments.',
+    body: slogan,
     hook: 'Open veyl.',
     action: Object.freeze({
         join: 'Join veyl',
