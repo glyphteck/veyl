@@ -2,6 +2,14 @@
 
 Repo-level changes are listed newest first. Keep entries short and concrete. Broad pushes get grouped bullets, while narrow fixes can use one concise bugfix or cleanup bullet that still names the actual change.
 
+## 0.14.19 - 2026-06-12
+
+- Retuned iOS glass colors with explicit background, soft background, and foreground tint tokens, and applied the soft glass input treatment through the shared search and field primitives.
+- Reworked iOS chat and settings search headers into floating search controls, adjusted wallet header action spacing, and kept the camera shutter on the softer glass background tint.
+- Hardened chat preview and cache behavior so self read receipts do not replace the user's own message preview and transient listener failures retain cached chat rows while reconnecting.
+- Filtered wallet history and cached transfers to product-visible transfer types, while tightening transaction-list rendering around balance/header motion.
+- Stabilized iOS home pager gesture state and recorded the remaining app-wide glass styling follow-up for inputs, disabled buttons, and destructive button feedback.
+
 ## 0.14.18 - 2026-06-11
 
 - Added public Veyl and Glyphteck search metadata, crawler-visible join content, robots files, and sitemaps for app discovery.

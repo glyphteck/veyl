@@ -1,7 +1,8 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Animated, FlatList, Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useNavigation, useRouter } from 'expo-router';
+import { useIsFocused } from 'expo-router/react-navigation';
 import * as Haptics from 'expo-haptics';
 import { Search, Trash2 } from 'lucide-react-native';
 import ReAnimated, { Easing, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
@@ -15,7 +16,6 @@ import { usePeer } from '@/providers/peerprovider';
 import { useSearch } from '@/lib/search/usesearch';
 import Avatar from '@/components/avatar';
 import EmptyState from '@/components/emptystate';
-import GlassHeader from '@/components/glass/glassheader';
 import Icon from '@/components/icon';
 import { getMainMenuHeight } from '@/components/mainmenu';
 import SearchInput from '@/components/search';
@@ -31,7 +31,8 @@ import { lowerText } from '@veyl/shared/utils/text';
 import { cleanUsername } from '@veyl/shared/username';
 
 const SEARCH_BAR_HEIGHT = 42;
-const HEADER_BOTTOM_PADDING = 8;
+const SEARCH_TOP_GAP = 8;
+const SEARCH_LIST_GAP = 2;
 const CHAT_ROW_HEIGHT = 71;
 const DELETE_DRAG = 24;
 const DELETE_HINT_W = 60;
@@ -369,6 +370,8 @@ const ChatListChatRow = memo(function ChatListChatRow({ animationKey = '', chat,
 
 export default function ChatList() {
     const { theme } = useTheme();
+    const focused = useIsFocused();
+    const navigation = useNavigation();
     const router = useRouter();
     const insets = useSafeAreaInsets();
     const { chats, isChatDataReady, hasMoreChats, loadingMoreChats, loadMoreChats, deleteChat, restoreDeletedChat } = useChat();
@@ -383,7 +386,8 @@ export default function ChatList() {
     const rowMoveKeyRef = useRef(0);
     const [search, setSearch] = useState('');
     const [rowMove, setRowMove] = useState(null);
-    const headerHeight = insets.top + SEARCH_BAR_HEIGHT + HEADER_BOTTOM_PADDING;
+    const searchTop = insets.top + SEARCH_TOP_GAP;
+    const listTopSpace = searchTop + SEARCH_BAR_HEIGHT + SEARCH_LIST_GAP;
     const mainMenuHeight = getMainMenuHeight(insets.bottom);
 
     const chatQuery = useMemo(() => lowerText(search), [search]);
@@ -604,6 +608,19 @@ export default function ChatList() {
         clearSearch();
     }, [clearSearch]);
 
+    const focusSearchInput = useCallback(() => {
+        searchInputRef.current?.focus?.();
+    }, []);
+
+    useEffect(() => {
+        const unsubscribe = navigation.addListener('tabPress', () => {
+            if (!focused) return;
+            focusSearchInput();
+        });
+
+        return unsubscribe;
+    }, [focusSearchInput, focused, navigation]);
+
     const handleDeleteChat = useCallback(
         (chatId) => {
             if (!chatId) return;
@@ -686,10 +703,10 @@ export default function ChatList() {
     const getItemLayout = useCallback(
         (_data, index) => ({
             length: CHAT_ROW_HEIGHT,
-            offset: headerHeight + CHAT_ROW_HEIGHT * index,
+            offset: listTopSpace + CHAT_ROW_HEIGHT * index,
             index,
         }),
-        [headerHeight]
+        [listTopSpace]
     );
 
     if (chatBanned) {
@@ -713,7 +730,7 @@ export default function ChatList() {
                 alwaysBounceVertical
                 keyboardDismissMode="interactive"
                 keyboardShouldPersistTaps="handled"
-                contentContainerStyle={{ flexGrow: 1, paddingTop: headerHeight, paddingBottom: mainMenuHeight }}
+                contentContainerStyle={{ flexGrow: 1, paddingTop: listTopSpace, paddingBottom: mainMenuHeight }}
                 renderItem={renderItem}
                 extraData={listExtraData}
                 getItemLayout={getItemLayout}
@@ -746,21 +763,27 @@ export default function ChatList() {
                     return <EmptyState title="no chats yet" detail="Use the search bar above to find people and start chatting." />;
                 }}
             />
-            <GlassHeader>
+            <View
+                style={{
+                    paddingHorizontal: 16,
+                    position: 'absolute',
+                    top: searchTop,
+                    left: 0,
+                    right: 0,
+                    zIndex: 2,
+                }}
+            >
                 <SearchInput
                     ref={searchInputRef}
                     value={search}
                     onChangeText={handleSearchChange}
                     onClear={handleClearSearch}
                     searching={searching}
-                    glassEffectStyle="regular"
-                    tintColor={theme.background}
                     style={{
                         zIndex: 1,
-                        height: SEARCH_BAR_HEIGHT,
                     }}
                 />
-            </GlassHeader>
+            </View>
         </View>
     );
 }

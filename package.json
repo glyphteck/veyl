@@ -1,6 +1,6 @@
 {
     "name": "veyl",
-    "version": "0.14.18",
+    "version": "0.14.19",
     "private": true,
     "license": "Apache-2.0",
     "workspaces": {

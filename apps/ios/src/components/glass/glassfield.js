@@ -7,7 +7,7 @@ export default function GlassField({ children, disabled = false, tintColor, styl
     return (
         <GlassView
             glassEffectStyle="regular"
-            tintColor={tintColor ?? theme.background}
+            tintColor={tintColor ?? theme.glassBackgroundSoft}
             style={[
                 {
                     flexDirection: 'row',

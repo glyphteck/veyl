@@ -5,7 +5,7 @@ import { CircleDollarSign, FileText, KeyRound, Lock, LogOut, MessageCircle, QrCo
 import { useIsFocused, useNavigation, useRouter } from 'expo-router';
 
 import AvatarPicker from '@/components/avatarpicker';
-import GlassHeader from '@/components/glass/glassheader';
+import GlassIcon from '@/components/glass/glassicon';
 import GlassView from '@/components/glass/glassview';
 import Icon from '@/components/icon';
 import { getMainMenuHeight } from '@/components/mainmenu';
@@ -33,7 +33,9 @@ const MONEY_LABELS = {
     usd: 'US$',
 };
 const AUTOLOCK_VALUES = [1, 5, 10, 15, 30, 60, 'never'];
-const SEARCH_BAR_HEIGHT = 42;
+const SEARCH_ROW_HEIGHT = 56;
+const SEARCH_TOP_GAP = 8;
+const SEARCH_LIST_GAP = 2;
 
 function cloneSettings(settings) {
     const next = {
@@ -203,40 +205,42 @@ function ClearCacheRow({ localCache, disabled = false, focused = true }) {
     );
 }
 
-function SettingsHeader({ value, onChangeText, onClear, onLayout, disabled = false }) {
+function SettingsHeader({ disabled = false, searchTop, value, onChangeText, onClear }) {
     const { theme } = useTheme();
     const router = useRouter();
     const { lockRoute } = useRouteLock();
 
-    const qrFeedback = useTap({
-        disabled,
-        onPress: () => {
-            if (!lockRoute()) return;
-            router.push('/userscan');
-        },
-    });
+    const openScan = useCallback(() => {
+        if (!lockRoute()) return;
+        router.push('/userscan');
+    }, [lockRoute, router]);
 
     return (
-        <GlassHeader onLayout={onLayout} contentStyle={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+        <View
+            style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 10,
+                paddingHorizontal: 16,
+                position: 'absolute',
+                top: searchTop,
+                left: 0,
+                right: 0,
+                zIndex: 2,
+            }}
+        >
             <SearchInput
                 value={value}
                 onChangeText={onChangeText}
                 onClear={onClear}
                 placeholder="search settings"
-                glassEffectStyle="regular"
-                tintColor={theme.background}
                 style={{
                     flex: 1,
                     zIndex: 1,
-                    height: SEARCH_BAR_HEIGHT,
                 }}
             />
-            <Pressable {...qrFeedback.props} hitSlop={10} style={{ minHeight: 44, justifyContent: 'center' }} disabled={disabled}>
-                <Animated.View style={{ opacity: disabled ? 0.45 : 1, transform: [{ scale: qrFeedback.scale }] }}>
-                    <Icon icon={QrCode} size={28} color={theme.foreground} />
-                </Animated.View>
-            </Pressable>
-        </GlassHeader>
+            <GlassIcon icon={QrCode} onPress={openScan} disabled={disabled} size={56} iconSize={26} />
+        </View>
     );
 }
 
@@ -328,10 +332,11 @@ export default function SettingsScreen() {
     const insets = useSafeAreaInsets();
     const user = useUser();
     const { vault, localCache } = useVault();
-    const [headerHeight, setHeaderHeight] = useState(0);
     const [settingSearch, setSettingSearch] = useState('');
     const [isLoggingOut, setIsLoggingOut] = useState(false);
     const mainMenuHeight = getMainMenuHeight(insets.bottom);
+    const searchTop = insets.top + SEARCH_TOP_GAP;
+    const listTopSpace = searchTop + SEARCH_ROW_HEIGHT + SEARCH_LIST_GAP;
 
     const serverSettings = useMemo(() => cloneSettings(user.settings), [user.settings]);
     const [settings, setSettings] = useState(serverSettings);
@@ -582,7 +587,7 @@ export default function SettingsScreen() {
         <View style={{ flex: 1, overflow: 'hidden' }}>
             <ScrollView
                 contentContainerStyle={{
-                    paddingTop: headerHeight,
+                    paddingTop: listTopSpace,
                     paddingBottom: mainMenuHeight,
                 }}
                 style={{ flex: 1 }}
@@ -712,7 +717,7 @@ export default function SettingsScreen() {
                 ) : null}
             </ScrollView>
 
-            <SettingsHeader value={settingSearch} onChangeText={setSettingSearch} onClear={() => setSettingSearch('')} onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)} disabled={isBusy} />
+            <SettingsHeader value={settingSearch} onChangeText={setSettingSearch} onClear={() => setSettingSearch('')} searchTop={searchTop} disabled={isBusy} />
         </View>
     );
 }

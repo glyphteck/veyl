@@ -36,6 +36,8 @@ flowchart TD
 
 Owner entry `ts` plus `entryId` is the plaintext owner-visible list marker. It is not canonical message order; clients repair stale previews after decrypting pings/actions.
 
+The vaulted local cache may render owner-entry snapshots while the live chat-list listener is offline or reconnecting. Transient listener failures must not clear the rendered chat list; auth/vault loss, chat bans, explicit local deletes, and confirmed inactive parent chat markers are the paths that drop rows. When the listener reconnects, the live owner-entry snapshot and parent delete-marker checks reconcile stale cached rows.
+
 ## Parent Chat Docs
 
 Parent `chats/{chatId}` docs are not app state. Missing parent docs are normal active chats. A parent doc exists only as a server kill marker during and after whole-chat delete.

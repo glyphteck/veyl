@@ -33,7 +33,8 @@ export default function GlassButton({
         transform: [{ scale: scale.value }],
     }));
     const radius = Math.round(height / 2);
-    const resolvedTintColor = tintColor ?? (accent ? alpha(theme.foreground, disabled ? 28 : 100) : theme.background);
+    const accentTintColor = disabled ? alpha(theme.glassForeground, 28) : theme.glassForeground;
+    const resolvedTintColor = tintColor ?? (accent ? accentTintColor : theme.glassBackground);
     const resolvedColor = color ?? (disabled ? theme.muted : accent ? theme.background : theme.foreground);
     const resolvedGlassEffectStyle = resolveGlassEffectStyle(glassEffectStyle);
 

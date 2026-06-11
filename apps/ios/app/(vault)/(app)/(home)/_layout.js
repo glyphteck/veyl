@@ -1,6 +1,7 @@
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useMemo, useRef } from 'react';
-import { useIsFocused, usePathname } from 'expo-router';
+import { usePathname } from 'expo-router';
+import { useIsFocused } from 'expo-router/react-navigation';
 import { readResumeRoute, writeResumeTarget } from '@veyl/shared/cache/localdata';
 import { useTheme } from '@/providers/themeprovider';
 import { useVault } from '@/providers/vaultprovider';

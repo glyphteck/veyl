@@ -41,7 +41,7 @@ function routeProgress(position, index) {
     });
 }
 
-function MenuItem({ progress, onPress, onPressIn, disabled = false, children }) {
+function MenuItem({ progress, onPress, onPressIn, disabled = false, pressScale = 1, children }) {
     const liveScale = useMemo(
         () =>
             progress.interpolate({
@@ -51,7 +51,7 @@ function MenuItem({ progress, onPress, onPressIn, disabled = false, children }) 
             }),
         [progress]
     );
-    const pressFeedback = useTap({ onPress, disabled, hapticIn: false, hapticOut: 'soft', scale: 1 });
+    const pressFeedback = useTap({ onPress, disabled, hapticIn: false, hapticOut: 'soft', scale: pressScale });
     const pressProps = {
         ...pressFeedback.props,
         onPressIn: (event) => {
@@ -62,7 +62,7 @@ function MenuItem({ progress, onPress, onPressIn, disabled = false, children }) 
 
     return (
         <Pressable {...pressProps} style={ITEM_STYLE} disabled={disabled}>
-            <Animated.View style={{ opacity: disabled ? 0.45 : 1, transform: [{ scale: liveScale }] }}>{children}</Animated.View>
+            <Animated.View style={{ opacity: disabled ? 0.45 : 1, transform: [{ scale: liveScale }, { scale: pressFeedback.scale }] }}>{children}</Animated.View>
         </Pressable>
     );
 }
@@ -76,6 +76,7 @@ export default function MainMenu({ state, navigation, position, onWarmRoute }) {
     const tabProgress = useMemo(() => state.routes.map((_, index) => routeProgress(position, index)), [state.routes, position]);
     const hasUnseenChats = !!chats?.some((chat) => chat?.unseen);
     const showWalletDot = false;
+    const chatActive = state.routes[state.index]?.name === 'chat';
 
     const warmRoute = (name) => {
         const index = routeIndexes[name];
@@ -103,7 +104,7 @@ export default function MainMenu({ state, navigation, position, onWarmRoute }) {
                     paddingTop: TOP_PADDING,
                 }}
             >
-                <MenuItem progress={tabProgress[routeIndexes.chat]} onPress={() => onSelect('chat')} onPressIn={() => warmRoute('chat')} disabled={chatBanned}>
+                <MenuItem progress={tabProgress[routeIndexes.chat]} onPress={() => onSelect('chat')} onPressIn={() => warmRoute('chat')} disabled={chatBanned} pressScale={chatActive ? 0.86 : 1}>
                     <DotIcon iconNode={DOT_ICONS.messageCircle} show={!chatBanned && hasUnseenChats} color={chatBanned ? theme.muted : theme.foreground} size={ICON_SIZE} />
                 </MenuItem>
                 <MenuItem progress={tabProgress[routeIndexes.camera]} onPress={() => onSelect('camera')} onPressIn={() => warmRoute('camera')}>

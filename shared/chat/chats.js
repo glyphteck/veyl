@@ -1,7 +1,7 @@
 'use client';
 
-import { canRenderChatPreview, canShowMsg, chatPreviewWantsAttention } from './messages.js';
-import { collectMessageKeys, messageHasKey } from './messagekeys.js';
+import { canRenderChatPreview, canShowMsg, chatPreviewHasKey, chatPreviewWantsAttention } from './messages.js';
+import { collectMessageKeys } from './messagekeys.js';
 import { ttlMillis } from './ttl.js';
 import { timestampMs } from '../utils/time.js';
 import { uniqueValues } from '../utils/array.js';
@@ -248,7 +248,7 @@ function samePreviewMsg(a, b) {
 }
 
 function cleanPreviewReplacement(replacement, keys) {
-    return replacement && canRenderChatPreview(replacement) && !messageHasKey(replacement, keys) ? replacement : null;
+    return replacement && canRenderChatPreview(replacement) && !chatPreviewHasKey(replacement, keys) ? replacement : null;
 }
 
 function shouldClearPreviewForDrop(chat, override) {
@@ -319,7 +319,7 @@ export function applyChatPreviewOverrides(chats, overridesByChat, chatPK, readCa
         }
 
         const preview = cleanPreviewReplacement(override.preview, override.keys);
-        if (chat?.preview && !messageHasKey(chat.preview, override.keys)) {
+        if (chat?.preview && !chatPreviewHasKey(chat.preview, override.keys)) {
             if (shouldClearPreviewForDrop(chat, override)) {
                 const unseen = previewUnseen(chat, preview, chatPK, readCache);
                 if (samePreviewMsg(chat.preview, preview) && chat.unseen === unseen) {
@@ -411,7 +411,7 @@ export function clearChatPreviewsByKeys(chats, chatId, keys) {
         if (chat?.id !== chatId || !chat.preview) {
             return chat;
         }
-        if (!messageHasKey(chat.preview, nextKeys)) {
+        if (!chatPreviewHasKey(chat.preview, nextKeys)) {
             return chat;
         }
         changed = true;
@@ -437,7 +437,7 @@ export function clearChatPreviewsByHiddenKeys(chats, hiddenKeysByChat) {
     let changed = false;
     const next = (chats || []).map((chat) => {
         const keys = hiddenKeysByChat.get(chat?.id);
-        if (!chat?.preview || !messageHasKey(chat.preview, keys)) {
+        if (!chat?.preview || !chatPreviewHasKey(chat.preview, keys)) {
             return chat;
         }
         changed = true;
@@ -543,7 +543,7 @@ export function pruneLocalChats(localByChat, serverChats) {
             if (!message || message.pending || message.failed) {
                 return true;
             }
-            if (messageHasKey(server?.preview, collectMessageKeys(message))) {
+            if (chatPreviewHasKey(server?.preview, collectMessageKeys(message))) {
                 changed = true;
                 return false;
             }

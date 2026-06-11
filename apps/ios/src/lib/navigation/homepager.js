@@ -24,6 +24,7 @@ function HomePagerNavigator({ initialRouteName, children, screenOptions, tabBar,
     const routesRef = useRef(state.routes);
     const currentPageRef = useRef(state.index);
     const busyRef = useRef(false);
+    const swipeEnabledRef = useRef(swipeEnabled);
     const livePageRef = useRef(state.index);
     const expectedPageRef = useRef(state.index);
     const warmRouteRef = useRef(null);
@@ -35,6 +36,19 @@ function HomePagerNavigator({ initialRouteName, children, screenOptions, tabBar,
     const markBusy = useCallback((busy) => {
         busyRef.current = busy;
     }, []);
+
+    useEffect(() => {
+        const enabled = !!swipeEnabled;
+        swipeEnabledRef.current = enabled;
+        pagerRef.current?.setScrollEnabled?.(enabled);
+        if (enabled) return;
+
+        markBusy(false);
+        pageOffset.setValue(0);
+        pagePosition.setValue(currentPageRef.current);
+        livePageRef.current = currentPageRef.current;
+        expectedPageRef.current = currentPageRef.current;
+    }, [markBusy, pageOffset, pagePosition, swipeEnabled]);
 
     const warmRoute = useCallback(
         (index) => {
@@ -133,6 +147,7 @@ function HomePagerNavigator({ initialRouteName, children, screenOptions, tabBar,
     const onPageSelected = useCallback(
         (event) => {
             const index = event.nativeEvent.position;
+            if (!swipeEnabledRef.current) return;
             if (!busyRef.current) return;
             if (index === currentPageRef.current) return;
             if (index !== expectedPageRef.current && Math.abs(index - livePageRef.current) > SELECTION_POSITION_TOLERANCE) return;

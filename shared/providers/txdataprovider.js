@@ -3,7 +3,7 @@
 import { createContext, useContext, useEffect, useMemo, useRef } from 'react';
 import { DAY_MS, HOUR_MS } from '../config.js';
 import { dayHourKey, dayKey, hourKey } from '../utils/time.js';
-import { isCompletedTransfer, isVisibleTransfer, transferBelongsToWallet, txCreatedMs } from '../wallet/tx.js';
+import { isCompletedTransfer, isFundingTransfer, isVisibleTransfer, isWithdrawalTransfer, transferBelongsToWallet, txCreatedMs } from '../wallet/tx.js';
 import { markDiag } from '../utils/diagnostics.js';
 
 const byRecentTx = (a, b) => {
@@ -31,10 +31,9 @@ function coveredUnitsSince(oldestLoadedMs, unitMs, nowMs = Date.now()) {
 }
 
 const enrichTx = (tx) => {
-    const isStaticDeposit = tx.type === 'UTXO_SWAP' && tx.transferDirection === 'INCOMING';
     const incoming = tx.transferDirection === 'INCOMING';
-    const isWithdrawal = tx.type === 'COOPERATIVE_EXIT';
-    const isFunding = isStaticDeposit || tx.senderIdentityPublicKey === tx.receiverIdentityPublicKey || tx.type === 'BITCOIN_DEPOSIT';
+    const isWithdrawal = isWithdrawalTransfer(tx);
+    const isFunding = isFundingTransfer(tx);
     const peerPK = incoming ? tx.senderIdentityPublicKey : tx.receiverIdentityPublicKey;
     return {
         ...tx,

@@ -26,6 +26,7 @@ const SearchInput = forwardRef(function SearchInput(
     ref
 ) {
     const { theme, isDark } = useTheme();
+    const resolvedTintColor = tintColor ?? theme.glassBackgroundSoft;
     const inputRef = useRef(null);
     const [focused, setFocused] = useState(false);
     const focus = useSharedValue(0);
@@ -65,7 +66,7 @@ const SearchInput = forwardRef(function SearchInput(
     return (
         <GlassView
             glassEffectStyle={glassEffectStyle}
-            tintColor={tintColor}
+            tintColor={resolvedTintColor}
             style={[
                 {
                     flexDirection: 'row',

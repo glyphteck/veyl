@@ -57,7 +57,7 @@ Rounding is generous and consistent:
 - Circular avatars/status dots/buttons: `99` or `999`.
 - Route action icons: `16` when square, full radius when circular.
 
-Color should come from `useTheme()` and `src/lib/colors.js`: `background`, `glassTint`, `foreground`, `muted`, `border`, `destructive`, `inflow`, `outflow`, `bitcoin`, and `active`. `background` is the real screen fill, while `glassTint` is the material tint used by `GlassView` so light-mode screens can stay full white without making native glass disappear. Use `alpha()` when a translucent variant is needed. Avoid hardcoded colors except for camera overlays or other isolated native surfaces.
+Color should come from `useTheme()` and `src/lib/colors.js`: `background`, `glassBackground`, `glassBackgroundSoft`, `foreground`, `glassForeground`, `muted`, `border`, `destructive`, `inflow`, `outflow`, `bitcoin`, and `active`. `background` and `foreground` are solid fill and text colors, while `glassBackground`, `glassBackgroundSoft`, and `glassForeground` are material tints for `GlassView` surfaces. Use `glassBackgroundSoft` for input glass and camera shutter glass where the normal background tint is too opaque. Use `alpha()` only when a custom translucent variant is needed. Avoid hardcoded colors except for camera overlays or other isolated native surfaces.
 
 Headers and footers are usually absolute glass overlays. Account for safe areas with `useSafeAreaInsets()`. Keep scroll content padded under overlays instead of placing content behind them.
 

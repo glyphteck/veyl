@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CHAT_LIST_CACHE_WRITE_DELAY_MS, CHAT_LIST_LISTENER_RETRY_MS, CHAT_LIST_LIVE_COUNT, CHAT_LIST_PAGE_SIZE } from '../config.js';
 import { readCachedChats, writeCachedChats } from '../cache/localdata.js';
 import {
+    chatPreviewHasKey,
     getLatestOwnReadReceiptTarget,
     getLatestReadReceiptTarget,
 } from './messages.js';
@@ -24,7 +25,7 @@ import {
     setLocalChats,
     trimExpiredChatPreviews,
 } from './chats.js';
-import { collectMessageKeys, messageHasKey } from './messagekeys.js';
+import { collectMessageKeys } from './messagekeys.js';
 import { filterActiveUserChats, getChat, listenToChats, loadMoreChats as loadMoreChatEntries, restoreUserChats } from './list.js';
 import { setChatPreview, setChatRead } from './messages/write.js';
 import { markChatsRead } from './read.js';
@@ -60,6 +61,16 @@ function hydrateReadCache(chats, readCache) {
         }
         readCache.set(chatItem.id, readMs);
     }
+}
+
+const CHAT_LIST_RESET_ERROR_CODES = new Set(['permission-denied', 'unauthenticated']);
+
+function listenErrorReason(error) {
+    return error?.code || error?.message || String(error || '');
+}
+
+function shouldResetChatListAfterListenError(error) {
+    return CHAT_LIST_RESET_ERROR_CODES.has(error?.code);
 }
 
 export function useChatList({
@@ -217,7 +228,7 @@ export function useChatList({
         (chatId, keys, replacement = null) => {
             const currentChat = lastServerChatsRef.current.find((chatItem) => chatItem?.id === chatId) || chatsRef.current.find((chatItem) => chatItem?.id === chatId);
             const nextKeys = keys instanceof Set ? keys : collectMessageKeys(keys);
-            const affectsPreview = !!currentChat?.preview && messageHasKey(currentChat.preview, nextKeys);
+            const affectsPreview = !!currentChat?.preview && chatPreviewHasKey(currentChat.preview, nextKeys);
             if (!affectsPreview && replacement == null) {
                 return;
             }
@@ -360,6 +371,20 @@ export function useChatList({
         [resetChatList, resetExternalChatState]
     );
 
+    const retainChatListAfterListenError = useCallback(
+        (error) => {
+            const retainedCount = chatsRef.current.length;
+            markDiag(diag, 'chat.provider.listen.disconnected', {
+                reason: listenErrorReason(error),
+                retainedCount,
+            });
+            if (retainedCount) {
+                setIsChatDataReady(true);
+            }
+        },
+        [chatsRef, diag]
+    );
+
     const applyBatchReadReceipt = useCallback(
         (chatId, messages) => {
             if (!chatId || !chatPK || !Array.isArray(messages) || !messages.length) {
@@ -466,9 +491,22 @@ export function useChatList({
                         });
                     })
                     .catch((error) => {
-                        if (!cancelled) {
-                            markError(diag, 'chat.provider.cache', hydrateStartedAt, error, { count: cachedChats.length });
+                        if (cancelled) {
+                            return;
                         }
+                        markError(diag, 'chat.provider.cache', hydrateStartedAt, error, { count: cachedChats.length });
+                        if (serverChatsReadyRef.current || shouldResetChatListAfterListenError(error)) {
+                            return;
+                        }
+                        const shownCachedChats = commitServerChats(cachedChats, { writeCache: false, warm: false });
+                        setIsChatDataReady(true);
+                        markDone(diag, 'chat.provider.cache', hydrateStartedAt, {
+                            count: cachedChats.length,
+                            shownCount: shownCachedChats.length,
+                            hasSavedChatSnapshot,
+                            ready: true,
+                            source: 'unverified-cache',
+                        });
                     });
             } else {
                 markDone(diag, 'chat.provider.cache', hydrateStartedAt, {
@@ -582,7 +620,11 @@ export function useChatList({
             (error) => {
                 markError(diag, 'chat.provider.listen', listenStartedAt, error);
                 console.warn('Chat listener error', error);
-                resetAllChatState();
+                if (shouldResetChatListAfterListenError(error)) {
+                    resetAllChatState();
+                } else {
+                    retainChatListAfterListenError(error);
+                }
                 retryListen(error);
             },
             { limitCount: CHAT_LIST_LIVE_COUNT }
@@ -613,6 +655,7 @@ export function useChatList({
         listenRetrySeq,
         pendingDeleteIdsRef,
         readCacheRef,
+        retainChatListAfterListenError,
         resetAllChatState,
         selectedChatIdRef,
         serverChatIdsRef,

@@ -43,7 +43,7 @@ const INITIAL_ROUTE_STATE = {
 };
 
 function CameraContent({ cameraActive, pageOpen, warming }) {
-    const { theme, isDark } = useTheme();
+    const { theme } = useTheme();
     const { addPeer } = usePeer() || {};
     const { settings, username, chatPK, walletPK: ownWalletPK, chatBanned } = useUser();
     const { localCache } = useVault();
@@ -583,7 +583,6 @@ function CameraContent({ cameraActive, pageOpen, warming }) {
                     </RNAnimated.View>
                     <CameraShutter
                         disabled={taking}
-                        isDark={isDark}
                         lockGesture={lockGesture}
                         onLongPress={startVideoRecording}
                         onPress={handleShutterPress}

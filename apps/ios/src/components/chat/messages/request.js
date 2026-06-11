@@ -82,7 +82,7 @@ function PayButton({ blockExternalGestures, disabled = false, onPress }) {
         transform: [{ scale: scale.value }],
     }));
     const color = disabled ? theme.muted : theme.background;
-    const tintColor = alpha(theme.foreground, disabled ? 20 : 100);
+    const tintColor = disabled ? alpha(theme.glassForeground, 20) : theme.glassForeground;
     const inset = Math.max(0, (PAY_ICON_SIZE - PAY_ICON_SYMBOL_SIZE) / 2);
 
     return (

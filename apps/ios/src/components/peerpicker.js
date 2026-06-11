@@ -283,7 +283,6 @@ export default function PeerPicker({
                     onChangeText={onSearchChange}
                     onClear={onClearSearch}
                     searching={searching}
-                    glassEffectStyle="regular"
                     style={{
                         zIndex: 1,
                     }}

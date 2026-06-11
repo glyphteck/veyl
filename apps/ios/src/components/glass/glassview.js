@@ -5,8 +5,24 @@ import { useTheme } from '@/providers/themeprovider';
 import { useUser } from '@/providers/userprovider';
 
 function resolveTintColor(theme, tintColor) {
-    if (!tintColor || tintColor === theme.background) {
-        return theme.glassTint ?? theme.background;
+    if (!tintColor || tintColor === theme.background || tintColor === theme.glassBackground) {
+        return theme.glassBackground;
+    }
+
+    if (tintColor === theme.foreground || tintColor === theme.glassForeground) {
+        return theme.glassForeground;
+    }
+
+    return tintColor;
+}
+
+function resolveFillColor(theme, tintColor) {
+    if (!tintColor || tintColor === theme.background || tintColor === theme.glassBackground || tintColor === theme.glassBackgroundSoft) {
+        return theme.background;
+    }
+
+    if (tintColor === theme.foreground || tintColor === theme.glassForeground) {
+        return theme.foreground;
     }
 
     return tintColor;
@@ -14,7 +30,7 @@ function resolveTintColor(theme, tintColor) {
 
 function getBaseStyle(theme, tintColor, glassEffectStyle) {
     const glassStyle = typeof glassEffectStyle === 'string' ? glassEffectStyle : glassEffectStyle?.style;
-    const backgroundColor = resolveTintColor(theme, tintColor);
+    const backgroundColor = resolveFillColor(theme, tintColor);
 
     if (glassStyle === 'none') {
         return { backgroundColor: 'transparent' };
@@ -27,7 +43,7 @@ function getBaseStyle(theme, tintColor, glassEffectStyle) {
     return { backgroundColor };
 }
 
-export default function GlassView({ glassEffectStyle = 'regular', tintColor, style, children, ...props }) {
+export default function GlassView({ glassEffectStyle = 'clear', tintColor, style, children, ...props }) {
     const { theme } = useTheme();
     const { settings } = useUser();
     const glass = settings?.glass !== false;

@@ -2,11 +2,22 @@ export function alpha(color, percent) {
     return color.replace(/[\d.]+\)$/, `${percent / 100})`);
 }
 
+const GLASS_BACKGROUND_OPACITY = 75;
+const GLASS_BACKGROUND_SOFT_OPACITY = 25;
+const GLASS_FOREGROUND_OPACITY = 72;
+const lightBackground = 'rgba(254, 254, 254, 1)';
+const lightGlassBackground = 'rgba(252, 252, 252, 1)';
+const lightForeground = 'rgba(0, 0, 0, 1)';
+const darkBackground = 'rgba(0, 0, 0, 1)';
+const darkForeground = 'rgba(252, 252, 252, 1)';
+
 export const colors = {
     light: {
-        background: 'rgba(254, 254, 254, 1)',
-        glassTint: 'rgba(252, 252, 252, 1)',
-        foreground: 'rgba(0, 0, 0, 1)',
+        background: lightBackground,
+        glassBackground: alpha(lightGlassBackground, GLASS_BACKGROUND_OPACITY),
+        glassBackgroundSoft: alpha(lightBackground, GLASS_BACKGROUND_SOFT_OPACITY),
+        foreground: lightForeground,
+        glassForeground: alpha(lightForeground, GLASS_FOREGROUND_OPACITY),
         muted: 'rgba(128, 128, 128, 1)',
         destructive: 'rgba(185, 0, 8, 1)',
         alert: 'rgba(185, 0, 8, 1)',
@@ -18,9 +29,11 @@ export const colors = {
         shadow: 'rgba(206, 206, 206, 1)',
     },
     dark: {
-        background: 'rgba(0, 0, 0, 1)',
-        glassTint: 'rgba(0, 0, 0, 1)',
-        foreground: 'rgba(252, 252, 252, 1)',
+        background: darkBackground,
+        glassBackground: alpha(darkBackground, GLASS_BACKGROUND_OPACITY),
+        glassBackgroundSoft: alpha(darkBackground, GLASS_BACKGROUND_SOFT_OPACITY),
+        foreground: darkForeground,
+        glassForeground: alpha(darkForeground, GLASS_FOREGROUND_OPACITY),
         muted: 'rgba(113, 113, 113, 1)',
         destructive: 'rgba(202, 0, 49, 1)',
         alert: 'rgba(202, 0, 49, 1)',

@@ -27,7 +27,7 @@ flowchart TD
 
 Message docs carry only `{ head, body, ts, ttl }`. `head.cid` is an opaque client id used for ordering, retry, and action targeting. Sender identity, payload type, actor key, action op, action target, read state, reactions, retention mode, media path, media key, captions, filenames, and payment facts live inside the encrypted body.
 
-Visible delivery messages write the sender owner-entry preview and sealed recipient inbox ping. Read receipts, reactions, and hidden checkpoints are stream-only controls: they write only the encrypted message action doc plus the Firestore rules deletion-gate read. Loaded clients can still derive chat-list preview text such as "saw your message" or "liked your message" from those controls after the message stream is warmed or opened.
+Visible delivery messages write the sender owner-entry preview and sealed recipient inbox ping. Read receipts, reactions, and hidden checkpoints are stream-only controls: they write only the encrypted message action doc plus the Firestore rules deletion-gate read. Loaded clients can still derive peer-useful chat-list preview text such as "has seen your message" or "liked your message" from those controls after the message stream is warmed or opened, but a user's own read receipt does not replace the message they just read in their preview.
 
 Display creates get a normal 21-day `ttl`. Durable action docs use `ttl: null`. Firestore TTL is dumb server cleanup; it must not be shortened because a read receipt arrived.
 

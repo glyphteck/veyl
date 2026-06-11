@@ -224,7 +224,7 @@ export function DraftBar({ draft, peerDisplayName, onClear, onHidden }) {
         <PopScale show={!!draft} onHidden={hideDraft} enterDelayMs={COMPOSER_POP_MS}>
             <GlassView
                 glassEffectStyle="regular"
-                tintColor={theme.background}
+                tintColor={theme.glassBackgroundSoft}
                 style={{
                     flexDirection: 'row',
                     alignItems: 'center',
@@ -484,7 +484,7 @@ function ChatInput({ onLayout, onSend, onEditMessage, onSendImage, onSendAttachm
     return (
         <GlassView
             glassEffectStyle="regular"
-            tintColor={theme.background}
+            tintColor={theme.glassBackgroundSoft}
             onLayout={onLayout}
             style={{
                 flexDirection: 'row',

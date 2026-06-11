@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Animated, FlatList, Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useIsFocused, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { BanknoteArrowDown, BanknoteArrowUp, UserRoundPlus } from 'lucide-react-native';
 
 import { useBitcoin } from '@/providers/bitcoinprovider';
@@ -25,7 +25,7 @@ import { formatFullDateTime } from '@veyl/shared/utils/time';
 import { hasAvailableBalance } from '@veyl/shared/wallet/balance';
 
 const BALANCE_HEIGHT = 42;
-const ACTIONS_HEIGHT = 72;
+const ACTIONS_HEIGHT = 88;
 const ACTION_ICON_SIZE = 56;
 const ACTION_GAP = 24;
 const ACTION_COLLAPSE_OFFSET = (ACTION_ICON_SIZE + ACTION_GAP) / 2;
@@ -175,18 +175,18 @@ const TxRow = memo(function TxRow({ tx, profile, theme, moneyFormat, btcPrice, i
     sameProfile(prev.profile, next.profile)
 );
 
-const TxListFooter = memo(function TxListFooter({ bottomPadding, loading, theme }) {
+const TxListFooter = memo(function TxListFooter({ bottomPadding, loading, offset, theme }) {
     const loaderHeight = loading ? TX_ROW_HEIGHT : 0;
     if (!loaderHeight && !bottomPadding) return null;
 
     return (
-        <View style={{ height: loaderHeight + bottomPadding }}>
+        <Animated.View style={{ height: loaderHeight + bottomPadding, transform: [{ translateY: offset }] }}>
             {loading ? (
                 <View style={{ height: TX_ROW_HEIGHT, alignItems: 'center', justifyContent: 'center' }}>
                     <ActivityIndicator size="small" color={theme.foreground} />
                 </View>
             ) : null}
-        </View>
+        </Animated.View>
     );
 });
 
@@ -217,7 +217,6 @@ function WalletLoading() {
 export default function Wallet() {
     const { theme } = useTheme();
     const router = useRouter();
-    const isFocused = useIsFocused();
     const insets = useSafeAreaInsets();
     const bitcoin = useBitcoin();
     const { balance, hasMoreTxs, isTxLoading, loadMoreTxs, txReady } = useWallet();
@@ -258,7 +257,7 @@ export default function Wallet() {
         inputRange: [0, 1],
         outputRange: [-BALANCE_HEIGHT, 0],
     });
-    const listOffset = fundedAnim.interpolate({
+    const listContentOffset = fundedAnim.interpolate({
         inputRange: [0, 1],
         outputRange: [0, BALANCE_HEIGHT],
         extrapolate: 'clamp',
@@ -297,24 +296,6 @@ export default function Wallet() {
         if (displayBalance == null) return '';
         return renderBalance(displayBalance, activeFormat, btcPrice);
     }, [displayBalance, activeFormat, btcPrice]);
-
-    useEffect(() => {
-        if (!isFocused || chatBanned) return;
-
-        let frame = null;
-        const timer = setTimeout(() => {
-            frame = requestAnimationFrame(() => {
-                router.prefetch('/peerselector');
-            });
-        }, 700);
-
-        return () => {
-            clearTimeout(timer);
-            if (frame != null) {
-                cancelAnimationFrame(frame);
-            }
-        };
-    }, [chatBanned, isFocused, router]);
 
     useEffect(() => {
         if (showBalance) {
@@ -401,6 +382,15 @@ export default function Wallet() {
         handleLoadMoreTxs();
     }, [handleLoadMoreTxs]);
 
+    const renderTxCell = useCallback(
+        ({ children, onFocusCapture, onLayout, style }) => (
+            <Animated.View onFocusCapture={onFocusCapture} onLayout={onLayout} style={[style, { transform: [{ translateY: listContentOffset }] }]}>
+                {children}
+            </Animated.View>
+        ),
+        [listContentOffset]
+    );
+
     const renderTxItem = useCallback(
         ({ item, index }) => {
             return (
@@ -418,6 +408,11 @@ export default function Wallet() {
             );
         },
         [btcPrice, moneyFormat, openRoute, peerByWalletPK, selectPeerChat, theme, txListData.length, txListShowsLoader, user]
+    );
+
+    const renderTxEmpty = useCallback(
+        () => <Animated.View style={{ flex: 1, transform: [{ translateY: listContentOffset }] }}>{txReady ? <WalletEmpty /> : <WalletLoading />}</Animated.View>,
+        [listContentOffset, txReady]
     );
 
     const getTxItemLayout = useCallback((data, index) => {
@@ -458,29 +453,31 @@ export default function Wallet() {
 
     return (
         <View style={{ flex: 1, overflow: 'hidden' }}>
-            <Animated.View style={{ flex: 1, transform: [{ translateY: listOffset }] }}>
-                <FlatList
-                    data={txListData}
-                    keyExtractor={(item) => item.id}
-                    renderItem={renderTxItem}
-                    extraData={txListExtraData}
-                    getItemLayout={getTxItemLayout}
-                    initialNumToRender={TX_INITIAL_RENDER_COUNT}
-                    maxToRenderPerBatch={TX_RENDER_BATCH_SIZE}
-                    onEndReached={handleTxEndReached}
-                    onEndReachedThreshold={0.6}
-                    ListHeaderComponent={<View style={{ height: listTopSpace }} />}
-                    ListFooterComponent={txListHasFooter ? <TxListFooter bottomPadding={listBottomPadding} loading={txListShowsLoader} theme={theme} /> : null}
-                    ListEmptyComponent={() => (txReady ? <WalletEmpty /> : <WalletLoading />)}
-                    contentContainerStyle={{ flexGrow: 1 }}
-                    style={{ flex: 1 }}
-                    showsVerticalScrollIndicator={false}
-                    bounces
-                    alwaysBounceVertical
-                    directionalLockEnabled
-                    alwaysBounceHorizontal={false}
-                />
-            </Animated.View>
+            <FlatList
+                data={txListData}
+                CellRendererComponent={renderTxCell}
+                keyExtractor={(item) => item.id}
+                renderItem={renderTxItem}
+                extraData={txListExtraData}
+                getItemLayout={getTxItemLayout}
+                initialNumToRender={TX_INITIAL_RENDER_COUNT}
+                maxToRenderPerBatch={TX_RENDER_BATCH_SIZE}
+                removeClippedSubviews
+                updateCellsBatchingPeriod={24}
+                windowSize={8}
+                onEndReached={handleTxEndReached}
+                onEndReachedThreshold={0.6}
+                ListHeaderComponent={<View style={{ height: listTopSpace }} />}
+                ListFooterComponent={txListHasFooter ? <TxListFooter bottomPadding={listBottomPadding} loading={txListShowsLoader} offset={listContentOffset} theme={theme} /> : null}
+                ListEmptyComponent={renderTxEmpty}
+                contentContainerStyle={{ flexGrow: 1 }}
+                style={{ flex: 1 }}
+                showsVerticalScrollIndicator={false}
+                bounces
+                alwaysBounceVertical
+                directionalLockEnabled
+                alwaysBounceHorizontal={false}
+            />
 
             <Animated.View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: insets.top + ACTIONS_HEIGHT + BALANCE_HEIGHT, transform: [{ translateY: headerOffset }] }}>
                 <GlassHeader style={{ height: insets.top + ACTIONS_HEIGHT + BALANCE_HEIGHT, overflow: 'hidden' }}>
@@ -494,7 +491,7 @@ export default function Wallet() {
                         </Pressable>
                     </View>
 
-                    <View style={{ width: ACTION_ICON_SIZE * 3 + ACTION_GAP * 2, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 4, overflow: 'visible' }}>
+                    <View style={{ width: ACTION_ICON_SIZE * 3 + ACTION_GAP * 2, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingTop: 10, paddingBottom: 14, overflow: 'visible' }}>
                         <Animated.View style={{ transform: [{ translateX: fundOffset }] }}>
                             <GlassIcon glassEffectStyle="regular" rounded={16} icon={BanknoteArrowDown} onPress={() => openRoute('/fundwallet')} />
                         </Animated.View>

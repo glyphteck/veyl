@@ -35,6 +35,13 @@ export function canRenderChatPreview(preview) {
     return !!preview && (canShowMsg(preview) || isReadReceiptMsg(preview) || isReactionMsg(preview));
 }
 
+function canReplaceChatPreview(preview, chatPK) {
+    if (!canRenderChatPreview(preview)) {
+        return false;
+    }
+    return !(isReadReceiptMsg(preview) && fromSelf(preview, chatPK));
+}
+
 function settingsPreviewText(preview, self) {
     if (!isSystemMsg(preview)) {
         return '';
@@ -122,10 +129,10 @@ export function getMsgPreview(preview, chatPK, settings, btcPrice) {
     return self ? `you ${CHAT_PREVIEW_TEXT.fallback}` : CHAT_PREVIEW_TEXT.fallback;
 }
 
-export function latestPreviewMessage(messages) {
+export function latestPreviewMessage(messages, options = {}) {
     for (let index = (messages?.length || 0) - 1; index >= 0; index -= 1) {
         const message = messages[index];
-        if (canRenderChatPreview(message)) {
+        if (canReplaceChatPreview(message, options?.chatPK)) {
             return message;
         }
     }
@@ -165,6 +172,22 @@ function previewActionTargetsKey(message, key) {
         .some((target) => target === targetKey);
 }
 
+export function chatPreviewHasKey(preview, keys) {
+    const nextKeys = keySet(keys);
+    if (!preview || !nextKeys.size) {
+        return false;
+    }
+    if (messageHasKey(preview, nextKeys)) {
+        return true;
+    }
+    for (const key of nextKeys) {
+        if (previewActionTargetsKey(preview, key)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 function batchCoversPreviewKey(batch, key) {
     if (!batch || !key) {
         return false;
@@ -201,10 +224,16 @@ export function getPreviewDropSync({ chatId, chatPreviewKey, messages, serverBat
     };
 }
 
-export function getPreviewUpdateSync({ chatId, chatPreviewKey, messages }) {
-    const replacement = latestPreviewMessage(messages);
+function currentPreviewTargetsReplacement(currentPreview, replacement) {
+    const replacementKey = getMessageKey(replacement);
+    return !!replacementKey && previewActionTargetsKey(currentPreview, replacementKey);
+}
+
+export function getPreviewUpdateSync({ chatId, chatPreviewKey, chatPreview, chatPK, messages }) {
+    const replacement = latestPreviewMessage(messages, { chatPK });
     const previewKeys = new Set([chatPreviewKey]);
-    if (!replacement || (!messageHasKey(replacement, previewKeys) && !previewActionTargetsKey(replacement, chatPreviewKey))) {
+    const repairsOwnReadReceipt = isReadReceiptMsg(chatPreview) && fromSelf(chatPreview, chatPK) && currentPreviewTargetsReplacement(chatPreview, replacement);
+    if (!replacement || (!messageHasKey(replacement, previewKeys) && !previewActionTargetsKey(replacement, chatPreviewKey) && !repairsOwnReadReceipt)) {
         return null;
     }
 

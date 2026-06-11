@@ -1,6 +1,6 @@
 'use client';
 
-import { isPendingTransfer, transferBelongsToWallet, txCreatedMs } from '../../wallet/tx.js';
+import { isPendingTransfer, isVisibleTransfer, transferBelongsToWallet, txCreatedMs } from '../../wallet/tx.js';
 import { lowerText, sameText } from '../../utils/text.js';
 import { jsonClean } from './schema.js';
 
@@ -26,6 +26,7 @@ export function readCachedTransferState(cache, { walletPK = null } = {}) {
         .map((id) => payload.transfersById[id])
         .filter(Boolean)
         .filter((tx) => !isPendingTransfer(tx))
+        .filter(isVisibleTransfer)
         .sort((a, b) => txCreatedMs(b) - txCreatedMs(a));
     if (requestedWalletPK && transfers.some((tx) => !transferBelongsToWallet(tx, requestedWalletPK))) {
         return emptyTransferState({ walletPK: cachedWalletPK, rejectReason: 'non-owned-transfer' });
@@ -67,7 +68,7 @@ export function writeCachedTransferState(cache, { transfers, walletPK = null, hi
         const byId = {};
         const ids = [];
         const sorted = [...transfers]
-            .filter((tx) => tx?.id && !isPendingTransfer(tx) && transferBelongsToWallet(tx, nextWalletPK))
+            .filter((tx) => tx?.id && !isPendingTransfer(tx) && isVisibleTransfer(tx) && transferBelongsToWallet(tx, nextWalletPK))
             .sort((a, b) => txCreatedMs(b) - txCreatedMs(a));
         for (const tx of sorted) {
             const id = String(tx.id);

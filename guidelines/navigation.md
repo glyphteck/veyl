@@ -16,6 +16,8 @@ Start here when a task touches one of these areas.
 
 Forced auth, vault, and onboarding flows are route-guard owned. After a required write such as username, avatar, community acknowledgement, seed creation, auth, or unlock state changes, update the underlying state and let the guarded layout or protected stack choose the next route. Do not push or replace to the next concrete forced step from the completing screen; reserve explicit navigation for optional user actions and non-forced exits.
 
+On iOS, do not use `router.prefetch` or route preload to warm native sheets or modals; warm data/subsystems instead, because native `PRELOAD` can leave hidden stack routes that break full-screen back gestures.
+
 ## Vault And Seed Handling
 
 - Shared vault boot helpers: `shared/vault.js`

@@ -30,7 +30,8 @@ export default function GlassIcon({
     const { theme } = useTheme();
     const scale = useSharedValue(1);
     const inset = Math.max(0, (size - iconSize) / 2);
-    const resolvedTintColor = tintColor ?? (accent ? alpha(theme.foreground, disabled ? 20 : 100) : theme.background);
+    const accentTintColor = disabled ? alpha(theme.glassForeground, 20) : theme.glassForeground;
+    const resolvedTintColor = tintColor ?? (accent ? accentTintColor : theme.glassBackground);
     const resolvedColor = color ?? (disabled ? theme.muted : accent ? theme.background : theme.foreground);
     const resolvedGlassEffectStyle = resolveGlassEffectStyle(glassEffectStyle, visible, duration);
     const borderRadius = rounded === 'full' ? 99 : rounded;

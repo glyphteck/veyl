@@ -57,7 +57,9 @@ export function createUseChatMessages({ useChat, useUser, useVault, appState, pa
         const { chatPK } = useUser();
         const { chatPrivateKey, localCache } = useVault();
 
-        const peerChatPK = useMemo(() => getChatPeerPK((chats || []).find((chatItem) => chatItem?.id === chatId), chatPK), [chatId, chatPK, chats]);
+        const currentChat = useMemo(() => (chats || []).find((chatItem) => chatItem?.id === chatId) || null, [chatId, chats]);
+        const peerChatPK = useMemo(() => getChatPeerPK(currentChat, chatPK), [chatPK, currentChat]);
+        const chatPreview = currentChat?.preview || null;
         const scopeKey = `${chatId || ''}:${chatPK || ''}:${chatPrivateKey ? 'unlocked' : 'locked'}:${peerChatPK || ''}`;
         const initialSeed = messageSeedFromBatch(typeof getSharedMessageBatch === 'function' ? getSharedMessageBatch(chatId) : null, chatPK, peerChatPK) ?? messageSeedFromView(getMessageView?.(scopeKey));
 
@@ -741,14 +743,14 @@ export function createUseChatMessages({ useChat, useUser, useVault, appState, pa
                 return;
             }
 
-            const sync = getPreviewUpdateSync({ chatId, chatPreviewKey, messages });
+            const sync = getPreviewUpdateSync({ chatId, chatPreviewKey, chatPreview, chatPK, messages });
             if (!sync || lastPreviewUpdateSyncRef.current === sync.syncKey) {
                 return;
             }
 
             lastPreviewUpdateSyncRef.current = sync.syncKey;
             syncChatPreview(chatId, sync.replacement);
-        }, [activeExists, activeReady, chatId, messages, chatPreviewKey, syncChatPreview]);
+        }, [activeExists, activeReady, chatId, chatPK, chatPreview, messages, chatPreviewKey, syncChatPreview]);
 
         useEffect(() => {
             leaveTtlRef.current = {

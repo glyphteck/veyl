@@ -31,7 +31,10 @@ const PATH_ALPHA = 0.2;
 const PAYLOAD_RADIUS = 4;
 const PAYLOAD_ALPHA = 1;
 const FULLSCREEN_NODE_FADE_MS = 1280;
-const PING_COLOR_SEQUENCE = ['bitcoin', 'muted', 'bitcoin', 'muted', 'muted', 'bitcoin', 'muted', 'muted', 'muted', 'muted'];
+const PING_TYPE_ODDS = [
+    { type: 'default', odds: 19, color: 'muted' },
+    { type: 'bitcoin', odds: 1, color: 'bitcoin' },
+];
 
 const ROUTING_ALGORITHM_WEIGHTS = [
     { routing: dijkstraRouting, weight: 0.5 },
@@ -110,13 +113,20 @@ function currentThemeColors() {
     };
 }
 
-function randomPingColorIndex() {
-    return Math.floor(Math.random() * PING_COLOR_SEQUENCE.length);
+function rollPingType() {
+    const totalOdds = PING_TYPE_ODDS.reduce((sum, pingType) => sum + pingType.odds, 0);
+    let roll = Math.random() * totalOdds;
+
+    for (const pingType of PING_TYPE_ODDS) {
+        roll -= pingType.odds;
+        if (roll <= 0) return pingType;
+    }
+
+    return PING_TYPE_ODDS[0];
 }
 
-function choosePingColor(colors, index) {
-    const key = PING_COLOR_SEQUENCE[index % PING_COLOR_SEQUENCE.length];
-    return colors[key] || colors.muted;
+function pingTypeColor(colors, pingType) {
+    return colors[pingType.color] || colors.muted;
 }
 
 function chooseRoutingAlgorithm() {
@@ -252,7 +262,6 @@ export function Graph({ className = 'pointer-events-none absolute inset-0 h-full
         let fullscreenNode = null;
         let graphDirty = true;
         let colors = currentThemeColors();
-        let nextPingColorIndex = randomPingColorIndex();
         const routing = chooseRoutingAlgorithm();
         const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
@@ -263,7 +272,6 @@ export function Graph({ className = 'pointer-events-none absolute inset-0 h-full
             fullscreenNode = null;
             targetNodeCount = nodeCountForSize(width, height);
             nextNodeSpawnAt = now;
-            nextPingColorIndex = randomPingColorIndex();
             graphDirty = true;
         }
 
@@ -417,8 +425,9 @@ export function Graph({ className = 'pointer-events-none absolute inset-0 h-full
 
             if (!startNextHop(ping, now)) return;
 
-            ping.color = choosePingColor(colors, nextPingColorIndex);
-            nextPingColorIndex = (nextPingColorIndex + 1) % PING_COLOR_SEQUENCE.length;
+            const pingType = rollPingType();
+            ping.type = pingType.type;
+            ping.color = pingTypeColor(colors, pingType);
             markPingNode(ping, source, now, 'source');
             activePings.push(ping);
         }
