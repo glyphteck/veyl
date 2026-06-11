@@ -143,12 +143,13 @@ export function deriveRouteMessages({ older, live, locals, serverBatch, deletedK
     };
 }
 
-export function dropDeletedMessageWindow({ older, live, deletedKeys, removedKeys, snapshotKeys, fromMs, cidById, keepKeys }) {
+export function dropDeletedMessageWindow({ older, live, deletedKeys, removedKeys, expiredKeys, snapshotKeys, fromMs, cidById, keepKeys }) {
     const explicitKeys = keySet(removedKeys);
+    const expiredRemovedKeys = keySet(expiredKeys);
     const currentKeys = snapshotKeys ? keySet(snapshotKeys) : null;
     const currentCidById = cidById instanceof Map ? cidById : null;
     const retainedKeys = keySet(keepKeys);
-    if (!explicitKeys.size && !currentKeys && !currentCidById) {
+    if (!explicitKeys.size && !expiredRemovedKeys.size && !currentKeys && !currentCidById) {
         return null;
     }
 
@@ -157,10 +158,13 @@ export function dropDeletedMessageWindow({ older, live, deletedKeys, removedKeys
     for (const key of explicitKeys) {
         nextDeletedKeys.add(key);
     }
+    for (const key of expiredRemovedKeys) {
+        nextDeletedKeys.add(key);
+    }
     const deletedKeysChanged = nextDeletedKeys.size !== deletedKeyCount;
 
     const drop = (messages) => {
-        let dropped = false;
+        let changed = false;
         const droppedMessages = [];
         const next = [];
         for (const message of messages || []) {
@@ -168,27 +172,29 @@ export function dropDeletedMessageWindow({ older, live, deletedKeys, removedKeys
             const ms = getMessageOrderMs(message);
             const inSnapshotRange = isServerMessage && Number.isFinite(ms) && Number.isFinite(fromMs) && ms >= fromMs;
             const explicitlyRemoved = messageHasKey(message, explicitKeys);
+            const expiredRemoved = messageHasKey(message, expiredRemovedKeys);
             const missingFromSnapshot = currentKeys && inSnapshotRange && !messageHasKey(message, currentKeys);
             const sourceCid = currentCidById && inSnapshotRange ? currentCidById.get(message.id) : null;
             const sourceChanged = !!(sourceCid && message?.cid && sourceCid !== message.cid);
-            if (explicitlyRemoved || missingFromSnapshot || sourceChanged) {
+            if (explicitlyRemoved || expiredRemoved || missingFromSnapshot || sourceChanged) {
                 addMessageKeys(nextDeletedKeys, message);
-                if (messageHasKey(message, retainedKeys)) {
+                if (expiredRemoved && !explicitlyRemoved && !missingFromSnapshot && !sourceChanged && messageHasKey(message, retainedKeys)) {
+                    changed = true;
                     next.push(holdVisibleMsg(message));
                 } else {
-                    dropped = true;
+                    changed = true;
                     droppedMessages.push(message);
                 }
             } else {
                 next.push(message);
             }
         }
-        return { messages: dropped ? next : messages, dropped, droppedMessages };
+        return { messages: changed ? next : messages, changed, droppedMessages };
     };
 
     const olderDrop = drop(older);
     const liveDrop = drop(live);
-    if (!deletedKeysChanged && !olderDrop.dropped && !liveDrop.dropped) {
+    if (!deletedKeysChanged && !olderDrop.changed && !liveDrop.changed) {
         return null;
     }
 
@@ -196,8 +202,8 @@ export function dropDeletedMessageWindow({ older, live, deletedKeys, removedKeys
         deletedKeys: nextDeletedKeys,
         older: olderDrop.messages,
         live: liveDrop.messages,
-        olderChanged: olderDrop.dropped,
-        liveChanged: liveDrop.dropped,
+        olderChanged: olderDrop.changed,
+        liveChanged: liveDrop.changed,
         droppedMessages: [...olderDrop.droppedMessages, ...liveDrop.droppedMessages],
     };
 }
@@ -247,14 +253,11 @@ export function holdCurrentLiveMessages(previous, next, firstMs, nextKeys, expir
         if (!key || nextKeys.has(key)) {
             continue;
         }
-        if (messageHasKey(message, deletedKeys)) {
-            if (messageHasKey(message, keepKeys)) {
-                held.push(holdVisibleMsg(message));
-            }
-            continue;
-        }
         if (messageHasKey(message, expiredKeys)) {
             held.push(holdVisibleMsg(message));
+            continue;
+        }
+        if (messageHasKey(message, deletedKeys)) {
             continue;
         }
         if (current.length && Number.isFinite(ms) && ms >= firstMs) {

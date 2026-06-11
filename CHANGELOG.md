@@ -2,6 +2,13 @@
 
 Repo-level changes are listed newest first. Keep entries short and concrete. Broad pushes get grouped bullets, while narrow fixes can use one concise bugfix or cleanup bullet that still names the actual change.
 
+## 0.14.16 - 2026-06-11
+
+- Reworked public invite links to root `?join/...` tokens with centralized preview copy, a search-only web main-menu copy action, and `/join` as the public web entry route.
+- Tightened QR app-link parsing, external scan docs, and pending invite resume so QR wrappers stay separate from human-readable invite links.
+- Replaced bot groups/behaviors with canonical bot roles across runtime controls, admin CLI commands, traffic labels, and bot documentation.
+- Fixed iOS blocked-chat exits and shared expired-message window handling, and surfaced blocked web camera permission errors.
+
 ## 0.14.15 - 2026-06-11
 
 - Added canonical Veyl app-link QR and invite handling with root invite previews, pending invite resume, and production/test/dev iOS app priority.

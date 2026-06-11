@@ -10,10 +10,15 @@ export const invite = Object.freeze({
     send: 'send',
     request: 'request',
     media: 'media',
-    faucetDemo: 'faucet-demo',
 });
 
 const inviteKinds = new Set(Object.values(invite));
+const tokenKinds = new Map([
+    ['chat', invite.chat],
+    ['send', invite.send],
+    ['pay', invite.request],
+    ['media', invite.media],
+]);
 
 function getInviteOrigin() {
     return origins.veyl;
@@ -48,6 +53,97 @@ function cleanAmount(value) {
     return amount && /^\d+(\.\d+)?$/.test(amount) ? amount : null;
 }
 
+function publicUser(username) {
+    return username ? `@${username}` : 'someone';
+}
+
+function amountFromToken(value) {
+    const raw = lowerText(value);
+    const match = raw.match(/^(\d+(?:\.\d+)?)$/);
+    if (!match) return {};
+    return {
+        amount: match[1],
+    };
+}
+
+function cleanInviteData(value = {}) {
+    const kind = cleanKind(value.kind ?? value.type);
+    if (!kind) return null;
+
+    return {
+        kind,
+        from: cleanUsername(value.from ?? value.sender),
+        to: cleanUsername(value.to ?? value.recipient),
+        amount: cleanAmount(value.a ?? value.amount),
+        currency: cleanCurrency(value.c ?? value.currency),
+        walletPK: maybe(value.r ?? value.walletPK),
+        source: maybe(value.src ?? value.source),
+    };
+}
+
+function queryValue(value) {
+    return Array.isArray(value) ? value[0] : value;
+}
+
+function queryEntries(params) {
+    if (!params) return [];
+    if (typeof params.entries === 'function') return Array.from(params.entries());
+    if (typeof params === 'object') return Object.entries(params);
+    return [];
+}
+
+function tokenInvite(token, params) {
+    const parts = cleanText(token)
+        .split('/')
+        .filter(Boolean)
+        .map((part) => {
+            try {
+                return decodeURIComponent(part);
+            } catch {
+                return part;
+            }
+        });
+    if (!parts.length) return null;
+    if (lowerText(parts[0]) !== invite.join) return null;
+
+    const from = cleanUsername(parts[1]);
+    const actionIndex = from ? 2 : 1;
+    const action = lowerText(parts[actionIndex]);
+    const kind = tokenKinds.get(action) || invite.join;
+    const tokenAmount = amountFromToken(parts[actionIndex + 1]);
+
+    return cleanInviteData({
+        kind,
+        from,
+        amount: getRouteParam(params, 'a') ?? getRouteParam(params, 'amount') ?? tokenAmount.amount,
+        currency: getRouteParam(params, 'c') ?? getRouteParam(params, 'currency') ?? tokenAmount.currency,
+        walletPK: getRouteParam(params, 'r') ?? getRouteParam(params, 'walletPK'),
+        source: getRouteParam(params, 'src') ?? getRouteParam(params, 'source'),
+    });
+}
+
+function compactInvite(params) {
+    for (const [key, value] of queryEntries(params)) {
+        if (cleanText(queryValue(value))) continue;
+        const data = tokenInvite(key, params);
+        if (data) return data;
+    }
+    return null;
+}
+
+function inviteToken(data) {
+    const from = cleanUsername(data.from);
+    const user = from ? `@${from}` : '';
+    const amount = cleanAmount(data.amount);
+
+    if (data.kind === invite.join) return ['join', user].filter(Boolean).join('/');
+    if (data.kind === invite.chat) return ['join', user, 'chat'].filter(Boolean).join('/');
+    if (data.kind === invite.send) return ['join', user, 'send', amount].filter(Boolean).join('/');
+    if (data.kind === invite.request) return ['join', user, 'pay', amount].filter(Boolean).join('/');
+    if (data.kind === invite.media) return ['join', user, 'media'].filter(Boolean).join('/');
+    return 'join';
+}
+
 function parseUrl(value) {
     try {
         return new URL(value, getInviteOrigin());
@@ -57,19 +153,19 @@ function parseUrl(value) {
 }
 
 function readParams(params) {
+    const compact = compactInvite(params);
+    if (compact) return compact;
+
     const explicitKind = getRouteParam(params, 'kind') ?? getRouteParam(params, 'k');
     const cleanedKind = cleanKind(explicitKind);
     const from = cleanUsername(getRouteParam(params, 'from') ?? getRouteParam(params, 'f'));
-    const marker = getRouteParam(params, 'invite') === '1';
-    const hasIntent = marker || !!explicitKind || !!from;
+    const hasIntent = !!explicitKind || !!from;
     if (!hasIntent) return null;
     if (explicitKind && !cleanedKind) return null;
 
     const kind = cleanedKind || (from ? invite.chat : invite.join);
 
-    if (!kind) return null;
-
-    return {
+    return cleanInviteData({
         kind,
         from,
         to: cleanUsername(getRouteParam(params, 'to')),
@@ -77,7 +173,7 @@ function readParams(params) {
         currency: cleanCurrency(getRouteParam(params, 'c') ?? getRouteParam(params, 'currency')),
         walletPK: maybe(getRouteParam(params, 'r') ?? getRouteParam(params, 'walletPK')),
         source: maybe(getRouteParam(params, 'src') ?? getRouteParam(params, 'source')),
-    };
+    });
 }
 
 function makeQuery(params) {
@@ -123,18 +219,14 @@ export function makeInviteLink(value = {}) {
     const data = makeInvite(value);
     if (!data) return null;
 
+    const token = inviteToken(data);
     const query = makeQuery({
-        invite: data.kind === invite.join ? '1' : null,
-        kind: data.kind === invite.join ? null : data.kind,
-        from: data.from,
         to: data.to,
-        a: data.amount,
-        c: data.currency,
         r: data.walletPK,
         src: data.source,
     });
 
-    return `${getInviteOrigin()}/${query ? `?${query}` : ''}`;
+    return `${getInviteOrigin()}/?${[token, query].filter(Boolean).join('&')}`;
 }
 
 export function inviteFromQr(raw) {
@@ -155,7 +247,7 @@ export function makeInviteLinkFromQr(raw) {
 
 export function readInvite(raw) {
     if (!raw) return null;
-    if (typeof raw === 'object') return makeInvite(raw);
+    if (typeof raw === 'object') return readParams(raw);
 
     const value = cleanText(raw);
     if (!value) return null;
@@ -167,10 +259,6 @@ export function readInvite(raw) {
 
 export function readInviteOrQr(raw) {
     return readInvite(raw) || inviteFromQr(raw);
-}
-
-function displayUser(username) {
-    return username ? `@${username}` : 'someone';
 }
 
 function grouped(value) {
@@ -190,35 +278,49 @@ function amountLabel(data) {
     return `${amount} ${amount === '1' ? 'sat' : 'sats'}`;
 }
 
+export const inviteText = Object.freeze({
+    body: 'Private chat. Bitcoin payments.',
+    hook: 'Open veyl.',
+    action: Object.freeze({
+        join: 'Join veyl',
+        chat: 'Chat on veyl',
+        send: 'Open veyl',
+        request: 'Pay on veyl',
+        media: 'Open veyl',
+    }),
+});
+
+function inviteCopy(data) {
+    const from = publicUser(data.from);
+    const amount = amountLabel(data);
+
+    if (data.kind === invite.chat) {
+        return { title: `${from} wants to chat with you on veyl`, action: inviteText.action.chat };
+    }
+    if (data.kind === invite.send) {
+        return { title: amount ? `${from} wants to send you ${amount} on veyl` : `${from} wants to send you sats on veyl`, action: inviteText.action.send };
+    }
+    if (data.kind === invite.request) {
+        return { title: data.from ? `pay ${from} on veyl` : amount ? `pay ${amount} on veyl` : 'pay on veyl', action: inviteText.action.request };
+    }
+    if (data.kind === invite.media) {
+        return { title: `${from} shared private media on veyl`, action: inviteText.action.media };
+    }
+    if (data.kind === invite.join && data.from) {
+        return { title: `${from} invited you to join veyl`, action: inviteText.action.join };
+    }
+    return { title: 'Join veyl', action: inviteText.action.join };
+}
+
 export function describeInvite(raw) {
     const data = readInviteOrQr(raw);
     if (!data) return null;
 
-    const from = displayUser(data.from);
-    const amount = amountLabel(data);
-    const body = 'Veyl is private chat with Bitcoin payments built in.';
-    const hook = 'Send sats inside private chat.';
-
-    if (data.kind === invite.chat) {
-        return { title: `${from} wants to chat privately with you on Veyl`, body, hook, action: 'Continue to private chat' };
-    }
-    if (data.kind === invite.send) {
-        return { title: amount ? `${from} wants to send you ${amount} on Veyl` : `${from} wants to send you sats on Veyl`, body, hook, action: 'Open in Veyl' };
-    }
-    if (data.kind === invite.request) {
-        return { title: amount ? `${from} requested ${amount} on Veyl` : `${from} sent you a payment request on Veyl`, body, hook, action: 'Pay with Veyl' };
-    }
-    if (data.kind === invite.media) {
-        return { title: `${from} shared private media on Veyl`, body, hook, action: 'Continue to private chat' };
-    }
-    if (data.kind === invite.faucetDemo) {
-        return {
-            title: 'Try Veyl with @faucet',
-            body: 'Send a tiny request to @faucet and see private chat plus Bitcoin settlement in one flow. Limited demo budget.',
-            hook,
-            action: 'Try Veyl',
-        };
-    }
-
-    return { title: 'Create a private Veyl account', body, hook, action: 'Create account' };
+    const copy = inviteCopy(data);
+    return {
+        title: copy.title,
+        body: copy.body || inviteText.body,
+        hook: copy.hook || inviteText.hook,
+        action: copy.action,
+    };
 }

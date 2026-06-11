@@ -1,7 +1,7 @@
 import Image from 'next/image';
 import Webcam from 'react-webcam';
 
-export function CameraStage({ capture, cloaked, onUserMedia, webcamRef }) {
+export function CameraStage({ capture, cloaked, onUserMedia, onUserMediaError, webcamRef }) {
     return (
         <div className="absolute inset-0">
             <div className="absolute inset-0 -scale-x-100">
@@ -9,6 +9,7 @@ export function CameraStage({ capture, cloaked, onUserMedia, webcamRef }) {
                     ref={webcamRef}
                     audio={false}
                     onUserMedia={onUserMedia}
+                    onUserMediaError={onUserMediaError}
                     screenshotFormat="image/jpeg"
                     videoConstraints={{ facingMode: 'environment' }}
                     className={`absolute inset-0 w-full h-full object-cover transition-all duration-300 ${cloaked ? 'blur-3xl scale-110' : ''}`}

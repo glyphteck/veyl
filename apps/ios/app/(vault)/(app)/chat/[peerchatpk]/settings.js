@@ -76,8 +76,8 @@ export default function ChatSettingsRoute() {
     const navigation = useNavigation();
     const router = useRouter();
     const { blockPeer, chatPK: ownChatPK } = useUser();
-    const { chats, dropChat, setChatTtl } = useChat() || {};
-    const { peerByUsername, peerByUid, peerByChatPK, peerByWalletPK, addPeer, dropPeer } = usePeer() || {};
+    const { chats, dropChat, restoreDeletedChat, setChatTtl } = useChat() || {};
+    const { peerByUsername, peerByUid, peerByChatPK, peerByWalletPK, addPeer, dropPeer, restorePeer } = usePeer() || {};
     const backTap = useTap({ onPress: router.back });
     const { lockRoute } = useRouteLock();
     const [fetchedPeer, setFetchedPeer] = useState(null);
@@ -347,12 +347,21 @@ export default function ChatSettingsRoute() {
                 style: 'destructive',
                 onPress: () => {
                     void (async () => {
+                        const blockTarget = {
+                            ...(peer || {}),
+                            uid: nextUid,
+                            chatPK: peer?.chatPK || peerChatPK || routeChatPK || null,
+                        };
+                        const blockedChatId = settingsChatId || chatId;
+                        retentionChangedRef.current = false;
+                        if (blockedChatId) dropChat?.(blockedChatId);
+                        dropPeer?.(blockTarget);
+                        router.dismissTo('/chat');
                         try {
-                            await blockPeer?.(peer || nextUid);
-                            if (chatId) dropChat?.(chatId);
-                            dropPeer?.(peer || nextUid);
-                            router.back();
+                            await blockPeer?.(blockTarget);
                         } catch (error) {
+                            if (blockedChatId) restoreDeletedChat?.(blockedChatId);
+                            restorePeer?.(blockTarget);
                             console.warn('block peer failed', error);
                             Alert.alert('Block failed', error?.message || 'Could not block this user.');
                         }
@@ -360,7 +369,7 @@ export default function ChatSettingsRoute() {
                 },
             },
         ]);
-    }, [blockPeer, chatId, dropChat, dropPeer, peer, router, uid]);
+    }, [blockPeer, chatId, dropChat, dropPeer, peer, peerChatPK, restoreDeletedChat, restorePeer, routeChatPK, router, settingsChatId, uid]);
 
     const expireAfterSeen = retention === CHAT_RETENTION_SEEN;
     const showChatSettings = hasSettingsChat && !!setChatTtl;

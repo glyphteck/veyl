@@ -149,6 +149,11 @@ export function createFirebaseCloud({ db, auth, getAuth, functions, getFunctions
         return keys;
     }
 
+    function messageRecordTtlExpired(record, now = Date.now()) {
+        const ttlMs = timestampMs(record?.ttl, null);
+        return ttlMs != null && ttlMs <= now;
+    }
+
     function resolveFunctions() {
         return typeof getFunctions === 'function' ? getFunctions() : functions;
     }
@@ -991,15 +996,19 @@ export function createFirebaseCloud({ db, auth, getAuth, functions, getFunctions
                     }
                 }
                 const removedKeys = new Set();
+                const expiredKeys = new Set();
+                const now = Date.now();
                 for (const change of snap.docChanges()) {
                     if (change.type !== 'removed') {
                         continue;
                     }
-                    for (const key of messageRecordKeys(messageRecordFromDoc(change.doc))) {
-                        removedKeys.add(key);
+                    const record = messageRecordFromDoc(change.doc);
+                    const targetKeys = messageRecordTtlExpired(record, now) ? expiredKeys : removedKeys;
+                    for (const key of messageRecordKeys(record)) {
+                        targetKeys.add(key);
                     }
                 }
-                onUpdate?.({ keys, removedKeys, cidById });
+                onUpdate?.({ keys, removedKeys, expiredKeys, cidById });
             },
             onError
         );

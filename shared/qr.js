@@ -1,4 +1,4 @@
-import { origins } from './links.js';
+import { appLinkDomains, origins } from './links.js';
 import { getRouteParam } from './navigation/params.js';
 import { isUsername, normalizeUsername } from './username.js';
 import { cleanText, lowerText } from './utils/text.js';
@@ -11,6 +11,7 @@ const tx = {
     request: 'req',
     payment: 'pay',
 };
+const qrHosts = new Set(appLinkDomains);
 
 export const qr = Object.freeze({
     user: 'user',
@@ -62,33 +63,16 @@ function readTx(value) {
     };
 }
 
-function decodeParam(value) {
+function readQrUrlParams(value) {
     try {
-        return decodeURIComponent(String(value).replace(/\+/g, ' '));
+        const url = new URL(value, getQrOrigin());
+        if (url.protocol !== 'https:' || url.pathname !== '/qr' || !qrHosts.has(url.hostname)) {
+            return null;
+        }
+        return url.searchParams;
     } catch {
-        return value;
+        return null;
     }
-}
-
-function parseUrlQuery(value) {
-    const start = value.indexOf('?');
-    if (start < 0) return null;
-
-    const hash = value.indexOf('#', start + 1);
-    const query = value.slice(start + 1, hash < 0 ? undefined : hash);
-    if (!query) return null;
-
-    return Object.fromEntries(
-        query
-            .split('&')
-            .map((part) => {
-                const eq = part.indexOf('=');
-                const key = decodeParam(eq < 0 ? part : part.slice(0, eq));
-                const val = decodeParam(eq < 0 ? '' : part.slice(eq + 1));
-                return [key, val];
-            })
-            .filter(([key]) => key)
-    );
 }
 
 function readParams(params) {
@@ -148,7 +132,7 @@ function readApp(raw) {
     const value = cleanText(raw);
     if (!value) return null;
 
-    const params = parseUrlQuery(value);
+    const params = readQrUrlParams(value);
     if (params) return readParams(params);
     return value.startsWith('@') ? readUser(value) : null;
 }

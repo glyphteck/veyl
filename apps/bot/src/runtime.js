@@ -19,7 +19,7 @@ import {
     cleanTrafficCount,
     cleanTrafficDelayMs,
 } from '@veyl/shared/bot/traffic';
-import { hasBotEchoGroup, hasBotReviewBehavior, hasBotTrafficGroup } from '@veyl/shared/bot/groups';
+import { hasBotEchoRole, hasBotReviewRole, hasBotTrafficRole } from '@veyl/shared/bot/roles';
 import {
     BOT_TRAFFIC_MESSAGES,
     BOT_TRAFFIC_REQUEST_AMOUNT_BUCKETS,
@@ -742,7 +742,7 @@ export class BotRuntime {
         return [...this.sessions.values()].filter((session) => (
             session?.started &&
             !session.closing &&
-            hasBotTrafficGroup(session) &&
+            hasBotTrafficRole(session) &&
             session.chatJobs &&
             session.chatPK &&
             session.chatPrivKey
@@ -1213,8 +1213,7 @@ export class BotRuntime {
             current.resumeAtMs = timestampMs(bot.resumeAt, 0);
             current.restartAtMs = timestampMs(bot.restartAt, 0);
             current.mode = bot.mode || BOT_MODE;
-            current.groups = bot.groups || {};
-            current.behaviors = bot.behaviors || {};
+            current.roles = bot.roles || {};
             return;
         }
 
@@ -1247,8 +1246,7 @@ export class BotRuntime {
         session.resumeAtMs = timestampMs(bot.resumeAt, 0);
         session.restartAtMs = timestampMs(bot.restartAt, 0);
         session.mode = bot.mode || BOT_MODE;
-        session.groups = bot.groups || {};
-        session.behaviors = bot.behaviors || {};
+        session.roles = bot.roles || {};
 
         if (session.started) {
             return;
@@ -1567,8 +1565,7 @@ export class BotRuntime {
             current.resumeAtMs = timestampMs(bot.resumeAt, 0);
             current.restartAtMs = timestampMs(bot.restartAt, 0);
             current.mode = bot.mode || BOT_MODE;
-            current.groups = bot.groups || {};
-            current.behaviors = bot.behaviors || {};
+            current.roles = bot.roles || {};
             return current;
         }
 
@@ -1595,8 +1592,7 @@ export class BotRuntime {
                 resumeAtMs: timestampMs(bot.resumeAt, 0),
                 restartAtMs: timestampMs(bot.restartAt, 0),
                 mode: bot.mode || BOT_MODE,
-                groups: bot.groups || {},
-                behaviors: bot.behaviors || {},
+                roles: bot.roles || {},
                 started: false,
                 closing: false,
                 balance: null,
@@ -1852,7 +1848,7 @@ export class BotRuntime {
             });
         }
 
-        if (!replies.length || !hasBotEchoGroup(session)) {
+        if (!replies.length || !hasBotEchoRole(session)) {
             await this.ackChat(session, chat.id, readMs);
             return;
         }
@@ -1881,7 +1877,7 @@ export class BotRuntime {
     }
 
     async replyToChatMessage(session, context, msg) {
-        if (hasBotReviewBehavior(session)) {
+        if (hasBotReviewRole(session)) {
             await this.replyAsReviewBot(session, context, msg);
             return;
         }

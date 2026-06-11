@@ -48,6 +48,11 @@ export default function CameraPage() {
         shutterRef.current?.focus({ preventScroll: true });
     }, []);
 
+    const handleCameraError = useCallback((error) => {
+        console.error('camera failed:', error);
+        toast.error('camera is blocked');
+    }, []);
+
     const focusAction = useCallback((index = 0) => {
         const actions = actionRefs.current.filter(visibleFocusable);
         if (!actions.length) return;
@@ -208,7 +213,7 @@ export default function CameraPage() {
             onPointerUpCapture={handleCameraPointer}
             onKeyDown={handleCameraKeyDown}
         >
-            <CameraStage capture={capture} cloaked={cloaked} onUserMedia={focusShutter} webcamRef={webcamRef} />
+            <CameraStage capture={capture} cloaked={cloaked} onUserMedia={focusShutter} onUserMediaError={handleCameraError} webcamRef={webcamRef} />
             <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-8">
                 {capture ? (
                     <CameraActions actionRefs={actionRefs} initialSendFocus={initialSendFocus} onDiscard={discardCapture} onSave={handleSave} onSend={handleSend} />

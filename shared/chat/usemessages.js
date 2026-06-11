@@ -176,12 +176,13 @@ export function createUseChatMessages({ useChat, useUser, useVault, appState, pa
         );
 
         const dropDeletedMessages = useCallback(
-            (removedKeys, snapshotKeys, fromMs, cidById) => {
+            (removedKeys, snapshotKeys, fromMs, cidById, expiredKeys) => {
                 const result = dropDeletedMessageWindow({
                     older: olderRef.current,
                     live: liveRef.current,
                     deletedKeys: deletedMessageKeysRef.current,
                     removedKeys,
+                    expiredKeys,
                     snapshotKeys,
                     fromMs,
                     cidById,
@@ -694,11 +695,11 @@ export function createUseChatMessages({ useChat, useUser, useVault, appState, pa
             const unsubscribe = watchMessageWindow(
                 chatId,
                 loadedWindowMarker,
-                ({ keys, removedKeys, cidById } = {}) => {
+                ({ keys, removedKeys, expiredKeys, cidById } = {}) => {
                     if (messageWindowKeyRef.current !== watchKey) {
                         return;
                     }
-                    dropDeletedMessages(removedKeys, keys, fromMs, cidById);
+                    dropDeletedMessages(removedKeys, keys, fromMs, cidById, expiredKeys);
                 },
                 (error) => {
                     if (!isDenied(error)) {

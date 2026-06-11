@@ -35,15 +35,14 @@ Clipboard/share work stays platform-local:
 
 ## Link Shape
 
-Use root app links with invite query params. Root still owns routing; the query changes paste-preview metadata and gives the unlocked app a public intent to resume.
+Use root app links with one human-readable invite token in the query. Root owns paste-preview metadata and gives the unlocked app a public intent to resume without a separate route.
 
-- generic: `/?invite=1`
-- from a user: `/?from=<username>`
-- chat: `/?kind=chat&from=<username>`
-- send: `/?kind=send&from=<username>&a=<amount>&c=<sats|btc|usd>`
-- request: `/?kind=request&from=<username>&a=<amount>&c=<sats|btc|usd>`
-- media: `/?kind=media&from=<username>`
-- faucet demo: `/?kind=faucet-demo`
+- generic: `/?join`
+- from a user: `/?join/@<username>`
+- chat: `/?join/@<username>/chat`
+- send: `/?join/@<username>/send/<amount>`
+- request: `/?join/@<username>/pay/<amount>`
+- media: `/?join/@<username>/media`
 
 Future private or one-time invite codes can be added only if the backend needs state. Start stateless.
 
@@ -51,18 +50,17 @@ Future private or one-time invite codes can be added only if the backend needs s
 
 The headline should explain the exact social action before signup.
 
-Preferred headlines:
+Preferred headlines live in `shared/invite.js`:
 
-- `@zak invited you to Veyl`
-- `@zak wants to chat privately with you on Veyl`
-- `@zak wants to send you 2,500 sats on Veyl`
-- `@zak requested 2,500 sats on Veyl`
-- `@zak shared private media on Veyl`
-- `Try Veyl with @faucet`
+- `@zak invited you to join veyl`
+- `@zak wants to chat with you on veyl`
+- `@zak wants to send you 2,500 sats on veyl`
+- `pay @zak on veyl`
+- `@zak shared private media on veyl`
 
 Support copy:
 
-> Veyl is private chat with Bitcoin payments built in.
+> Private chat. Bitcoin payments.
 
 Short hook where space allows:
 
@@ -78,9 +76,7 @@ CTA labels:
 - Copy invite link
 - Share invite
 
-Avoid generic growth copy such as "Join Veyl", "Open app", "Sign up now", or "Claim free sats". For `@faucet`, frame it as demo liquidity, not a signup reward:
-
-> Send a tiny request to @faucet and see private chat plus Bitcoin settlement in one flow. Limited demo budget.
+Avoid generic growth copy such as "Open app", "Sign up now", or "Claim free sats".
 
 ## User Experience
 
@@ -158,8 +154,7 @@ Accept/resume paths:
 3. Preserve invite state through auth, onboarding, vault creation, and unlock.
 4. Resolve preserved invite state inside the unlocked app boundary.
 5. Add invite affordances to peer-selection empty states and action footers.
-6. Add faucet-demo copy and flow without presenting it as a signup reward.
-7. Add fixtures for build, parse, mobile fallback, unauthenticated resume, locked resume, and post-onboarding resume.
+6. Add fixtures for build, parse, mobile fallback, unauthenticated resume, locked resume, and post-onboarding resume.
 
 ## Acceptance Criteria
 

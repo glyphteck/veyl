@@ -66,12 +66,12 @@ Current QR state:
 
 - QR primitives already support user links, payment-request links, and Bitcoin address links.
 - Veyl QR links are already emitted as `/qr?...` wrapper URLs.
-- Authenticated `/qr` already handles:
+- `/qr` handles:
   - user QR -> find user and open chat
   - request QR -> open/send payment flow
   - Bitcoin QR -> open withdrawal flow
+- Root/auth/vault shells preserve `/qr?...` as public pending intent when the user is not unlocked yet, then the unlocked app boundary resumes the chat or transfer action.
 - Missing launch-grade behavior:
-  - unauthenticated users lose the invite/payment context
   - `/download` is only a static placeholder
   - payment request links do not yet render a public landing page
   - invite buttons are not consistently available from every peer-selection surface
@@ -116,7 +116,7 @@ Expected behavior:
 3. Existing locked user opens `/qr?...`.
 4. App preserves the invite, sends user through unlock, then resumes.
 5. New user opens `/qr?...`.
-6. Site shows contextual landing page.
+6. App/web onboarding preserves the QR intent through account and vault setup.
 7. User creates account.
 8. User creates vault.
 9. App resumes the original intended action.

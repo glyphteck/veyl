@@ -32,7 +32,7 @@ bun bot traffic label all
 bun bot traffic fund --target 1000
 ```
 
-`traffic label all` applies canonical defaults: ordinary bots become traffic+echo bots, `@faucet` stays the funding bot, `@echo` stays echo-only, and `@review` stays review+echo. `traffic fund` sends the flat target amount from `@faucet` by default to each enabled traffic-group bot. It is not a balance top-up calculation. Use `--source @botname` for another funding source and `--amount` as an alias for the per-bot amount.
+`traffic label all` applies canonical defaults: ordinary bots become traffic+echo bots, `@faucet` stays the funding bot, `@echo` stays echo-only, and `@review` stays review+echo. `traffic fund` sends the flat target amount from `@faucet` by default to each enabled traffic-role bot. It is not a balance top-up calculation. Use `--source @botname` for another funding source and `--amount` as an alias for the per-bot amount.
 
 4. Run mixed and message traffic while the chat list is visible:
 
@@ -67,6 +67,6 @@ Traffic actions are queued under the runtime action collection and the runtime r
 - Secrets: `apps/bot/src/secrets.js`
 - Shared modules: `shared/bot/`
 - Traffic config and pools: `shared/bot/traffic/traffic.js`, `shared/bot/traffic/messages.js`, `shared/bot/traffic/transfers.js`
-- Group and behavior config: `shared/bot/groups.js`
+- Role config: `shared/bot/roles.js`
 - CLI: `scripts/admin/bot.mjs`
 - Full doc: [../bots.md](../bots.md)

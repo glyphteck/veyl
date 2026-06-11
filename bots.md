@@ -34,7 +34,7 @@ When enabled, every bot:
 - keeps message TTL dumb like the clients: new messages use the standard 21-day TTL, saved messages use `ttl: null`, and the runtime does not shorten TTL after read handling
 - accepts incoming transfers passively (balance updates automatically via Spark events)
 
-Bots subscribed to the `echo` group mirror visible peer messages after the read receipt. `@echo` always mirrors, even if its group field is accidentally changed. Echo behavior:
+Bots with the `echo` role mirror visible peer messages after the read receipt. `@echo` gets the `echo` role by default, but the role field remains authoritative so dropping `roles.echo` stops new echo behavior. Echo role behavior:
 
 - mirrors incoming text messages and attachments back to the sender
 - pays any incoming payment request if funded, then sends a mirrored request back for the same amount
@@ -43,8 +43,8 @@ Bots subscribed to the `echo` group mirror visible peer messages after the read 
 Canonical bots:
 
 - `@faucet` is the canonical funding bot for other bots. Traffic funding uses it by default.
-- `@echo` is the dedicated echo bot and always mirrors messages.
-- `@review` has the `review` behavior tag and also subscribes to `echo` for now, so review-specific behavior has a separate owner while the current visible behavior stays deterministic.
+- `@echo` is the dedicated echo bot and gets the echo role by default.
+- `@review` has the `review` role and also has the `echo` role for now, so review-specific behavior has a separate owner while the current visible behavior stays deterministic.
 
 Guardrails:
 
@@ -72,12 +72,12 @@ The core bot loop. `BotRuntime` is a long-lived process that:
 2. for each enabled bot, reads its profile for the active network wallet key and `chatPK`, boots a Spark wallet session, and subscribes to its chats
 3. listens for Spark `transfer:claimed` and `balance:update` events to keep the admin-facing balance snapshot current
 4. watches bot-owned chats plus their latest message docs, then processes new peer messages and preview-neutral controls by comparing timestamps against `seen` and `resumeAt`
-5. applies changed `groups`, `behaviors`, and `restartAt` fields from the live bot subscription without restarting the whole runtime
+5. applies changed `roles` and `restartAt` fields from the live bot subscription without restarting the whole runtime
 
 Message handling:
 
-- text messages: decrypted, read, and mirrored back only when the bot is subscribed to echo behavior
-- attachments: decrypted, read, and mirrored as a fresh encrypted upload only when the bot is subscribed to echo behavior
+- text messages: decrypted, read, and mirrored back only when the bot has the echo role
+- attachments: decrypted, read, and mirrored as a fresh encrypted upload only when the bot has the echo role
 - payment requests: read by every bot; echo bots pay if funded, patch the original request with the tx id, then send a mirrored request for the same amount
 - retention: peer retention system messages and peer-stamped message retention update the bot-owned chat entry, so bot replies use the same delete-after-seen mode as the peer side
 - read receipts: appended as encrypted `t: 'rr'` control messages for readable peer messages and sent without updating the chat preview
@@ -116,7 +116,7 @@ When no username is provided, generates a random 12-character lowercase alphanum
 - `chat.js` — encrypt/decrypt bot messages, send/update messages, handle attachment upload/download with a pair cache
 - `wallet.js` — balance queries and outgoing transfers
 - `events.js` — constants (`BOT_MODE`, `BOT_UNDERFUNDED_TEXT`, `BOT_SEEDS_SECRET_ID`), bot marker factory, seed key helpers
-- `groups.js` — canonical bot usernames, group tags, behavior tags, default memberships, and runtime predicates
+- `roles.js` — canonical bot usernames, bot role tags, default memberships, and runtime predicates. Roles are currently bot-only behavior designations and can grow into a broader user-role model later.
 - `storage.js` — encrypted attachment read/write against Cloud Storage
 
 ### Wallet Environment
@@ -142,13 +142,12 @@ Bots that have no custom avatar show a bot icon instead of the default user silh
     - `uid`, `username`
     - `enabled` — power state
     - `mode` — behavior mode (`mirror`)
-    - `groups` — runtime subscriptions such as `traffic` and `echo`
-    - `behaviors` — bot-specific behavior tags such as `review`
+    - `roles` — runtime bot roles such as `traffic`, `echo`, and `review`
     - `status` — admin-readable runtime state
     - `balance` — admin-facing balance snapshot
     - `lastBootAt`, `lastRunAt`, `lastError`
     - `resumeAt` — replay cutoff when re-enabling
-    - `restartAt` — session restart token for one bot, a group, or a behavior cohort
+    - `restartAt` — session restart token for one bot or a role cohort
     - network-scoped `walletPKs`, `chatPK` — copied from the profile for runtime seed verification (avoids an extra Firestore read per boot)
 
 ### Moderation
@@ -173,17 +172,16 @@ The CLI can do the same:
 - `bun bot add <count>` — provision N bots with random usernames
 - `bun bot power <@username|uid> on`
 - `bun bot power <@username|uid> off`
-- `bun bot group <@username|uid|all|group:name> <traffic|echo> <on|off>` — subscribe or unsubscribe bot groups during a live runtime
-- `bun bot behavior <@username|uid|all|group:name> <review> <on|off>` — subscribe or unsubscribe bot behavior tags during a live runtime
-- `bun bot sub <@username|uid|all|group:name> <traffic|echo|review>` — short form for enabling a group or behavior
-- `bun bot unsub <@username|uid|all|group:name> <traffic|echo|review>` — short form for disabling a group or behavior
-- `bun bot restart <@username|uid|all|group:name|behavior:name>` — restart selected bot sessions without stopping the runtime
+- `bun bot role <@username|uid|all|role:name> <traffic|echo|review> <on|off>` — subscribe or unsubscribe bot roles during a live runtime
+- `bun bot sub <@username|uid|all|role:name> <traffic|echo|review>` — short form for enabling a role
+- `bun bot unsub <@username|uid|all|role:name> <traffic|echo|review>` — short form for disabling a role
+- `bun bot restart <@username|uid|all|role:name>` — restart selected bot sessions without stopping the runtime
 - `bun bot traffic [mixed/tx/msg] [@username/uid] [fast/slow]` — queue runtime-owned client load traffic; defaults to mixed message/transfer traffic for `@zxrl`
 - `bun bot traffic mixed [@username/uid] [fast/slow]` — queue message and 1-sat transfer traffic in parallel
 - `bun bot traffic msg [@username/uid] [fast/slow] [--solo] [--source @botname]` — send message traffic only, optionally pinned to one bot-owned chat
 - `bun bot traffic tx [@username/uid] [fast/slow]` — send 1-sat transfer traffic only
-- `bun bot traffic fund [--source @faucet] [--target 1000]` — send a flat funding transfer to each enabled traffic-group bot
-- `bun bot traffic label [@username|uid|all] [on|off]` — set the internal `groups.traffic` marker used by traffic commands
+- `bun bot traffic fund [--source @faucet] [--target 1000]` — send a flat funding transfer to each enabled traffic-role bot
+- `bun bot traffic label [@username|uid|all] [on|off]` — set the internal `roles.traffic` marker used by traffic commands
 - `bun bot traffic stop` — request cancellation for queued/running traffic actions; restarted runtimes also cancel stale queued/running traffic actions before accepting new work
 - `bun bot kill <@username|uid>` — fully delete the bot account
 - `bun bot kill all` — delete every bot
@@ -221,7 +219,7 @@ bun bot power @mybot off
 
 ### Traffic load testing
 
-Traffic commands are for client load testing. The bot runtime must already be running. The runtime uses enabled bots whose `bots/{uid}.groups.traffic` marker is `true`. `@faucet`, `@echo`, and `@review` stay out of the traffic group by default. Traffic bots also get `groups.echo = true` for now.
+Traffic commands are for client load testing. The bot runtime must already be running. The runtime uses enabled bots whose `bots/{uid}.roles.traffic` marker is `true`. `@faucet`, `@echo`, and `@review` stay out of the traffic role by default. Traffic bots also get `roles.echo = true` for now.
 
 Start verbose runtimes before observing clients:
 
@@ -239,7 +237,7 @@ bun bot traffic fund
 bun bot traffic fund --target 1000 --source @faucet
 ```
 
-`traffic label all` applies the canonical defaults: ordinary bots become traffic+echo bots, `@review` keeps echo+review behavior, `@echo` keeps echo-only behavior, and `@faucet` stays outside traffic and echo. Funding sends the flat target amount from `@faucet` to each enabled traffic-group bot. It does not inspect balances or top up to a threshold. `--amount` is accepted as the same per-bot amount when that reads more clearly. Use it before transfer traffic when the fleet needs sats.
+`traffic label all` applies the canonical defaults: ordinary bots become traffic+echo bots, `@review` keeps echo+review roles, `@echo` keeps echo-only role, and `@faucet` stays outside traffic and echo. Funding sends the flat target amount from `@faucet` to each enabled traffic-role bot. It does not inspect balances or top up to a threshold. `--amount` is accepted as the same per-bot amount when that reads more clearly. Use it before transfer traffic when the fleet needs sats.
 
 Queue mixed traffic:
 
@@ -249,7 +247,7 @@ bun bot traffic mixed @alice fast --count 50
 bun bot traffic mixed @alice slow --duration 10m --no-wait
 ```
 
-`fast` uses a 500ms delay and `slow` uses a 5s delay. Without a speed preset, traffic uses the default 3s delay. Message traffic shuffles enabled traffic-group bot sessions, covers each active bot once before repeating, then uses shared text-vs-request weights. Text messages come from the shared 100-item traffic-msg pool. Requests use weighted amount buckets from 1,000 to 1,000,000 sats, with most requests in the 10,000-99,999 sat range and fewer larger asks. The runtime still tries one final encrypted read receipt per bot chat when there is a recent user-authored message to acknowledge.
+`fast` uses a 500ms delay and `slow` uses a 5s delay. Without a speed preset, traffic uses the default 3s delay. Message traffic shuffles enabled traffic-role bot sessions, covers each active bot once before repeating, then uses shared text-vs-request weights. Text messages come from the shared 100-item traffic-msg pool. Requests use weighted amount buckets from 1,000 to 1,000,000 sats, with most requests in the 10,000-99,999 sat range and fewer larger asks. The runtime still tries one final encrypted read receipt per bot chat when there is a recent user-authored message to acknowledge.
 
 Queue focused traffic:
 

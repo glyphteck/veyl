@@ -8,13 +8,13 @@ export default function RootRedirect() {
         let active = true;
 
         async function send() {
-            let target = '/landing';
+            let target = '/join';
             try {
                 if (await userAvatarCache.hasRememberedAccount?.()) {
                     target = '/login';
                 }
             } catch {
-                target = '/landing';
+                target = '/join';
             }
             if (active) {
                 window.location.replace(target);

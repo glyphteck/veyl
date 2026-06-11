@@ -34,8 +34,22 @@ function PendingInviteHandler() {
             const pending = await readPendingInvite();
             if (!pending) return;
 
-            if (pending.kind === invite.chat && pending.from && pending.from !== user.username) {
-                const peer = await addPeer?.({ username: pending.from });
+            const addInvitePeer = async (value) => {
+                if (!addPeer) return null;
+                try {
+                    return await addPeer(value);
+                } catch {
+                    return null;
+                }
+            };
+            const peerByInvite = async () => {
+                if (pending.walletPK) return await addInvitePeer({ walletPK: pending.walletPK });
+                if (pending.from && pending.from !== user.username) return await addInvitePeer({ username: pending.from });
+                return null;
+            };
+
+            if ([invite.chat, invite.send, invite.media].includes(pending.kind) && pending.from && pending.from !== user.username) {
+                const peer = await addInvitePeer({ username: pending.from });
                 if (peer?.chatPK) {
                     await selectPeerChat?.(peer.chatPK);
                     router.replace({
@@ -45,11 +59,15 @@ function PendingInviteHandler() {
                 }
             }
 
-            if (pending.kind === invite.request && pending.walletPK) {
+            if (pending.kind === invite.request) {
+                const peer = await peerByInvite();
+                const walletPK = peer?.walletPK ?? pending.walletPK;
+                if (!walletPK) return;
                 router.replace({
                     pathname: '/transfer',
                     params: {
-                        walletPK: pending.walletPK,
+                        ...(peer?.uid ? { uid: peer.uid } : {}),
+                        walletPK,
                         ...(pending.amount ? { amount: pending.amount } : {}),
                         send: '1',
                     },

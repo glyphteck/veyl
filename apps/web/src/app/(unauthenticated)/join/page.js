@@ -69,7 +69,7 @@ const sections = [
     },
 ];
 
-function landingDevice(agent) {
+function joinDevice(agent) {
     const type = agent.device.type || 'desktop';
     const ua = agent.ua || '';
     const appDevice = type === 'mobile' || type === 'tablet';
@@ -78,11 +78,11 @@ function landingDevice(agent) {
     return { appDevice, iphone };
 }
 
-async function getLandingDevice() {
-    return landingDevice(userAgent({ headers: await headers() }));
+async function getJoinDevice() {
+    return joinDevice(userAgent({ headers: await headers() }));
 }
 
-function landingCta(device) {
+function joinCta(device) {
     if (device.appDevice) {
         return {
             href: '/download',
@@ -184,9 +184,9 @@ function FeatureSection({ id, icon, icon2, logos, title, body, shots, device, re
     );
 }
 
-export default async function LandingPage() {
-    const device = await getLandingDevice();
-    const cta = landingCta(device);
+export default async function JoinPage() {
+    const device = await getJoinDevice();
+    const cta = joinCta(device);
     const CtaIcon = cta.icon;
 
     return (

@@ -473,6 +473,17 @@ function buildStaticSections(options) {
                             shortcut: 'settings',
                         }
                     ),
+                    searchValue &&
+                        username &&
+                        row(
+                            { type: 'inviteLink' },
+                            {
+                                key: 'invite-link',
+                                icon: 'link',
+                                label: 'invite link',
+                                keywords: ['invite', 'share', 'copy', 'join', 'friend', 'link', 'veyl'],
+                            }
+                        ),
                     (hasChats || hasTx) &&
                         row(
                             { type: 'cloak' },

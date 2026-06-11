@@ -57,9 +57,9 @@ bun bot traffic msg @zxrl fast --solo --source @mybot
 bun bot traffic tx @zxrl fast --count 300
 bun bot traffic fund --amount 1000
 bun bot traffic stop
-bun bot group @mybot echo on
-bun bot sub group:traffic echo
-bun bot restart group:echo
+bun bot role @mybot echo on
+bun bot sub role:traffic echo
+bun bot restart role:echo
 bun bot kill @mybot
 bun nuke chat
 ```
@@ -178,9 +178,9 @@ bun bot traffic tx @zxrl fast --count 300
 bun bot traffic stop
 ```
 
-`bun bot traffic` defaults to mixed message and transfer traffic targeting `@zxrl`. `mixed`, `msg`, and `tx` accept either `--count N` or `--duration 10m`; duration derives count from the selected delay. `fast` is 500ms between events, `slow` is 5s, and the default delay is 3s. Use `msg --solo` for one bot-owned chat. `tx` always sends 1 sat per transfer. `fund` sends the flat target amount from `@faucet` by default to every enabled traffic-group bot; pass `--source @botname` to use another funding bot. `--amount` is accepted as the same per-bot fund amount.
+`bun bot traffic` defaults to mixed message and transfer traffic targeting `@zxrl`. `mixed`, `msg`, and `tx` accept either `--count N` or `--duration 10m`; duration derives count from the selected delay. `fast` is 500ms between events, `slow` is 5s, and the default delay is 3s. Use `msg --solo` for one bot-owned chat. `tx` always sends 1 sat per transfer. `fund` sends the flat target amount from `@faucet` by default to every enabled traffic-role bot; pass `--source @botname` to use another funding bot. `--amount` is accepted as the same per-bot fund amount.
 
-`bun bot group`, `bun bot behavior`, `bun bot sub`, and `bun bot unsub` update bot `groups` and `behaviors` during a live runtime. The runtime consumes those Firestore changes without a process restart. `bun bot restart <target>` updates `restartAt` for one bot, `all`, `group:name`, or `behavior:name` when a selected session needs a clean reboot.
+`bun bot role`, `bun bot sub`, and `bun bot unsub` update bot `roles` during a live runtime. The runtime consumes those Firestore changes without a process restart. `bun bot restart <target>` updates `restartAt` for one bot, `all`, or `role:name` when a selected session needs a clean reboot.
 
 Run `bun dev -v` while testing so web, iOS, and bot logs show the full receive path. The human has to unlock web and iOS as the target user before observation; web may need to be unlocked again after reloads. Use `mixed` for combined chat/wallet pressure, `msg --solo` for a single chat, `msg` for chat-list behavior, and `tx` for wallet-list behavior.
 

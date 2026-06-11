@@ -67,8 +67,11 @@ function secureRedirect(request, pathname) {
 }
 
 function hasRootInviteParams(request) {
-    const params = request.nextUrl.searchParams;
-    return params.get('invite') === '1' || params.has('kind') || params.has('from') || params.has('f');
+    for (const [key, value] of request.nextUrl.searchParams.entries()) {
+        if (value) continue;
+        if (key === 'join' || key.startsWith('join/')) return true;
+    }
+    return false;
 }
 
 export function proxy(request) {
@@ -80,12 +83,12 @@ export function proxy(request) {
 
     const isMobile = ['mobile', 'tablet'].includes(userAgent(request).device.type);
 
-    if (pathname === '/landing') {
+    if (pathname === '/join') {
         return secureNext(request);
     }
 
     if (pathname === '/') {
-        return isMobile && !hasRootInviteParams(request) ? secureRedirect(request, '/landing') : secureNext(request);
+        return isMobile && !hasRootInviteParams(request) ? secureRedirect(request, '/join') : secureNext(request);
     }
 
     if (pathname === '/download') {

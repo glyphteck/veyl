@@ -84,16 +84,22 @@ function PendingInviteHandler() {
         if (!pending) return;
 
         async function run() {
-            if (pending.kind === invite.chat && pending.from && pending.from !== user.username) {
-                const peer = await addPeer({ username: pending.from });
+            const peerByInvite = async () => {
+                if (pending.walletPK) return await addPeer({ walletPK: pending.walletPK }).catch(() => null);
+                if (pending.from && pending.from !== user.username) return await addPeer({ username: pending.from }).catch(() => null);
+                return null;
+            };
+
+            if ([invite.chat, invite.send, invite.media].includes(pending.kind) && pending.from && pending.from !== user.username) {
+                const peer = await peerByInvite();
                 if (peer?.chatPK) {
                     await selectPeerChat(peer.chatPK);
                     router.replace('/chat');
                 }
             }
-            if (pending.kind === invite.request && pending.walletPK) {
-                const peer = await addPeer({ walletPK: pending.walletPK }).catch(() => null);
-                if (peer) {
+            if (pending.kind === invite.request) {
+                const peer = await peerByInvite();
+                if (peer?.walletPK) {
                     openDialog('payments', { peer, tab: 'send', amount: pending.amount ?? null });
                 }
                 router.replace('/wallet');

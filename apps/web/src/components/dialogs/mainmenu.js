@@ -22,6 +22,7 @@ import {
     Bot,
     Hammer,
     Search,
+    Link,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useDialog } from '@/components/providers/dialogprovider';
@@ -61,6 +62,7 @@ import { Bitcoin } from '@/components/bitcoin';
 import { makeReq, makeTxt } from '@veyl/shared/chat/messages';
 import { Dot } from '@/components/dot';
 import { qr } from '@veyl/shared/qr';
+import { invite, makeInviteLink } from '@veyl/shared/invite';
 import { Shortcut } from '@/components/shortcut';
 
 const ROW_ICONS = {
@@ -76,6 +78,7 @@ const ROW_ICONS = {
     hammer: Hammer,
     history: History,
     lock: Lock,
+    link: Link,
     logOut: LogOut,
     messageCircle: MessageCircle,
     messageCirclePlus: MessageCirclePlus,
@@ -340,6 +343,22 @@ export default function MainMenu({ close, data, open = true }) {
         void copyFundingAddress(address).catch(() => {});
     };
 
+    const copyInviteLink = async () => {
+        const link = makeInviteLink({ kind: invite.join, from: username });
+        if (!link) {
+            toast.error('invite unavailable');
+            return;
+        }
+        try {
+            await navigator.clipboard.writeText(link);
+            close();
+            toast('invite link copied');
+        } catch (error) {
+            console.error('invite link copy failed', error);
+            toast.error('could not copy invite link');
+        }
+    };
+
     const runSlashCommand = async (parsed) => {
         if (!parsed?.complete) return;
         let peer =
@@ -535,6 +554,8 @@ export default function MainMenu({ close, data, open = true }) {
             openRoute(action.href);
         } else if (action.type === 'fundingQr') {
             void openFundingQr();
+        } else if (action.type === 'inviteLink') {
+            void copyInviteLink();
         } else if (action.type === 'clearCache') {
             void clearCache();
         } else if (action.type === 'cloak') {

@@ -215,8 +215,13 @@ export function createPeerProvider({ useChat, useUser, useTxData, useVault, peer
                     next.add(peer.chatPK);
                 }
             }
+            for (const peer of blockedPeers || []) {
+                if (peer?.chatPK) {
+                    next.add(peer.chatPK);
+                }
+            }
             return next;
-        }, [allPeers, blockedSet]);
+        }, [allPeers, blockedPeers, blockedSet]);
 
         const enrichedPeers = useMemo(() => {
             const next = allPeers || [];

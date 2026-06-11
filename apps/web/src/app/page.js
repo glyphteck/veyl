@@ -15,7 +15,7 @@ export async function generateMetadata({ searchParams }) {
             description: copy.body,
             url: '/',
             siteName: 'veyl',
-            images: [{ url: walletLogoSrc, width: 512, height: 512, alt: 'veyl wallet' }],
+            images: [{ url: walletLogoSrc, width: 512, height: 512, alt: 'veyl' }],
             type: 'website',
         },
         twitter: {

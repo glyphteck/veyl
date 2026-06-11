@@ -64,7 +64,7 @@ export default function PeerChatRoute() {
     const { chats, selectChat, resolvePeerChatId, sendMessage, sendAttachment, sendImage, updateMessage } = useChat();
     const { chatPK, chatBanned } = useUser();
     const { sendMoneyWithSpark } = useWallet();
-    const { peerByChatPK, updatePeer } = usePeer() || {};
+    const { peerByChatPK, isBlockedChatPK, updatePeer } = usePeer() || {};
     const backTap = useTap({ onPress: () => router.dismissTo('/chat') });
     const inputH = useRef(0);
     const { lockRoute } = useRouteLock();
@@ -108,6 +108,7 @@ export default function PeerChatRoute() {
     const currentChat = useMemo(() => (chatId && Array.isArray(chats) ? (chats.find((chat) => chat?.id === chatId) ?? null) : null), [chatId, chats]);
 
     const peerChatPK = useMemo(() => getChatPeerPK(currentChat, chatPK) ?? routeChatPK, [chatPK, currentChat, routeChatPK]);
+    const routeBlocked = !!peerChatPK && !!isBlockedChatPK?.(peerChatPK);
     const peerProfile = useMemo(() => (peerChatPK ? (peerByChatPK?.get(peerChatPK) ?? null) : null), [peerByChatPK, peerChatPK]);
     const chatTitle = useMemo(() => {
         if (!peerChatPK) return 'chat';
@@ -178,6 +179,13 @@ export default function PeerChatRoute() {
         }
         router.replace('/wallet');
     }, [chatBanned, router]);
+
+    useEffect(() => {
+        if (!routeBlocked) {
+            return;
+        }
+        router.dismissTo('/chat');
+    }, [routeBlocked, router]);
 
     useEffect(() => {
         setDraft(null);
@@ -448,7 +456,7 @@ export default function PeerChatRoute() {
         return () => clearTimeout(timer);
     }, [composerOverlayPadding, hasComposerOverlay]);
 
-    if (chatBanned) {
+    if (chatBanned || routeBlocked) {
         return null;
     }
 
