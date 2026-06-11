@@ -2,6 +2,10 @@
 
 Repo-level changes are listed newest first. Keep entries short and concrete. Broad pushes get grouped bullets, while narrow fixes can use one concise bugfix or cleanup bullet that still names the actual change.
 
+## 0.14.15 - 2026-06-11
+
+- Added canonical Veyl app-link QR and invite handling with root invite previews, pending invite resume, and production/test/dev iOS app priority.
+
 ## 0.14.12 - 2026-06-10
 
 - Added chat-preview privacy controls across web and iOS while keeping read-receipt and reaction controls stream-only without inbox pings.

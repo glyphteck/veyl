@@ -66,6 +66,11 @@ function secureRedirect(request, pathname) {
     return response;
 }
 
+function hasRootInviteParams(request) {
+    const params = request.nextUrl.searchParams;
+    return params.get('invite') === '1' || params.has('kind') || params.has('from') || params.has('f');
+}
+
 export function proxy(request) {
     const { pathname } = request.nextUrl;
 
@@ -80,7 +85,7 @@ export function proxy(request) {
     }
 
     if (pathname === '/') {
-        return isMobile ? secureRedirect(request, '/landing') : secureNext(request);
+        return isMobile && !hasRootInviteParams(request) ? secureRedirect(request, '/landing') : secureNext(request);
     }
 
     if (pathname === '/download') {

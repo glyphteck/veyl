@@ -1,16 +1,18 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import Loading from '@/components/loading';
 import Navbar from '@/components/navbar';
-import { useChatInput } from '@/components/providers/chatprovider';
-import { AppDialogHost, useDialogState } from '@/components/providers/dialogprovider';
-import { PeerProvider } from '@/components/providers/peerprovider';
+import { useChat, useChatInput } from '@/components/providers/chatprovider';
+import { AppDialogHost, useDialog, useDialogState } from '@/components/providers/dialogprovider';
+import { PeerProvider, usePeer } from '@/components/providers/peerprovider';
 import { ShortcutProvider } from '@/components/providers/shortcutprovider';
 import { TxDataProvider } from '@/components/providers/txdataprovider';
 import { useUser } from '@/components/providers/userprovider';
 import { useVault } from '@/components/providers/vaultprovider';
+import { dropPendingInvite, readPendingInvite } from '@/lib/invite';
+import { invite } from '@veyl/shared/invite';
 import { WalletProvider } from '@/components/providers/walletprovider';
 import { writeResumeTarget } from '@veyl/shared/cache/localdata';
 import { resumeTargetFromPath } from '@veyl/shared/navigation/resume';
@@ -64,6 +66,46 @@ function AppShell({ children }) {
             <main className="min-h-0 flex-1">{children}</main>
         </div>
     );
+}
+
+function PendingInviteHandler() {
+    const router = useRouter();
+    const user = useUser();
+    const { openDialog } = useDialog();
+    const { selectPeerChat } = useChat();
+    const { addPeer } = usePeer();
+    const handledRef = useRef(false);
+
+    useEffect(() => {
+        if (handledRef.current) return;
+        handledRef.current = true;
+
+        const pending = readPendingInvite();
+        if (!pending) return;
+
+        async function run() {
+            if (pending.kind === invite.chat && pending.from && pending.from !== user.username) {
+                const peer = await addPeer({ username: pending.from });
+                if (peer?.chatPK) {
+                    await selectPeerChat(peer.chatPK);
+                    router.replace('/chat');
+                }
+            }
+            if (pending.kind === invite.request && pending.walletPK) {
+                const peer = await addPeer({ walletPK: pending.walletPK }).catch(() => null);
+                if (peer) {
+                    openDialog('payments', { peer, tab: 'send', amount: pending.amount ?? null });
+                }
+                router.replace('/wallet');
+            }
+        }
+
+        run()
+            .catch((error) => console.warn('pending invite failed', error))
+            .finally(() => dropPendingInvite());
+    }, [addPeer, openDialog, router, selectPeerChat, user.username]);
+
+    return null;
 }
 
 export default function AppLayout({ children }) {
@@ -123,6 +165,7 @@ export default function AppLayout({ children }) {
                 <PeerProvider>
                     <AppDialogHost>
                         <ShortcutProvider>
+                            <PendingInviteHandler />
                             <AppShell>{children}</AppShell>
                         </ShortcutProvider>
                     </AppDialogHost>

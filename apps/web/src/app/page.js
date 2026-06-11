@@ -1,8 +1,32 @@
-'use client';
+import { describeInvite } from '@veyl/shared/invite';
+import { walletLogoSrc } from '@/lib/brand';
+import RootClient from './rootclient';
 
-import RootRedirect from './rootredirect';
-import { RootGate } from '@/lib/routeguards';
+export async function generateMetadata({ searchParams }) {
+    const params = await searchParams;
+    const copy = describeInvite(params);
+    if (!copy) return {};
+
+    return {
+        title: copy.title,
+        description: copy.body,
+        openGraph: {
+            title: copy.title,
+            description: copy.body,
+            url: '/',
+            siteName: 'veyl',
+            images: [{ url: walletLogoSrc, width: 512, height: 512, alt: 'veyl wallet' }],
+            type: 'website',
+        },
+        twitter: {
+            card: 'summary',
+            title: copy.title,
+            description: copy.body,
+            images: [walletLogoSrc],
+        },
+    };
+}
 
 export default function Root() {
-    return <RootGate guest={<RootRedirect />} />;
+    return <RootClient />;
 }

@@ -1,10 +1,15 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { AppState } from 'react-native';
-import { Stack, usePathname } from 'expo-router';
+import { Stack, usePathname, useRouter } from 'expo-router';
 import { writeResumeTarget } from '@veyl/shared/cache/localdata';
+import { invite } from '@veyl/shared/invite';
 import { resumeTargetFromPath } from '@veyl/shared/navigation/resume';
 import { useTheme } from '@/providers/themeprovider';
+import { useChat } from '@/providers/chatprovider';
+import { usePeer } from '@/providers/peerprovider';
+import { useUser } from '@/providers/userprovider';
 import { useVault } from '@/providers/vaultprovider';
+import { dropPendingInvite, readPendingInvite } from '@/lib/invite';
 import { mark } from '@/lib/diagnostics';
 import { stackScreenOptions } from '@/lib/navigation/stackoptions';
 
@@ -13,6 +18,55 @@ export const unstable_settings = {
 };
 
 const SHEET_ROUTES = new Set(['userscan', 'fundwallet', 'fundinginfo', 'withdraw', 'withdrawalinfo', 'transfer', 'peerselector', 'sendphoto', 'sharemedia']);
+
+function PendingInviteHandler() {
+    const router = useRouter();
+    const user = useUser();
+    const { selectPeerChat } = useChat();
+    const { addPeer } = usePeer();
+    const handledRef = useRef(false);
+
+    useEffect(() => {
+        if (handledRef.current) return;
+        handledRef.current = true;
+
+        async function run() {
+            const pending = await readPendingInvite();
+            if (!pending) return;
+
+            if (pending.kind === invite.chat && pending.from && pending.from !== user.username) {
+                const peer = await addPeer?.({ username: pending.from });
+                if (peer?.chatPK) {
+                    await selectPeerChat?.(peer.chatPK);
+                    router.replace({
+                        pathname: '/chat/[peerchatpk]',
+                        params: { peerchatpk: peer.chatPK },
+                    });
+                }
+            }
+
+            if (pending.kind === invite.request && pending.walletPK) {
+                router.replace({
+                    pathname: '/transfer',
+                    params: {
+                        walletPK: pending.walletPK,
+                        ...(pending.amount ? { amount: pending.amount } : {}),
+                        send: '1',
+                    },
+                });
+            }
+
+            await dropPendingInvite();
+        }
+
+        run().catch((error) => {
+            console.warn('pending invite failed', error);
+            void dropPendingInvite();
+        });
+    }, [addPeer, router, selectPeerChat, user.username]);
+
+    return null;
+}
 
 export default function AppLayout() {
     const { theme } = useTheme();
@@ -62,102 +116,105 @@ export default function AppLayout() {
     }, [lockState, saveCurrentRoute]);
 
     return (
-        <Stack screenOptions={stackScreenOptions(theme, SHEET_ROUTES)}>
-            <Stack.Screen name="(home)" options={{ animationTypeForReplace: 'pop' }} />
-            <Stack.Screen name="community" />
-            <Stack.Screen name="exportwallet" />
-            <Stack.Screen name="blocked" />
-            <Stack.Screen name="legal" />
-            <Stack.Screen
-                name="chat/[peerchatpk]/index"
-                options={{
-                    freezeOnBlur: true,
-                }}
-            />
-            <Stack.Screen name="chat/[peerchatpk]/settings" />
-            <Stack.Screen name="history" />
-            <Stack.Screen
-                name="userscan"
-                options={{
-                    presentation: 'formSheet',
-                    sheetGrabberVisible: true,
-                    sheetAllowedDetents: 'fitToContents',
-                    contentStyle: { backgroundColor: 'transparent' },
-                }}
-            />
-            <Stack.Screen
-                name="fundwallet"
-                options={{
-                    presentation: 'formSheet',
-                    sheetGrabberVisible: true,
-                    sheetAllowedDetents: 'fitToContents',
-                    contentStyle: { backgroundColor: 'transparent' },
-                }}
-            />
-            <Stack.Screen
-                name="fundinginfo"
-                options={{
-                    presentation: 'formSheet',
-                    sheetGrabberVisible: true,
-                    sheetAllowedDetents: 'fitToContents',
-                    contentStyle: { backgroundColor: 'transparent' },
-                }}
-            />
-            <Stack.Screen
-                name="withdraw"
-                options={{
-                    presentation: 'formSheet',
-                    sheetGrabberVisible: true,
-                    sheetAllowedDetents: 'fitToContents',
-                    contentStyle: { backgroundColor: 'transparent' },
-                }}
-            />
-            <Stack.Screen
-                name="withdrawalinfo"
-                options={{
-                    presentation: 'formSheet',
-                    sheetGrabberVisible: true,
-                    sheetAllowedDetents: 'fitToContents',
-                    contentStyle: { backgroundColor: 'transparent' },
-                }}
-            />
-            <Stack.Screen name="deleteaccount" />
-            <Stack.Screen
-                name="transfer"
-                options={{
-                    presentation: 'formSheet',
-                    sheetGrabberVisible: true,
-                    sheetAllowedDetents: 'fitToContents',
-                    contentStyle: { backgroundColor: 'transparent' },
-                }}
-            />
-            <Stack.Screen
-                name="peerselector"
-                options={{
-                    presentation: 'formSheet',
-                    sheetGrabberVisible: true,
-                    sheetAllowedDetents: [1],
-                    contentStyle: { backgroundColor: theme?.background },
-                }}
-            />
-            <Stack.Screen
-                name="sendphoto"
-                options={{
-                    presentation: 'formSheet',
-                    sheetGrabberVisible: true,
-                    sheetAllowedDetents: [1],
-                    contentStyle: { backgroundColor: theme?.background },
-                }}
-            />
-            <Stack.Screen
-                name="sharemedia"
-                options={{
-                    presentation: 'formSheet',
-                    sheetGrabberVisible: true,
-                    sheetAllowedDetents: [1],
-                    contentStyle: { backgroundColor: theme?.background },
-                }}
-            />
-        </Stack>
+        <>
+            <PendingInviteHandler />
+            <Stack screenOptions={stackScreenOptions(theme, SHEET_ROUTES)}>
+                <Stack.Screen name="(home)" options={{ animationTypeForReplace: 'pop' }} />
+                <Stack.Screen name="community" />
+                <Stack.Screen name="exportwallet" />
+                <Stack.Screen name="blocked" />
+                <Stack.Screen name="legal" />
+                <Stack.Screen
+                    name="chat/[peerchatpk]/index"
+                    options={{
+                        freezeOnBlur: true,
+                    }}
+                />
+                <Stack.Screen name="chat/[peerchatpk]/settings" />
+                <Stack.Screen name="history" />
+                <Stack.Screen
+                    name="userscan"
+                    options={{
+                        presentation: 'formSheet',
+                        sheetGrabberVisible: true,
+                        sheetAllowedDetents: 'fitToContents',
+                        contentStyle: { backgroundColor: 'transparent' },
+                    }}
+                />
+                <Stack.Screen
+                    name="fundwallet"
+                    options={{
+                        presentation: 'formSheet',
+                        sheetGrabberVisible: true,
+                        sheetAllowedDetents: 'fitToContents',
+                        contentStyle: { backgroundColor: 'transparent' },
+                    }}
+                />
+                <Stack.Screen
+                    name="fundinginfo"
+                    options={{
+                        presentation: 'formSheet',
+                        sheetGrabberVisible: true,
+                        sheetAllowedDetents: 'fitToContents',
+                        contentStyle: { backgroundColor: 'transparent' },
+                    }}
+                />
+                <Stack.Screen
+                    name="withdraw"
+                    options={{
+                        presentation: 'formSheet',
+                        sheetGrabberVisible: true,
+                        sheetAllowedDetents: 'fitToContents',
+                        contentStyle: { backgroundColor: 'transparent' },
+                    }}
+                />
+                <Stack.Screen
+                    name="withdrawalinfo"
+                    options={{
+                        presentation: 'formSheet',
+                        sheetGrabberVisible: true,
+                        sheetAllowedDetents: 'fitToContents',
+                        contentStyle: { backgroundColor: 'transparent' },
+                    }}
+                />
+                <Stack.Screen name="deleteaccount" />
+                <Stack.Screen
+                    name="transfer"
+                    options={{
+                        presentation: 'formSheet',
+                        sheetGrabberVisible: true,
+                        sheetAllowedDetents: 'fitToContents',
+                        contentStyle: { backgroundColor: 'transparent' },
+                    }}
+                />
+                <Stack.Screen
+                    name="peerselector"
+                    options={{
+                        presentation: 'formSheet',
+                        sheetGrabberVisible: true,
+                        sheetAllowedDetents: [1],
+                        contentStyle: { backgroundColor: theme?.background },
+                    }}
+                />
+                <Stack.Screen
+                    name="sendphoto"
+                    options={{
+                        presentation: 'formSheet',
+                        sheetGrabberVisible: true,
+                        sheetAllowedDetents: [1],
+                        contentStyle: { backgroundColor: theme?.background },
+                    }}
+                />
+                <Stack.Screen
+                    name="sharemedia"
+                    options={{
+                        presentation: 'formSheet',
+                        sheetGrabberVisible: true,
+                        sheetAllowedDetents: [1],
+                        contentStyle: { backgroundColor: theme?.background },
+                    }}
+                />
+            </Stack>
+        </>
     );
 }

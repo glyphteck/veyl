@@ -4,15 +4,15 @@
         "details": [
             {
                 "appID": "HHTM355M49.com.glyphteck.veyl",
-                "paths": ["/qr", "/qr/*"]
-            },
-            {
-                "appID": "HHTM355M49.com.glyphteck.veyl.dev",
-                "paths": ["/qr", "/qr/*"]
+                "paths": ["/", "/qr", "/qr/*"]
             },
             {
                 "appID": "HHTM355M49.com.glyphteck.veyl.test",
-                "paths": ["/qr", "/qr/*"]
+                "paths": ["/", "/qr", "/qr/*"]
+            },
+            {
+                "appID": "HHTM355M49.com.glyphteck.veyl.dev",
+                "paths": ["/", "/qr", "/qr/*"]
             }
         ]
     }

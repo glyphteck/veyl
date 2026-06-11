@@ -11,7 +11,7 @@ import { MediaViewerProvider } from '@/providers/mediaviewerprovider';
 import { UserProvider, useUser } from '@/providers/userprovider';
 import { BitcoinProvider } from '@/providers/bitcoinprovider';
 import { VaultProvider, useVault } from '@/providers/vaultprovider';
-import { Stack } from 'expo-router';
+import { Stack, useGlobalSearchParams } from 'expo-router';
 import { usePathname } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { hasCurrentCommunityRules } from '@veyl/shared/community';
@@ -20,6 +20,7 @@ import { cloud } from '@/lib/cloud';
 import { KeyboardRootProvider } from '@/components/keyboardscroll';
 import { installDiagnostics, mark } from '@/lib/diagnostics';
 import { stackScreenOptions } from '@/lib/navigation/stackoptions';
+import { writePendingInvite } from '@/lib/invite';
 
 installDiagnostics();
 void SplashScreen.preventAutoHideAsync();
@@ -62,6 +63,7 @@ function AppContent() {
     const user = useUser();
     const { vaultReady, vault, lockState, touch } = useVault();
     const pathname = usePathname();
+    const params = useGlobalSearchParams();
     const [authReady, setAuthReady] = useState(!!cloud.auth.user);
     const [ready, setReady] = useState(false);
 
@@ -77,6 +79,11 @@ function AppContent() {
     useEffect(() => {
         mark('route.path', { pathname, route: safeRoute(pathname) });
     }, [pathname]);
+
+    useEffect(() => {
+        if (pathname !== '/' && !pathname.startsWith('/qr')) return;
+        void writePendingInvite(params);
+    }, [params, pathname]);
 
     const hasAuthSession = !!cloud.auth.user || !!user.uid;
     const signedIn = !!user.uid;

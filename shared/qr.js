@@ -1,28 +1,10 @@
-import { appLinkDomains, domains, origins } from './links.js';
-import { getAppOrigin, resolveNetwork } from './network.js';
+import { origins } from './links.js';
 import { getRouteParam } from './navigation/params.js';
 import { isUsername, normalizeUsername } from './username.js';
 import { cleanText, lowerText } from './utils/text.js';
-import { resolveVeylVariant } from './variant.js';
-
-const originByVariant = Object.freeze({
-    dev: origins.veylDev,
-    test: origins.veylTest,
-    prod: origins.veyl,
-});
 
 function getQrOrigin() {
-    const origin = globalThis?.location?.origin;
-    const host = globalThis?.location?.hostname;
-    if (host === domains.veylDev) {
-        return origins.veylDev;
-    }
-    if (origin && host && appLinkDomains.includes(host)) {
-        return origin;
-    }
-
-    const env = globalThis?.process?.env ?? {};
-    return originByVariant[resolveVeylVariant(env, '')] || getAppOrigin(resolveNetwork(env));
+    return origins.veyl;
 }
 
 const tx = {

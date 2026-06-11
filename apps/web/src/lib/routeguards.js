@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Loading from '@/components/loading';
 import { cloud } from '@/lib/cloud';
+import { writePendingInviteFromLocation } from '@/lib/invite';
 
 const STEP_HREF = {
     username: '/getusername',
@@ -46,6 +47,7 @@ function useOnboardingRefreshKey() {
 function leaveAuth() {
     if (typeof window === 'undefined' || leavingAuth) return;
     leavingAuth = true;
+    writePendingInviteFromLocation();
     replaceDocument('/');
 }
 

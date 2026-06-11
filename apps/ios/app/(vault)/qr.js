@@ -8,6 +8,7 @@ import { useChat } from '@/providers/chatprovider';
 import { usePeer } from '@/providers/peerprovider';
 import { useUser } from '@/providers/userprovider';
 import { useWallet } from '@/providers/walletprovider';
+import { dropPendingInvite } from '@/lib/invite';
 
 export default function QRRoute() {
     const params = useLocalSearchParams();
@@ -24,6 +25,8 @@ export default function QRRoute() {
         const data = readQr(params);
 
         async function run() {
+            await dropPendingInvite();
+
             if (data?.kind === qr.user && data.username) {
                 const peer = await addPeer?.({ username: data.username });
                 if (!chatBanned && chatPK && peer?.chatPK) {
