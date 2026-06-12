@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useChat } from '@/components/providers/chatprovider';
-import { hasStoredFileRef, isExpiredAttachmentMsg } from '@veyl/shared/chat/messages';
+import { hasStoredFileRef, isExpiredAttachmentMsg, isImageAttachmentMsg } from '@veyl/shared/chat/messages';
 import { createObjectUrlCache, revokeObjectUrl } from './objecturlcache';
 
 const imageCache = createObjectUrlCache({ max: 40 });
@@ -12,7 +12,7 @@ function getCacheKey(msg) {
 }
 
 function isRemoteImageMsg(msg) {
-    return msg?.t === 'img' && hasStoredFileRef(msg);
+    return isImageAttachmentMsg(msg) && hasStoredFileRef(msg);
 }
 
 function retainImage(key) {

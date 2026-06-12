@@ -87,6 +87,8 @@ export function getAttachmentTitle(msg) {
             return 'video';
         case 'img':
             return 'image';
+        case 'gif':
+            return 'gif';
         default:
             return 'file';
     }
@@ -116,6 +118,18 @@ export function getImageAspect(msg, fallback = 4 / 3) {
 
 export function isPngMsg(msg) {
     return lowerText(msg?.m) === 'image/png';
+}
+
+export function isGifMsg(msg) {
+    return msg?.t === 'gif' || lowerText(msg?.m) === 'image/gif';
+}
+
+export function isImageAttachmentMsgType(type) {
+    return type === 'img' || type === 'gif';
+}
+
+export function isImageAttachmentMsg(msg) {
+    return isImageAttachmentMsgType(msg?.t);
 }
 
 export function isAttachmentMsgType(type) {
@@ -191,6 +205,10 @@ export function makeSharedAttachment(msg) {
 
 export function makeImg(file) {
     return makeAttachment('img', file);
+}
+
+export function makeGif(file) {
+    return makeAttachment('gif', file);
 }
 
 export function makeM4a(file) {

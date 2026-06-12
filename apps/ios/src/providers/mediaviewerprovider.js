@@ -20,7 +20,7 @@ export function MediaViewerProvider({ children }) {
 
         for (const item of Array.isArray(nextItems) ? nextItems : []) {
             const id = cleanText(item?.id);
-            if (!id || seen.has(id) || (item?.type !== 'img' && item?.type !== 'mp4')) {
+            if (!id || seen.has(id) || (item?.type !== 'img' && item?.type !== 'gif' && item?.type !== 'mp4')) {
                 continue;
             }
             seen.add(id);

@@ -1,7 +1,7 @@
 'use client';
 
 import { putChatFile, putSharedFile, readChatFile } from '../files.js';
-import { makeAttachment, makeFile, makeImg, makeM4a, makeMp4 } from './messages.js';
+import { makeAttachment, makeFile, makeGif, makeImg, makeM4a, makeMp4 } from './messages.js';
 
 export function pickAttachmentMeta(meta = {}) {
     return {
@@ -19,6 +19,8 @@ function buildAttachmentMsg(type, file) {
     switch (type) {
         case 'img':
             return makeImg(file);
+        case 'gif':
+            return makeGif(file);
         case 'm4a':
             return makeM4a(file);
         case 'mp4':
@@ -48,6 +50,10 @@ export async function putSharedAttachment(type, data, meta = {}) {
 
 export async function putImg(pair, cid, data, meta = {}) {
     return putAttachment(pair, cid, 'img', data, meta);
+}
+
+export async function putGif(pair, cid, data, meta = {}) {
+    return putAttachment(pair, cid, 'gif', data, meta);
 }
 
 export async function putM4a(pair, cid, data, meta = {}) {

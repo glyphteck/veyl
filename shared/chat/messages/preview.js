@@ -6,7 +6,7 @@ import { formatRelativeTime, nextRelativeTimeRefreshMs, timestampMs } from '../.
 import { getMessageRetention, seenMessageTtlMs, ttlMillis } from '../ttl.js';
 import { canShowMsg, getSystemMsgText, isReadReceiptMsg, isReactionMsg, isSystemMsg } from './control.js';
 import { getAttachmentCaption, getAttachmentTitle, isAttachmentMsgType } from './files.js';
-import { hasText } from './text.js';
+import { formatTextLinks, hasText } from './text.js';
 
 export const CHAT_PREVIEW_TEXT = Object.freeze({
     hidden: '',
@@ -61,6 +61,7 @@ function settingsPreviewText(preview, self) {
 function attachmentPreviewText(preview, self) {
     const prefix = self ? 'you sent' : 'sent';
     if (preview.t === 'img') return `${prefix} an image`;
+    if (preview.t === 'gif') return `${prefix} a gif`;
     if (preview.t === 'm4a') return self ? 'you sent audio' : 'sent audio';
     if (preview.t === 'mp4') return `${prefix} a video`;
     return `${prefix} a file`;
@@ -199,7 +200,7 @@ function contentPreviewText(preview, chatPK, settings, btcPrice) {
         return settingsPreviewText(preview, self) || getSystemMsgText(preview);
     }
     if (preview.t === 'txt' && typeof preview.c === 'string') {
-        return preview.c;
+        return formatTextLinks(preview.c);
     }
     if (isAttachmentMsgType(preview?.t)) return attachmentPreviewText(preview, self);
     if (preview.t === 'req') {
@@ -225,7 +226,7 @@ export function getReplyPreview(msg) {
         return '';
     }
     if (msg.t === 'txt' && hasText(msg.c)) {
-        return msg.c.trim();
+        return formatTextLinks(msg.c).trim();
     }
     if (msg.t === 'req') {
         return msg.tx ? 'payment' : 'payment request';

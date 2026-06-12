@@ -25,6 +25,7 @@ export function ChatMessageType({ msg, fromPeer = false, peerChatPK, peerDisplay
             body = <RequestMessage msg={msg} fromPeer={fromPeer} peerDisplayName={peerDisplayName} onPay={onPay} isPaying={isPaying} />;
             break;
         case 'img':
+        case 'gif':
             body = <ImageMessage msg={msg} peerChatPK={peerChatPK} />;
             break;
         case 'm4a':

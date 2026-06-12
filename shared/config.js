@@ -84,7 +84,7 @@ export const CHAT_VISITED_PREFETCH_OLDER_BATCHES = 0;
 export const CHAT_MEDIA_WARM_MESSAGES_PER_CHAT = CHAT_MESSAGE_BATCH_SIZE;
 export const CHAT_MEDIA_WARM_START_DELAY_MS = 600;
 export const CHAT_MEDIA_WARM_STEP_DELAY_MS = 120;
-export const CHAT_MEDIA_WARM_TYPES = Object.freeze(['img', 'mp4']);
+export const CHAT_MEDIA_WARM_TYPES = Object.freeze(['img', 'gif', 'mp4']);
 export const CHAT_MEDIA_WARM_MAX_BYTES = 0;
 
 // Chat write-throttle cost knobs. These batch noisy control messages into fewer Firestore writes.

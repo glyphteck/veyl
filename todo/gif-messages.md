@@ -1,18 +1,14 @@
 # GIF Messages
 
-status: active
+status: pending manual verification
 branch: current
 worktree: current
-base: main@dd4fbb925656
-repo version: 0.14.15
+base: main@40135c16ca3b
+repo version: 0.15.1
 
 ## Scope
 
-Add support for animated GIFs as chat media messages across web and iOS.
-
-The current media path treats `image/*` as `img`, but web image preparation converts non-PNG images to JPEG, which strips GIF animation. GIF support should preserve animation, captions, dimensions, caching, sharing, save/unsave, delete cleanup, downloads, previews, and reply thumbnails through the existing encrypted chat media lifecycle.
-
-Prefer one shared representation. The likely shape is still `img` with `m: image/gif`, because GIF is an image subtype and the existing message contract already uses `img` for image payloads. Add a separate `gif` payload type only if the renderer, cache, or lifecycle behavior cannot stay cleanly under `img`.
+Add first-class animated GIF chat messages across web and iOS.
 
 ## Non-Goals
 
@@ -29,12 +25,11 @@ Prefer one shared representation. The likely shape is still `img` with `m: image
 
 ## Plan
 
-1. Confirm the payload choice: keep GIFs as `img` with `m: image/gif` unless a separate message type has a clear ownership benefit.
-2. Update attachment preparation so GIF bytes are not transcoded or flattened, while existing JPEG/PNG and video shaping stays unchanged.
-3. Make render, reply, media viewer, download, share, cache, and warmup paths treat animated GIF image messages consistently on web and iOS.
-4. Keep upload limits and Storage metadata aligned with the existing encrypted chat media model.
-5. Update the chat/media lifecycle docs if the supported image contract changes.
+1. Verify web can send an animated GIF and the recipient sees animation in the message row, reply thumbnail, and shared-media destination.
+2. Verify iOS can send an animated GIF from Photos or Files and the recipient sees animation in the message row, reply thumbnail, and fullscreen media viewer.
+3. Verify save/unsave, delete cleanup, download/share, local retry, report evidence, and bot echo behavior still treat GIFs as encrypted chat media.
+4. After verification, delete this todo and keep the shipped payload contract in `guidelines/chat.md`.
 
 ## Handoff
 
-Start from the current chat media path rather than adding a new attachment stack. The main risk is accidentally converting GIFs into JPEG previews or creating two image representations that drift across web and iOS.
+The code path now uses a separate encrypted payload type `gif` while reusing the image render/cache/viewer surfaces. The remaining risk is runtime animation support in the web and iOS image renderers plus platform download/share behavior.

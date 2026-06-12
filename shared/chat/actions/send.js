@@ -3,7 +3,7 @@
 import { useCallback, useRef } from 'react';
 import { attachmentBytes, checkAttachmentSize, getAttachmentType, isAttachmentType, makeAttachmentUnavailableError, makeChatUnavailableError, makeTxtFileAttachment, saveMedia } from '../attachments.js';
 import { setLocalChats } from '../chats.js';
-import { hasSharedMediaFileRef, hasStoredFileRef, isAttachmentMsgType, isLongTxt, makeSharedAttachment } from '../messages.js';
+import { hasSharedMediaFileRef, hasStoredFileRef, isAttachmentMsgType, isImageAttachmentMsgType, isLongTxt, makeSharedAttachment } from '../messages.js';
 import { putSharedAttachment } from '../media.js';
 import { usePendingSendQueue } from './pending.js';
 import { getPeerChatPKFromChatId } from '../ids.js';
@@ -203,7 +203,7 @@ export function prepareAttachment(chatPK, attachment) {
         ...(Number.isFinite(attachment?.duration) ? { d: attachment.duration } : {}),
         ...(caption ? { c: caption } : {}),
         ...(name ? { n: name } : {}),
-        ...((type === 'img' || type === 'm4a' || type === 'mp4') && localUri ? { localUri } : {}),
+        ...((isImageAttachmentMsgType(type) || type === 'm4a' || type === 'mp4') && localUri ? { localUri } : {}),
         ...(attachment?.data ? { localData: attachment.data } : {}),
         cid,
         s: chatPK,
@@ -446,7 +446,7 @@ export function useChatSend({ cloud, media = {}, uid, chatBanned, chatPK, chatPr
                     cachedLocalMediaRef.current.add(mediaKey);
                     saveMedia(localCache, message, local.localData, message);
                 }
-                if (message?.t === 'img' && mediaKey && !adoptedLocalMediaRef.current.has(mediaKey)) {
+                if (isImageAttachmentMsgType(message?.t) && mediaKey && !adoptedLocalMediaRef.current.has(mediaKey)) {
                     adoptedLocalMediaRef.current.add(mediaKey);
                     adoptLocalMessageMedia?.(message, local);
                 }
@@ -691,7 +691,7 @@ export function useChatSend({ cloud, media = {}, uid, chatBanned, chatPK, chatPr
         [cloud, media, chatBanned, chatPK, chatPrivateKey, localCache, queueSend, rememberCachedLocalMedia, sendOptionsForPeer, sendOptionsForQueuedWrite]
     );
 
-    const sendImage = useCallback((peerChatPK, image) => sendAttachment(peerChatPK, { ...image, type: 'img' }), [sendAttachment]);
+    const sendImage = useCallback((peerChatPK, image) => sendAttachment(peerChatPK, { ...image, type: image?.type || 'img' }), [sendAttachment]);
 
     const sendAttachmentMany = useCallback(
         async (peerChatPKs, attachment) => {
@@ -784,7 +784,7 @@ export function useChatSend({ cloud, media = {}, uid, chatBanned, chatPK, chatPr
         [cloud, media, chatBanned, chatPK, chatPrivateKey, enqueueSendJob, localCache, markLocalStatus, rememberCachedLocalMedia, sendOptionsForPeer, showLocalMessage, uid]
     );
 
-    const sendImageMany = useCallback((peerChatPKs, image) => sendAttachmentMany(peerChatPKs, { ...image, type: 'img' }), [sendAttachmentMany]);
+    const sendImageMany = useCallback((peerChatPKs, image) => sendAttachmentMany(peerChatPKs, { ...image, type: image?.type || 'img' }), [sendAttachmentMany]);
 
     const resolveSharePayload = useCallback(
         async (message, options = {}) => {

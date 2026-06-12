@@ -24,6 +24,8 @@ function reportTypeLabel(type) {
             return 'request';
         case 'img':
             return 'image';
+        case 'gif':
+            return 'gif';
         case 'file':
             return 'file';
         case 'm4a':
@@ -83,7 +85,7 @@ function ReportEvidence({ report }) {
         toast('reported text copied to clipboard', { icon: <Copy /> });
     };
 
-    if (attachment?.kind === 'img' && fileUrl) {
+    if ((attachment?.kind === 'img' || attachment?.kind === 'gif') && fileUrl) {
         const width = imageWidth(aspect);
 
         return (

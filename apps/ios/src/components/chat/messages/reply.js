@@ -307,6 +307,7 @@ function ReplyPreview({ blockExternalGestures, reply, replyFromPeer, peerChatPK,
         case 'req':
             return <ReplyRequest blockExternalGestures={blockExternalGestures} reply={reply} replyFromPeer={replyFromPeer} peerDisplayName={peerDisplayName} onReplyPress={onReplyPress} />;
         case 'img':
+        case 'gif':
             return <ReplyImage blockExternalGestures={blockExternalGestures} reply={reply} peerChatPK={peerChatPK} onReplyPress={onReplyPress} />;
         case 'mp4':
             return <ReplyVideo blockExternalGestures={blockExternalGestures} reply={reply} peerChatPK={peerChatPK} onReplyPress={onReplyPress} />;

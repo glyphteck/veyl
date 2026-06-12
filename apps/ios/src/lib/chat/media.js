@@ -13,7 +13,7 @@ import {
     fitChatImageSize,
 } from '@veyl/shared/chat/filepayload';
 import { filenameWithExtension } from '@veyl/shared/utils/filename';
-import { fileMime, isAudioFile, isImageFile, isM4aFile, isPngFile, isVideoFile } from '@veyl/shared/utils/filetype';
+import { fileMime, isAudioFile, isGifFile, isImageFile, isM4aFile, isPngFile, isVideoFile } from '@veyl/shared/utils/filetype';
 import { getMediaFileRef, makeChatMediaId, mediaFilePath } from '@veyl/shared/files';
 import { createFileKey, decodeFileKey, encodeFileKey, FILE_IV_BYTES, FILE_TAG_BYTES, getFileAadForPath } from '@veyl/shared/crypto/file';
 import { cleanBytes, randomBytes, toBytes } from '@veyl/shared/crypto/core';
@@ -154,6 +154,22 @@ function isPngAsset(asset) {
     return isPngFile(asset);
 }
 
+function isGifAsset(asset) {
+    return isGifFile(asset);
+}
+
+function preservedImageInfo(asset) {
+    const gif = isGifAsset(asset);
+    const png = isPngAsset(asset);
+    if (gif) {
+        return { type: 'gif', mimeType: 'image/gif', ext: 'gif' };
+    }
+    if (png) {
+        return { mimeType: asset?.mimeType || 'image/png', ext: 'png' };
+    }
+    return { mimeType: asset?.mimeType || 'image/jpeg', ext: 'jpg' };
+}
+
 async function prepareNativeM4a(asset) {
     const duration = getAudioDurationSeconds(asset);
     if (isM4aFile(asset)) {
@@ -229,20 +245,22 @@ export async function prepareAssetForChatUpload(asset) {
     const mimeType = fileMime(asset);
     mark('chat.media.prepare.start', { uri: asset.uri, mimeType, width: asset?.width || 0, height: asset?.height || 0, fileSize: asset?.fileSize || asset?.size || 0 });
     if (isImageAsset(asset)) {
-        if (asset?.preserveImage === true) {
+        const preserveImage = asset?.preserveImage === true || isGifAsset(asset);
+        if (preserveImage) {
             mark('chat.media.prepare.image.preserve', {});
             const data = await readUriBytes(asset.uri);
             assertChatUploadByteSize(data);
-            const png = isPngAsset(asset);
+            const info = preservedImageInfo(asset);
             const width = Number(asset?.width);
             const height = Number(asset?.height);
             return {
+                ...(info.type ? { type: info.type } : {}),
                 data,
-                mimeType: asset?.mimeType || (png ? 'image/png' : 'image/jpeg'),
+                mimeType: info.mimeType,
                 size: Number.isFinite(data?.byteLength) ? data.byteLength : (asset?.fileSize ?? asset?.size),
                 ...(Number.isFinite(width) && width > 0 ? { width } : {}),
                 ...(Number.isFinite(height) && height > 0 ? { height } : {}),
-                name: getAssetName(asset, png ? 'png' : 'jpg', 'image'),
+                name: getAssetName(asset, info.ext, 'image'),
                 previewUri: asset.uri,
             };
         }
@@ -377,6 +395,15 @@ export async function uploadImgMsgNative(senderPubkey, senderPrivkey, receiverCh
     return uploadAttachmentMsgNative(senderPubkey, senderPrivkey, receiverChatPK, {
         cid,
         type: 'img',
+        data,
+        meta,
+    });
+}
+
+export async function uploadGifMsgNative(senderPubkey, senderPrivkey, receiverChatPK, cid, data, meta = {}) {
+    return uploadAttachmentMsgNative(senderPubkey, senderPrivkey, receiverChatPK, {
+        cid,
+        type: 'gif',
         data,
         meta,
     });

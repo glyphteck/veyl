@@ -2,14 +2,14 @@ import { useEffect, useMemo, useState } from "react";
 import { useChat } from "@/providers/chatprovider";
 import { getCachedMessageFileUri, getMessageFileName } from "@/lib/chat/downloads";
 import { loadCachedMsgImage } from "@/lib/chat/imagecache";
-import { hasStoredFileRef, storedFileKey } from "@veyl/shared/chat/messages";
+import { hasStoredFileRef, isImageAttachmentMsg, storedFileKey } from "@veyl/shared/chat/messages";
 
 export function useMsgImage(peerChatPK, msg, active = true) {
   const { readMessageFile } = useChat();
   const initialUri = getCachedMessageFileUri(msg, peerChatPK);
   const [uri, setUri] = useState(() => initialUri);
   const [loading, setLoading] = useState(
-    () => msg?.t === "img" && !initialUri && hasStoredFileRef(msg),
+    () => isImageAttachmentMsg(msg) && !initialUri && hasStoredFileRef(msg),
   );
   const source = useMemo(() => (uri ? { uri } : null), [uri]);
 
@@ -27,7 +27,7 @@ export function useMsgImage(peerChatPK, msg, active = true) {
       return;
     }
 
-    if (msg?.t !== "img" || !peerChatPK || !hasStoredFileRef(msg)) {
+    if (!isImageAttachmentMsg(msg) || !peerChatPK || !hasStoredFileRef(msg)) {
       setUri(null);
       setLoading(false);
       return;

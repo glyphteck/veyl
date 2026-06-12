@@ -203,6 +203,7 @@ function ReplyPreview({ reply, replyFromPeer, peerChatPK, peerDisplayName, onRep
         case 'req':
             return <ReplyRequest reply={reply} replyFromPeer={replyFromPeer} peerDisplayName={peerDisplayName} onReplyPress={onReplyPress} />;
         case 'img':
+        case 'gif':
             return <ReplyImage reply={reply} peerChatPK={peerChatPK} onReplyPress={onReplyPress} />;
         case 'mp4':
             return <ReplyVideo reply={reply} peerChatPK={peerChatPK} onReplyPress={onReplyPress} />;

@@ -3,7 +3,7 @@
 import { chatUploadErrorMessage, formatMaxChatUploadFiles } from '@veyl/shared/chat/attachments';
 import { CHAT_IMAGE_COMPRESS, assertChatUploadByteSize, fitChatImageSize, getChatUploadFileList } from '@veyl/shared/chat/filepayload';
 import { filenameWithExtension } from '@veyl/shared/utils/filename';
-import { isAudioFile, isImageFile, isVideoFile } from '@veyl/shared/utils/filetype';
+import { isAudioFile, isGifFile, isImageFile, isVideoFile } from '@veyl/shared/utils/filetype';
 import { toM4a } from '../media/audio';
 import { toMp4 } from '../media/video';
 
@@ -24,6 +24,10 @@ function readPreview(file) {
 
 function isImage(file) {
     return isImageFile(file);
+}
+
+function isGif(file) {
+    return isGifFile(file);
 }
 
 function imageName(file, ext) {
@@ -106,17 +110,31 @@ async function prepareImage(file) {
     return normalizeImage(file, img);
 }
 
+async function prepareGif(file) {
+    const img = await loadImage(file);
+    const naturalWidth = img.naturalWidth || img.width;
+    const naturalHeight = img.naturalHeight || img.height;
+    const nextFile = file.type === 'image/gif' ? file : new File([file], imageName(file, 'gif'), { type: 'image/gif', lastModified: file.lastModified || Date.now() });
+    return {
+        file: nextFile,
+        ...(naturalWidth > 0 ? { width: naturalWidth } : {}),
+        ...(naturalHeight > 0 ? { height: naturalHeight } : {}),
+    };
+}
+
 export async function prepareFile(file) {
-    const image = isImage(file) ? await prepareImage(file) : null;
+    const gif = isGif(file) ? await prepareGif(file) : null;
+    const image = !gif && isImage(file) ? await prepareImage(file) : null;
     const isAudio = isAudioFile(file);
     const isVideo = isVideoFile(file);
-    const upload = image ? { file: image.file, width: image.width, height: image.height, duration: null } : isAudio ? await toM4a(file) : isVideo ? await toMp4(file) : { file, duration: null };
+    const upload = gif ? { file: gif.file, width: gif.width, height: gif.height, duration: null } : image ? { file: image.file, width: image.width, height: image.height, duration: null } : isAudio ? await toM4a(file) : isVideo ? await toMp4(file) : { file, duration: null };
     const nextFile = upload.file;
     assertChatUploadByteSize(nextFile);
-    const imageUpload = Boolean(image);
+    const imageUpload = Boolean(gif || image);
     const previewUri = imageUpload ? await readPreview(nextFile) : isAudio || isVideo ? URL.createObjectURL(nextFile) : null;
 
     return {
+        ...(gif ? { type: 'gif' } : {}),
         data: nextFile,
         mimeType: nextFile.type || 'application/octet-stream',
         size: nextFile.size,

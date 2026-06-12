@@ -1,5 +1,6 @@
 import { MAX_TXT_CHARS } from './types.js';
 import { retentionPatch } from '../ttl.js';
+import { appLinkDomains } from '../../links.js';
 import { cleanText } from '../../utils/text.js';
 
 const DOMAIN_LABEL_PATTERN = '[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?';
@@ -14,6 +15,7 @@ const LINK_PATTERN = new RegExp(`mailto:${EMAIL_PATTERN}|${EMAIL_PATTERN}|https?
 const LINK_START_BLOCKER = /[a-z0-9._@/-]/i;
 const LINK_BAD_CHARS = /[<>"'`]/;
 const LINK_TRAILING_PUNCT = /[),.;!?]+$/;
+const VEYL_INVITE_HOSTS = new Set(appLinkDomains);
 
 export function hasText(value) {
     return cleanText(value).length > 0;
@@ -40,6 +42,27 @@ function getMailUrl(value) {
         return '';
     }
     return `mailto:${email}`;
+}
+
+function isVeylInviteUrl(value) {
+    if (typeof URL !== 'function') {
+        return false;
+    }
+
+    try {
+        const url = new URL(value);
+        if (!VEYL_INVITE_HOSTS.has(url.hostname) || url.pathname !== '/') {
+            return false;
+        }
+        for (const key of url.searchParams.keys()) {
+            if (key === 'join' || key.startsWith('join/')) {
+                return true;
+            }
+        }
+        return false;
+    } catch {
+        return false;
+    }
 }
 
 function charLength(value) {
@@ -74,8 +97,33 @@ export function getLinkUrl(value) {
     return hasUsableUrlHost({ hostname: getCandidateHostname(candidate) }) ? candidate : '';
 }
 
+export function getLinkText(value, urlValue) {
+    const raw = cleanText(value);
+    const url = cleanText(urlValue) || getLinkUrl(raw);
+    if (!url) {
+        return raw;
+    }
+
+    if (/^mailto:/i.test(url)) {
+        const mailto = MAILTO_LINK_PATTERN.exec(url);
+        return mailto?.[1] || raw.replace(/^mailto:/i, '');
+    }
+
+    if (isVeylInviteUrl(url)) {
+        return new URL(url).hostname;
+    }
+
+    return (raw || url).replace(/^https?:\/\//i, '');
+}
+
 export function isLinkText(value) {
     return !!getLinkUrl(value);
+}
+
+export function formatTextLinks(text) {
+    return splitLinks(text)
+        .map((part) => part.c)
+        .join('');
 }
 
 export function splitLinks(text) {
@@ -101,7 +149,7 @@ export function splitLinks(text) {
         if (match.index > index) {
             parts.push({ t: 'txt', c: value.slice(index, match.index) });
         }
-        parts.push({ t: 'lnk', c: value.slice(match.index, cleanEnd), u: url });
+        parts.push({ t: 'lnk', c: getLinkText(value.slice(match.index, cleanEnd), url), u: url });
         if (cleanEnd < end) {
             parts.push({ t: 'txt', c: value.slice(cleanEnd, end) });
         }

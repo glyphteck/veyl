@@ -17,12 +17,15 @@ import {
     LogOut,
     Eye,
     EyeOff,
+    KeyRound,
     Loader,
     Box,
     Bot,
     Hammer,
+    QrCode,
     Search,
     UserPlus,
+    UserX,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useDialog } from '@/components/providers/dialogprovider';
@@ -51,6 +54,7 @@ import {
     getMainMenuMatchedPeers,
     getMainMenuSearchState,
     getMainMenuSearchTarget,
+    getMainMenuSelfMatch,
     getMainMenuTopPeers,
     getMainMenuTransactions,
     getMenuSignature,
@@ -62,7 +66,7 @@ import { isEditableTarget, listNavigationStep } from '@/lib/focus';
 import { Bitcoin } from '@/components/bitcoin';
 import { makeReq, makeTxt } from '@veyl/shared/chat/messages';
 import { Dot } from '@/components/dot';
-import { qr } from '@veyl/shared/qr';
+import { makeUserQr, qr } from '@veyl/shared/qr';
 import { invite, makeInviteLink } from '@veyl/shared/invite';
 import { Shortcut } from '@/components/shortcut';
 
@@ -78,13 +82,16 @@ const ROW_ICONS = {
     eyeOff: EyeOff,
     hammer: Hammer,
     history: History,
+    keyRound: KeyRound,
     lock: Lock,
     logOut: LogOut,
     messageCircle: MessageCircle,
     messageCirclePlus: MessageCirclePlus,
+    qrCode: QrCode,
     settings2: Settings2,
     trash2: Trash2,
     userPlus: UserPlus,
+    userX: UserX,
     wallet: Wallet,
 };
 
@@ -160,13 +167,15 @@ function MainMenuShortcut({ className, ...props }) {
 function MainMenuRowContent({ row }) {
     if (row.kind === 'user') {
         const peer = row.peer;
+        const trailingIcon = renderIcon(row.trailingIcon);
         return (
             <>
                 <Avatar active={peer?.active} bot={!!peer?.bot}>
                     <AvatarImage src={peer?.avatar} alt={row.label || peer?.username || 'user'} />
                     <AvatarFallback />
                 </Avatar>
-                <span>{row.label}</span>
+                <span className="min-w-0 flex-1 truncate">{row.label}</span>
+                {trailingIcon ? <div className="ml-auto flex items-center text-sm text-muted">{trailingIcon}</div> : null}
             </>
         );
     }
@@ -178,11 +187,11 @@ function MainMenuRowContent({ row }) {
                     <AvatarImage src={row.avatarSrc} alt={row.displayName} />
                     <AvatarFallback />
                 </Avatar>
-                <span className="min-w-0 flex-1 truncate font-black">{row.displayName}</span>
-                <span className="ml-auto flex shrink-0 flex-col items-end leading-none">
-                    <span className="text-xs text-muted">{row.status}</span>
-                    <span className={cn('truncate text-xs font-black', row.amountClassName)}>{row.amount}</span>
+                <span className="min-w-0 flex flex-1 items-baseline gap-1.5">
+                    <span className="min-w-0 truncate font-black">{row.displayName}</span>
+                    <span className="shrink-0 text-xs font-bold text-muted">{row.status}</span>
                 </span>
+                <span className={cn('ml-auto max-w-36 shrink-0 truncate text-right text-base font-black', row.amountClassName)}>{row.amount}</span>
             </>
         );
     }
@@ -213,11 +222,11 @@ function MainMenuRowContent({ row }) {
                 <span>{label}</span>
             )}
             {row.shortcut ? <MainMenuShortcut>{shortcuts[row.shortcut]}</MainMenuShortcut> : null}
-            {row.trailing ? (
+            {row.trailing || trailingIcon ? (
                 trailingIcon ? (
                     <div className="ml-auto flex items-center gap-1 text-sm text-muted">
                         {trailingIcon}
-                        <span>{row.trailing}</span>
+                        {row.trailing ? <span>{row.trailing}</span> : null}
                     </div>
                 ) : (
                     <span className="ml-auto text-sm text-muted">{row.trailing}</span>
@@ -305,7 +314,7 @@ function MainMenuList({ id, resetKey, sections, activeIndex, setActiveIndex, emp
 export default function MainMenu({ close, data, open = true }) {
     const router = useRouter();
     const { openDialog } = useDialog();
-    const { uid, username, settings, chatPK, chatBanned, isAdmin, avatar, walletPK } = useUser();
+    const { uid, username, settings, chatPK, chatBanned, isAdmin, avatar, active, walletPK } = useUser();
     const bitcoin = useBitcoin();
     const { copyFundingAddress, fundingAddress, getFundingAddress, sendMoneyWithSpark, balance, hasMoreTxs, isTxLoading, loadMoreTxs } = useWallet();
     const { lock, localCache } = useVault();
@@ -328,6 +337,10 @@ export default function MainMenu({ close, data, open = true }) {
         () => getMainMenuMatchedPeers({ searchState, peers, recentPeers, results, query, uid }),
         [peers, query, recentPeers, results, searchState, uid]
     );
+    const selfMatch = useMemo(
+        () => getMainMenuSelfMatch({ active, avatar, query, searchState, searchValue, uid, username }),
+        [active, avatar, query, searchState, searchValue, uid, username]
+    );
     const txs = useMemo(() => getMainMenuTransactions(searchState, sortedTransactions), [searchState, sortedTransactions]);
     const txTimes = useMemo(() => txs.map((tx) => tx.createdTime), [txs]);
     const rowTimeNow = useRowDateTimeNow(txTimes);
@@ -345,6 +358,13 @@ export default function MainMenu({ close, data, open = true }) {
         if (!address) return;
         openDialog('qrcode', { type: qr.bitcoin, value: address });
         void copyFundingAddress(address).catch(() => {});
+    };
+
+    const openUserQr = () => {
+        const qrData = makeUserQr(username);
+        if (!qrData) return;
+        close();
+        openDialog('qrcode', { type: qr.user, value: qrData });
     };
 
     const copyInviteLink = async () => {
@@ -558,6 +578,8 @@ export default function MainMenu({ close, data, open = true }) {
             openRoute(action.href);
         } else if (action.type === 'fundingQr') {
             void openFundingQr();
+        } else if (action.type === 'userQr') {
+            openUserQr();
         } else if (action.type === 'inviteLink') {
             void copyInviteLink();
         } else if (action.type === 'clearCache') {
@@ -603,9 +625,11 @@ export default function MainMenu({ close, data, open = true }) {
         peerByChatPK,
         peerByWalletPK,
         previewNow,
+        query,
         rowTimeNow,
         searchState,
         searchValue,
+        selfMatch,
         settings,
         showWalletDot,
         topPeers,

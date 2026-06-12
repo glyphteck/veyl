@@ -1,5 +1,6 @@
 import { lowerText } from '@veyl/shared/utils/text';
-import { compareProfilesByName } from '@veyl/shared/search/sort';
+import { matchesProfile } from '@veyl/shared/search/match';
+import { compareProfilesByName, sortProfiles } from '@veyl/shared/search/sort';
 import { mergeProfiles } from '@veyl/shared/search/merge';
 import { completeCommandPrefix, getTypingUsername, matchCommands, parseCommand } from '@veyl/shared/commands';
 import { getMsgPreview as displayPreview } from '@veyl/shared/chat/messages';
@@ -13,6 +14,7 @@ export const ROW_HEIGHT = 36;
 export const LIST_HEIGHT = 384;
 export const MIN_RENDER_ROWS = 44;
 const MAINMENU_COMMAND_OPTIONS = { mode: 'mainmenu' };
+const TRANSACTION_HISTORY_SHORTCUT_VISIBLE = false;
 
 export function textMatches(row, raw) {
     const needle = lowerText(raw);
@@ -126,6 +128,36 @@ export function getMainMenuMatchedPeers({ searchState, peers, recentPeers, resul
     return mergeProfiles({ local: peers || [], remote: results || [], parsed: query, excludeUid: uid });
 }
 
+function selfPeer({ active, avatar, uid, username }) {
+    if (!uid || !username) return null;
+    return {
+        uid,
+        username,
+        avatar,
+        active,
+        mainMenuSelf: true,
+    };
+}
+
+function selfSearchProbe(peer) {
+    return {
+        label: formatUserDisplay(peer, true),
+        keywords: ['qr', 'qr code', 'code', 'me', 'my', 'profile', 'username', 'scan', 'share', peer.username, `@${peer.username}`],
+    };
+}
+
+export function getMainMenuSelfMatch({ active, avatar, query, searchState, searchValue, uid, username }) {
+    if (searchState?.showSlashCommands || searchState?.showAllTx) return null;
+    const peer = selfPeer({ active, avatar, uid, username });
+    if (!peer) return null;
+
+    if (query) {
+        return matchesProfile(peer, query) ? peer : null;
+    }
+
+    return searchValue && textMatches(selfSearchProbe(peer), searchValue) ? peer : null;
+}
+
 export function getMainMenuTopPeers(recentPeers) {
     return (recentPeers?.all || []).slice(0, 3);
 }
@@ -145,16 +177,25 @@ function rowsSection(key, rows) {
     return rows.length ? { key, type: 'rows', rows } : null;
 }
 
+function userRow(peer, actionType = 'openUser', extras = {}) {
+    const { row: rowExtrasConfig, ...actionExtras } = extras || {};
+    const rawRowExtras = typeof rowExtrasConfig === 'function' ? rowExtrasConfig(peer) : rowExtrasConfig;
+    const rowExtras = rawRowExtras || {};
+    const action = typeof actionType === 'function' ? actionType(peer) : { type: actionType, peer, ...actionExtras };
+    return {
+        kind: 'user',
+        key: rowExtras.key || peer.uid,
+        label: rowExtras.label || formatUserDisplay(peer, true),
+        peer,
+        ...rowExtras,
+        action,
+    };
+}
+
 function usersSection(key, peers, actionType = 'openUser', extras = {}) {
     const rows = (peers || [])
         .filter((peer) => peer?.uid)
-        .map((peer) => ({
-            kind: 'user',
-            key: peer.uid,
-            label: formatUserDisplay(peer, true),
-            peer,
-            action: { type: actionType, peer, ...extras },
-        }));
+        .map((peer) => userRow(peer, actionType, extras));
     return rows.length ? { key, type: 'users', rows } : null;
 }
 
@@ -298,6 +339,7 @@ function buildStaticSections(options) {
         lastChat,
         peerByChatPK,
         searchValue,
+        selfMatch,
         settings,
         showWalletDot,
         uid,
@@ -389,7 +431,8 @@ function buildStaticSections(options) {
                             shortcut: 'wallet',
                         }
                     ),
-                    hasTx &&
+                    TRANSACTION_HISTORY_SHORTCUT_VISIBLE &&
+                        hasTx &&
                         row(
                             { type: 'route', href: '/transactions' },
                             {
@@ -451,6 +494,16 @@ function buildStaticSections(options) {
                                 label: 'withdraw funds',
                             }
                         ),
+                    searchValue &&
+                        row(
+                            { type: 'dialog', id: 'exportwallet' },
+                            {
+                                key: 'export-wallet',
+                                icon: 'keyRound',
+                                label: 'export wallet',
+                                keywords: ['seed', 'backup', 'key', 'wallet backup'],
+                            }
+                        ),
                 ],
                 staticFilter
             )
@@ -473,6 +526,23 @@ function buildStaticSections(options) {
                             shortcut: 'settings',
                         }
                     ),
+                    selfMatch &&
+                        userRow(selfMatch, 'userQr', {
+                            row: {
+                                key: 'user-qr',
+                                trailingIcon: 'qrCode',
+                            },
+                        }),
+                    searchValue &&
+                        row(
+                            { type: 'dialog', id: 'blocked' },
+                            {
+                                key: 'blocked-users',
+                                icon: 'userX',
+                                label: 'blocked users',
+                                keywords: ['blocked', 'block', 'block list', 'unblock', 'privacy'],
+                            }
+                        ),
                     searchValue &&
                         username &&
                         row(
@@ -606,8 +676,12 @@ function buildTransactionRows({ avatar, bitcoin, cloaked, peerByWalletPK, rowTim
 }
 
 export function buildMainMenuModel(options) {
-    const { matchedPeers = [], searchState, searchValue, topPeers = [], txs = [] } = options;
+    const { matchedPeers = [], query, searchState, searchValue, selfMatch, topPeers = [], txs = [] } = options;
     const sections = [];
+    const userSearchPeers =
+        searchState.showUserSearch && selfMatch
+            ? sortProfiles([selfMatch, ...matchedPeers], query)
+            : matchedPeers;
 
     for (const section of buildSlashSections({ searchValue, searchState, matchedPeers })) {
         addSection(sections, section);
@@ -623,8 +697,24 @@ export function buildMainMenuModel(options) {
         }
     }
 
-    if (searchState.showUserSearch && matchedPeers.length > 0) {
-        addSection(sections, usersSection('users', matchedPeers));
+    if (searchState.showUserSearch && userSearchPeers.length > 0) {
+        addSection(
+            sections,
+            usersSection(
+                'users',
+                userSearchPeers,
+                (peer) => ({ type: peer?.mainMenuSelf ? 'userQr' : 'openUser', peer }),
+                {
+                    row: (peer) =>
+                        peer?.mainMenuSelf
+                            ? {
+                                  key: 'user-qr',
+                                  trailingIcon: 'qrCode',
+                              }
+                            : null,
+                }
+            )
+        );
     }
 
     if (searchState.showAllTx && txs.length > 0) {

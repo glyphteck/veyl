@@ -1,5 +1,5 @@
 import { sealMsg } from '../../crypto/chat.js';
-import { putAttachment, putFile, putImg, putM4a, putMp4, readMsgFile } from '../media.js';
+import { putAttachment, putFile, putGif, putImg, putM4a, putMp4, readMsgFile } from '../media.js';
 import { hasChatMediaFileRef, makeHiddenCheckpoint, makeReaction, makeReadReceipt, makeRetentionSystemMsg } from '../messages.js';
 import { getCachedPair } from '../pairs.js';
 import { makeOwnChatEntry, openOwnChatEntry, ownChatEntryId, sealOwnChatEntry } from '../entry.js';
@@ -356,6 +356,15 @@ export async function uploadImgMsg(_cloud, senderPubkey, senderPrivkey, receiver
     });
 }
 
+export async function uploadGifMsg(_cloud, senderPubkey, senderPrivkey, receiverChatPK, cid, data, meta = {}) {
+    return uploadAttachmentMsg(_cloud, senderPubkey, senderPrivkey, receiverChatPK, {
+        cid,
+        type: 'gif',
+        data,
+        meta,
+    });
+}
+
 export async function uploadM4aMsg(_cloud, senderPubkey, senderPrivkey, receiverChatPK, cid, data, meta = {}) {
     return uploadAttachmentMsg(_cloud, senderPubkey, senderPrivkey, receiverChatPK, {
         cid,
@@ -405,6 +414,8 @@ export async function uploadAttachmentMsg(_cloud, senderPubkey, senderPrivkey, r
     switch (type) {
         case 'img':
             return putImg(pair, nextCid, data, meta);
+        case 'gif':
+            return putGif(pair, nextCid, data, meta);
         case 'm4a':
             return putM4a(pair, nextCid, data, meta);
         case 'mp4':

@@ -291,15 +291,16 @@ export function useActions({
                     }
                     break;
                 case 'img':
+                case 'gif':
                     if (hasMessageFile(msg)) {
                         items.push({ id: 'copy', title: 'Copy', icon: Copy, run: () => copyMessageImage(msg, peerChatPK, readMessageFile) });
                         items.push({
                             id: 'download',
-                            title: 'Download image',
+                            title: msg.t === 'gif' ? 'Download GIF' : 'Download image',
                             icon: Download,
                             run: async () => {
                                 await downloadMessageImage(msg, peerChatPK, readMessageFile);
-                                Alert.alert('Downloaded', 'Image downloaded to Photos.');
+                                Alert.alert('Downloaded', msg.t === 'gif' ? 'GIF downloaded to Photos.' : 'Image downloaded to Photos.');
                             },
                         });
                     }

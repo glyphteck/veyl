@@ -1,8 +1,8 @@
-import { formatAttachmentSize, hasStoredFileRef, isPngMsg } from '@veyl/shared/chat/messages';
+import { formatAttachmentSize, hasStoredFileRef, isGifMsg, isPngMsg } from '@veyl/shared/chat/messages';
 import { cleanText } from '@veyl/shared/utils/text';
 import { saveBytes, saveUrl } from '../download';
 
-const HOVER_DOWNLOAD_MSG_TYPES = ['img', 'm4a', 'mp4'];
+const HOVER_DOWNLOAD_MSG_TYPES = ['img', 'gif', 'm4a', 'mp4'];
 
 export function bubbleBg(fromPeer = false) {
     return fromPeer ? 'bg-foreground/3' : 'bg-foreground/1';
@@ -31,6 +31,8 @@ export function msgFileName(msg, fallback = 'attachment') {
     switch (msg?.t) {
         case 'img':
             return isPngMsg(msg) ? 'image.png' : 'image.jpg';
+        case 'gif':
+            return isGifMsg(msg) ? 'image.gif' : 'gif.gif';
         case 'm4a':
             return 'audio.m4a';
         case 'mp4':
@@ -44,6 +46,8 @@ export function msgMime(msg) {
     switch (msg?.t) {
         case 'img':
             return msg?.m || 'image/jpeg';
+        case 'gif':
+            return msg?.m || 'image/gif';
         case 'm4a':
             return msg?.m || 'audio/mp4';
         case 'mp4':

@@ -1,10 +1,11 @@
 'use client';
 
+import { isImageAttachmentMsg } from '@veyl/shared/chat/messages';
 import { preloadMsgImage } from './useimage';
 import { preloadMsgVideo } from './videocache';
 
 export function preloadMessageMedia(peerChatPK, msg, readMessageFile, options = {}) {
-    if (msg?.t === 'img') {
+    if (isImageAttachmentMsg(msg)) {
         return preloadMsgImage(peerChatPK, msg, readMessageFile, options).catch(() => null);
     }
     if (msg?.t === 'mp4') {

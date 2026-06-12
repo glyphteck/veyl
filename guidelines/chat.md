@@ -30,7 +30,7 @@ Delete is also chat-visible global state. Either participant may hard-delete any
 
 ## Payloads
 
-- Display payloads: `txt`, `req`, `img`, `mp3`, `mp4`, `file`.
+- Display payloads: `txt`, `req`, `img`, `gif`, `m4a`, `mp4`, `file`.
 - Append-only action envelopes cover `create`, `edit`, `pay_confirm`, `rxn`, `rr`, `hid`, and `sys`.
 - Creates, edits, payment confirmations, reactions, read receipts, hidden checkpoints, and system actions are signed by the per-chat actor key derived from local vault material plus the active `chatId`.
 - Edits apply only when the action actor is pinned for the original author. A peer cannot edit someone else's message without producing the original author's per-chat actor signature.

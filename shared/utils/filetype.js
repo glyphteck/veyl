@@ -69,6 +69,10 @@ export function isImageFile(value) {
     return mime.startsWith('image/') || IMAGE_EXTENSION.test(fileName(value));
 }
 
+export function isGifFile(value) {
+    return fileMime(value) === 'image/gif' || fileExtension(value) === 'gif';
+}
+
 export function isAudioFile(value) {
     const mime = fileMime(value);
     return mime.startsWith('audio/') || AUDIO_EXTENSION.test(fileName(value));

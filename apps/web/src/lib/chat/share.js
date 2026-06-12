@@ -1,5 +1,6 @@
 'use client';
 
+import { isImageAttachmentMsg } from '@veyl/shared/chat/messages';
 import { readCachedMsgAudioUrl } from './audiocache';
 import { readCachedMsgImageUrl } from './useimage';
 import { readCachedMsgVideoUrl } from './videocache';
@@ -21,7 +22,7 @@ export async function readCachedShareAttachmentData(msg, peerChatPK) {
     }
 
     let url = '';
-    if (msg?.t === 'img') {
+    if (isImageAttachmentMsg(msg)) {
         url = readCachedMsgImageUrl(msg);
     } else if (msg?.t === 'mp4') {
         url = readCachedMsgVideoUrl(peerChatPK, msg);

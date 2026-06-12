@@ -2,6 +2,12 @@
 
 Repo-level changes are listed newest first. Keep entries short and concrete. Broad pushes get grouped bullets, while narrow fixes can use one concise bugfix or cleanup bullet that still names the actual change.
 
+## 0.15.2 - 2026-06-12
+
+- Added first-class GIF chat messages across shared upload/write paths, web and iOS send/render/cache/viewer surfaces, reply previews, downloads, shares, and report evidence handling.
+- Added searchable web main-menu actions for the current user's QR code, wallet export, and blocked users while keeping the transaction-history shortcut hidden.
+- Normalized chat link labels in message previews and reply snippets so invite, email, and web links display compact text.
+
 ## 0.15.1 - 2026-06-12
 
 - Added chat-preview activity metadata and read-receipt inbox pings so stale seen previews compact to activity context without subscribing closed chat rows to message lists.

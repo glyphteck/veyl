@@ -1,7 +1,8 @@
 import { getMessageKey } from '@veyl/shared/chat/state';
+import { isImageAttachmentMsg } from '@veyl/shared/chat/messages';
 
 export function isMediaViewerMsg(msg) {
-    return msg?.t === 'img' || msg?.t === 'mp4';
+    return isImageAttachmentMsg(msg) || msg?.t === 'mp4';
 }
 
 export function getMediaViewerKey(peerChatPK, msg) {

@@ -50,6 +50,7 @@ export function ChatMessageType({
         case 'req':
             return <RequestMessage msg={msg} fromPeer={fromPeer} peerDisplayName={peerDisplayName} onPay={onPay} isPaying={isPaying} menuId={menuId} menuItems={menuItems} onHold={onRequestHold} reactions={reactions} reactionUsers={reactionUsers} reactionPreviewInset={reactionPreviewInset} />;
         case 'img':
+        case 'gif':
             return <ImageMessage msg={msg} peerChatPK={peerChatPK} fromPeer={fromPeer} menuItems={menuItems} menuId={menuId} onLike={onLike} reactions={reactions} reactionUsers={reactionUsers} reactionPreviewInset={reactionPreviewInset} />;
         case 'm4a':
             return <AudioMessage msg={msg} peerChatPK={peerChatPK} fromPeer={fromPeer} menuItems={menuItems} menuId={menuId} reactions={reactions} reactionUsers={reactionUsers} reactionPreviewInset={reactionPreviewInset} />;

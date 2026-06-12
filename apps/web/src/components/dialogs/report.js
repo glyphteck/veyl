@@ -17,11 +17,11 @@ function MsgPreview({ msg }) {
     if (!msg) return null;
     const { t, c, n } = msg;
 
-    if (t === 'img') {
+    if (t === 'img' || t === 'gif') {
         return (
             <div className="flex items-center gap-2  min-w-0">
                 <Image className="size-5 shrink-0 " />
-                <span className="truncate ">{n || 'image'}</span>
+                <span className="truncate ">{n || (t === 'gif' ? 'gif' : 'image')}</span>
             </div>
         );
     }

@@ -8,7 +8,7 @@ import {
   loadCachedMsgFile,
   loadCachedMsgImage,
 } from "@/lib/chat/imagecache";
-import { hasStoredFileRef, isExpiredAttachmentMsg, storedFileKey } from "@veyl/shared/chat/messages";
+import { hasStoredFileRef, isExpiredAttachmentMsg, isImageAttachmentMsg, storedFileKey } from "@veyl/shared/chat/messages";
 import { CHAT_READY_DOWNLOAD_MAX_BYTES } from "@veyl/shared/config";
 import { fileExtension, mimeExtension } from "@veyl/shared/utils/filetype";
 import { cleanText } from "@veyl/shared/utils/text";
@@ -24,7 +24,7 @@ function cleanPart(value, fallback) {
 }
 
 function cacheKey(peerChatPK, msg) {
-  return storedFileKey(peerChatPK, msg, { type: msg?.t !== "img" });
+  return storedFileKey(peerChatPK, msg, { type: !isImageAttachmentMsg(msg) });
 }
 
 function getExt(msg) {
@@ -41,6 +41,8 @@ function getExt(msg) {
   switch (msg?.t) {
     case "img":
       return "jpg";
+    case "gif":
+      return "gif";
     case "m4a":
       return "m4a";
     case "mp4":
@@ -59,6 +61,8 @@ function getBaseName(msg) {
   switch (msg?.t) {
     case "img":
       return "image";
+    case "gif":
+      return "gif";
     case "m4a":
       return "audio";
     case "mp4":
@@ -93,7 +97,7 @@ export function getCachedMessageFileUri(msg, peerChatPK) {
   }
 
   const key = cacheKey(peerChatPK, msg);
-  const cached = msg?.t === "img" ? getCachedMsgImage(key) : getCachedMsgFile(key);
+  const cached = isImageAttachmentMsg(msg) ? getCachedMsgImage(key) : getCachedMsgFile(key);
   return fileUri(cached);
 }
 
@@ -104,7 +108,7 @@ function isImageUri(uri) {
 }
 
 function shouldWarmDownload(msg) {
-  if (msg?.t === "img") {
+  if (isImageAttachmentMsg(msg)) {
     return true;
   }
 
@@ -181,7 +185,7 @@ async function resolveFileUri(msg, peerChatPK, readMessageFile, options = {}) {
     throw new Error("file unavailable");
   }
 
-  if (msg?.t === "img") {
+  if (isImageAttachmentMsg(msg)) {
     return resolveImageUri(msg, peerChatPK, readMessageFile, options);
   }
 
@@ -206,7 +210,7 @@ export function resolveMessageFileUri(msg, peerChatPK, readMessageFile, options 
 }
 
 export function preloadMessageMediaUri(peerChatPK, msg, readMessageFile) {
-  if (msg?.t !== "img" && msg?.t !== "mp4") {
+  if (!isImageAttachmentMsg(msg) && msg?.t !== "mp4") {
     return null;
   }
   if (
@@ -271,7 +275,7 @@ export function warmMessageDownload(msg, peerChatPK, readMessageFile) {
   const key = cacheKey(peerChatPK, msg);
   const loader = () => readMessageFile(peerChatPK, msg);
 
-  if (msg?.t === "img") {
+  if (isImageAttachmentMsg(msg)) {
     return loadCachedMsgImage(key, msg?.m, loader, {
       fileName: getFileName(msg),
       defaultExt: "jpg",

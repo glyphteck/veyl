@@ -6,7 +6,9 @@ import { ATTACHMENT_CACHE_FALLBACK_DELAY_MS, ATTACHMENT_CACHE_IDLE_TIMEOUT_MS } 
 import { encoder } from '../crypto/core.js';
 import { writeCachedMedia } from '../cache/localdata.js';
 import { formatBytes } from '../utils/display.js';
+import { isGifFile } from '../utils/filetype.js';
 import { cleanText, lowerText } from '../utils/text.js';
+import { ATTACHMENT_MSG_TYPES } from './messages/types.js';
 
 export function makeChatUnavailableError() {
     const error = new Error('chat unavailable');
@@ -151,6 +153,10 @@ export function getAttachmentType(attachment = {}) {
         return type;
     }
 
+    if (isGifFile(attachment)) {
+        return 'gif';
+    }
+
     const mimeType = lowerText(attachment?.mimeType);
     if (mimeType.startsWith('image/')) {
         return 'img';
@@ -166,5 +172,5 @@ export function getAttachmentType(attachment = {}) {
 }
 
 export function isAttachmentType(type) {
-    return type === 'img' || type === 'm4a' || type === 'mp4' || type === 'file';
+    return ATTACHMENT_MSG_TYPES.includes(type);
 }
