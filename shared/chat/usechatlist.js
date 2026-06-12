@@ -7,6 +7,7 @@ import {
     chatPreviewHasKey,
     getLatestOwnReadReceiptTarget,
     getLatestReadReceiptTarget,
+    withChatPreviewOpened,
 } from './messages.js';
 import {
     applyChatPreviewOverrides,
@@ -114,6 +115,7 @@ export function useChatList({
     const [loadingMoreChats, setLoadingMoreChats] = useState(false);
     const [chatLoadVersion, setChatLoadVersion] = useState(0);
     const [listenRetrySeq, setListenRetrySeq] = useState(0);
+    const [previewNow, setPreviewNow] = useState(() => Date.now());
     const peersCache = useRef([]);
     const lastPeersKey = useRef('');
     const lastServerChatIdsKey = useRef('');
@@ -224,6 +226,22 @@ export function useChatList({
         [cloud, uid, chatPrivateKey]
     );
 
+    const persistChangedChatPreviews = useCallback(
+        (prevChats, nextChats) => {
+            if (prevChats === nextChats) {
+                return;
+            }
+            const prevById = new Map((prevChats || []).map((chatItem) => [chatItem?.id, chatItem]));
+            for (const chatItem of nextChats || []) {
+                const prev = prevById.get(chatItem?.id);
+                if (prev && prev.preview !== chatItem?.preview) {
+                    persistChatPreview(chatItem.id, chatItem.preview || null);
+                }
+            }
+        },
+        [persistChatPreview]
+    );
+
     const clearChatPreviewKeys = useCallback(
         (chatId, keys, replacement = null) => {
             const currentChat = lastServerChatsRef.current.find((chatItem) => chatItem?.id === chatId) || chatsRef.current.find((chatItem) => chatItem?.id === chatId);
@@ -328,6 +346,7 @@ export function useChatList({
             setHasMoreChats((prev) => (prev ? false : prev));
             setLoadingMoreChats((prev) => (prev ? false : prev));
             setChatLoadVersion((prev) => (prev ? 0 : prev));
+            setPreviewNow(Date.now());
             flushChatCacheWrite();
             peersCache.current = [];
             lastPeersKey.current = '';
@@ -402,12 +421,14 @@ export function useChatList({
             }
 
             readCacheRef.current.set(chatId, readMs);
-            void setChatRead(cloud, uid, chatPrivateKey, chatId, readMs).catch((error) => {
+            void setChatRead(cloud, uid, chatPrivateKey, chatId, readMs, {
+                preview: (currentPreview) => withChatPreviewOpened(currentPreview, ownTarget, readMs, chatPK, chatPK) || currentPreview,
+            }).catch((error) => {
                 console.warn('chat read state write failed', error);
             });
-            lastServerChatsRef.current = markChatsRead(lastServerChatsRef.current, chatId, ownTarget);
+            lastServerChatsRef.current = markChatsRead(lastServerChatsRef.current, chatId, ownTarget, { chatPK, readMs });
             setChats((prev) => {
-                const next = markChatsRead(prev, chatId, ownTarget);
+                const next = markChatsRead(prev, chatId, ownTarget, { chatPK, readMs });
                 if (sameChats(prev, next)) {
                     return prev;
                 }
@@ -546,7 +567,10 @@ export function useChatList({
                 const updateStartedAt = Date.now();
                 const rawNextChats = Array.isArray(nextChats) ? nextChats : [];
                 hydrateReadCache(rawNextChats, readCacheRef.current);
-                const nextChatsWithRead = clearChatPreviewsByHiddenKeys(trimExpiredChatPreviews(applyReadCache(rawNextChats, chatPK, readCacheRef.current), { skipChatId: selectedChatIdRef.current }), hiddenChatPreviewKeysRef.current);
+                const readAppliedChats = applyReadCache(rawNextChats, chatPK, readCacheRef.current);
+                const trimmedChats = trimExpiredChatPreviews(readAppliedChats, { skipChatId: selectedChatIdRef.current });
+                persistChangedChatPreviews(readAppliedChats, trimmedChats);
+                const nextChatsWithRead = clearChatPreviewsByHiddenKeys(trimmedChats, hiddenChatPreviewKeysRef.current);
                 const firstSnapshot = !serverChatsReadyRef.current;
                 serverChatsReadyRef.current = true;
                 const nextChatIds = rawNextChats.map((chatItem) => chatItem.id);
@@ -654,6 +678,7 @@ export function useChatList({
         localCache,
         listenRetrySeq,
         pendingDeleteIdsRef,
+        persistChangedChatPreviews,
         readCacheRef,
         retainChatListAfterListenError,
         resetAllChatState,
@@ -675,8 +700,11 @@ export function useChatList({
         try {
             const page = await loadMoreChatEntries(cloud, uid, chatPK, chatPrivateKey, chatPageAfterChatRef.current, CHAT_LIST_PAGE_SIZE);
             const hiddenIds = pendingDeleteIdsRef.current;
+            const readAppliedChats = applyReadCache(Array.isArray(page?.chats) ? page.chats : [], chatPK, readCacheRef.current);
+            const trimmedChats = trimExpiredChatPreviews(readAppliedChats, { skipChatId: selectedChatIdRef.current });
+            persistChangedChatPreviews(readAppliedChats, trimmedChats);
             const pageChats = clearChatPreviewsByHiddenKeys(
-                trimExpiredChatPreviews(applyReadCache(Array.isArray(page?.chats) ? page.chats : [], chatPK, readCacheRef.current), { skipChatId: selectedChatIdRef.current }),
+                trimmedChats,
                 hiddenChatPreviewKeysRef.current
             ).filter((chatItem) => chatItem?.id && !hiddenIds.has(chatItem.id));
             const nextServerChats = sortedChats(pageChats, lastServerChatsRef.current).filter((chatItem) => chatItem?.id && !hiddenIds.has(chatItem.id));
@@ -709,19 +737,23 @@ export function useChatList({
         hiddenChatPreviewKeysRef,
         lastServerChatsRef,
         pendingDeleteIdsRef,
+        persistChangedChatPreviews,
         readCacheRef,
         selectedChatIdRef,
     ]);
 
     useEffect(() => {
-        const nextExpiryMs = nextChatPreviewExpiryMs(chats, Date.now(), { skipChatId: selectedChatId });
+        const nextExpiryMs = nextChatPreviewExpiryMs(chats, previewNow, { skipChatId: selectedChatId });
         if (nextExpiryMs == null) {
             return undefined;
         }
 
         const delay = Math.max(0, Math.min(nextExpiryMs - Date.now() + 25, 2_147_483_647));
         const timeout = setTimeout(() => {
-            const nextServerChats = trimExpiredChatPreviews(lastServerChatsRef.current, { skipChatId: selectedChatId });
+            const now = Date.now();
+            setPreviewNow(now);
+            const nextServerChats = trimExpiredChatPreviews(lastServerChatsRef.current, { skipChatId: selectedChatId, now });
+            persistChangedChatPreviews(lastServerChatsRef.current, nextServerChats);
             if (nextServerChats !== lastServerChatsRef.current) {
                 lastServerChatsRef.current = nextServerChats;
                 queueChatCacheWrite(nextServerChats);
@@ -730,7 +762,7 @@ export function useChatList({
             }
 
             setChats((prev) => {
-                const next = applyChatPreviewOverrides(clearChatPreviewsByHiddenKeys(trimExpiredChatPreviews(prev, { skipChatId: selectedChatId }), hiddenChatPreviewKeysRef.current), chatPreviewOverridesRef.current, chatPK, readCacheRef.current);
+                const next = applyChatPreviewOverrides(clearChatPreviewsByHiddenKeys(trimExpiredChatPreviews(prev, { skipChatId: selectedChatId, now }), hiddenChatPreviewKeysRef.current), chatPreviewOverridesRef.current, chatPK, readCacheRef.current);
                 if (sameChats(prev, next)) {
                     return prev;
                 }
@@ -741,7 +773,7 @@ export function useChatList({
         }, delay);
 
         return () => clearTimeout(timeout);
-    }, [chatPK, chatPreviewOverridesRef, chats, hiddenChatPreviewKeysRef, lastServerChatsRef, queueChatCacheWrite, readCacheRef, selectedChatId, updateRenderedChats]);
+    }, [chatPK, chatPreviewOverridesRef, chats, hiddenChatPreviewKeysRef, lastServerChatsRef, persistChangedChatPreviews, previewNow, queueChatCacheWrite, readCacheRef, selectedChatId, updateRenderedChats]);
 
     const getChatPreviewKey = useCallback(
         (chatId) => {
@@ -846,6 +878,7 @@ export function useChatList({
         peers,
         isChatDataReady,
         hasChats: chats.length > 0,
+        previewNow,
         lastChat,
         setLastChat,
         hasMoreChats,

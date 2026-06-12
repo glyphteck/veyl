@@ -1,5 +1,5 @@
 import { CHAT_LIST_PAGE_SIZE, CHAT_LIST_SNAPSHOT_COALESCE_MS } from '../config.js';
-import { canRenderChatPreview, canStoreMsg } from './messages.js';
+import { canRenderChatPreview } from './messages.js';
 import { openOwnChatEntry, ownChatEntryId, sealOwnChatEntry } from './entry.js';
 import { processInbox } from './inbox.js';
 import { canonicalChatVersions, isChatUnseenForUser, isCurrentUserChatEntry } from './chats.js';
@@ -24,7 +24,7 @@ function normalizeChatPreview(msgData, message) {
         ts: msgData?.ts ?? null,
         ttl: msgData?.ttl ?? null,
     };
-    return canStoreMsg(normalized) ? normalized : null;
+    return canRenderChatPreview(normalized) ? normalized : null;
 }
 
 async function readEntries(userChatPK, userPrivKey, docs, cache, options = {}) {

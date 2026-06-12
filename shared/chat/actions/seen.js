@@ -4,6 +4,7 @@ import { useCallback } from 'react';
 import { writeCachedChats } from '../../cache/localdata.js';
 import { sendReadReceipt, setChatRead } from '../messages/write.js';
 import { markChatsRead, readCandidate, scheduleReadReceiptWrite } from '../read.js';
+import { withChatPreviewOpened } from '../messages/preview.js';
 
 export function useChatSeen({ cloud, uid, chatBanned, chatPK, chatPrivateKey, localCache, pendingReadRef, readCacheRef, readReceiptWriteDelay, getChatRetention, setChats }) {
     const scheduleReadReceipt = useCallback(
@@ -41,13 +42,15 @@ export function useChatSeen({ cloud, uid, chatBanned, chatPK, chatPrivateKey, lo
             }
 
             setChats((prevChats) => {
-                const nextChats = markChatsRead(prevChats, chatId, read.preview);
+                const nextChats = markChatsRead(prevChats, chatId, read.preview, { chatPK, readMs: read.previewMs });
                 writeCachedChats(localCache, nextChats);
                 return nextChats;
             });
 
             readCacheRef.current.set(chatId, read.previewMs);
-            void setChatRead(cloud, uid, chatPrivateKey, chatId, read.previewMs).catch((error) => {
+            void setChatRead(cloud, uid, chatPrivateKey, chatId, read.previewMs, {
+                preview: (currentPreview) => withChatPreviewOpened(currentPreview, read.preview, read.previewMs, chatPK, chatPK) || currentPreview,
+            }).catch((error) => {
                 console.warn('chat read state write failed', error);
             });
             if (sendReceipt) {

@@ -1,8 +1,9 @@
 import { renderMoney } from '../../money.js';
-import { addMessageKeys, keySet, messageHasKey } from '../messagekeys.js';
+import { addMessageKeys, collectMessageKeys, keySet, messageHasKey } from '../messagekeys.js';
 import { getMessageKey, getMessageOrderMs } from '../state.js';
 import { cleanText } from '../../utils/text.js';
-import { timestampMs } from '../../utils/time.js';
+import { formatRelativeTime, nextRelativeTimeRefreshMs, timestampMs } from '../../utils/time.js';
+import { getMessageRetention, seenMessageTtlMs, ttlMillis } from '../ttl.js';
 import { canShowMsg, getSystemMsgText, isReadReceiptMsg, isReactionMsg, isSystemMsg } from './control.js';
 import { getAttachmentCaption, getAttachmentTitle, isAttachmentMsgType } from './files.js';
 import { hasText } from './text.js';
@@ -22,6 +23,8 @@ export const CHAT_PREVIEW_TEXT = Object.freeze({
     settingsPeer: 'changed chat settings',
 });
 
+export const CHAT_PREVIEW_ACTIVITY_OPENED = 'opened';
+
 function fromSelf(preview, chatPK) {
     const sender = preview?.from || preview?.s;
     return !!sender && !!chatPK && sender === chatPK;
@@ -32,7 +35,7 @@ function showPreviewText(settings) {
 }
 
 export function canRenderChatPreview(preview) {
-    return !!preview && (canShowMsg(preview) || isReadReceiptMsg(preview) || isReactionMsg(preview));
+    return !!preview && (canShowMsg(preview) || hasChatPreviewActivity(preview) || isReadReceiptMsg(preview) || isReactionMsg(preview));
 }
 
 function canReplaceChatPreview(preview, chatPK) {
@@ -75,6 +78,138 @@ function requestPreviewText(preview, self, chatPK, settings, btcPrice) {
     return self ? `you requested ${formattedAmount}` : `requested ${formattedAmount}`;
 }
 
+export function getChatPreviewSourceKey(preview) {
+    return cleanText(preview?.sourceKey) || cleanText(getMessageKey(preview));
+}
+
+export function getChatPreviewSourceTs(preview) {
+    return timestampMs(preview?.sourceTs, null, { positive: true }) ?? timestampMs(preview?.ts, null, { positive: true }) ?? getMessageOrderMs(preview);
+}
+
+export function getChatPreviewActivityAt(preview) {
+    return timestampMs(preview?.activity?.at, null, { positive: true });
+}
+
+export function hasChatPreviewActivity(preview) {
+    return cleanText(preview?.activity?.kind) === CHAT_PREVIEW_ACTIVITY_OPENED && getChatPreviewActivityAt(preview) != null;
+}
+
+export function chatPreviewContentExpired(preview, now = Date.now()) {
+    const until = timestampMs(preview?.contentUntil, null, { positive: true });
+    return until != null && until <= now;
+}
+
+function chatPreviewTtlExpired(preview, now = Date.now()) {
+    const ttl = ttlMillis(preview?.ttl);
+    return ttl != null && ttl <= now;
+}
+
+export function dropExpiredChatPreviewContent(preview, now = Date.now()) {
+    if (!hasChatPreviewActivity(preview) || (!chatPreviewContentExpired(preview, now) && !chatPreviewTtlExpired(preview, now))) {
+        return preview;
+    }
+    const sourceKey = getChatPreviewSourceKey(preview);
+    const sourceTs = getChatPreviewSourceTs(preview);
+    const sender = cleanText(preview?.from || preview?.s);
+    const activityAt = getChatPreviewActivityAt(preview);
+    const activityBy = cleanText(preview?.activity?.by);
+    return {
+        ...(sender ? { s: sender, from: sender } : {}),
+        ...(sourceKey ? { sourceKey } : {}),
+        ...(Number.isFinite(sourceTs) ? { sourceTs, ts: sourceTs } : {}),
+        activity: {
+            kind: CHAT_PREVIEW_ACTIVITY_OPENED,
+            at: activityAt,
+            ...(activityBy ? { by: activityBy } : {}),
+        },
+    };
+}
+
+export function chatPreviewContentUntilForRead(preview, readAt) {
+    const readMs = timestampMs(readAt, null, { positive: true });
+    if (readMs == null) {
+        return null;
+    }
+    return getMessageRetention(preview) === 'seen' ? readMs : seenMessageTtlMs(readMs);
+}
+
+export function withChatPreviewActivity(preview, activity = {}) {
+    if (!preview || typeof preview !== 'object' || Array.isArray(preview)) {
+        return null;
+    }
+    const kind = cleanText(activity.kind);
+    const at = timestampMs(activity.at, null, { positive: true });
+    if (!kind || at == null) {
+        return preview;
+    }
+    const by = cleanText(activity.by);
+    const sourceKey = cleanText(activity.sourceKey) || getChatPreviewSourceKey(preview);
+    const sourceTs = timestampMs(activity.sourceTs, null, { positive: true }) ?? getChatPreviewSourceTs(preview);
+    const contentUntil = timestampMs(activity.contentUntil, null, { positive: true });
+    const { activity: _oldActivity, contentUntil: _oldContentUntil, sourceKey: _oldSourceKey, sourceTs: _oldSourceTs, ...rest } = preview;
+    return {
+        ...rest,
+        ...(sourceKey ? { sourceKey } : {}),
+        ...(Number.isFinite(sourceTs) ? { sourceTs } : {}),
+        ...(contentUntil != null ? { contentUntil } : {}),
+        activity: {
+            kind,
+            at,
+            ...(by ? { by } : {}),
+        },
+    };
+}
+
+export function withChatPreviewOpened(preview, target, openedAt, by, chatPK) {
+    if (!preview || !target) {
+        return null;
+    }
+    const keys = collectMessageKeys(target);
+    if (!chatPreviewHasKey(preview, keys)) {
+        return null;
+    }
+    const at = timestampMs(openedAt, null, { positive: true });
+    if (at == null) {
+        return null;
+    }
+    const self = fromSelf(preview, chatPK);
+    return withChatPreviewActivity(preview, {
+        kind: CHAT_PREVIEW_ACTIVITY_OPENED,
+        at,
+        by,
+        sourceKey: getChatPreviewSourceKey(preview),
+        sourceTs: getChatPreviewSourceTs(preview),
+        ...(!self ? { contentUntil: chatPreviewContentUntilForRead(preview, at) } : {}),
+    });
+}
+
+function activityPreviewText(preview, now) {
+    const at = getChatPreviewActivityAt(preview) ?? (isReadReceiptMsg(preview) ? timestampMs(preview?.ts, null, { positive: true }) : null);
+    if (at == null) {
+        return '';
+    }
+    return `opened ${formatRelativeTime(at, now)}`;
+}
+
+function contentPreviewText(preview, chatPK, settings, btcPrice) {
+    if (!canShowMsg(preview)) return '';
+
+    const self = fromSelf(preview, chatPK);
+    if (isSystemMsg(preview)) {
+        return settingsPreviewText(preview, self) || getSystemMsgText(preview);
+    }
+    if (preview.t === 'txt' && typeof preview.c === 'string') {
+        return preview.c;
+    }
+    if (isAttachmentMsgType(preview?.t)) return attachmentPreviewText(preview, self);
+    if (preview.t === 'req') {
+        return requestPreviewText(preview, self, chatPK, settings, btcPrice);
+    }
+    if (typeof preview.c === 'string') return preview.c;
+    if (typeof preview.text === 'string') return preview.text;
+    return self ? `you ${CHAT_PREVIEW_TEXT.fallback}` : CHAT_PREVIEW_TEXT.fallback;
+}
+
 export function chatPreviewWantsAttention(preview, chatPK) {
     if (!preview || fromSelf(preview, chatPK)) {
         return false;
@@ -101,32 +236,28 @@ export function getReplyPreview(msg) {
     return '';
 }
 
-export function getMsgPreview(preview, chatPK, settings, btcPrice) {
+export function getMsgPreview(preview, chatPK, settings, btcPrice, options = {}) {
     if (!preview) return '';
     if (!showPreviewText(settings)) return CHAT_PREVIEW_TEXT.hidden;
     if (typeof preview === 'string') return preview;
     if (!canRenderChatPreview(preview)) return '';
 
+    const now = timestampMs(options?.now, Date.now(), { parseString: true });
     const self = fromSelf(preview, chatPK);
     if (isReadReceiptMsg(preview)) {
-        return self ? CHAT_PREVIEW_TEXT.readSelf : CHAT_PREVIEW_TEXT.readPeer;
+        return activityPreviewText(preview, now) || (self ? CHAT_PREVIEW_TEXT.readSelf : CHAT_PREVIEW_TEXT.readPeer);
     }
     if (isReactionMsg(preview)) {
         return self ? CHAT_PREVIEW_TEXT.reactionSelf : CHAT_PREVIEW_TEXT.reactionPeer;
     }
-    if (isSystemMsg(preview)) {
-        return settingsPreviewText(preview, self) || getSystemMsgText(preview);
+
+    const activity = activityPreviewText(preview, now);
+    const content = chatPreviewContentExpired(preview, now) ? '' : contentPreviewText(preview, chatPK, settings, btcPrice);
+    if (activity && (self || !content)) {
+        return activity;
     }
-    if (preview.t === 'txt' && typeof preview.c === 'string') {
-        return preview.c;
-    }
-    if (isAttachmentMsgType(preview?.t)) return attachmentPreviewText(preview, self);
-    if (preview.t === 'req') {
-        return requestPreviewText(preview, self, chatPK, settings, btcPrice);
-    }
-    if (typeof preview.c === 'string') return preview.c;
-    if (typeof preview.text === 'string') return preview.text;
-    return self ? `you ${CHAT_PREVIEW_TEXT.fallback}` : CHAT_PREVIEW_TEXT.fallback;
+    if (content && !self) return content;
+    return content || activity;
 }
 
 export function latestPreviewMessage(messages, options = {}) {
@@ -142,6 +273,8 @@ export function latestPreviewMessage(messages, options = {}) {
 export function previewValueKey(message) {
     return [
         getMessageKey(message),
+        message?.sourceKey,
+        timestampMs(message?.sourceTs, null),
         message?.id,
         message?.t,
         message?.c,
@@ -153,6 +286,10 @@ export function previewValueKey(message) {
         message?.emoji,
         message?.actionOp,
         message?.actionTarget,
+        message?.activity?.kind,
+        timestampMs(message?.activity?.at, null),
+        message?.activity?.by,
+        timestampMs(message?.contentUntil, null),
         timestampMs(message?.ttl, null),
         message?.pending === true ? 'pending' : '',
         message?.failed === true ? 'failed' : '',
@@ -178,6 +315,10 @@ export function chatPreviewHasKey(preview, keys) {
         return false;
     }
     if (messageHasKey(preview, nextKeys)) {
+        return true;
+    }
+    const sourceKey = getChatPreviewSourceKey(preview);
+    if (sourceKey && nextKeys.has(sourceKey)) {
         return true;
     }
     for (const key of nextKeys) {
@@ -229,6 +370,29 @@ function currentPreviewTargetsReplacement(currentPreview, replacement) {
     return !!replacementKey && previewActionTargetsKey(currentPreview, replacementKey);
 }
 
+export function nextChatPreviewRefreshMs(preview, now = Date.now()) {
+    if (!preview) {
+        return null;
+    }
+    const times = [];
+    const contentUntil = timestampMs(preview.contentUntil, null, { positive: true });
+    if (contentUntil != null && contentUntil > now) {
+        times.push(contentUntil);
+    }
+    const ttl = ttlMillis(preview.ttl);
+    if (ttl != null && ttl > now) {
+        times.push(ttl);
+    }
+    for (const relativeSource of [getChatPreviewActivityAt(preview), getChatPreviewSourceTs(preview)]) {
+        const relativeRefresh = nextRelativeTimeRefreshMs(relativeSource, now);
+        if (relativeRefresh != null && relativeRefresh > now) {
+            times.push(relativeRefresh);
+        }
+    }
+    const next = Math.min(...times);
+    return Number.isFinite(next) ? next : null;
+}
+
 export function getPreviewUpdateSync({ chatId, chatPreviewKey, chatPreview, chatPK, messages }) {
     const replacement = latestPreviewMessage(messages, { chatPK });
     const previewKeys = new Set([chatPreviewKey]);
@@ -237,8 +401,13 @@ export function getPreviewUpdateSync({ chatId, chatPreviewKey, chatPreview, chat
         return null;
     }
 
+    const nextReplacement =
+        isReadReceiptMsg(replacement) && previewActionTargetsKey(replacement, chatPreviewKey)
+            ? withChatPreviewOpened(chatPreview, chatPreviewKey, replacement.ts, replacement.from || replacement.s, chatPK) || replacement
+            : replacement;
+
     return {
-        replacement,
-        syncKey: `${chatId}:${chatPreviewKey}:${previewValueKey(replacement)}`,
+        replacement: nextReplacement,
+        syncKey: `${chatId}:${chatPreviewKey}:${previewValueKey(nextReplacement)}`,
     };
 }

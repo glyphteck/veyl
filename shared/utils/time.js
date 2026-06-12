@@ -138,6 +138,64 @@ export function formatFullDateTime(timestamp) {
     return `${date.getMonth() + 1}/${date.getDate()} ${formatTimeHHMM(date, true)}`;
 }
 
+const MINUTE_MS = 60_000;
+const HOUR_MS = 60 * MINUTE_MS;
+
+function nextLocalDayStartMs(ms) {
+    const date = new Date(ms);
+    date.setDate(date.getDate() + 1);
+    date.setHours(0, 0, 0, 0);
+    return date.getTime();
+}
+
+export function formatRowDateTime(value, now = Date.now()) {
+    const ms = timestampMs(value, null, { parseString: true });
+    const nowMs = timestampMs(now, Date.now(), { parseString: true });
+    if (!Number.isFinite(ms) || !Number.isFinite(nowMs)) return '';
+
+    const age = nowMs - ms;
+    if (age > -MINUTE_MS && age < MINUTE_MS) return 'now';
+    if (age >= 0 && age < HOUR_MS) return `${Math.floor(age / MINUTE_MS)}m ago`;
+    if (localDayKey(ms) === localDayKey(nowMs)) return formatTimeHHMM(ms, true);
+    return formatFullDateTime(ms);
+}
+
+export function nextRowDateTimeRefreshMs(value, now = Date.now()) {
+    const ms = timestampMs(value, null, { parseString: true });
+    const nowMs = timestampMs(now, Date.now(), { parseString: true });
+    if (!Number.isFinite(ms) || !Number.isFinite(nowMs)) return null;
+
+    const age = nowMs - ms;
+    if (age < -MINUTE_MS) return ms - MINUTE_MS;
+    if (age < MINUTE_MS) return ms + MINUTE_MS;
+    if (age < HOUR_MS) return ms + (Math.floor(age / MINUTE_MS) + 1) * MINUTE_MS;
+    if (localDayKey(ms) === localDayKey(nowMs)) return nextLocalDayStartMs(nowMs);
+    return null;
+}
+
+export function formatRelativeTime(value, now = Date.now()) {
+    const ms = timestampMs(value, null, { parseString: true });
+    const nowMs = timestampMs(now, Date.now(), { parseString: true });
+    if (!Number.isFinite(ms) || !Number.isFinite(nowMs)) return '';
+    const age = Math.max(0, nowMs - ms);
+    if (age < 30_000) return 'just now';
+    if (age < 60_000) return '1m ago';
+    if (age < 60 * 60_000) return `${Math.floor(age / 60_000)}m ago`;
+    if (age < 24 * 60 * 60_000) return `${Math.floor(age / (60 * 60_000))}h ago`;
+    return `${Math.floor(age / (24 * 60 * 60_000))}d ago`;
+}
+
+export function nextRelativeTimeRefreshMs(value, now = Date.now()) {
+    const ms = timestampMs(value, null, { parseString: true });
+    const nowMs = timestampMs(now, Date.now(), { parseString: true });
+    if (!Number.isFinite(ms) || !Number.isFinite(nowMs)) return null;
+    const age = Math.max(0, nowMs - ms);
+    if (age < 30_000) return ms + 30_000;
+    if (age < 60 * 60_000) return ms + (Math.floor(age / 60_000) + 1) * 60_000;
+    if (age < 24 * 60 * 60_000) return ms + (Math.floor(age / (60 * 60_000)) + 1) * 60 * 60_000;
+    return ms + (Math.floor(age / (24 * 60 * 60_000)) + 1) * 24 * 60 * 60_000;
+}
+
 export function formatDuration(seconds, { hours = true } = {}) {
     const safe = Math.max(0, Math.floor(Number.isFinite(seconds) ? seconds : 0));
     const minutes = Math.floor(safe / 60);

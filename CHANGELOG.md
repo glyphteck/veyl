@@ -2,6 +2,13 @@
 
 Repo-level changes are listed newest first. Keep entries short and concrete. Broad pushes get grouped bullets, while narrow fixes can use one concise bugfix or cleanup bullet that still names the actual change.
 
+## 0.15.1 - 2026-06-12
+
+- Added chat-preview activity metadata and read-receipt inbox pings so stale seen previews compact to activity context without subscribing closed chat rows to message lists.
+- Switched chat and transaction row timestamps on web and iOS to contextual labels like `now`, `4m ago`, same-day time, and older date/time, with exact web timestamps available on hover.
+- Tightened preview display so normal peer-message previews avoid duplicate relative time while opened/expired previews still show the meaningful read activity.
+- Adjusted iOS chat message scroll padding around the floating header edge inset.
+
 ## 0.15.0 - 2026-06-12
 
 - Normalized chat media uploads across web and iOS so images become JPEG or PNG, videos become H.264/AAC MP4, and audio becomes AAC M4A before encrypted upload.

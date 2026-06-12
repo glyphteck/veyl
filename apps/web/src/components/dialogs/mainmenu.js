@@ -38,6 +38,7 @@ import { parseCommandAmountSats } from '@veyl/shared/commands';
 import { useChat } from '@/components/providers/chatprovider';
 import { cn } from '@/lib/classes';
 import { formatUserDisplay } from '@veyl/shared/profile';
+import { useRowDateTimeNow } from '@veyl/shared/utils/userowdatetime';
 import { renderMoney } from '@veyl/shared/money';
 import {
     LIST_HEIGHT,
@@ -132,11 +133,12 @@ function MainMenuInput({ inputRef, listId, activeId, value, onChange, onKeyDown 
     );
 }
 
-function MainMenuItem({ active, className, children, onActive, onSelect }) {
+function MainMenuItem({ active, className, children, onActive, onSelect, title }) {
     return (
         <button
             type="button"
             tabIndex={-1}
+            title={title || undefined}
             data-active={active ? 'true' : undefined}
             className={cn(
                 'relative flex h-9 w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-base select-none outline-none data-[active=true]:bg-foreground/5 [&>*:nth-child(-n+2)]:transition-transform [&>*:nth-child(-n+2)]:ease-out hover:[&>*:nth-child(-n+2)]:translate-x-3 data-[active=true]:[&>*:nth-child(-n+2)]:translate-x-3 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&>*.avatar]:size-6',
@@ -227,7 +229,7 @@ function MainMenuRowContent({ row }) {
 
 function MainMenuRow({ row, active, separated, onActive, onSelect }) {
     return (
-        <MainMenuItem active={active} className={cn(separated && 'shadow-[inset_0_1px_0_0_var(--border)]', row.className)} onActive={onActive} onSelect={onSelect}>
+        <MainMenuItem active={active} className={cn(separated && 'shadow-[inset_0_1px_0_0_var(--border)]', row.className)} onActive={onActive} onSelect={onSelect} title={row.exactTitle}>
             <MainMenuRowContent row={row} />
         </MainMenuItem>
     );
@@ -308,7 +310,7 @@ export default function MainMenu({ close, data, open = true }) {
     const { copyFundingAddress, fundingAddress, getFundingAddress, sendMoneyWithSpark, balance, hasMoreTxs, isTxLoading, loadMoreTxs } = useWallet();
     const { lock, localCache } = useVault();
     const { hasTx, sortedTransactions } = useTxData();
-    const { hasChats, lastChat, chats, sendMessage, selectPeerChat } = useChat();
+    const { hasChats, lastChat, chats, previewNow, sendMessage, selectPeerChat } = useChat();
     const { peers, recentPeers, peerByWalletPK, peerByChatPK, addPeer } = usePeer();
     const { cloaked, cloak } = useCloak();
     const { searching, results, query, search, clearSearch } = useSearch('mainmenu');
@@ -327,6 +329,8 @@ export default function MainMenu({ close, data, open = true }) {
         [peers, query, recentPeers, results, searchState, uid]
     );
     const txs = useMemo(() => getMainMenuTransactions(searchState, sortedTransactions), [searchState, sortedTransactions]);
+    const txTimes = useMemo(() => txs.map((tx) => tx.createdTime), [txs]);
+    const rowTimeNow = useRowDateTimeNow(txTimes);
 
     const openUser = useCallback(
         (peer) => {
@@ -598,6 +602,8 @@ export default function MainMenu({ close, data, open = true }) {
         matchedPeers,
         peerByChatPK,
         peerByWalletPK,
+        previewNow,
+        rowTimeNow,
         searchState,
         searchValue,
         settings,

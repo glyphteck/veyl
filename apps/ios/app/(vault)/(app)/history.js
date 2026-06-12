@@ -20,12 +20,13 @@ import { BTC_PRICE_FALLBACK } from '@veyl/shared/config';
 import { renderMoney, renderNet } from '@veyl/shared/money';
 import { formatUserDisplay } from '@veyl/shared/profile';
 import { textRouteParam } from '@veyl/shared/navigation/params';
-import { formatFullDateTime } from '@veyl/shared/utils/time';
+import { formatRowDateTime } from '@veyl/shared/utils/time';
+import { useRowDateTimeNow } from '@veyl/shared/utils/userowdatetime';
 
-function TxRow({ tx, theme, moneyFormat, btcPrice, peerAvatarSource, userAvatarSource, isPeerActive, isPeerBot, isLast }) {
+function TxRow({ tx, theme, moneyFormat, btcPrice, peerAvatarSource, userAvatarSource, isPeerActive, isPeerBot, isLast, rowTimeNow }) {
     const isInflow = (tx?.amount ?? 0) > 0;
     const amountText = renderMoney(tx?.totalValue ?? 0, moneyFormat, btcPrice, isInflow ? '+' : '-');
-    const label = tx?.pending ? 'pending' : formatFullDateTime(tx?.createdTime);
+    const label = tx?.pending ? 'pending' : formatRowDateTime(tx?.createdTime, rowTimeNow);
     const title = isInflow ? 'received' : 'sent';
     const avatarSource = isInflow ? peerAvatarSource : userAvatarSource;
     const isActive = isInflow ? isPeerActive : false;
@@ -102,6 +103,8 @@ export default function HistoryRoute() {
     const txs = useMemo(() => {
         return getPeerTxs?.(peerWalletPK) ?? [];
     }, [getPeerTxs, peerWalletPK]);
+    const txTimes = useMemo(() => txs.map((tx) => tx.createdTime), [txs]);
+    const rowTimeNow = useRowDateTimeNow(txTimes);
 
     const stats = useMemo(() => {
         const sharedStats = getPeerStats?.(peerWalletPK);
@@ -145,6 +148,7 @@ export default function HistoryRoute() {
                 <FlatList
                     data={txs}
                     keyExtractor={(item) => item.id}
+                    extraData={rowTimeNow}
                     renderItem={({ item, index }) => (
                         <TxRow
                             tx={item}
@@ -156,6 +160,7 @@ export default function HistoryRoute() {
                             isPeerActive={isPeerActive}
                             isPeerBot={!!peerProfile?.bot}
                             isLast={index === txs.length - 1}
+                            rowTimeNow={rowTimeNow}
                         />
                     )}
                     onEndReached={handleLoadMoreTxs}

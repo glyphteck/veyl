@@ -24,7 +24,7 @@ import { useRouteLock } from '@/lib/navigation/routelock';
 import { ScrollEdgeScreen } from '@/lib/navigation/scrolledge';
 import { useTap } from '@/lib/tap';
 import { formatUserDisplay } from '@veyl/shared/profile';
-import { formatFullDateTime, timestampMs } from '@veyl/shared/utils/time';
+import { formatRowDateTime, timestampMs } from '@veyl/shared/utils/time';
 import { getChatPeerPK } from '@veyl/shared/chat/ids';
 import { getInsertedRowBatch, getMovedRowBatch, sameListIds } from '@veyl/shared/chat/listanimation';
 import { getMsgPreview } from '@veyl/shared/chat/messages';
@@ -278,6 +278,8 @@ function samePreviewMsg(a, b) {
     if (!a || !b) return false;
     return (
         a.cid === b.cid &&
+        a.sourceKey === b.sourceKey &&
+        timestampMs(a.sourceTs) === timestampMs(b.sourceTs) &&
         a.id === b.id &&
         a.s === b.s &&
         a.from === b.from &&
@@ -293,6 +295,10 @@ function samePreviewMsg(a, b) {
         a.emoji === b.emoji &&
         a.actionOp === b.actionOp &&
         a.actionTarget === b.actionTarget &&
+        a.activity?.kind === b.activity?.kind &&
+        timestampMs(a.activity?.at) === timestampMs(b.activity?.at) &&
+        a.activity?.by === b.activity?.by &&
+        timestampMs(a.contentUntil) === timestampMs(b.contentUntil) &&
         timestampMs(a.ttl) === timestampMs(b.ttl) &&
         timestampMs(a.editedAt) === timestampMs(b.editedAt) &&
         timestampMs(a.paidAt) === timestampMs(b.paidAt) &&
@@ -334,14 +340,14 @@ function profileSignature(profile) {
     return [profile.uid || '', profile.username || '', profile.avatar || '', profile.active ? '1' : '0', profile.bot || '', profile.chatPK || ''].join(':');
 }
 
-const ChatListChatRow = memo(function ChatListChatRow({ animationKey = '', chat, chatPK, handleDeleteChat, isLast, mode = null, openChat, peerByChatPK, settings }) {
+const ChatListChatRow = memo(function ChatListChatRow({ animationKey = '', chat, chatPK, handleDeleteChat, isLast, mode = null, openChat, peerByChatPK, previewNow, settings }) {
     const { contentStyle, slotStyle } = useRowMoveStyles(animationKey, mode);
     const peerChatPK = getChatPeerPK(chat, chatPK);
     const profile = peerChatPK ? peerByChatPK?.get(peerChatPK) : null;
     const title = formatUserDisplay({ username: profile?.username, chatPK: peerChatPK });
-    const subtitle = getMsgPreview(chat?.preview, chatPK, settings, null);
+    const subtitle = getMsgPreview(chat?.preview, chatPK, settings, null, { now: previewNow });
     const lastMs = chat?.ts || null;
-    const rightLabel = lastMs ? formatFullDateTime(lastMs) : '';
+    const rightLabel = lastMs ? formatRowDateTime(lastMs, previewNow) : '';
 
     return (
         <ChatRow
@@ -365,6 +371,7 @@ const ChatListChatRow = memo(function ChatListChatRow({ animationKey = '', chat,
     prev.isLast === next.isLast &&
     prev.chatPK === next.chatPK &&
     prev.settings === next.settings &&
+    prev.previewNow === next.previewNow &&
     sameChatRow(prev.chat, next.chat) &&
     samePeerProfile(prev, next)
 ));
@@ -375,7 +382,7 @@ export default function ChatList() {
     const navigation = useNavigation();
     const router = useRouter();
     const insets = useSafeAreaInsets();
-    const { chats, isChatDataReady, hasMoreChats, loadingMoreChats, loadMoreChats, deleteChat, restoreDeletedChat } = useChat();
+    const { chats, isChatDataReady, hasMoreChats, loadingMoreChats, loadMoreChats, previewNow, deleteChat, restoreDeletedChat } = useChat();
     const { chatPK, blockedSet, chatBanned, settings } = useUser();
     const { peers, peerByChatPK, isBlockedChatPK, isPeerDataReady } = usePeer() || {};
     const { searching, results, query, search: runSearch, clearSearch } = useSearch('profiles');
@@ -417,13 +424,13 @@ export default function ChatList() {
             const title = lowerText(formatUserDisplay({ username: profile?.username, chatPK: peerChatPK }));
             const username = lowerText(profile?.username);
             const atUsername = username ? `@${username}` : '';
-            const preview = lowerText(getMsgPreview(chat?.preview, chatPK, settings, null));
+            const preview = lowerText(getMsgPreview(chat?.preview, chatPK, settings, null, { now: previewNow }));
             const peerKey = lowerText(peerChatPK);
             const usernameMatch = usernameQuery ? (usernamePrefixSearch ? username.startsWith(usernameQuery) : username.includes(usernameQuery)) : false;
 
             return title.includes(chatQuery) || usernameMatch || atUsername.includes(chatQuery) || preview.includes(chatQuery) || peerKey.includes(chatQuery);
         });
-    }, [chatPK, chatQuery, chats, hasBlockedUsers, isBlockedChatPK, isPeerDataReady, peerByChatPK, settings, usernamePrefixSearch, usernameQuery]);
+    }, [chatPK, chatQuery, chats, hasBlockedUsers, isBlockedChatPK, isPeerDataReady, peerByChatPK, previewNow, settings, usernamePrefixSearch, usernameQuery]);
 
     const chatPeerPKs = useMemo(() => new Set((Array.isArray(chats) ? chats : []).map((chat) => chat?.peerChatPK).filter(Boolean)), [chats]);
 
@@ -694,11 +701,12 @@ export default function ChatList() {
                     mode={item.type === 'moving-chat-in' ? 'in' : item.type === 'moving-chat-out' ? 'out' : null}
                     openChat={openChat}
                     peerByChatPK={peerByChatPK}
+                    previewNow={previewNow}
                     settings={settings}
                 />
             );
         },
-        [chatPK, displayItems.length, handleDeleteChat, openChat, peerByChatPK, settings]
+        [chatPK, displayItems.length, handleDeleteChat, openChat, peerByChatPK, previewNow, settings]
     );
 
     const renderScrollComponent = useCallback(

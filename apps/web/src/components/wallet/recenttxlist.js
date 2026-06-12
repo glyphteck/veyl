@@ -6,7 +6,8 @@ import { Button } from '@/components/button';
 import { Card } from '@/components/card';
 import { formatUserDisplay } from '@veyl/shared/profile';
 import { renderMoney } from '@veyl/shared/money';
-import { formatFullDateTime } from '@veyl/shared/utils/time';
+import { formatFullDateTime, formatRowDateTime } from '@veyl/shared/utils/time';
+import { useRowDateTimeNow } from '@veyl/shared/utils/userowdatetime';
 import { useBitcoin } from '@/components/providers/bitcoinprovider';
 import { useWallet } from '@/components/providers/walletprovider';
 import { useUser } from '@/components/providers/userprovider';
@@ -135,8 +136,9 @@ function useRecentTxAnimation(recentTxs) {
     return { displayTxs, insertingIds };
 }
 
-const RecentTxRow = memo(function RecentTxRow({ bitcoinPrice, cloaked, isFirst, isLast, moneyFormat, onOpenTx, profile, rowRefs, tx, user }) {
-    const label = formatFullDateTime(tx.createdTime);
+const RecentTxRow = memo(function RecentTxRow({ bitcoinPrice, cloaked, isFirst, isLast, moneyFormat, onOpenTx, profile, rowNow, rowRefs, tx, user }) {
+    const exactLabel = formatFullDateTime(tx.createdTime);
+    const label = formatRowDateTime(tx.createdTime, rowNow);
     const isInflow = tx.amount > 0;
     const formattedAmount = renderMoney(tx.totalValue, moneyFormat, bitcoinPrice, isInflow ? '+' : '-');
     const displayName = tx.funding
@@ -161,6 +163,7 @@ const RecentTxRow = memo(function RecentTxRow({ bitcoinPrice, cloaked, isFirst, 
             tabIndex={isFirst ? 0 : -1}
             className={`group h-15 w-full justify-start rounded-none px-3 text-left ${isFirst ? 'pt-px' : ''} ${isLast ? 'pb-px' : ''}`}
             onClick={() => onOpenTx(tx)}
+            title={exactLabel || undefined}
         >
             <div className="flex w-full items-center gap-2.5">
                 <Avatar active={tx.funding || tx.withdrawal ? false : profile?.active} bot={!!profile?.bot} className="grower group-focus-visible:scale-120">
@@ -182,6 +185,7 @@ const RecentTxRow = memo(function RecentTxRow({ bitcoinPrice, cloaked, isFirst, 
     prev.isLast === next.isLast &&
     prev.moneyFormat === next.moneyFormat &&
     prev.onOpenTx === next.onOpenTx &&
+    prev.rowNow === next.rowNow &&
     prev.user?.avatar === next.user?.avatar &&
     sameTxRow(prev.tx, next.tx) &&
     sameProfile(prev.profile, next.profile)
@@ -208,6 +212,8 @@ export function RecentTxList() {
 
     const visibleTxs = useMemo(() => displayTxs.slice(0, Math.min(visibleLimit, displayTxs.length)), [displayTxs, visibleLimit]);
     const visibleTxIds = useMemo(() => visibleTxs.map((tx) => tx.id), [visibleTxs]);
+    const visibleTxTimes = useMemo(() => visibleTxs.map((tx) => tx.createdTime), [visibleTxs]);
+    const rowNow = useRowDateTimeNow(visibleTxTimes);
     const hasHiddenRenderedTxs = visibleLimit < displayTxs.length;
     const itemCount = visibleTxs.length;
     const openTx = useCallback((tx) => openDialog('txdetails', { tx }), [openDialog]);
@@ -331,10 +337,11 @@ export function RecentTxList() {
                                         cloaked={cloaked}
                                         isFirst={index === 0}
                                         isLast={index === visibleTxs.length - 1}
-                                        moneyFormat={moneyFormat}
-                                        onOpenTx={openTx}
-                                        profile={peerByWalletPK.get(tx.peerPK)}
-                                        rowRefs={rowRefs}
+                                    moneyFormat={moneyFormat}
+                                    onOpenTx={openTx}
+                                    profile={peerByWalletPK.get(tx.peerPK)}
+                                    rowNow={rowNow}
+                                    rowRefs={rowRefs}
                                         tx={tx}
                                         user={user}
                                     />

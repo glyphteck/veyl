@@ -12,7 +12,7 @@ import { useEffect } from 'react';
 
 export default function ChatTitleLayout({ children }) {
     const { chatPK, settings } = useUser();
-    const { chats, selectedChatId, isChatDataReady } = useChat();
+    const { chats, selectedChatId, isChatDataReady, previewNow } = useChat();
     const { peerByChatPK } = usePeer();
     const bitcoin = useBitcoin();
     const { cloaked } = useCloak();
@@ -35,9 +35,9 @@ export default function ChatTitleLayout({ children }) {
             username: profile?.username,
             chatPK: peerChatPK,
         });
-        const preview = displayPreview(selectedChat.preview, chatPK, settings, bitcoin.price);
+        const preview = displayPreview(selectedChat.preview, chatPK, settings, bitcoin.price, { now: previewNow });
         document.title = preview ? `${displayName}: ${preview}` : displayName;
-    }, [chats, selectedChatId, isChatDataReady, chatPK, peerByChatPK, settings, bitcoin.price, cloaked]);
+    }, [chats, selectedChatId, isChatDataReady, chatPK, peerByChatPK, settings, bitcoin.price, cloaked, previewNow]);
 
     return children;
 }

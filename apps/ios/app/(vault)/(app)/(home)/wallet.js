@@ -22,7 +22,8 @@ import { useTap } from '@/lib/tap';
 import { BTC_PRICE_FALLBACK } from '@veyl/shared/config';
 import { renderBalance, renderMoney } from '@veyl/shared/money';
 import { formatUserDisplay } from '@veyl/shared/profile';
-import { formatFullDateTime } from '@veyl/shared/utils/time';
+import { formatRowDateTime } from '@veyl/shared/utils/time';
+import { useRowDateTimeNow } from '@veyl/shared/utils/userowdatetime';
 import { hasAvailableBalance } from '@veyl/shared/wallet/balance';
 
 const BALANCE_HEIGHT = 42;
@@ -84,12 +85,12 @@ const StableTxAvatar = memo(function StableTxAvatar({ active, bot, uri }) {
     return <Avatar pointerEvents="none" source={source} active={active} bot={bot} />;
 });
 
-const TxRow = memo(function TxRow({ tx, profile, theme, moneyFormat, btcPrice, isLast, openRoute, selectPeerChat, user }) {
+const TxRow = memo(function TxRow({ tx, profile, theme, moneyFormat, btcPrice, isLast, openRoute, rowTimeNow, selectPeerChat, user }) {
     const { chatPK, chatBanned } = user || {};
     const isInflow = (tx?.amount ?? 0) > 0;
     const amountText = renderMoney(tx?.totalValue ?? 0, moneyFormat, btcPrice, isInflow ? '+' : '-');
 
-    const label = tx?.pending ? 'pending' : formatFullDateTime(tx?.createdTime);
+    const label = tx?.pending ? 'pending' : formatRowDateTime(tx?.createdTime, rowTimeNow);
     const displayName = tx?.funding ? 'Funded' : tx?.withdrawal ? 'Withdrawn' : formatUserDisplay({ username: profile?.username, walletPK: tx?.peerPK });
 
     const avatarUri = tx?.funding || tx?.withdrawal ? user?.avatar : profile?.avatar;
@@ -167,6 +168,7 @@ const TxRow = memo(function TxRow({ tx, profile, theme, moneyFormat, btcPrice, i
     prev.btcPrice === next.btcPrice &&
     prev.isLast === next.isLast &&
     prev.openRoute === next.openRoute &&
+    prev.rowTimeNow === next.rowTimeNow &&
     prev.selectPeerChat === next.selectPeerChat &&
     prev.user?.chatPK === next.user?.chatPK &&
     prev.user?.chatBanned === next.user?.chatBanned &&
@@ -276,6 +278,8 @@ export default function Wallet() {
     const balanceFeedback = useTap({ onPress: cycleFormat, disabled: !showBalance });
 
     const txListData = txData?.sortedTransactions ?? [];
+    const txTimes = useMemo(() => txListData.map((tx) => tx.createdTime), [txListData]);
+    const rowTimeNow = useRowDateTimeNow(txTimes);
     const mountedRef = useRef(true);
     const loadingMoreRef = useRef(false);
     const loadingMoreFrameRef = useRef(null);
@@ -406,12 +410,13 @@ export default function Wallet() {
                     btcPrice={btcPrice}
                     isLast={!txListShowsLoader && index === txListData.length - 1}
                     openRoute={openRoute}
+                    rowTimeNow={rowTimeNow}
                     selectPeerChat={selectPeerChat}
                     user={user}
                 />
             );
         },
-        [btcPrice, moneyFormat, openRoute, peerByWalletPK, selectPeerChat, theme, txListData.length, txListShowsLoader, user]
+        [btcPrice, moneyFormat, openRoute, peerByWalletPK, rowTimeNow, selectPeerChat, theme, txListData.length, txListShowsLoader, user]
     );
 
     const renderTxEmpty = useCallback(
@@ -436,6 +441,7 @@ export default function Wallet() {
             theme.inflow,
             theme.outflow,
             theme.border,
+            rowTimeNow,
             txListShowsLoader ? '1' : '0',
             txProfileSignature,
         ].join('|'),
@@ -447,6 +453,7 @@ export default function Wallet() {
             theme.inflow,
             theme.muted,
             theme.outflow,
+            rowTimeNow,
             txListShowsLoader,
             user?.avatar,
             user?.chatBanned,

@@ -5,7 +5,7 @@ import { Avatar, AvatarImage, AvatarFallback } from '@/components/avatar';
 import { Button } from '@/components/button';
 import { Card } from '@/components/card';
 import { formatUserDisplay } from '@veyl/shared/profile';
-import { formatFullDateTime, timestampMs } from '@veyl/shared/utils/time';
+import { formatFullDateTime, formatRowDateTime, timestampMs } from '@veyl/shared/utils/time';
 import { getMsgPreview as displayPreview } from '@veyl/shared/chat/messages';
 import { getChatPeerPK } from '@veyl/shared/chat/ids';
 import { getInsertedRowBatch, getMovedRowBatch, sameListIds } from '@veyl/shared/chat/listanimation';
@@ -53,6 +53,8 @@ function samePreviewMsg(a, b) {
     if (!a || !b) return false;
     return (
         a.cid === b.cid &&
+        a.sourceKey === b.sourceKey &&
+        timestampMs(a.sourceTs) === timestampMs(b.sourceTs) &&
         a.id === b.id &&
         a.s === b.s &&
         a.from === b.from &&
@@ -68,6 +70,10 @@ function samePreviewMsg(a, b) {
         a.emoji === b.emoji &&
         a.actionOp === b.actionOp &&
         a.actionTarget === b.actionTarget &&
+        a.activity?.kind === b.activity?.kind &&
+        timestampMs(a.activity?.at) === timestampMs(b.activity?.at) &&
+        a.activity?.by === b.activity?.by &&
+        timestampMs(a.contentUntil) === timestampMs(b.contentUntil) &&
         timestampMs(a.ttl) === timestampMs(b.ttl) &&
         timestampMs(a.editedAt) === timestampMs(b.editedAt) &&
         timestampMs(a.paidAt) === timestampMs(b.paidAt) &&
@@ -116,6 +122,7 @@ const RecentChatRow = memo(function RecentChatRow({
     isLast,
     mode = null,
     peerByChatPK,
+    previewNow,
     rowRefs,
     selected,
     selectedChatButtonRef,
@@ -128,7 +135,7 @@ const RecentChatRow = memo(function RecentChatRow({
         username: profile?.username,
         chatPK: peerChatPK,
     });
-    const previewText = displayPreview(chat.preview, chatPK, settings, bitcoinPrice);
+    const previewText = displayPreview(chat.preview, chatPK, settings, bitcoinPrice, { now: previewNow });
     const hasPreview = !!previewText.trim();
 
     return (
@@ -172,7 +179,7 @@ const RecentChatRow = memo(function RecentChatRow({
                         <div className="hidden min-w-0 flex-1 md:block">
                             <div className="flex items-baseline justify-between gap-3">
                                 <span className="min-w-0 flex-1 truncate font-black leading-5">{displayName}</span>
-                                <span className="shrink-0 whitespace-nowrap text-sm leading-4 font-black text-muted">{chat.ts ? formatFullDateTime(chat.ts) : ''}</span>
+                                <span className="shrink-0 whitespace-nowrap text-sm leading-4 font-black text-muted" title={chat.ts ? formatFullDateTime(chat.ts) : undefined}>{chat.ts ? formatRowDateTime(chat.ts, previewNow) : ''}</span>
                             </div>
                             {hasPreview ? (
                                 <div className={`mt-0.5 truncate text-sm leading-4 ${chat.unseen ? 'text-foreground' : 'text-muted'} ${cloaked ? 'cloaked' : ''}`}>
@@ -193,6 +200,7 @@ const RecentChatRow = memo(function RecentChatRow({
     prev.isFirst === next.isFirst &&
     prev.isLast === next.isLast &&
     prev.mode === next.mode &&
+    prev.previewNow === next.previewNow &&
     prev.selected === next.selected &&
     prev.settings === next.settings &&
     sameChatRow(prev.chat, next.chat) &&
@@ -201,7 +209,7 @@ const RecentChatRow = memo(function RecentChatRow({
 
 export function RecentChatsList() {
     const { chatPK, settings } = useUser();
-    const { chats, isChatDataReady, hasMoreChats, loadingMoreChats, loadMoreChats, selectChat, selectedChatId } = useChat();
+    const { chats, isChatDataReady, hasMoreChats, loadingMoreChats, loadMoreChats, previewNow, selectChat, selectedChatId } = useChat();
     const { focusChatInput, focusNavbar, selectedChatButtonRef } = useChatInput();
     const { peerByChatPK, updatePeer, isBlockedChatPK } = usePeer();
     const bitcoin = useBitcoin();
@@ -440,6 +448,7 @@ export function RecentChatsList() {
                             isLast={index === displayedChats.length - 1}
                             mode={movingIds.has(chat.id) ? rowMove?.phase : null}
                             peerByChatPK={peerByChatPK}
+                            previewNow={previewNow}
                             rowRefs={rowRefs}
                             selected={chat.id === selectedChatId}
                             selectedChatButtonRef={selectedChatButtonRef}

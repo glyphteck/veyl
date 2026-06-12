@@ -1,8 +1,7 @@
 'use client';
 
-import { canRenderChatPreview, canShowMsg, chatPreviewHasKey, chatPreviewWantsAttention } from './messages.js';
+import { canRenderChatPreview, chatPreviewHasKey, chatPreviewWantsAttention, dropExpiredChatPreviewContent, nextChatPreviewRefreshMs } from './messages.js';
 import { collectMessageKeys } from './messagekeys.js';
-import { ttlMillis } from './ttl.js';
 import { timestampMs } from '../utils/time.js';
 import { uniqueValues } from '../utils/array.js';
 import { cleanText } from '../utils/text.js';
@@ -20,6 +19,8 @@ function sameChatShape(a, b) {
         a.unseen === b.unseen &&
         a.settings?.retention === b.settings?.retention &&
         a.preview?.cid === b.preview?.cid &&
+        a.preview?.sourceKey === b.preview?.sourceKey &&
+        timestampMs(a.preview?.sourceTs) === timestampMs(b.preview?.sourceTs) &&
         a.preview?.id === b.preview?.id &&
         a.preview?.s === b.preview?.s &&
         a.preview?.from === b.preview?.from &&
@@ -35,6 +36,10 @@ function sameChatShape(a, b) {
         a.preview?.emoji === b.preview?.emoji &&
         a.preview?.actionOp === b.preview?.actionOp &&
         a.preview?.actionTarget === b.preview?.actionTarget &&
+        a.preview?.activity?.kind === b.preview?.activity?.kind &&
+        timestampMs(a.preview?.activity?.at) === timestampMs(b.preview?.activity?.at) &&
+        a.preview?.activity?.by === b.preview?.activity?.by &&
+        timestampMs(a.preview?.contentUntil) === timestampMs(b.preview?.contentUntil) &&
         timestampMs(a.preview?.ttl) === timestampMs(b.preview?.ttl) &&
         timestampMs(a.preview?.editedAt) === timestampMs(b.preview?.editedAt) &&
         timestampMs(a.preview?.paidAt) === timestampMs(b.preview?.paidAt) &&
@@ -224,6 +229,8 @@ function samePreviewMsg(a, b) {
     if (!a || !b) return false;
     return (
         a.cid === b.cid &&
+        a.sourceKey === b.sourceKey &&
+        timestampMs(a.sourceTs) === timestampMs(b.sourceTs) &&
         a.id === b.id &&
         a.s === b.s &&
         a.from === b.from &&
@@ -239,6 +246,10 @@ function samePreviewMsg(a, b) {
         a.emoji === b.emoji &&
         a.actionOp === b.actionOp &&
         a.actionTarget === b.actionTarget &&
+        a.activity?.kind === b.activity?.kind &&
+        timestampMs(a.activity?.at) === timestampMs(b.activity?.at) &&
+        a.activity?.by === b.activity?.by &&
+        timestampMs(a.contentUntil) === timestampMs(b.contentUntil) &&
         timestampMs(a.ttl) === timestampMs(b.ttl) &&
         timestampMs(a.editedAt) === timestampMs(b.editedAt) &&
         timestampMs(a.paidAt) === timestampMs(b.paidAt) &&
@@ -382,9 +393,22 @@ export function replaceChatPreview(chats, chatId, replacement, chatPK, readCache
 
 export function trimExpiredChatPreviews(chats, options = {}) {
     const skip = skipChatSet(options);
+    const now = timestampMs(options.now, Date.now(), { parseString: true });
     let changed = false;
     const next = (chats || []).map((chat) => {
-        if (!chat?.preview || skip?.has(chat.id) || canRenderChatPreview(chat.preview)) {
+        if (!chat?.preview || skip?.has(chat.id)) {
+            return chat;
+        }
+        const preview = dropExpiredChatPreviewContent(chat.preview, now);
+        if (preview !== chat.preview) {
+            changed = true;
+            return {
+                ...chat,
+                preview,
+                unseen: false,
+            };
+        }
+        if (canRenderChatPreview(chat.preview)) {
             return chat;
         }
         changed = true;
@@ -455,10 +479,10 @@ export function nextChatPreviewExpiryMs(chats, now = Date.now(), options = {}) {
     const skip = skipChatSet(options);
     let next = Infinity;
     for (const chat of chats || []) {
-        if (!chat?.preview || skip?.has(chat.id) || !canShowMsg(chat.preview)) {
+        if (!chat?.preview || skip?.has(chat.id)) {
             continue;
         }
-        const ms = ttlMillis(chat.preview.ttl);
+        const ms = nextChatPreviewRefreshMs(chat.preview, now);
         if (ms != null && ms > now && ms < next) {
             next = ms;
         }

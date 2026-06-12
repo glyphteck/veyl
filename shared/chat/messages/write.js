@@ -10,7 +10,7 @@ import { makeCid } from '../state.js';
 import { cleanChatRetention, newMessageTtlMs, withMessageRetention } from '../ttl.js';
 import { CHAT_DELETE_WRITE_BATCH_SIZE } from '../../config.js';
 import { cleanText } from '../../utils/text.js';
-import { makeTimestamp, timestampMs } from '../../utils/time.js';
+import { timestampMs } from '../../utils/time.js';
 
 const DELETE_WRITE_BATCH_SIZE = CHAT_DELETE_WRITE_BATCH_SIZE;
 
@@ -51,7 +51,7 @@ async function readOwnEntry(cloud, uid, chatPrivKey, entryId) {
     return openOwnChatEntry(chatPrivKey, entryId, record.body).catch(() => null);
 }
 
-export async function setChatRead(cloud, uid, chatPrivKey, chatId, readMs) {
+export async function setChatRead(cloud, uid, chatPrivKey, chatId, readMs, options = {}) {
     const nextReadMs = timestampMs(readMs, null, { positive: true });
     if (!cloud || !uid || !chatPrivKey || !chatId || nextReadMs == null) {
         return false;
@@ -59,14 +59,17 @@ export async function setChatRead(cloud, uid, chatPrivKey, chatId, readMs) {
     const entryId = ownChatEntryId(chatPrivKey, chatId);
     const entry = await readOwnEntry(cloud, uid, chatPrivKey, entryId);
     const currentReadMs = timestampMs(entry?.readMs, 0) ?? 0;
-    if (!entry?.chatId || currentReadMs >= nextReadMs) {
+    const hasPreviewPatch = typeof options.preview === 'function';
+    if (!entry?.chatId || (currentReadMs >= nextReadMs && !hasPreviewPatch)) {
         return false;
     }
+    const preview = hasPreviewPatch ? options.preview(entry.preview || null, entry) : entry.preview;
 
     await cloud.user.chats.write(uid, entryId, {
         body: await sealOwnChatEntry(chatPrivKey, entryId, {
             ...entry,
-            readMs: nextReadMs,
+            readMs: Math.max(currentReadMs, nextReadMs),
+            ...(hasPreviewPatch ? { preview: preview || null } : {}),
         }),
     });
     return true;
@@ -126,14 +129,14 @@ async function ownEntryWrite(cloud, uid, chatPrivKey, pair, fields = {}) {
 }
 
 function ownerPreview(senderPubkey, message, messageId, head, tsMs, ttlMs) {
-    const ttl = Number.isFinite(ttlMs) ? makeTimestamp(ttlMs) : null;
+    const ttl = Number.isFinite(ttlMs) ? ttlMs : null;
     return {
         ...(message || {}),
         s: senderPubkey,
         from: senderPubkey,
         cid: head.cid,
         id: messageId,
-        ts: makeTimestamp(tsMs),
+        ts: tsMs,
         ttl,
         pending: false,
         failed: false,
@@ -209,10 +212,11 @@ export async function sendMsg(cloud, senderPubkey, senderPrivkey, receiverChatPK
               ts: tsMs,
           })
         : null;
+    const pingKind = updatePreview ? 'message' : cleanText(options?.pingKind) || 'ping';
     const ping =
         recipientProfile?.uid && (updatePreview || options?.ping === true)
             ? await sealPing(senderPubkey, senderPrivkey, receiverChatPK, {
-                  kind: updatePreview ? 'message' : 'ping',
+                  kind: pingKind,
                   chatId,
                   senderUid: cleanText(options?.senderUid),
                   messageId,
@@ -236,7 +240,7 @@ export async function sendReadReceipt(cloud, senderPubkey, senderPrivkey, receiv
         cid: makeCid(),
         s: senderPubkey,
     };
-    return sendMsg(cloud, senderPubkey, senderPrivkey, receiverChatPK, receipt, { ...options, updatePreview: false, ping: false });
+    return sendMsg(cloud, senderPubkey, senderPrivkey, receiverChatPK, receipt, { ...options, updatePreview: false, ping: options?.ping !== false, pingKind: 'read' });
 }
 
 export async function sendReaction(cloud, senderPubkey, senderPrivkey, receiverChatPK, target, emoji, options = {}) {

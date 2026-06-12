@@ -2,6 +2,7 @@
 
 import { timestampMs } from '../utils/time.js';
 import { getMessageKey } from './state.js';
+import { withChatPreviewOpened } from './messages/preview.js';
 
 export function clearReadWrite(pendingRead, chatId) {
     const pending = pendingRead?.get?.(chatId);
@@ -77,17 +78,20 @@ export function readCandidate({ chatId, chatPK, chatPrivateKey, message, readCac
     };
 }
 
-export function markChatsRead(chats, chatId, preview) {
+export function markChatsRead(chats, chatId, preview, options = {}) {
+    const readMs = timestampMs(options.readMs ?? preview?.ts, null, { positive: true });
+    const chatPK = options.chatPK || '';
     return chats.map((chatItem) => {
         if (chatItem.id !== chatId) {
             return chatItem;
         }
 
         const isPreview = chatItem.preview?.cid && chatItem.preview.cid === preview.cid;
+        const openedPreview = isPreview && readMs != null ? withChatPreviewOpened(chatItem.preview, preview, readMs, chatPK, chatPK) || chatItem.preview : chatItem.preview;
         return {
             ...chatItem,
             unseen: false,
-            preview: isPreview ? { ...(chatItem.preview || {}) } : chatItem.preview,
+            preview: isPreview ? { ...(openedPreview || {}) } : chatItem.preview,
         };
     });
 }

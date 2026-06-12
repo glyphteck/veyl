@@ -6,7 +6,8 @@ import { Button } from '@/components/button';
 import { Card } from '@/components/card';
 import { formatUserDisplay } from '@veyl/shared/profile';
 import { renderMoney } from '@veyl/shared/money';
-import { formatFullDateTime } from '@veyl/shared/utils/time';
+import { formatFullDateTime, formatRowDateTime } from '@veyl/shared/utils/time';
+import { useRowDateTimeNow } from '@veyl/shared/utils/userowdatetime';
 import { useBitcoin } from '@/components/providers/bitcoinprovider';
 import { useWallet } from '@/components/providers/walletprovider';
 import { useUser } from '@/components/providers/userprovider';
@@ -45,6 +46,8 @@ export default function TransactionsPage() {
         return { start, end };
     }, [scrollTop, sorted.length, viewportHeight]);
     const visibleTxs = useMemo(() => sorted.slice(visibleWindow.start, visibleWindow.end), [sorted, visibleWindow.end, visibleWindow.start]);
+    const visibleTxTimes = useMemo(() => visibleTxs.map((tx) => tx.createdTime), [visibleTxs]);
+    const rowNow = useRowDateTimeNow(visibleTxTimes);
 
     const focusTxAtIndex = useCallback(
         (index) => {
@@ -151,7 +154,8 @@ export default function TransactionsPage() {
                     <div className="relative" style={{ height: sorted.length * TX_ROW_HEIGHT }}>
                         {visibleTxs.map((tx, windowIndex) => {
                             const index = visibleWindow.start + windowIndex;
-                            const label = formatFullDateTime(tx.createdTime);
+                            const exactLabel = formatFullDateTime(tx.createdTime);
+                            const label = formatRowDateTime(tx.createdTime, rowNow);
                             const isInflow = tx.amount > 0;
                             const formattedAmount = renderMoney(tx.totalValue, moneyFormat, bitcoin.price, isInflow ? '+' : '-');
                             const profile = peerByWalletPK.get(tx.peerPK);
@@ -178,6 +182,7 @@ export default function TransactionsPage() {
                                         tabIndex={index === 0 ? 0 : -1}
                                         className="group h-full w-full justify-start rounded-none px-3 text-left"
                                         onClick={() => openDialog('txdetails', { tx })}
+                                        title={exactLabel || undefined}
                                     >
                                         <div className="flex w-full items-center gap-2.5">
                                             <Avatar active={tx.funding || tx.withdrawal ? false : profile?.active} bot={!!profile?.bot} className="grower group-focus-visible:scale-120">

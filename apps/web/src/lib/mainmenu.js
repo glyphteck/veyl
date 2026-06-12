@@ -6,7 +6,7 @@ import { getMsgPreview as displayPreview } from '@veyl/shared/chat/messages';
 import { hasAvailableBalance } from '@veyl/shared/wallet/balance';
 import { formatUserDisplay } from '@veyl/shared/profile';
 import { renderMoney } from '@veyl/shared/money';
-import { formatFullDateTime } from '@veyl/shared/utils/time';
+import { formatFullDateTime, formatRowDateTime } from '@veyl/shared/utils/time';
 import { formatCacheSize } from '@veyl/shared/utils/display';
 
 export const ROW_HEIGHT = 36;
@@ -265,7 +265,7 @@ function buildSlashSections({ searchValue, searchState, matchedPeers }) {
     return sections;
 }
 
-function chatPreview({ lastChat, peerByChatPK, chatPK, settings, bitcoin }) {
+function chatPreview({ lastChat, peerByChatPK, chatPK, settings, bitcoin, previewNow }) {
     if (!lastChat) return '';
     if (settings?.showChatPreviews === false) return '';
     const profile = peerByChatPK?.get?.(lastChat.peerChatPK) ?? null;
@@ -276,7 +276,7 @@ function chatPreview({ lastChat, peerByChatPK, chatPK, settings, bitcoin }) {
         },
         true
     );
-    const lastMessage = displayPreview(lastChat.preview, chatPK, settings, bitcoin?.price);
+    const lastMessage = displayPreview(lastChat.preview, chatPK, settings, bitcoin?.price, { now: previewNow });
     if (!lastMessage) return displayName;
     const truncatedMessage = lastMessage.length > 24 ? `${lastMessage.slice(0, 24)}...` : lastMessage;
     return `${displayName}: ${truncatedMessage}`;
@@ -583,7 +583,7 @@ function buildStaticSections(options) {
     return sections;
 }
 
-function buildTransactionRows({ avatar, bitcoin, cloaked, peerByWalletPK, settings, txs }) {
+function buildTransactionRows({ avatar, bitcoin, cloaked, peerByWalletPK, rowTimeNow, settings, txs }) {
     return (txs || []).map((tx, index) => {
         const peer = peerByWalletPK?.get?.(tx.peerPK);
         const displayName = tx.funding ? 'Funded' : tx.withdrawal ? 'Withdrawn' : formatUserDisplay(peer || { walletPK: tx.peerPK }, true);
@@ -596,7 +596,8 @@ function buildTransactionRows({ avatar, bitcoin, cloaked, peerByWalletPK, settin
             avatarSrc: tx.funding || tx.withdrawal ? avatar : peer?.avatar,
             active: tx.funding || tx.withdrawal ? false : peer?.active,
             bot: !!peer?.bot,
-            status: tx.pending ? 'pending' : formatFullDateTime(tx.createdTime),
+            status: tx.pending ? 'pending' : formatRowDateTime(tx.createdTime, rowTimeNow),
+            exactTitle: tx.pending ? '' : formatFullDateTime(tx.createdTime),
             amount: renderMoney(tx.totalValue, settings?.moneyFormat, bitcoin?.price, tx.incoming ? '+' : '-'),
             amountClassName: `${tx.incoming ? 'text-inflow' : 'text-outflow'} ${tx.pending ? 'opacity-50' : ''} ${cloaked ? 'cloaked' : ''}`,
             action: { type: 'txdetails', tx },

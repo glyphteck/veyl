@@ -28,9 +28,9 @@ export function useScroll({ chatId, extraContentPadding, hasOlder, inputH, loadO
     const contentContainerStyle = useMemo(
         () => ({
             paddingTop: positivePx(insets.bottom + inputH + NEWEST_GAP),
-            paddingBottom: FLOATING_HEADER_SCROLL_EDGE_PAD,
+            paddingBottom: positivePx(headerEdgeInset + FLOATING_HEADER_SCROLL_EDGE_PAD),
         }),
-        [insets.bottom, inputH]
+        [headerEdgeInset, insets.bottom, inputH]
     );
     const bottomStyle = useAnimatedStyle(() => ({
         transform: [

@@ -1,10 +1,12 @@
-import { canRenderChatPreview, canStoreMsg } from './messages.js';
+import { canRenderChatPreview, isReadReceiptMsg, withChatPreviewOpened } from './messages.js';
 import { makeOwnChatEntry, openOwnChatEntry, ownChatEntryId, sealOwnChatEntry } from './entry.js';
 import { openPing } from './ping.js';
 import { decryptMsg } from './messages/query.js';
 import { isChatUnseenForUser } from './chats.js';
 import { timestampMs } from '../utils/time.js';
 import { cleanText } from '../utils/text.js';
+
+const CHAT_PING_KIND_READ = 'read';
 
 function normalizeChatPreview(msgData, message) {
     if (!message || typeof message !== 'object') {
@@ -16,7 +18,7 @@ function normalizeChatPreview(msgData, message) {
         ts: msgData?.ts ?? null,
         ttl: msgData?.ttl ?? null,
     };
-    return canStoreMsg(normalized) ? normalized : null;
+    return canRenderChatPreview(normalized) ? normalized : null;
 }
 
 async function readExistingEntry(cloud, uid, userPrivKey, entryId) {
@@ -38,6 +40,14 @@ function pingSortMs(pingDoc, ping) {
         return payloadMs;
     }
     return timestampMs(pingDoc?.ts, 0) ?? 0;
+}
+
+function pingKind(ping) {
+    return cleanText(ping?.payload?.kind);
+}
+
+function isReadPing(ping) {
+    return pingKind(ping) === CHAT_PING_KIND_READ;
 }
 
 function pingActors(ping, existing) {
@@ -63,6 +73,7 @@ function chatFromPing(ping, entryId, existing, preview, userChatPK, ms) {
         peerUid: existing?.peerUid || cleanText(ping.payload.senderUid) || null,
         actors: pingActors(ping, existing),
         settings: existing?.settings,
+        saved: existing?.saved || null,
         readMs,
         preview: visiblePreview,
         ts,
@@ -124,11 +135,30 @@ async function savePing(cloud, uid, userChatPK, userPrivKey, ping, options = {})
         readMs: existing?.readMs,
     });
     const body = await sealOwnChatEntry(userPrivKey, entryId, entry);
-    await cloud.user.chats.write(uid, entryId, {
-        body,
-        tsMs: options.tsMs || pingTsMs(ping, preview, Date.now()),
-    });
+    const record = { body };
+    if (options.writeTs !== false) {
+        record.tsMs = timestampMs(options.tsMs, null) ?? pingTsMs(ping, preview, Date.now());
+    }
+    await cloud.user.chats.write(uid, entryId, record);
     return true;
+}
+
+function chatWithReadPreview(existing, preview, userChatPK) {
+    if (!existing?.id || !preview) {
+        return null;
+    }
+    return {
+        ...existing,
+        preview,
+        unseen: isChatUnseenForUser({ preview, readMs: existing.readMs }, userChatPK),
+    };
+}
+
+function patchReadPingPreview(existing, receiptPreview, userChatPK) {
+    if (!existing?.preview || !isReadReceiptMsg(receiptPreview)) {
+        return null;
+    }
+    return withChatPreviewOpened(existing.preview, receiptPreview, receiptPreview?.ts, receiptPreview?.from || receiptPreview?.s, userChatPK);
 }
 
 export async function processInbox(cloud, uid, userChatPK, userPrivKey, options = {}) {
@@ -160,44 +190,86 @@ export async function processInbox(cloud, uid, userChatPK, userPrivKey, options 
 
     await Promise.all(invalidDocs.map((pingDoc) => cloud.inbox.delete(uid, pingDoc.id).catch(() => {})));
 
-    const latestByChat = new Map();
+    const pingsByChat = new Map();
     for (const item of opened.sort((a, b) => a.ms - b.ms)) {
-        const current = latestByChat.get(item.chatId);
-        if (!current || item.ms > current.ms) {
-            latestByChat.set(item.chatId, {
-                ...item,
-                docs: [...(current?.docs || []), item.pingDoc],
-            });
-            continue;
+        let group = pingsByChat.get(item.chatId);
+        if (!group) {
+            group = {
+                chatId: item.chatId,
+                docs: [],
+                message: null,
+                read: null,
+            };
+            pingsByChat.set(item.chatId, group);
         }
-        current.docs.push(item.pingDoc);
+        group.docs.push(item.pingDoc);
+        if (isReadPing(item.ping)) {
+            if (!group.read || item.ms > group.read.ms) {
+                group.read = item;
+            }
+        } else if (!group.message || item.ms > group.message.ms) {
+            group.message = item;
+        }
     }
 
-    const writes = await Promise.all([...latestByChat.values()].map(async (item) => {
+    const writes = await Promise.all([...pingsByChat.values()].map(async (group) => {
         try {
-            const existing = chatsById.get(item.chatId) || null;
-            const entryId = ownChatEntryId(userPrivKey, item.chatId);
-            const actors = pingActors(item.ping, existing);
-            const existingMs = timestampMs(existing?.preview?.ts, 0) ?? 0;
-            const preview = existingMs >= item.ms ? existing?.preview || null : await readPingMsg(cloud, userChatPK, userPrivKey, item.ping, actors);
-            const chat = chatFromPing(item.ping, entryId, existing, preview, userChatPK, item.ms);
-            if (chat) {
-                chatsById.set(chat.id, chat);
-                options.onPingChat?.(chat);
-                await new Promise((resolve) => setTimeout(resolve, 0));
+            let current = chatsById.get(group.chatId) || null;
+            let wrote = false;
+            let handled = false;
+
+            if (group.message) {
+                const item = group.message;
+                const entryId = ownChatEntryId(userPrivKey, item.chatId);
+                const actors = pingActors(item.ping, current);
+                const existingMs = timestampMs(current?.preview?.ts, 0) ?? 0;
+                const preview = existingMs >= item.ms ? current?.preview || null : await readPingMsg(cloud, userChatPK, userPrivKey, item.ping, actors);
+                const chat = chatFromPing(item.ping, entryId, current, preview, userChatPK, item.ms);
+                if (chat) {
+                    current = chat;
+                    chatsById.set(chat.id, chat);
+                    options.onPingChat?.(chat);
+                    await new Promise((resolve) => setTimeout(resolve, 0));
+                }
+
+                wrote = await savePing(cloud, uid, userChatPK, userPrivKey, item.ping, {
+                    existing: current,
+                    actors,
+                    preview,
+                });
             }
 
-            const wrote = await savePing(cloud, uid, userChatPK, userPrivKey, item.ping, {
-                existing,
-                actors,
-                preview,
-            });
-            if (wrote) {
-                await Promise.all(item.docs.map((pingDoc) => cloud.inbox.delete(uid, pingDoc.id).catch(() => {})));
+            if (group.read) {
+                const item = group.read;
+                const entryId = ownChatEntryId(userPrivKey, item.chatId);
+                const existing = current || await readExistingEntry(cloud, uid, userPrivKey, entryId);
+                const actors = pingActors(item.ping, existing);
+                const receiptPreview = await readPingMsg(cloud, userChatPK, userPrivKey, item.ping, actors);
+                const openedPreview = patchReadPingPreview(existing, receiptPreview, userChatPK);
+                const chat = chatWithReadPreview(current, openedPreview, userChatPK);
+                handled = true;
+                if (openedPreview) {
+                    if (chat) {
+                        current = chat;
+                        chatsById.set(chat.id, chat);
+                        options.onPingChat?.(chat);
+                    }
+                    const writeExisting = chat || existing;
+                    wrote = await savePing(cloud, uid, userChatPK, userPrivKey, item.ping, {
+                        existing: writeExisting,
+                        actors,
+                        preview: openedPreview,
+                        writeTs: false,
+                    }) || wrote;
+                }
             }
-            return wrote;
+
+            if (wrote || handled) {
+                await Promise.all(group.docs.map((pingDoc) => cloud.inbox.delete(uid, pingDoc.id).catch(() => {})));
+            }
+            return wrote || handled;
         } catch (error) {
-            options.onPingError?.(error, item);
+            options.onPingError?.(error, group);
             return false;
         }
     }));
