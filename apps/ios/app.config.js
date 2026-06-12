@@ -86,6 +86,7 @@ module.exports = {
             'expo-image',
             'expo-secure-store',
             'expo-video',
+            'react-native-compressor',
             [
                 'expo-splash-screen',
                 {

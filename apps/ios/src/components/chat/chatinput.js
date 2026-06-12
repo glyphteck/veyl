@@ -142,7 +142,7 @@ function getAttachmentDraftTitle(msg) {
     switch (msg?.t) {
         case 'img':
             return 'image';
-        case 'mp3':
+        case 'm4a':
             return 'audio';
         case 'mp4':
             return 'video';
@@ -174,7 +174,7 @@ function getDraftTypeIcon(msg) {
     switch (msg?.t) {
         case 'img':
             return ImageIcon;
-        case 'mp3':
+        case 'm4a':
             return AudioLines;
         case 'mp4':
             return Film;

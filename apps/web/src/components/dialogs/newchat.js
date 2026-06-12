@@ -3,7 +3,7 @@ import { useRouter } from 'next/navigation';
 import { Card } from '@/components/card';
 import { Button } from '@/components/button';
 import { Input } from '@/components/input';
-import { PEER_GRID_HEIGHT, PeerGridCell, usePeerGrid } from '@/components/peergrid';
+import { PEER_GRID_HEIGHT, PeerGridCell, PeerGridInviteCell, usePeerGrid } from '@/components/peergrid';
 import { CircleArrowRight, CircleCheck, HandCoins, Loader, Paperclip, Search } from 'lucide-react';
 import { useUser } from '@/components/providers/userprovider';
 import { useChat } from '@/components/providers/chatprovider';
@@ -13,6 +13,7 @@ import { useCloak } from '@veyl/shared/providers/cloakprovider';
 import { useWallet } from '@/components/providers/walletprovider';
 import { useSearch } from '@/lib/search/usesearch';
 import { makeTxt } from '@veyl/shared/chat/messages';
+import { invite, makeInviteLink } from '@veyl/shared/invite';
 import { mergeProfiles } from '@veyl/shared/search/merge';
 import { formatUserDisplay } from '@veyl/shared/profile';
 import { chatUploadErrorMessage, getUploadFiles, queueMessages } from '@/lib/chat/files';
@@ -20,7 +21,7 @@ import { toast } from 'sonner';
 
 export default function NewChat({ close }) {
     const router = useRouter();
-    const { uid, chatPK, chatBanned } = useUser();
+    const { uid, username, chatPK, chatBanned } = useUser();
     const { chats, sendMessage, sendAttachment, selectPeerChat } = useChat();
     const { peers, recentPeers } = usePeer();
     const { openDialog } = useDialog();
@@ -80,6 +81,30 @@ export default function NewChat({ close }) {
         setSelectedPeer(peer);
         setMsgContent('');
         setTimeout(() => msgRef.current?.focus(), 0);
+    };
+
+    const copyInviteLink = async () => {
+        if (chatBanned) {
+            toast.error('chat unavailable');
+            return;
+        }
+        if (!username) {
+            toast.error('invite unavailable');
+            return;
+        }
+
+        const link = makeInviteLink({ kind: invite.chat, from: username });
+        if (!link) {
+            toast.error('invite unavailable');
+            return;
+        }
+        try {
+            await navigator.clipboard.writeText(link);
+            toast('invite link copied');
+        } catch (error) {
+            console.error('invite link copy failed', error);
+            toast.error('could not copy invite link');
+        }
     };
 
     const handlePayments = () => {
@@ -153,19 +178,16 @@ export default function NewChat({ close }) {
             />
             <Card>
                 <div className="overflow-y-scroll p-4" style={{ height: PEER_GRID_HEIGHT }} onScroll={handlePeerScroll}>
-                    {searching && query && !displayPeers.length ? (
-                        <div className="flex items-center justify-center h-full">
-                            <Loader className="animate-spin size-6 text-muted" />
-                        </div>
-                    ) : displayPeers.length > 0 ? (
-                        <div className="grid grid-cols-4 gap-4">
-                            {visiblePeers.map((peer) => (
-                                <PeerGridCell key={peer.uid} peer={peer} onClick={handleSelect} selected={selectedPeer?.uid === peer.uid} />
-                            ))}
-                        </div>
-                    ) : (
-                        <div className="flex items-center justify-center h-full text-muted text-sm">{query ? 'no results' : 'search for a user'}</div>
-                    )}
+                    <div className="grid grid-cols-4 gap-4">
+                        <PeerGridInviteCell onClick={copyInviteLink} />
+                        {searching && query && !displayPeers.length ? (
+                            <div className="flex h-20 items-center justify-center">
+                                <Loader className="animate-spin size-6 text-muted" />
+                            </div>
+                        ) : (
+                            visiblePeers.map((peer) => <PeerGridCell key={peer.uid} peer={peer} onClick={handleSelect} selected={selectedPeer?.uid === peer.uid} />)
+                        )}
+                    </div>
                 </div>
             </Card>
             {showInput && (

@@ -21,6 +21,7 @@ import { getMainMenuHeight } from '@/components/mainmenu';
 import SearchInput from '@/components/search';
 import { KeyboardChatScrollView } from '@/components/keyboardscroll';
 import { useRouteLock } from '@/lib/navigation/routelock';
+import { ScrollEdgeScreen } from '@/lib/navigation/scrolledge';
 import { useTap } from '@/lib/tap';
 import { formatUserDisplay } from '@veyl/shared/profile';
 import { formatFullDateTime, timestampMs } from '@veyl/shared/utils/time';
@@ -30,8 +31,8 @@ import { getMsgPreview } from '@veyl/shared/chat/messages';
 import { lowerText } from '@veyl/shared/utils/text';
 import { cleanUsername } from '@veyl/shared/username';
 
-const SEARCH_BAR_HEIGHT = 42;
-const SEARCH_TOP_GAP = 8;
+const SEARCH_BAR_HEIGHT = 48;
+const SEARCH_TOP_GAP = 0;
 const SEARCH_LIST_GAP = 2;
 const CHAT_ROW_HEIGHT = 71;
 const DELETE_DRAG = 24;
@@ -380,6 +381,7 @@ export default function ChatList() {
     const { searching, results, query, search: runSearch, clearSearch } = useSearch('profiles');
     const { lockRoute } = useRouteLock();
     const searchInputRef = useRef(null);
+    const listRef = useRef(null);
     const stableChatItemsRef = useRef([]);
     const pendingChatItemsRef = useRef(null);
     const rowMoveRef = useRef(null);
@@ -387,7 +389,10 @@ export default function ChatList() {
     const [search, setSearch] = useState('');
     const [rowMove, setRowMove] = useState(null);
     const searchTop = insets.top + SEARCH_TOP_GAP;
-    const listTopSpace = searchTop + SEARCH_BAR_HEIGHT + SEARCH_LIST_GAP;
+    const searchBottom = searchTop + SEARCH_BAR_HEIGHT;
+    const listInset = useMemo(() => ({ top: searchBottom }), [searchBottom]);
+    const listOffset = useMemo(() => ({ x: 0, y: -searchBottom }), [searchBottom]);
+    const listTopSpace = SEARCH_LIST_GAP;
     const mainMenuHeight = getMainMenuHeight(insets.bottom);
 
     const chatQuery = useMemo(() => lowerText(search), [search]);
@@ -597,10 +602,11 @@ export default function ChatList() {
 
     const handleSearchChange = useCallback(
         (value) => {
+            listRef.current?.scrollToOffset?.({ offset: -searchBottom, animated: false });
             setSearch(value);
             runSearch(value);
         },
-        [runSearch]
+        [runSearch, searchBottom]
     );
 
     const handleClearSearch = useCallback(() => {
@@ -722,50 +728,56 @@ export default function ChatList() {
 
     return (
         <View style={{ flex: 1, overflow: 'hidden' }}>
-            <FlatList
-                data={displayItems}
-                keyExtractor={(item) => item.id}
-                showsVerticalScrollIndicator={false}
-                bounces
-                alwaysBounceVertical
-                keyboardDismissMode="interactive"
-                keyboardShouldPersistTaps="handled"
-                contentContainerStyle={{ flexGrow: 1, paddingTop: listTopSpace, paddingBottom: mainMenuHeight }}
-                renderItem={renderItem}
-                extraData={listExtraData}
-                getItemLayout={getItemLayout}
-                initialNumToRender={16}
-                maxToRenderPerBatch={12}
-                removeClippedSubviews
-                updateCellsBatchingPeriod={24}
-                windowSize={8}
-                directionalLockEnabled
-                alwaysBounceHorizontal={false}
-                onEndReached={handleLoadMoreChats}
-                onEndReachedThreshold={0.65}
-                renderScrollComponent={renderScrollComponent}
-                ListFooterComponent={() =>
-                    !chatQuery && loadingMoreChats && items.length ? (
-                        <View style={{ paddingVertical: 14, alignItems: 'center', justifyContent: 'center' }}>
-                            <ActivityIndicator color={theme.muted} />
-                        </View>
-                    ) : null
-                }
-                ListEmptyComponent={() => {
-                    if (chatQuery) {
-                        return searching ? <EmptyState busy title="searching..." /> : <EmptyState icon={Search} title="no matches" detail="Try another username." />;
+            <ScrollEdgeScreen>
+                <FlatList
+                    ref={listRef}
+                    data={displayItems}
+                    keyExtractor={(item) => item.id}
+                    showsVerticalScrollIndicator={false}
+                    bounces
+                    alwaysBounceVertical
+                    keyboardDismissMode="interactive"
+                    keyboardShouldPersistTaps="handled"
+                    contentInset={listInset}
+                    contentOffset={listOffset}
+                    scrollIndicatorInsets={listInset}
+                    contentContainerStyle={{ flexGrow: 1, paddingTop: listTopSpace, paddingBottom: mainMenuHeight }}
+                    renderItem={renderItem}
+                    extraData={listExtraData}
+                    getItemLayout={getItemLayout}
+                    initialNumToRender={16}
+                    maxToRenderPerBatch={12}
+                    removeClippedSubviews
+                    updateCellsBatchingPeriod={24}
+                    windowSize={8}
+                    directionalLockEnabled
+                    alwaysBounceHorizontal={false}
+                    onEndReached={handleLoadMoreChats}
+                    onEndReachedThreshold={0.65}
+                    renderScrollComponent={renderScrollComponent}
+                    ListFooterComponent={() =>
+                        !chatQuery && loadingMoreChats && items.length ? (
+                            <View style={{ paddingVertical: 14, alignItems: 'center', justifyContent: 'center' }}>
+                                <ActivityIndicator color={theme.muted} />
+                            </View>
+                        ) : null
                     }
+                    ListEmptyComponent={() => {
+                        if (chatQuery) {
+                            return searching ? <EmptyState busy title="searching..." /> : <EmptyState icon={Search} title="no matches" detail="Try another username." />;
+                        }
 
-                    if (showLoadingChats) {
-                        return <EmptyState busy />;
-                    }
+                        if (showLoadingChats) {
+                            return <EmptyState busy />;
+                        }
 
-                    return <EmptyState title="no chats yet" detail="Use the search bar above to find people and start chatting." />;
-                }}
-            />
+                        return <EmptyState title="no chats yet" detail="Use the search bar above to find people and start chatting." />;
+                    }}
+                />
+            </ScrollEdgeScreen>
             <View
                 style={{
-                    paddingHorizontal: 16,
+                    paddingHorizontal: 14,
                     position: 'absolute',
                     top: searchTop,
                     left: 0,

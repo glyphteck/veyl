@@ -1,19 +1,20 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Animated as RNAnimated, Keyboard, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { BanknoteArrowUp, ChevronLeft, Eye, EyeOff, KeyRound, Lock, Trash2 } from 'lucide-react-native';
+import { BanknoteArrowUp, Eye, EyeOff, KeyRound, Lock, Trash2 } from 'lucide-react-native';
 import Animated, { cancelAnimation, useAnimatedStyle, useSharedValue, withRepeat, withSequence, withTiming } from 'react-native-reanimated';
 
+import FloatingHeader, { FloatingHeaderBackIcon, FLOATING_HEADER_SCROLL_EDGE_PAD, getFloatingHeaderHeight } from '@/components/floatingheader';
 import GlassButton from '@/components/glass/glassbutton';
 import GlassField from '@/components/glass/glassfield';
-import GlassHeader from '@/components/glass/glassheader';
 import GlassIcon from '@/components/glass/glassicon';
 import GlassView from '@/components/glass/glassview';
 import Icon from '@/components/icon';
 import { cloud } from '@/lib/cloud';
 import { clearFaceIdPassword } from '@/lib/faceid';
 import { dropPush } from '@/lib/push';
+import { ScrollEdgeScreen } from '@/lib/navigation/scrolledge';
 import { useTap } from '@/lib/tap';
 import { userAvatarCache } from '@/lib/user/avatarcache';
 import { useBitcoin } from '@/providers/bitcoinprovider';
@@ -55,17 +56,13 @@ export default function DeleteAccountScreen() {
     const [isVerifying, setIsVerifying] = useState(false);
     const [isVerified, setIsVerified] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
+    const [headerHeight, setHeaderHeight] = useState(() => getFloatingHeaderHeight(insets.top));
+    const headerInset = useMemo(() => ({ top: headerHeight }), [headerHeight]);
+    const headerOffset = useMemo(() => ({ x: 0, y: -headerHeight }), [headerHeight]);
     const showWithdraw = hasAvailableBalance(balance);
     const balanceLabel = renderMoney(balance ?? 0n, settings.moneyFormat, bitcoin.price);
     const lockPulse = useSharedValue(1);
     const lockAnimStyle = useAnimatedStyle(() => ({ opacity: lockPulse.value }));
-
-    const backTap = useTap({
-        disabled: isDeleting,
-        onPress: () => {
-            router.back();
-        },
-    });
 
     const eyeFeedback = useTap({
         disabled: isVerifying || isDeleting,
@@ -180,23 +177,28 @@ export default function DeleteAccountScreen() {
         <View style={{ flex: 1, backgroundColor: theme.background }}>
             {step === 'intro' ? (
                 <>
-                    <ScrollView
-                        style={{ flex: 1 }}
-                        contentContainerStyle={{
-                            paddingTop: insets.top + 56,
-                            paddingBottom: insets.bottom + 96,
-                            paddingHorizontal: 16,
-                            gap: 16,
-                        }}
-                        showsVerticalScrollIndicator={false}
-                        bounces
-                        alwaysBounceVertical
-                    >
-                        <View style={{ gap: 10 }}>
-                            <Text style={{ fontSize: 28, fontWeight: '900', color: theme.foreground }}>delete account?</Text>
-                            <WarningCopy />
-                        </View>
-                    </ScrollView>
+                    <ScrollEdgeScreen>
+                        <ScrollView
+                            style={{ flex: 1 }}
+                            contentInset={headerInset}
+                            contentOffset={headerOffset}
+                            scrollIndicatorInsets={headerInset}
+                            contentContainerStyle={{
+                                paddingTop: FLOATING_HEADER_SCROLL_EDGE_PAD,
+                                paddingBottom: insets.bottom + 96,
+                                paddingHorizontal: 16,
+                                gap: 16,
+                            }}
+                            showsVerticalScrollIndicator={false}
+                            bounces
+                            alwaysBounceVertical
+                        >
+                            <View style={{ gap: 10 }}>
+                                <Text style={{ fontSize: 28, fontWeight: '900', color: theme.foreground }}>delete account?</Text>
+                                <WarningCopy />
+                            </View>
+                        </ScrollView>
+                    </ScrollEdgeScreen>
 
                     <View style={{ position: 'absolute', left: 16, right: 16, bottom: insets.bottom + 16, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                         <GlassIcon icon={BanknoteArrowUp} onPress={() => router.push('/withdraw')} disabled={!showWithdraw} />
@@ -207,7 +209,7 @@ export default function DeleteAccountScreen() {
             ) : null}
 
             {step === 'unlock' ? (
-                <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: insets.top + 52, paddingBottom: 140 }}>
+                <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: headerHeight, paddingBottom: 140 }}>
                     {isVerifying ? (
                         <View>
                             <View style={{ width: 64, height: 64 }}>
@@ -254,23 +256,28 @@ export default function DeleteAccountScreen() {
 
             {step === 'confirm' ? (
                 <>
-                    <ScrollView
-                        style={{ flex: 1 }}
-                        contentContainerStyle={{
-                            paddingTop: insets.top + 56,
-                            paddingBottom: insets.bottom + 96,
-                            paddingHorizontal: 16,
-                            gap: 16,
-                        }}
-                        showsVerticalScrollIndicator={false}
-                        bounces
-                        alwaysBounceVertical
-                    >
-                        <View style={{ gap: 14 }}>
-                            <Text style={{ fontSize: 28, fontWeight: '900', color: theme.foreground }}>delete account forever?</Text>
-                            <WarningCopy />
-                        </View>
-                    </ScrollView>
+                    <ScrollEdgeScreen>
+                        <ScrollView
+                            style={{ flex: 1 }}
+                            contentInset={headerInset}
+                            contentOffset={headerOffset}
+                            scrollIndicatorInsets={headerInset}
+                            contentContainerStyle={{
+                                paddingTop: FLOATING_HEADER_SCROLL_EDGE_PAD,
+                                paddingBottom: insets.bottom + 96,
+                                paddingHorizontal: 16,
+                                gap: 16,
+                            }}
+                            showsVerticalScrollIndicator={false}
+                            bounces
+                            alwaysBounceVertical
+                        >
+                            <View style={{ gap: 14 }}>
+                                <Text style={{ fontSize: 28, fontWeight: '900', color: theme.foreground }}>delete account forever?</Text>
+                                <WarningCopy />
+                            </View>
+                        </ScrollView>
+                    </ScrollEdgeScreen>
 
                     <GlassButton
                         onPress={handleDelete}
@@ -295,19 +302,15 @@ export default function DeleteAccountScreen() {
                 </>
             ) : null}
 
-            <GlassHeader contentStyle={{ flexDirection: 'row', alignItems: 'center' }}>
+            <FloatingHeader onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}>
                 <View style={{ width: 56, alignItems: 'flex-start', justifyContent: 'center' }}>
-                    <Pressable {...backTap.props} hitSlop={10} style={{ justifyContent: 'center' }} disabled={isDeleting}>
-                        <RNAnimated.View style={{ transform: [{ scale: backTap.scale }] }}>
-                            <Icon icon={ChevronLeft} color={theme.foreground} size={32} />
-                        </RNAnimated.View>
-                    </Pressable>
+                    <FloatingHeaderBackIcon onPress={() => router.back()} disabled={isDeleting} />
                 </View>
                 <View style={{ flex: 1, minWidth: 0, alignItems: 'center', justifyContent: 'center' }}>
                     <Text numberOfLines={1} style={{ fontSize: 20, fontWeight: '800', color: theme.foreground }}>delete account</Text>
                 </View>
                 <View style={{ width: 56 }} />
-            </GlassHeader>
+            </FloatingHeader>
         </View>
     );
 }

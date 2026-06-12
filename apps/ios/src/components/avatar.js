@@ -11,6 +11,8 @@ import { useTap } from '@/lib/tap';
 import { useTheme } from '../providers/themeprovider';
 
 const AVATAR_ANIMATION_MS = 160;
+const AVATAR_SHADOW_COLOR = 'rgba(0, 0, 0, 1)';
+const AVATAR_SHADOW_OPACITY = 0.1;
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 const loadedAvatarSrcs = new Set();
 
@@ -335,13 +337,13 @@ export default function Avatar({
                     height: size,
                     borderRadius: size / 2,
                     backgroundColor: 'transparent',
-                    shadowColor: theme.shadow,
-                    shadowOpacity: 1,
+                    shadowColor: AVATAR_SHADOW_COLOR,
+                    shadowOpacity: AVATAR_SHADOW_OPACITY,
                     shadowRadius: 3,
                     shadowOffset: { width: 0, height: 0 },
                 },
             }),
-        [size, theme.shadow]
+        [size]
     );
 
     return (

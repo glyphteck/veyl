@@ -50,6 +50,11 @@ export const CHAT_MAX_UPLOAD_FILES = 5;
 export const CHAT_UPLOAD_MAX_BYTES = 64 * MIB_BYTES;
 export const CHAT_IMAGE_MAX_EDGE = 1600;
 export const CHAT_IMAGE_COMPRESS = 0.82;
+export const CHAT_AUDIO_TRANSCODE_BITRATE_BPS = 128_000;
+export const CHAT_VIDEO_TRANSCODE_VIDEO_BITRATE_BPS = 768_000;
+export const CHAT_VIDEO_TRANSCODE_AUDIO_BITRATE_BPS = CHAT_AUDIO_TRANSCODE_BITRATE_BPS;
+export const CHAT_VIDEO_TRANSCODE_MAX_EDGE = 1280;
+export const CHAT_MEDIA_TRANSCODE_ESTIMATE_SAFETY_RATIO = 1.08;
 export const CAMERA_MEDIA_RECIPIENT_MAX = 5;
 
 // Chat Firestore read/delete/write cost knobs. Tune these first when message queries or cleanup are expensive.

@@ -1,13 +1,15 @@
 import { Alert, Animated, AppState, Pressable, ScrollView, Switch, Text, View } from 'react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
-import { ChevronLeft, Clock3, Flag, History, UserX } from 'lucide-react-native';
+import { Clock3, Flag, History, UserX } from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import Avatar from '@/components/avatar';
-import GlassHeader from '@/components/glass/glassheader';
+import FloatingHeader, { FloatingHeaderBackIcon, FLOATING_HEADER_SCROLL_EDGE_PAD, getFloatingHeaderHeight } from '@/components/floatingheader';
 import GlassIcon from '@/components/glass/glassicon';
 import Icon from '@/components/icon';
 import { cloud } from '@/lib/cloud';
+import { ScrollEdgeScreen } from '@/lib/navigation/scrolledge';
 import { useRouteLock } from '@/lib/navigation/routelock';
 import { useTap } from '@/lib/tap';
 import { useChat } from '@/providers/chatprovider';
@@ -72,16 +74,18 @@ function SettingRow({ icon, label, description, onPress, right, disabled = false
 
 export default function ChatSettingsRoute() {
     const { theme } = useTheme();
+    const insets = useSafeAreaInsets();
     const params = useLocalSearchParams();
     const navigation = useNavigation();
     const router = useRouter();
     const { blockPeer, chatPK: ownChatPK } = useUser();
     const { chats, dropChat, restoreDeletedChat, setChatTtl } = useChat() || {};
     const { peerByUsername, peerByUid, peerByChatPK, peerByWalletPK, addPeer, dropPeer, restorePeer } = usePeer() || {};
-    const backTap = useTap({ onPress: router.back });
     const { lockRoute } = useRouteLock();
     const [fetchedPeer, setFetchedPeer] = useState(null);
-    const [headerHeight, setHeaderHeight] = useState(0);
+    const [headerHeight, setHeaderHeight] = useState(() => getFloatingHeaderHeight(insets.top));
+    const headerInset = useMemo(() => ({ top: headerHeight }), [headerHeight]);
+    const headerOffset = useMemo(() => ({ x: 0, y: -headerHeight }), [headerHeight]);
 
     const routePeer = useMemo(() => parsePeer(params?.peer), [params?.peer]);
     const chatId = textRouteParam(params?.chatId).trim();
@@ -382,49 +386,50 @@ export default function ChatSettingsRoute() {
 
     return (
         <View style={{ flex: 1, overflow: 'hidden' }}>
-            <ScrollView
-                contentContainerStyle={{
-                    paddingTop: headerHeight + 24,
-                    paddingBottom: 56,
-                    alignItems: 'stretch',
-                }}
-                style={{ flex: 1 }}
-                showsVerticalScrollIndicator={false}
-                bounces
-                alwaysBounceVertical
-                directionalLockEnabled
-                alwaysBounceHorizontal={false}
-            >
-                <View style={{ alignItems: 'center', paddingHorizontal: 24 }}>
-                    <Avatar source={avatar} size={160} active={!!peer?.active} bot={!!peer?.bot} />
-                    <View style={{ marginTop: 24, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
-                        <GlassIcon glassEffectStyle="regular" rounded={16} icon={History} onPress={handleOpenHistory} disabled={!(peer?.walletPK || walletPK) || !(peer?.chatPK || routeChatPK)} />
-                        <GlassIcon glassEffectStyle="regular" rounded={16} icon={UserX} onPress={handleBlock} disabled={!(peer?.uid || uid)} />
-                        <GlassIcon glassEffectStyle="regular" rounded={16} icon={Flag} onPress={handleReport} disabled={!(peer?.uid || uid)} />
+            <ScrollEdgeScreen>
+                <ScrollView
+                    contentInset={headerInset}
+                    contentOffset={headerOffset}
+                    scrollIndicatorInsets={headerInset}
+                    contentContainerStyle={{
+                        paddingTop: FLOATING_HEADER_SCROLL_EDGE_PAD + 24,
+                        paddingBottom: 56,
+                        alignItems: 'stretch',
+                    }}
+                    style={{ flex: 1 }}
+                    showsVerticalScrollIndicator={false}
+                    bounces
+                    alwaysBounceVertical
+                    directionalLockEnabled
+                    alwaysBounceHorizontal={false}
+                >
+                    <View style={{ alignItems: 'center', paddingHorizontal: 24 }}>
+                        <Avatar source={avatar} size={160} active={!!peer?.active} bot={!!peer?.bot} />
+                        <View style={{ marginTop: 24, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
+                            <GlassIcon glassEffectStyle="regular" rounded={16} icon={History} onPress={handleOpenHistory} disabled={!(peer?.walletPK || walletPK) || !(peer?.chatPK || routeChatPK)} />
+                            <GlassIcon glassEffectStyle="regular" rounded={16} icon={UserX} onPress={handleBlock} disabled={!(peer?.uid || uid)} />
+                            <GlassIcon glassEffectStyle="regular" rounded={16} icon={Flag} onPress={handleReport} disabled={!(peer?.uid || uid)} />
+                        </View>
                     </View>
-                </View>
-                {showChatSettings ? (
-                    <View style={{ marginTop: 30 }}>
-                        <Text style={{ paddingHorizontal: 16, paddingBottom: 8, color: theme.foreground, fontSize: 26, fontWeight: '900' }}>settings</Text>
-                        <SectionDivider />
-                        <SettingRow
-                            icon={Clock3}
-                            label="expire after seen"
-                            description="otherwise messages expire 24h after seen."
-                            onPress={() => handleRetentionToggle(!expireAfterSeen)}
-                            right={<Switch value={expireAfterSeen} onValueChange={handleRetentionToggle} {...switchProps} />}
-                            disabled={retentionDisabled}
-                        />
-                    </View>
-                ) : null}
-            </ScrollView>
-            <GlassHeader contentStyle={{ flexDirection: 'row', alignItems: 'center' }} onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}>
+                    {showChatSettings ? (
+                        <View style={{ marginTop: 30 }}>
+                            <Text style={{ paddingHorizontal: 16, paddingBottom: 8, color: theme.foreground, fontSize: 26, fontWeight: '900' }}>settings</Text>
+                            <SectionDivider />
+                            <SettingRow
+                                icon={Clock3}
+                                label="expire after seen"
+                                description="otherwise messages expire 24h after seen."
+                                onPress={() => handleRetentionToggle(!expireAfterSeen)}
+                                right={<Switch value={expireAfterSeen} onValueChange={handleRetentionToggle} {...switchProps} />}
+                                disabled={retentionDisabled}
+                            />
+                        </View>
+                    ) : null}
+                </ScrollView>
+            </ScrollEdgeScreen>
+            <FloatingHeader onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}>
                 <View style={{ width: 56, alignItems: 'flex-start', justifyContent: 'center' }}>
-                    <Pressable {...backTap.props} hitSlop={10} style={{ justifyContent: 'center' }}>
-                        <Animated.View style={{ transform: [{ scale: backTap.scale }] }}>
-                            <Icon icon={ChevronLeft} size={32} color={theme.foreground} />
-                        </Animated.View>
-                    </Pressable>
+                    <FloatingHeaderBackIcon onPress={() => router.back()} />
                 </View>
                 <View style={{ flex: 1, minWidth: 0, alignItems: 'center', justifyContent: 'center' }}>
                     <Text numberOfLines={1} style={{ textAlign: 'center', color: theme.foreground, fontSize: 24, fontWeight: '900' }}>
@@ -432,7 +437,7 @@ export default function ChatSettingsRoute() {
                     </Text>
                 </View>
                 <View style={{ width: 56 }} />
-            </GlassHeader>
+            </FloatingHeader>
         </View>
     );
 }

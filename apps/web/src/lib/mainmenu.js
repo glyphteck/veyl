@@ -479,8 +479,8 @@ function buildStaticSections(options) {
                             { type: 'inviteLink' },
                             {
                                 key: 'invite-link',
-                                icon: 'link',
-                                label: 'invite link',
+                                icon: 'userPlus',
+                                label: 'invite a friend',
                                 keywords: ['invite', 'share', 'copy', 'join', 'friend', 'link', 'veyl'],
                             }
                         ),

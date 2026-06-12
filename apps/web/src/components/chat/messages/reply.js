@@ -206,7 +206,7 @@ function ReplyPreview({ reply, replyFromPeer, peerChatPK, peerDisplayName, onRep
             return <ReplyImage reply={reply} peerChatPK={peerChatPK} onReplyPress={onReplyPress} />;
         case 'mp4':
             return <ReplyVideo reply={reply} peerChatPK={peerChatPK} onReplyPress={onReplyPress} />;
-        case 'mp3':
+        case 'm4a':
             return <ReplyAudio reply={reply} replyFromPeer={replyFromPeer} onReplyPress={onReplyPress} />;
         case 'file':
             return <ReplyAttachment reply={reply} replyFromPeer={replyFromPeer} onReplyPress={onReplyPress} />;

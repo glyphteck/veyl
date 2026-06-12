@@ -17,12 +17,14 @@ export default function GlassIcon({
     duration = 160,
     size = 56,
     iconSize = size * 0.5,
+    iconStrokeWidth,
     rounded = 'full',
     color,
     tintColor,
     style,
     glassStyle,
     glassEffectStyle,
+    iconStyle,
     pressableStyle,
     drift,
     isInteractive = false,
@@ -34,7 +36,7 @@ export default function GlassIcon({
     const resolvedTintColor = tintColor ?? (accent ? accentTintColor : theme.glassBackground);
     const resolvedColor = color ?? (disabled ? theme.muted : accent ? theme.background : theme.foreground);
     const resolvedGlassEffectStyle = resolveGlassEffectStyle(glassEffectStyle, visible, duration);
-    const borderRadius = rounded === 'full' ? 99 : rounded;
+    const borderRadius = rounded === 'full' ? size / 2 : rounded;
     const press = tap({
         value: scale,
         disabled: disabled || !visible,
@@ -60,7 +62,7 @@ export default function GlassIcon({
                 ]}
             >
                 <GlassView glassEffectStyle={resolvedGlassEffectStyle} tintColor={resolvedTintColor} isInteractive={isInteractive} style={[{ flex: 1, alignItems: 'center', justifyContent: 'center', borderRadius }, glassStyle]}>
-                    {visible ? <Icon icon={icon} size={iconSize} color={resolvedColor} style={{ margin: inset }} /> : null}
+                    {visible ? <Icon icon={icon} size={iconSize} strokeWidth={iconStrokeWidth} color={resolvedColor} style={[{ margin: inset }, iconStyle]} /> : null}
                 </GlassView>
             </Animated.View>
         </Pressable>

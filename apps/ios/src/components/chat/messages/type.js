@@ -51,7 +51,7 @@ export function ChatMessageType({
             return <RequestMessage msg={msg} fromPeer={fromPeer} peerDisplayName={peerDisplayName} onPay={onPay} isPaying={isPaying} menuId={menuId} menuItems={menuItems} onHold={onRequestHold} reactions={reactions} reactionUsers={reactionUsers} reactionPreviewInset={reactionPreviewInset} />;
         case 'img':
             return <ImageMessage msg={msg} peerChatPK={peerChatPK} fromPeer={fromPeer} menuItems={menuItems} menuId={menuId} onLike={onLike} reactions={reactions} reactionUsers={reactionUsers} reactionPreviewInset={reactionPreviewInset} />;
-        case 'mp3':
+        case 'm4a':
             return <AudioMessage msg={msg} peerChatPK={peerChatPK} fromPeer={fromPeer} menuItems={menuItems} menuId={menuId} reactions={reactions} reactionUsers={reactionUsers} reactionPreviewInset={reactionPreviewInset} />;
         case 'mp4':
             return <VideoMessage msg={msg} peerChatPK={peerChatPK} fromPeer={fromPeer} menuItems={menuItems} menuId={menuId} onLike={onLike} reactions={reactions} reactionUsers={reactionUsers} reactionPreviewInset={reactionPreviewInset} />;

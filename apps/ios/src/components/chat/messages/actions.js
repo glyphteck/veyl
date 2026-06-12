@@ -305,7 +305,7 @@ export function useActions({
                     }
                     break;
                 case 'file':
-                case 'mp3':
+                case 'm4a':
                 case 'mp4':
                     if (hasMessageFile(msg)) {
                         items.push({ id: 'download', title: 'Download file', icon: Download, run: () => downloadMessageFile(msg, peerChatPK, readMessageFile) });

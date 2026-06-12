@@ -1,17 +1,18 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated as RNAnimated, Keyboard, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Clipboard from 'expo-clipboard';
-import { BanknoteArrowUp, Check, ChevronLeft, Copy, Eye, EyeOff, Lock } from 'lucide-react-native';
+import { BanknoteArrowUp, Check, Copy, Eye, EyeOff, Lock } from 'lucide-react-native';
 import Animated, { cancelAnimation, useAnimatedStyle, useSharedValue, withRepeat, withSequence, withTiming } from 'react-native-reanimated';
 
+import FloatingHeader, { FloatingHeaderBackIcon, FLOATING_HEADER_SCROLL_EDGE_PAD, getFloatingHeaderHeight } from '@/components/floatingheader';
 import GlassButton from '@/components/glass/glassbutton';
 import GlassField from '@/components/glass/glassfield';
-import GlassHeader from '@/components/glass/glassheader';
 import GlassIcon from '@/components/glass/glassicon';
 import GlassView from '@/components/glass/glassview';
 import Icon from '@/components/icon';
+import { ScrollEdgeScreen } from '@/lib/navigation/scrolledge';
 import { useTap } from '@/lib/tap';
 import { useTheme } from '@/providers/themeprovider';
 import { useVault } from '@/providers/vaultprovider';
@@ -35,6 +36,9 @@ export default function ExportWalletScreen() {
     const [error, setError] = useState('');
     const [isCopied, setIsCopied] = useState(false);
     const [copyError, setCopyError] = useState(false);
+    const [headerHeight, setHeaderHeight] = useState(() => getFloatingHeaderHeight(insets.top));
+    const headerInset = useMemo(() => ({ top: headerHeight }), [headerHeight]);
+    const headerOffset = useMemo(() => ({ x: 0, y: -headerHeight }), [headerHeight]);
 
     const lockPulse = useSharedValue(1);
     const lockAnimStyle = useAnimatedStyle(() => ({ opacity: lockPulse.value }));
@@ -45,11 +49,6 @@ export default function ExportWalletScreen() {
         setWalletMnemonic(nextMnemonic);
     }, []);
 
-    const backTap = useTap({
-        onPress: () => {
-            router.back();
-        },
-    });
     const eyeFeedback = useTap({ disabled: isLoading, onPress: () => setShowPassword((prev) => !prev) });
 
     const canLoad = !!vault && !isLoading && isPassword(password);
@@ -130,38 +129,43 @@ export default function ExportWalletScreen() {
         <View style={{ flex: 1, backgroundColor: theme.background }}>
             {step === 'intro' ? (
                 <>
-                    <ScrollView
-                        style={{ flex: 1 }}
-                        contentContainerStyle={{
-                            paddingTop: insets.top + 52,
-                            paddingBottom: insets.bottom + 88,
-                            paddingHorizontal: 16,
-                            gap: 16,
-                        }}
-                        showsVerticalScrollIndicator={false}
-                        bounces
-                        alwaysBounceVertical
-                    >
-                        <View style={{ gap: 16 }}>
-                            <GlassView glassEffectStyle="clear" tintColor={theme.background} style={{ borderRadius: 28, paddingHorizontal: 18, paddingVertical: 18, gap: 12 }}>
-                                <Text style={{ fontSize: 28, fontWeight: '900', color: theme.foreground }}>this is not a bitcoin wallet.</Text>
-                                <Text style={{ fontSize: 16, lineHeight: 24, color: theme.foreground }}>
-                                    you cannot use it like a normal bitcoin wallet. you can only use it with the spark network. either with a new account on this platform, on
-                                    a different platform that uses spark wallets, or yourself through the spark sdk.
-                                </Text>
-                            </GlassView>
+                    <ScrollEdgeScreen>
+                        <ScrollView
+                            style={{ flex: 1 }}
+                            contentInset={headerInset}
+                            contentOffset={headerOffset}
+                            scrollIndicatorInsets={headerInset}
+                            contentContainerStyle={{
+                                paddingTop: FLOATING_HEADER_SCROLL_EDGE_PAD,
+                                paddingBottom: insets.bottom + 88,
+                                paddingHorizontal: 16,
+                                gap: 16,
+                            }}
+                            showsVerticalScrollIndicator={false}
+                            bounces
+                            alwaysBounceVertical
+                        >
+                            <View style={{ gap: 16 }}>
+                                <GlassView glassEffectStyle="clear" tintColor={theme.background} style={{ borderRadius: 28, paddingHorizontal: 18, paddingVertical: 18, gap: 12 }}>
+                                    <Text style={{ fontSize: 28, fontWeight: '900', color: theme.foreground }}>this is not a bitcoin wallet.</Text>
+                                    <Text style={{ fontSize: 16, lineHeight: 24, color: theme.foreground }}>
+                                        you cannot use it like a normal bitcoin wallet. you can only use it with the spark network. either with a new account on this platform, on
+                                        a different platform that uses spark wallets, or yourself through the spark sdk.
+                                    </Text>
+                                </GlassView>
 
-                            <GlassView glassEffectStyle="clear" tintColor={theme.background} style={{ borderRadius: 24, paddingHorizontal: 18, paddingVertical: 18, gap: 10 }}>
-                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                                    <Text style={{ flex: 1, fontSize: 22, fontWeight: '900', color: theme.foreground }}>withdraw instead</Text>
-                                    <GlassIcon accent icon={BanknoteArrowUp} onPress={() => router.push('/withdraw')} size={54} iconSize={28} />
-                                </View>
-                                <Text style={{ fontSize: 15, lineHeight: 23, color: theme.foreground }}>
-                                    if you do not want to use this account anymore, it is highly recommended that you withdraw your funds back to a bitcoin wallet instead.
-                                </Text>
-                            </GlassView>
-                        </View>
-                    </ScrollView>
+                                <GlassView glassEffectStyle="clear" tintColor={theme.background} style={{ borderRadius: 24, paddingHorizontal: 18, paddingVertical: 18, gap: 10 }}>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                                        <Text style={{ flex: 1, fontSize: 22, fontWeight: '900', color: theme.foreground }}>withdraw instead</Text>
+                                        <GlassIcon accent icon={BanknoteArrowUp} onPress={() => router.push('/withdraw')} size={54} iconSize={28} />
+                                    </View>
+                                    <Text style={{ fontSize: 15, lineHeight: 23, color: theme.foreground }}>
+                                        if you do not want to use this account anymore, it is highly recommended that you withdraw your funds back to a bitcoin wallet instead.
+                                    </Text>
+                                </GlassView>
+                            </View>
+                        </ScrollView>
+                    </ScrollEdgeScreen>
 
                     <GlassButton
                         style={{ position: 'absolute', bottom: insets.bottom + 16, left: 16, right: 16 }}
@@ -173,7 +177,7 @@ export default function ExportWalletScreen() {
             ) : null}
 
             {step === 'unlock' ? (
-                <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: insets.top + 52, paddingBottom: 140 }}>
+                <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: headerHeight, paddingBottom: 140 }}>
                     {isLoading ? (
                         <View>
                             <View style={{ width: 64, height: 64 }}>
@@ -221,7 +225,7 @@ export default function ExportWalletScreen() {
 
             {step === 'seed' ? (
                 <>
-                    <View style={{ flex: 1, paddingTop: insets.top + 52, paddingHorizontal: 16 }}>
+                    <View style={{ flex: 1, paddingTop: headerHeight, paddingHorizontal: 16 }}>
                         {isRevealed ? (
                             <GlassView glassEffectStyle="clear" tintColor={theme.background} style={{ borderRadius: 24, paddingHorizontal: 18, paddingVertical: 18, gap: 10 }}>
                                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', rowGap: 14 }}>
@@ -284,19 +288,17 @@ export default function ExportWalletScreen() {
                 </>
             ) : null}
 
-            <GlassHeader contentStyle={{ flexDirection: 'row', alignItems: 'center' }}>
+            <FloatingHeader onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}>
                 <View style={{ width: 56, alignItems: 'flex-start', justifyContent: 'center' }}>
-                    <Pressable {...backTap.props} hitSlop={10} style={{ justifyContent: 'center' }}>
-                        <RNAnimated.View style={{ transform: [{ scale: backTap.scale }] }}>
-                            <Icon icon={ChevronLeft} color={theme.foreground} size={32} />
-                        </RNAnimated.View>
-                    </Pressable>
+                    <FloatingHeaderBackIcon onPress={() => router.back()} />
                 </View>
                 <View style={{ flex: 1, minWidth: 0, alignItems: 'center', justifyContent: 'center' }}>
-                    <Text numberOfLines={1} style={{ fontSize: 20, fontWeight: '800', color: theme.foreground }}>export wallet</Text>
+                    <Text numberOfLines={1} style={{ fontSize: 20, fontWeight: '800', color: theme.foreground }}>
+                        export wallet
+                    </Text>
                 </View>
                 <View style={{ width: 56 }} />
-            </GlassHeader>
+            </FloatingHeader>
         </View>
     );
 }

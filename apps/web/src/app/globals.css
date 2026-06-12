@@ -93,6 +93,11 @@
     .button-destructive {
         @apply bg-destructive px-3 py-2 text-background shadow;
     }
+
+    .veyl-toast:has([data-description], [data-button]) {
+        min-width: 12.5rem;
+        padding: 1rem;
+    }
 }
 
 @layer utilities {

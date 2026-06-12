@@ -1,6 +1,6 @@
 import { CHAT_MAX_REACTIONS, CHAT_MAX_TEXT_CHARS } from '../../config.js';
 
-export const ATTACHMENT_MSG_TYPES = ['img', 'mp3', 'mp4', 'file'];
+export const ATTACHMENT_MSG_TYPES = ['img', 'm4a', 'mp4', 'file'];
 export const UNAVAILABLE_REPLY_MSG_TYPE = 'uav';
 export const UNAVAILABLE_REPLY_TEXT = 'this message is no longer available';
 export const MAX_TXT_CHARS = CHAT_MAX_TEXT_CHARS;

@@ -18,7 +18,7 @@ export function releaseAudio(key) {
 }
 
 export function loadAudioObjectUrl(peerChatPK, msg, readMessageFile) {
-    if (msg?.t !== 'mp3' || !peerChatPK || !hasStoredFileRef(msg) || typeof readMessageFile !== 'function') {
+    if (msg?.t !== 'm4a' || !peerChatPK || !hasStoredFileRef(msg) || typeof readMessageFile !== 'function') {
         return Promise.resolve('');
     }
 
@@ -34,7 +34,7 @@ export function loadAudioObjectUrl(peerChatPK, msg, readMessageFile) {
             if (!bytes?.byteLength) {
                 throw new Error('audio unavailable');
             }
-            const objectUrl = URL.createObjectURL(new Blob([bytes], { type: msg?.m || 'audio/mpeg' }));
+            const objectUrl = URL.createObjectURL(new Blob([bytes], { type: msg?.m || 'audio/mp4' }));
             if (epoch !== audioCache.epoch) {
                 revokeObjectUrl(objectUrl);
                 return '';
@@ -51,7 +51,7 @@ export function loadAudioObjectUrl(peerChatPK, msg, readMessageFile) {
 }
 
 export function readCachedMsgAudioUrl(peerChatPK, msg) {
-    if (msg?.t !== 'mp3' || !peerChatPK || !hasStoredFileRef(msg) || isExpiredAttachmentMsg(msg)) {
+    if (msg?.t !== 'm4a' || !peerChatPK || !hasStoredFileRef(msg) || isExpiredAttachmentMsg(msg)) {
         return '';
     }
     return audioCache.getReady(getAudioCacheKey(peerChatPK, msg))?.url || '';

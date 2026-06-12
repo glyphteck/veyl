@@ -4,7 +4,7 @@ export function alpha(color, percent) {
 
 const GLASS_BACKGROUND_OPACITY = 75;
 const GLASS_BACKGROUND_SOFT_OPACITY = 25;
-const GLASS_FOREGROUND_OPACITY = 72;
+const GLASS_FOREGROUND_OPACITY = 90;
 const lightBackground = 'rgba(254, 254, 254, 1)';
 const lightGlassBackground = 'rgba(252, 252, 252, 1)';
 const lightForeground = 'rgba(0, 0, 0, 1)';

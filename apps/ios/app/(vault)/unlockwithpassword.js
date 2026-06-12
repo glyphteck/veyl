@@ -8,9 +8,10 @@ import { useTheme } from '@/providers/themeprovider';
 import { useUser } from '@/providers/userprovider';
 import { useVault } from '@/providers/vaultprovider';
 import Avatar from '@/components/avatar';
+import FloatingHeader from '@/components/floatingheader';
 import GlassButton from '@/components/glass/glassbutton';
 import GlassField from '@/components/glass/glassfield';
-import GlassHeader from '@/components/glass/glassheader';
+import GlassIcon from '@/components/glass/glassicon';
 import Icon from '@/components/icon';
 import { hasQuickLoginAccount } from '@/lib/user/quicklogin';
 import { useTap } from '@/lib/tap';
@@ -126,32 +127,21 @@ export default function UnlockScreen() {
 
     const canSubmit = !disabled && isPassword(password);
     const logoutDisabled = status === 'loading' || lockState === 'unlocking';
-    const logoutFeedback = useTap({
-        onPress: onLogout,
-        disabled: logoutDisabled,
-    });
     const eyeFeedback = useTap({ disabled, onPress: () => setShowPassword((prev) => !prev) });
 
     return (
         <View style={{ flex: 1, backgroundColor: theme.background }}>
             <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingBottom: isUnlocking ? 0 : 140 }}>
                 {!isUnlocking && !isCovering ? (
-                    <GlassHeader>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
-                                <Avatar size={52} source={user?.avatar ? { uri: user.avatar } : null} active={!!user?.active} pointerEvents="none" />
-                                <Text numberOfLines={1} style={{ fontSize: 24, fontWeight: '900', color: theme.foreground, maxWidth: 220 }}>
-                                    {user?.username || 'profile'}
-                                </Text>
-                            </View>
-
-                            <Pressable {...logoutFeedback.props} hitSlop={10} disabled={logoutDisabled}>
-                                <RNAnimated.View style={{ transform: [{ scale: logoutFeedback.scale }] }}>
-                                    <Icon icon={LogOut} size={26} strokeWidth={3} />
-                                </RNAnimated.View>
-                            </Pressable>
+                    <FloatingHeader>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1, minWidth: 0 }}>
+                            <Avatar size={52} source={user?.avatar ? { uri: user.avatar } : null} active={!!user?.active} pointerEvents="none" />
+                            <Text numberOfLines={1} style={{ flex: 1, fontSize: 24, fontWeight: '900', color: theme.foreground }}>
+                                {user?.username || 'profile'}
+                            </Text>
                         </View>
-                    </GlassHeader>
+                        <GlassIcon icon={LogOut} iconSize={26} onPress={onLogout} disabled={logoutDisabled} />
+                    </FloatingHeader>
                 ) : null}
 
                 {isUnlocking ? (

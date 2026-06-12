@@ -14,7 +14,7 @@ function renderMainMenu(props) {
 }
 
 export default function TabsLayout() {
-    const { theme, isDark } = useTheme();
+    const { theme } = useTheme();
     const { localCache } = useVault();
     const focused = useIsFocused();
     const pathname = usePathname();
@@ -41,7 +41,7 @@ export default function TabsLayout() {
 
     return (
         <>
-            <StatusBar style={isDark ? 'light' : 'dark'} />
+            <StatusBar style="auto" />
             <HomeTabs
                 initialRouteName={initialRouteNameRef.current}
                 swipeEnabled={tabSwipeEnabled}

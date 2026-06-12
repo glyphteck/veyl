@@ -58,7 +58,7 @@ function settingsPreviewText(preview, self) {
 function attachmentPreviewText(preview, self) {
     const prefix = self ? 'you sent' : 'sent';
     if (preview.t === 'img') return `${prefix} an image`;
-    if (preview.t === 'mp3') return self ? 'you sent audio' : 'sent audio';
+    if (preview.t === 'm4a') return self ? 'you sent audio' : 'sent audio';
     if (preview.t === 'mp4') return `${prefix} a video`;
     return `${prefix} a file`;
 }

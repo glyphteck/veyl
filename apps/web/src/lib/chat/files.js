@@ -1,10 +1,10 @@
 'use client';
 
 import { chatUploadErrorMessage, formatMaxChatUploadFiles } from '@veyl/shared/chat/attachments';
-import { CHAT_IMAGE_COMPRESS, fitChatImageSize, getChatUploadFileList } from '@veyl/shared/chat/filepayload';
+import { CHAT_IMAGE_COMPRESS, assertChatUploadByteSize, fitChatImageSize, getChatUploadFileList } from '@veyl/shared/chat/filepayload';
 import { filenameWithExtension } from '@veyl/shared/utils/filename';
-import { fileMime, isImageFile, isPngFile, isVideoFile } from '@veyl/shared/utils/filetype';
-import { toMp3 } from '../media/audio';
+import { isAudioFile, isImageFile, isVideoFile } from '@veyl/shared/utils/filetype';
+import { toM4a } from '../media/audio';
 import { toMp4 } from '../media/video';
 
 export { chatUploadErrorMessage, formatMaxChatUploadFiles };
@@ -26,12 +26,8 @@ function isImage(file) {
     return isImageFile(file);
 }
 
-function isPng(file) {
-    return isPngFile(file);
-}
-
-function jpgName(file) {
-    return filenameWithExtension(file?.name, 'jpg', 'image');
+function imageName(file, ext) {
+    return filenameWithExtension(file?.name, ext, 'image');
 }
 
 function loadImage(file) {
@@ -68,26 +64,38 @@ function canvasBlob(canvas, type, quality) {
     });
 }
 
-async function toJpeg(file, img) {
-    const naturalWidth = img.naturalWidth || img.width;
-    const naturalHeight = img.naturalHeight || img.height;
-    const size = fitSize(naturalWidth, naturalHeight);
+function drawImageCanvas(img, size) {
     const canvas = document.createElement('canvas');
     canvas.width = size.width;
     canvas.height = size.height;
 
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) {
         throw new Error('image conversion unavailable');
     }
-
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(0, 0, size.width, size.height);
     ctx.drawImage(img, 0, 0, size.width, size.height);
+    return { canvas, ctx };
+}
 
-    const blob = await canvasBlob(canvas, 'image/jpeg', CHAT_IMAGE_COMPRESS);
+function hasAlpha(ctx, width, height) {
+    const data = ctx.getImageData(0, 0, width, height).data;
+    for (let i = 3; i < data.length; i += 4) {
+        if (data[i] < 255) return true;
+    }
+    return false;
+}
+
+async function normalizeImage(file, img) {
+    const naturalWidth = img.naturalWidth || img.width;
+    const naturalHeight = img.naturalHeight || img.height;
+    const size = fitSize(naturalWidth, naturalHeight);
+    const { canvas, ctx } = drawImageCanvas(img, size);
+    const png = hasAlpha(ctx, size.width, size.height);
+    const type = png ? 'image/png' : 'image/jpeg';
+    const ext = png ? 'png' : 'jpg';
+    const blob = await canvasBlob(canvas, type, png ? undefined : CHAT_IMAGE_COMPRESS);
     return {
-        file: new File([blob], jpgName(file), { type: 'image/jpeg', lastModified: Date.now() }),
+        file: new File([blob], imageName(file, ext), { type, lastModified: Date.now() }),
         width: size.width,
         height: size.height,
     };
@@ -95,27 +103,17 @@ async function toJpeg(file, img) {
 
 async function prepareImage(file) {
     const img = await loadImage(file);
-    const naturalWidth = img.naturalWidth || img.width;
-    const naturalHeight = img.naturalHeight || img.height;
-    if (!isPng(file)) {
-        return toJpeg(file, img);
-    }
-
-    return {
-        file,
-        width: naturalWidth,
-        height: naturalHeight,
-    };
+    return normalizeImage(file, img);
 }
 
 export async function prepareFile(file) {
-    const type = fileMime(file);
     const image = isImage(file) ? await prepareImage(file) : null;
-    const isAudio = type.startsWith('audio/');
+    const isAudio = isAudioFile(file);
     const isVideo = isVideoFile(file);
-    const upload = image ? { file: image.file, width: image.width, height: image.height, duration: null } : isAudio ? await toMp3(file) : isVideo ? await toMp4(file) : { file, duration: null };
+    const upload = image ? { file: image.file, width: image.width, height: image.height, duration: null } : isAudio ? await toM4a(file) : isVideo ? await toMp4(file) : { file, duration: null };
     const nextFile = upload.file;
-    const imageUpload = fileMime(nextFile).startsWith('image/');
+    assertChatUploadByteSize(nextFile);
+    const imageUpload = Boolean(image);
     const previewUri = imageUpload ? await readPreview(nextFile) : isAudio || isVideo ? URL.createObjectURL(nextFile) : null;
 
     return {

@@ -2,13 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { Animated, Pressable, Text, TextInput, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useTheme } from '@/providers/themeprovider';
+import FloatingHeader, { FloatingHeaderBackIcon } from '@/components/floatingheader';
 import GlassButton from '@/components/glass/glassbutton';
 import GlassField from '@/components/glass/glassfield';
 import { passkeyRegister } from '@/lib/passkeys';
 import { useTap } from '@/lib/tap';
-import GlassHeader from '@/components/glass/glassheader';
-import { ChevronLeft } from 'lucide-react-native';
-import Icon from '@/components/icon';
 import Avatar from '@/components/avatar';
 import { sleep } from '@veyl/shared/utils/async';
 
@@ -29,9 +27,6 @@ export default function NewAccount() {
     const isLoading = authState !== 'idle';
     const isWaitingForAuth = isLoading && authState !== 'success';
     const isCovering = isLoading;
-    const backTap = useTap({
-        onPress: () => router.back(),
-    });
 
     useEffect(() => {
         Animated.timing(promptCoverOpacity, {
@@ -152,19 +147,15 @@ export default function NewAccount() {
                     </Pressable>
                 </View>
             </View>
-            <GlassHeader contentStyle={{ flexDirection: 'row', alignItems: 'center' }}>
+            <FloatingHeader>
                 <View style={{ width: 56, alignItems: 'flex-start', justifyContent: 'center' }}>
-                    <Pressable {...backTap.props} hitSlop={10} style={{ justifyContent: 'center' }}>
-                        <Animated.View style={{ transform: [{ scale: backTap.scale }] }}>
-                            <Icon icon={ChevronLeft} color={theme.foreground} size={32} />
-                        </Animated.View>
-                    </Pressable>
+                    <FloatingHeaderBackIcon onPress={() => router.back()} />
                 </View>
                 <View style={{ flex: 1, minWidth: 0, alignItems: 'center', justifyContent: 'center' }}>
                     <Text numberOfLines={1} style={{ fontSize: 20, fontWeight: '800', color: theme.foreground }}>new account</Text>
                 </View>
                 <View style={{ width: 56 }} />
-            </GlassHeader>
+            </FloatingHeader>
             <Animated.View
                 pointerEvents={isCovering ? 'auto' : 'none'}
                 style={{

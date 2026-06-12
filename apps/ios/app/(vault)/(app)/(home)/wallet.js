@@ -13,10 +13,11 @@ import { usePeer } from '@/providers/peerprovider';
 import { useChat } from '@/providers/chatprovider';
 
 import Avatar from '@/components/avatar';
-import GlassHeader from '@/components/glass/glassheader';
+import { FLOATING_HEADER_SCROLL_EDGE_PAD } from '@/components/floatingheader';
 import GlassIcon from '@/components/glass/glassicon';
 import { getMainMenuHeight } from '@/components/mainmenu';
 import { useRouteLock } from '@/lib/navigation/routelock';
+import { ScrollEdgeScreen } from '@/lib/navigation/scrolledge';
 import { useTap } from '@/lib/tap';
 import { BTC_PRICE_FALLBACK } from '@veyl/shared/config';
 import { renderBalance, renderMoney } from '@veyl/shared/money';
@@ -25,7 +26,7 @@ import { formatFullDateTime } from '@veyl/shared/utils/time';
 import { hasAvailableBalance } from '@veyl/shared/wallet/balance';
 
 const BALANCE_HEIGHT = 42;
-const ACTIONS_HEIGHT = 88;
+const ACTIONS_HEIGHT = 76;
 const ACTION_ICON_SIZE = 56;
 const ACTION_GAP = 24;
 const ACTION_COLLAPSE_OFFSET = (ACTION_ICON_SIZE + ACTION_GAP) / 2;
@@ -262,7 +263,10 @@ export default function Wallet() {
         outputRange: [0, BALANCE_HEIGHT],
         extrapolate: 'clamp',
     });
-    const listTopSpace = insets.top + ACTIONS_HEIGHT;
+    const listEdgeInset = insets.top + ACTIONS_HEIGHT;
+    const listInset = useMemo(() => ({ top: listEdgeInset }), [listEdgeInset]);
+    const listOffset = useMemo(() => ({ x: 0, y: -listEdgeInset }), [listEdgeInset]);
+    const listTopSpace = FLOATING_HEADER_SCROLL_EDGE_PAD;
     const cycleFormat = useCallback(() => {
         const abs = Math.abs(Number(balance ?? 0));
         const cycle = abs < 1_000_000 ? ['sats', 'usd'] : ['sats', 'usd', 'btc'];
@@ -453,58 +457,61 @@ export default function Wallet() {
 
     return (
         <View style={{ flex: 1, overflow: 'hidden' }}>
-            <FlatList
-                data={txListData}
-                CellRendererComponent={renderTxCell}
-                keyExtractor={(item) => item.id}
-                renderItem={renderTxItem}
-                extraData={txListExtraData}
-                getItemLayout={getTxItemLayout}
-                initialNumToRender={TX_INITIAL_RENDER_COUNT}
-                maxToRenderPerBatch={TX_RENDER_BATCH_SIZE}
-                removeClippedSubviews
-                updateCellsBatchingPeriod={24}
-                windowSize={8}
-                onEndReached={handleTxEndReached}
-                onEndReachedThreshold={0.6}
-                ListHeaderComponent={<View style={{ height: listTopSpace }} />}
-                ListFooterComponent={txListHasFooter ? <TxListFooter bottomPadding={listBottomPadding} loading={txListShowsLoader} offset={listContentOffset} theme={theme} /> : null}
-                ListEmptyComponent={renderTxEmpty}
-                contentContainerStyle={{ flexGrow: 1 }}
-                style={{ flex: 1 }}
-                showsVerticalScrollIndicator={false}
-                bounces
-                alwaysBounceVertical
-                directionalLockEnabled
-                alwaysBounceHorizontal={false}
-            />
+            <ScrollEdgeScreen>
+                <FlatList
+                    data={txListData}
+                    CellRendererComponent={renderTxCell}
+                    keyExtractor={(item) => item.id}
+                    renderItem={renderTxItem}
+                    extraData={txListExtraData}
+                    getItemLayout={getTxItemLayout}
+                    initialNumToRender={TX_INITIAL_RENDER_COUNT}
+                    maxToRenderPerBatch={TX_RENDER_BATCH_SIZE}
+                    removeClippedSubviews
+                    updateCellsBatchingPeriod={24}
+                    windowSize={8}
+                    onEndReached={handleTxEndReached}
+                    onEndReachedThreshold={0.6}
+                    ListHeaderComponent={<View style={{ height: listTopSpace }} />}
+                    ListFooterComponent={txListHasFooter ? <TxListFooter bottomPadding={listBottomPadding} loading={txListShowsLoader} offset={listContentOffset} theme={theme} /> : null}
+                    ListEmptyComponent={renderTxEmpty}
+                    contentInset={listInset}
+                    contentOffset={listOffset}
+                    scrollIndicatorInsets={listInset}
+                    contentContainerStyle={{ flexGrow: 1 }}
+                    style={{ flex: 1 }}
+                    showsVerticalScrollIndicator={false}
+                    bounces
+                    alwaysBounceVertical
+                    directionalLockEnabled
+                    alwaysBounceHorizontal={false}
+                />
+            </ScrollEdgeScreen>
 
-            <Animated.View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: insets.top + ACTIONS_HEIGHT + BALANCE_HEIGHT, transform: [{ translateY: headerOffset }] }}>
-                <GlassHeader style={{ height: insets.top + ACTIONS_HEIGHT + BALANCE_HEIGHT, overflow: 'hidden' }}>
-                    <View style={{ height: BALANCE_HEIGHT, overflow: 'hidden', justifyContent: 'center' }}>
-                        <Pressable {...balanceFeedback.props} disabled={!showBalance} style={{ alignSelf: 'center', height: BALANCE_HEIGHT, justifyContent: 'center' }}>
-                            <Animated.View style={{ transform: [{ scale: balanceScale }] }}>
-                                <Animated.View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center', transform: [{ scale: balanceFeedback.scale }] }}>
-                                    <Text style={{ fontSize: 40, fontWeight: '900', color: theme.foreground }}>{balanceText}</Text>
-                                </Animated.View>
+            <Animated.View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: insets.top + ACTIONS_HEIGHT + BALANCE_HEIGHT, paddingTop: insets.top, paddingBottom: 8, paddingHorizontal: 12, overflow: 'hidden', transform: [{ translateY: headerOffset }] }}>
+                <View style={{ height: BALANCE_HEIGHT, overflow: 'hidden', justifyContent: 'center' }}>
+                    <Pressable {...balanceFeedback.props} disabled={!showBalance} style={{ alignSelf: 'center', height: BALANCE_HEIGHT, justifyContent: 'center' }}>
+                        <Animated.View style={{ transform: [{ scale: balanceScale }] }}>
+                            <Animated.View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center', transform: [{ scale: balanceFeedback.scale }] }}>
+                                <Text style={{ fontSize: 40, fontWeight: '900', color: theme.foreground }}>{balanceText}</Text>
                             </Animated.View>
-                        </Pressable>
-                    </View>
+                        </Animated.View>
+                    </Pressable>
+                </View>
 
-                    <View style={{ width: ACTION_ICON_SIZE * 3 + ACTION_GAP * 2, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingTop: 10, paddingBottom: 14, overflow: 'visible' }}>
-                        <Animated.View style={{ transform: [{ translateX: fundOffset }] }}>
-                            <GlassIcon glassEffectStyle="regular" rounded={16} icon={BanknoteArrowDown} onPress={() => openRoute('/fundwallet')} />
-                        </Animated.View>
-                        <View style={{ width: ACTION_GAP }} />
-                        <Animated.View pointerEvents={canWithdraw ? 'auto' : 'none'} style={{ transform: [{ scale: balanceScale }] }}>
-                            <GlassIcon glassEffectStyle="regular" rounded={16} icon={BanknoteArrowUp} onPress={() => canWithdraw && openRoute('/withdraw')} disabled={!canWithdraw} visible={canWithdraw} />
-                        </Animated.View>
-                        <View style={{ width: ACTION_GAP }} />
-                        <Animated.View style={{ transform: [{ translateX: peerOffset }] }}>
-                            <GlassIcon glassEffectStyle="regular" rounded={16} icon={UserRoundPlus} onPress={() => openRoute('/peerselector', 'push', PEER_SELECTOR_LOCK_MS)} disabled={chatBanned} />
-                        </Animated.View>
-                    </View>
-                </GlassHeader>
+                <View style={{ width: ACTION_ICON_SIZE * 3 + ACTION_GAP * 2, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingTop: 10, paddingBottom: 14, overflow: 'visible' }}>
+                    <Animated.View style={{ transform: [{ translateX: fundOffset }] }}>
+                        <GlassIcon glassEffectStyle="clear" rounded={16} icon={BanknoteArrowDown} onPress={() => openRoute('/fundwallet')} />
+                    </Animated.View>
+                    <View style={{ width: ACTION_GAP }} />
+                    <Animated.View pointerEvents={canWithdraw ? 'auto' : 'none'} style={{ transform: [{ scale: balanceScale }] }}>
+                        <GlassIcon glassEffectStyle="clear" rounded={16} icon={BanknoteArrowUp} onPress={() => canWithdraw && openRoute('/withdraw')} disabled={!canWithdraw} visible={canWithdraw} />
+                    </Animated.View>
+                    <View style={{ width: ACTION_GAP }} />
+                    <Animated.View style={{ transform: [{ translateX: peerOffset }] }}>
+                        <GlassIcon glassEffectStyle="clear" rounded={16} icon={UserRoundPlus} onPress={() => openRoute('/peerselector', 'push', PEER_SELECTOR_LOCK_MS)} disabled={chatBanned} />
+                    </Animated.View>
+                </View>
             </Animated.View>
         </View>
     );

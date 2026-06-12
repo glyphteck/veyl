@@ -16,6 +16,7 @@ import { cloud } from '@/lib/cloud';
 import { clearMsgImageCache } from '@/lib/chat/imagecache';
 import { hasQuickLoginAccount } from '@/lib/user/quicklogin';
 import { useRouteLock } from '@/lib/navigation/routelock';
+import { ScrollEdgeScreen } from '@/lib/navigation/scrolledge';
 import { useTap } from '@/lib/tap';
 import { logout } from '@/lib/user/actions';
 import { useTheme } from '@/providers/themeprovider';
@@ -33,8 +34,8 @@ const MONEY_LABELS = {
     usd: 'US$',
 };
 const AUTOLOCK_VALUES = [1, 5, 10, 15, 30, 60, 'never'];
-const SEARCH_ROW_HEIGHT = 56;
-const SEARCH_TOP_GAP = 8;
+const SEARCH_ROW_HEIGHT = 48;
+const SEARCH_TOP_GAP = 0;
 const SEARCH_LIST_GAP = 2;
 
 function cloneSettings(settings) {
@@ -239,7 +240,7 @@ function SettingsHeader({ disabled = false, searchTop, value, onChangeText, onCl
                     zIndex: 1,
                 }}
             />
-            <GlassIcon icon={QrCode} onPress={openScan} disabled={disabled} size={56} iconSize={26} />
+            <GlassIcon icon={QrCode} onPress={openScan} disabled={disabled} size={48} iconSize={24} />
         </View>
     );
 }
@@ -307,7 +308,7 @@ function AccountBlock({ disabled = false }) {
     }, [canRemoveAvatar, clearAvatar, disabled, effectiveUid, isAvatarBusy]);
 
     return (
-        <View style={{ alignItems: 'center', paddingHorizontal: 16, paddingTop: 26, paddingBottom: 68, gap: 14 }}>
+        <View style={{ alignItems: 'center', paddingHorizontal: 16, paddingTop: 34, paddingBottom: 68, gap: 14 }}>
             <AvatarPicker
                 size={140}
                 disabled={disabled || isAvatarBusy || avatarBanned}
@@ -336,7 +337,10 @@ export default function SettingsScreen() {
     const [isLoggingOut, setIsLoggingOut] = useState(false);
     const mainMenuHeight = getMainMenuHeight(insets.bottom);
     const searchTop = insets.top + SEARCH_TOP_GAP;
-    const listTopSpace = searchTop + SEARCH_ROW_HEIGHT + SEARCH_LIST_GAP;
+    const searchBottom = searchTop + SEARCH_ROW_HEIGHT;
+    const listInset = useMemo(() => ({ top: searchBottom }), [searchBottom]);
+    const listOffset = useMemo(() => ({ x: 0, y: -searchBottom }), [searchBottom]);
+    const listTopSpace = SEARCH_LIST_GAP;
 
     const serverSettings = useMemo(() => cloneSettings(user.settings), [user.settings]);
     const [settings, setSettings] = useState(serverSettings);
@@ -585,25 +589,29 @@ export default function SettingsScreen() {
 
     return (
         <View style={{ flex: 1, overflow: 'hidden' }}>
-            <ScrollView
-                contentContainerStyle={{
-                    paddingTop: listTopSpace,
-                    paddingBottom: mainMenuHeight,
-                }}
-                style={{ flex: 1 }}
-                showsVerticalScrollIndicator={false}
-                bounces
-                alwaysBounceVertical
-                directionalLockEnabled
-                alwaysBounceHorizontal={false}
-            >
-                {!isSearching ? (
-                    <>
-                        <AccountBlock disabled={isBusy} />
-                        <Text style={{ paddingHorizontal: 16, paddingBottom: 8, color: theme.foreground, fontSize: 26, fontWeight: '900' }}>settings</Text>
-                        {hasSettingsRows ? <SectionDivider /> : null}
-                    </>
-                ) : null}
+            <ScrollEdgeScreen>
+                <ScrollView
+                    contentInset={listInset}
+                    contentOffset={listOffset}
+                    scrollIndicatorInsets={listInset}
+                    contentContainerStyle={{
+                        paddingTop: listTopSpace,
+                        paddingBottom: mainMenuHeight,
+                    }}
+                    style={{ flex: 1 }}
+                    showsVerticalScrollIndicator={false}
+                    bounces
+                    alwaysBounceVertical
+                    directionalLockEnabled
+                    alwaysBounceHorizontal={false}
+                >
+                    {!isSearching ? (
+                        <>
+                            <AccountBlock disabled={isBusy} />
+                            <Text style={{ paddingHorizontal: 16, paddingBottom: 8, color: theme.foreground, fontSize: 26, fontWeight: '900' }}>settings</Text>
+                            {hasSettingsRows ? <SectionDivider /> : null}
+                        </>
+                    ) : null}
 
                 {preferenceRows ? (
                     <>
@@ -711,11 +719,12 @@ export default function SettingsScreen() {
                     </View>
                 ) : null}
                 {!isSearching && appVersion ? (
-                    <View style={{ alignItems: 'center', paddingTop: 8, paddingBottom: 14 }}>
+                    <View style={{ alignItems: 'center', paddingTop: 8, paddingBottom: 8 }}>
                         <Text style={{ fontSize: 16, fontWeight: '900', color: theme.foreground }}>v{appVersion}</Text>
                     </View>
                 ) : null}
-            </ScrollView>
+                </ScrollView>
+            </ScrollEdgeScreen>
 
             <SettingsHeader value={settingSearch} onChangeText={setSettingSearch} onClear={() => setSettingSearch('')} searchTop={searchTop} disabled={isBusy} />
         </View>

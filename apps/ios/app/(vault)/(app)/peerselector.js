@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Keyboard, Pressable, Text, TextInput, View } from 'react-native';
+import { Alert, Keyboard, Pressable, Share, Text, TextInput, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import { ArrowDownLeft, ArrowUpRight, MessageCircle, Search } from 'lucide-react-native';
@@ -8,6 +8,7 @@ import { yieldToUi } from '@veyl/shared/utils/async';
 import { MONEY_UNITS, toDisplay, toSats } from '@veyl/shared/money';
 import { formatUserDisplay } from '@veyl/shared/profile';
 import { makeReq } from '@veyl/shared/chat/messages';
+import { invite, makeInviteLink } from '@veyl/shared/invite';
 import { BTC_PRICE_FALLBACK, REQUEST_MONEY_MAX_SATS } from '@veyl/shared/config';
 import { availableBalanceSats } from '@veyl/shared/wallet/balance';
 
@@ -29,7 +30,7 @@ import { useRouteLock } from '@/lib/navigation/routelock';
 export default function PeerSelectorScreen() {
     const { theme } = useTheme();
     const { peers, recentPeers } = usePeer() || {};
-    const { settings, chatPK, chatBanned } = useUser();
+    const { settings, username, chatPK, chatBanned } = useUser();
     const bitcoin = useBitcoin();
     const { sendMoneyWithSpark, balance } = useWallet();
     const { sendMessage, selectPeerChat } = useChat();
@@ -79,6 +80,38 @@ export default function PeerSelectorScreen() {
         setAmount('');
         setInputUnit(settings?.moneyFormat || 'sats');
     }, [pickPeer, settings?.moneyFormat]);
+
+    const handleInvite = useCallback(async () => {
+        if (chatBanned) {
+            Alert.alert('Chat unavailable', 'You cannot create a chat invite right now.');
+            return;
+        }
+        if (!username) {
+            Alert.alert('Invite unavailable', 'Your profile is still loading.');
+            return;
+        }
+
+        const link = makeInviteLink({ kind: invite.chat, from: username });
+        if (!link) {
+            Alert.alert('Invite unavailable', 'Could not create an invite link.');
+            return;
+        }
+
+        searchInputRef.current?.blur();
+        amountInputRef.current?.blur();
+        Keyboard.dismiss();
+        resetOverlay();
+
+        try {
+            await Share.share({
+                title: 'Chat on veyl',
+                message: link,
+                url: link,
+            });
+        } catch (error) {
+            Alert.alert('Invite failed', error?.message || 'Could not open sharing.');
+        }
+    }, [chatBanned, resetOverlay, username]);
 
     const finishClose = useCallback(() => {
         if (activePeer.current) return;
@@ -257,6 +290,7 @@ export default function PeerSelectorScreen() {
             searching={searching}
             peers={filteredPeers}
             theme={theme}
+            onInvitePress={handleInvite}
             onPeerPress={handleSelectPeer}
             isPeerSelected={(peer) => samePeer(selectedPeer, peer)}
             isPeerDisabled={(peer) => !peer?.walletPK && !peer?.chatPK}

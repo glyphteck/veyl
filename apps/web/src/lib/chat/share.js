@@ -25,7 +25,7 @@ export async function readCachedShareAttachmentData(msg, peerChatPK) {
         url = readCachedMsgImageUrl(msg);
     } else if (msg?.t === 'mp4') {
         url = readCachedMsgVideoUrl(peerChatPK, msg);
-    } else if (msg?.t === 'mp3') {
+    } else if (msg?.t === 'm4a') {
         url = readCachedMsgAudioUrl(peerChatPK, msg);
     }
     return objectUrlBlob(url);

@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Animated, Linking, Pressable, ScrollView, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { ChevronLeft, ExternalLink, FileText, LifeBuoy, Mail, Shield } from 'lucide-react-native';
+import { ExternalLink, FileText, LifeBuoy, Mail, Shield } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import FloatingHeader, { FloatingHeaderBackIcon, FLOATING_HEADER_SCROLL_EDGE_PAD, getFloatingHeaderHeight } from '@/components/floatingheader';
 import GlassButton from '@/components/glass/glassbutton';
 import GlassFooter from '@/components/glass/glassfooter';
-import GlassHeader from '@/components/glass/glassheader';
 import GlassView from '@/components/glass/glassview';
 import Icon from '@/components/icon';
+import { ScrollEdgeScreen } from '@/lib/navigation/scrolledge';
 import { useTap } from '@/lib/tap';
 import { LEGAL_EFFECTIVE_DATE, LEGAL_SECTION_ORDER, COMPANY_NAME, LEGAL_SECTIONS, getLegalSection } from '@veyl/shared/legal';
 import { useTheme } from '@/providers/themeprovider';
@@ -74,17 +75,19 @@ export default function LegalRoute() {
     const params = useLocalSearchParams();
     const insets = useSafeAreaInsets();
     const [selectedKey, setSelectedKey] = useState(getLegalSection(textRouteParam(params?.section)).key);
+    const [headerHeight, setHeaderHeight] = useState(() => getFloatingHeaderHeight(insets.top));
     const [footerHeight, setFooterHeight] = useState(0);
+    const headerInset = useMemo(() => ({ top: headerHeight }), [headerHeight]);
+    const headerOffset = useMemo(() => ({ x: 0, y: -headerHeight }), [headerHeight]);
     const scrollRef = useRef(null);
-    const backTap = useTap({ onPress: router.back });
 
     useEffect(() => {
         setSelectedKey(getLegalSection(textRouteParam(params?.section)).key);
     }, [params?.section]);
 
     useEffect(() => {
-        scrollRef.current?.scrollTo?.({ y: 0, animated: false });
-    }, [selectedKey]);
+        scrollRef.current?.scrollTo?.({ y: -headerHeight, animated: false });
+    }, [headerHeight, selectedKey]);
 
     const content = useMemo(() => LEGAL_SECTIONS[selectedKey] || LEGAL_SECTIONS.privacy, [selectedKey]);
 
@@ -98,44 +101,49 @@ export default function LegalRoute() {
 
     return (
         <View style={{ flex: 1 }}>
-            <ScrollView
-                ref={scrollRef}
-                style={{ flex: 1 }}
-                contentContainerStyle={{
-                    paddingTop: insets.top + 56,
-                    paddingBottom: (footerHeight || insets.bottom + 56) + 8,
-                    paddingHorizontal: 16,
-                    gap: 16,
-                }}
-                showsVerticalScrollIndicator={false}
-                bounces
-                alwaysBounceVertical
-            >
-                <View style={{ gap: 16 }}>
-                    <GlassView glassEffectStyle="clear" tintColor={theme.background} style={{ borderRadius: 28, paddingHorizontal: 18, paddingVertical: 18, gap: 12 }}>
-                        <Text style={{ fontSize: 28, fontWeight: '900', color: theme.foreground }}>{content.title}</Text>
-                        <Text style={{ fontSize: 13, fontWeight: '700', color: theme.muted }}>{`effective ${LEGAL_EFFECTIVE_DATE} - ${COMPANY_NAME}`}</Text>
-                        <Text style={{ fontSize: 16, lineHeight: 24, color: theme.foreground }}>{content.intro}</Text>
-                    </GlassView>
-
-                    {content.sections.map((section) => (
-                        <GlassView key={section.title} glassEffectStyle="clear" tintColor={theme.background} style={{ borderRadius: 24, paddingHorizontal: 18, paddingVertical: 18, gap: 10 }}>
-                            <Text style={{ fontSize: 18, fontWeight: '900', color: theme.foreground }}>{section.title}</Text>
-                            {section.body.map((line) => (
-                                <Text key={line} style={{ fontSize: 15, lineHeight: 23, color: theme.foreground }}>
-                                    {line}
-                                </Text>
-                            ))}
+            <ScrollEdgeScreen>
+                <ScrollView
+                    ref={scrollRef}
+                    style={{ flex: 1 }}
+                    contentInset={headerInset}
+                    contentOffset={headerOffset}
+                    scrollIndicatorInsets={headerInset}
+                    contentContainerStyle={{
+                        paddingTop: FLOATING_HEADER_SCROLL_EDGE_PAD,
+                        paddingBottom: (footerHeight || insets.bottom + 56) + 8,
+                        paddingHorizontal: 16,
+                        gap: 16,
+                    }}
+                    showsVerticalScrollIndicator={false}
+                    bounces
+                    alwaysBounceVertical
+                >
+                    <View style={{ gap: 16 }}>
+                        <GlassView glassEffectStyle="clear" tintColor={theme.background} style={{ borderRadius: 28, paddingHorizontal: 18, paddingVertical: 18, gap: 12 }}>
+                            <Text style={{ fontSize: 28, fontWeight: '900', color: theme.foreground }}>{content.title}</Text>
+                            <Text style={{ fontSize: 13, fontWeight: '700', color: theme.muted }}>{`effective ${LEGAL_EFFECTIVE_DATE} - ${COMPANY_NAME}`}</Text>
+                            <Text style={{ fontSize: 16, lineHeight: 24, color: theme.foreground }}>{content.intro}</Text>
                         </GlassView>
-                    ))}
 
-                    <View style={{ gap: 10 }}>
-                        {content.links.map((item) => (
-                            <LinkButton key={item.label} item={item} onPress={() => openLink(item.url)} />
+                        {content.sections.map((section) => (
+                            <GlassView key={section.title} glassEffectStyle="clear" tintColor={theme.background} style={{ borderRadius: 24, paddingHorizontal: 18, paddingVertical: 18, gap: 10 }}>
+                                <Text style={{ fontSize: 18, fontWeight: '900', color: theme.foreground }}>{section.title}</Text>
+                                {section.body.map((line) => (
+                                    <Text key={line} style={{ fontSize: 15, lineHeight: 23, color: theme.foreground }}>
+                                        {line}
+                                    </Text>
+                                ))}
+                            </GlassView>
                         ))}
+
+                        <View style={{ gap: 10 }}>
+                            {content.links.map((item) => (
+                                <LinkButton key={item.label} item={item} onPress={() => openLink(item.url)} />
+                            ))}
+                        </View>
                     </View>
-                </View>
-            </ScrollView>
+                </ScrollView>
+            </ScrollEdgeScreen>
 
             <GlassFooter
                 onLayout={(e) => setFooterHeight(e.nativeEvent.layout.height)}
@@ -151,19 +159,15 @@ export default function LegalRoute() {
                 ))}
             </GlassFooter>
 
-            <GlassHeader contentStyle={{ flexDirection: 'row', alignItems: 'center' }}>
+            <FloatingHeader onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}>
                 <View style={{ width: 56, alignItems: 'flex-start', justifyContent: 'center' }}>
-                    <Pressable {...backTap.props} hitSlop={10} style={{ justifyContent: 'center' }}>
-                        <Animated.View style={{ transform: [{ scale: backTap.scale }] }}>
-                            <Icon icon={ChevronLeft} color={theme.foreground} size={32} />
-                        </Animated.View>
-                    </Pressable>
+                    <FloatingHeaderBackIcon onPress={() => router.back()} />
                 </View>
                 <View style={{ flex: 1, minWidth: 0, alignItems: 'center', justifyContent: 'center' }}>
                     <Text numberOfLines={1} style={{ fontSize: 20, fontWeight: '800', color: theme.foreground }}>legal & support</Text>
                 </View>
                 <View style={{ width: 56 }} />
-            </GlassHeader>
+            </FloatingHeader>
         </View>
     );
 }

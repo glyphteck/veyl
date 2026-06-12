@@ -1,7 +1,5 @@
-import { alpha } from '@/lib/colors';
-
 export function bubbleTint(theme, fromPeer = false) {
-    return fromPeer ? alpha(theme.foreground, 10) : alpha(theme.foreground, 5);
+    return fromPeer ? theme.glassBackgroundSoft : theme.glassBackground;
 }
 
 export function imageWidth(aspect) {

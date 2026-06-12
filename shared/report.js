@@ -4,7 +4,7 @@ export function reportAttachmentName(kind) {
     switch (kind) {
         case 'img':
             return 'image';
-        case 'mp3':
+        case 'm4a':
             return 'audio';
         case 'mp4':
             return 'video';
@@ -17,8 +17,8 @@ export function reportAttachmentMime(kind) {
     switch (kind) {
         case 'img':
             return 'image/webp';
-        case 'mp3':
-            return 'audio/mpeg';
+        case 'm4a':
+            return 'audio/mp4';
         case 'mp4':
             return 'video/mp4';
         default:
@@ -28,7 +28,7 @@ export function reportAttachmentMime(kind) {
 
 export function getReportAttachmentMeta(msg) {
     const kind = cleanText(msg?.t);
-    if (!['img', 'file', 'mp3', 'mp4'].includes(kind)) {
+    if (!['img', 'file', 'm4a', 'mp4'].includes(kind)) {
         return null;
     }
 

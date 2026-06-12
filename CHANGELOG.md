@@ -2,6 +2,13 @@
 
 Repo-level changes are listed newest first. Keep entries short and concrete. Broad pushes get grouped bullets, while narrow fixes can use one concise bugfix or cleanup bullet that still names the actual change.
 
+## 0.15.0 - 2026-06-12
+
+- Normalized chat media uploads across web and iOS so images become JPEG or PNG, videos become H.264/AAC MP4, and audio becomes AAC M4A before encrypted upload.
+- Added media transcode preflight sizing, broad input type detection, upload-too-large messaging, and shared bitrate/size limits for audio and video sends.
+- Replaced browser MP3 encoding with FFmpeg WASM, added the iOS compressor dev-client integration, and moved chat audio message/report handling from MP3 to M4A without showing the extension in titles.
+- Refined iOS floating headers, scroll-edge insets, main menu glass placement, video reply previews, and web invite entry points in the new-chat surface.
+
 ## 0.14.19 - 2026-06-12
 
 - Retuned iOS glass colors with explicit background, soft background, and foreground tint tokens, and applied the soft glass input treatment through the shared search and field primitives.

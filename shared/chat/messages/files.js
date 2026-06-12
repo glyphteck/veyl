@@ -66,16 +66,22 @@ export function formatAttachmentSize(value) {
     return formatBytes(value);
 }
 
+function titleWithoutExtension(value) {
+    const title = String(value || '').trim().replace(/\.[^.]+$/, '').trim();
+    return title || String(value || '').trim();
+}
+
 export function getAttachmentTitle(msg) {
     if (hasText(msg?.n)) {
-        return msg.n.trim();
+        const title = msg.n.trim();
+        return msg?.t === 'm4a' ? titleWithoutExtension(title) : title;
     }
     if (hasText(msg?.c)) {
         return msg.c.trim();
     }
 
     switch (msg?.t) {
-        case 'mp3':
+        case 'm4a':
             return 'audio';
         case 'mp4':
             return 'video';
@@ -187,8 +193,8 @@ export function makeImg(file) {
     return makeAttachment('img', file);
 }
 
-export function makeMp3(file) {
-    return makeAttachment('mp3', file);
+export function makeM4a(file) {
+    return makeAttachment('m4a', file);
 }
 
 export function makeMp4(file) {

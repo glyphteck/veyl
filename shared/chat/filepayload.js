@@ -4,10 +4,15 @@ import { createFileKey, encodeFileKey, sealFile } from '../crypto/file.js';
 import {
     CHAT_MAX_UPLOAD_FILES,
     CHAT_UPLOAD_MAX_BYTES,
+    CHAT_AUDIO_TRANSCODE_BITRATE_BPS as CONFIG_CHAT_AUDIO_TRANSCODE_BITRATE_BPS,
     CHAT_IMAGE_COMPRESS as CONFIG_CHAT_IMAGE_COMPRESS,
     CHAT_IMAGE_MAX_EDGE,
+    CHAT_MEDIA_TRANSCODE_ESTIMATE_SAFETY_RATIO as CONFIG_CHAT_MEDIA_TRANSCODE_ESTIMATE_SAFETY_RATIO,
     CHAT_MEDIA_TTL_DAYS as CONFIG_CHAT_MEDIA_TTL_DAYS,
     CHAT_MEDIA_TTL_MS as CONFIG_CHAT_MEDIA_TTL_MS,
+    CHAT_VIDEO_TRANSCODE_AUDIO_BITRATE_BPS as CONFIG_CHAT_VIDEO_TRANSCODE_AUDIO_BITRATE_BPS,
+    CHAT_VIDEO_TRANSCODE_MAX_EDGE as CONFIG_CHAT_VIDEO_TRANSCODE_MAX_EDGE,
+    CHAT_VIDEO_TRANSCODE_VIDEO_BITRATE_BPS as CONFIG_CHAT_VIDEO_TRANSCODE_VIDEO_BITRATE_BPS,
 } from '../config.js';
 import { cleanBytes, randomBytes, toBytes, toHex } from '../crypto/core.js';
 
@@ -19,6 +24,12 @@ export const MAX_CHAT_UPLOAD_FILES = CHAT_MAX_UPLOAD_FILES;
 export const MAX_CHAT_UPLOAD_BYTES = CHAT_UPLOAD_MAX_BYTES;
 export const MAX_CHAT_IMAGE_EDGE = CHAT_IMAGE_MAX_EDGE;
 export const CHAT_IMAGE_COMPRESS = CONFIG_CHAT_IMAGE_COMPRESS;
+export const CHAT_AUDIO_TRANSCODE_BITRATE_BPS = CONFIG_CHAT_AUDIO_TRANSCODE_BITRATE_BPS;
+export const CHAT_VIDEO_TRANSCODE_VIDEO_BITRATE_BPS = CONFIG_CHAT_VIDEO_TRANSCODE_VIDEO_BITRATE_BPS;
+export const CHAT_VIDEO_TRANSCODE_AUDIO_BITRATE_BPS = CONFIG_CHAT_VIDEO_TRANSCODE_AUDIO_BITRATE_BPS;
+export const CHAT_VIDEO_TRANSCODE_TOTAL_BITRATE_BPS = CHAT_VIDEO_TRANSCODE_VIDEO_BITRATE_BPS + CHAT_VIDEO_TRANSCODE_AUDIO_BITRATE_BPS;
+export const CHAT_VIDEO_TRANSCODE_MAX_EDGE = CONFIG_CHAT_VIDEO_TRANSCODE_MAX_EDGE;
+export const CHAT_MEDIA_TRANSCODE_ESTIMATE_SAFETY_RATIO = CONFIG_CHAT_MEDIA_TRANSCODE_ESTIMATE_SAFETY_RATIO;
 const CHAT_ID_PATTERN = '[0-9a-fA-F]{64}';
 const SHARED_MEDIA_ID_PATTERN = '[0-9a-fA-F]{32}';
 const MEDIA_ID_PATTERN = '[0-9a-fA-F]{32}';
@@ -114,18 +125,67 @@ export function makeTooManyChatFilesError(count) {
     return error;
 }
 
-export function assertChatUploadByteSize(bytes) {
-    if (!Number.isFinite(bytes?.byteLength)) {
+function uploadByteLength(value) {
+    if (Number.isFinite(value?.byteLength)) {
+        return value.byteLength;
+    }
+    if (Number.isFinite(value?.size)) {
+        return value.size;
+    }
+    if (Number.isFinite(value)) {
+        return value;
+    }
+    return null;
+}
+
+export function makeChatUploadTooLargeError(bytes, maxBytes = MAX_CHAT_UPLOAD_BYTES) {
+    const error = new Error('upload too large');
+    error.code = 'upload-too-large';
+    error.maxBytes = maxBytes;
+    if (Number.isFinite(bytes)) {
+        error.bytes = bytes;
+    }
+    return error;
+}
+
+export function assertChatUploadByteSize(bytes, maxBytes = MAX_CHAT_UPLOAD_BYTES) {
+    const length = uploadByteLength(bytes);
+    if (!Number.isFinite(length)) {
         throw new Error('upload bytes required');
     }
-    if (bytes.byteLength <= 0 || bytes.byteLength > MAX_CHAT_UPLOAD_BYTES) {
-        const error = new Error('upload too large');
-        error.code = 'upload-too-large';
-        error.maxBytes = MAX_CHAT_UPLOAD_BYTES;
-        error.bytes = bytes.byteLength;
+    if (length <= 0 || length > maxBytes) {
+        throw makeChatUploadTooLargeError(length, maxBytes);
+    }
+    return length;
+}
+
+function estimatedTranscodeBytes(durationSeconds, bitsPerSecond) {
+    const duration = Number(durationSeconds);
+    const bitrate = Number(bitsPerSecond);
+    if (!Number.isFinite(duration) || duration <= 0 || !Number.isFinite(bitrate) || bitrate <= 0) {
+        return null;
+    }
+    return Math.ceil((duration * bitrate * CHAT_MEDIA_TRANSCODE_ESTIMATE_SAFETY_RATIO) / 8);
+}
+
+export function estimateChatAudioTranscodeBytes(durationSeconds) {
+    return estimatedTranscodeBytes(durationSeconds, CHAT_AUDIO_TRANSCODE_BITRATE_BPS);
+}
+
+export function estimateChatVideoTranscodeBytes(durationSeconds) {
+    return estimatedTranscodeBytes(durationSeconds, CHAT_VIDEO_TRANSCODE_TOTAL_BITRATE_BPS);
+}
+
+export function assertChatMediaTranscodeWorthTrying(type, durationSeconds, maxBytes = MAX_CHAT_UPLOAD_BYTES) {
+    const estimate = type === 'audio' ? estimateChatAudioTranscodeBytes(durationSeconds) : type === 'video' ? estimateChatVideoTranscodeBytes(durationSeconds) : null;
+    if (estimate != null && estimate > maxBytes) {
+        const error = makeChatUploadTooLargeError(estimate, maxBytes);
+        error.estimated = true;
+        error.duration = Number(durationSeconds);
+        error.mediaType = type;
         throw error;
     }
-    return bytes.byteLength;
+    return estimate;
 }
 
 export function getChatUploadFileList(files) {

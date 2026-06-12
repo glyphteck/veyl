@@ -1,16 +1,13 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Alert, Animated, Pressable, Text, View, ScrollView } from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Alert, Text, View, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
-import { ChevronLeft } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COMMUNITY_RULES_EFFECTIVE, COMMUNITY_RULES_VERSION, COMMUNITY_SECTIONS, hasCurrentCommunityRules } from '@veyl/shared/community';
 
+import FloatingHeader, { FloatingHeaderBackIcon, FLOATING_HEADER_SCROLL_EDGE_PAD, getFloatingHeaderHeight } from '@/components/floatingheader';
 import GlassButton from '@/components/glass/glassbutton';
-import GlassFooter from '@/components/glass/glassfooter';
-import GlassHeader from '@/components/glass/glassheader';
 import GlassView from '@/components/glass/glassview';
-import Icon from '@/components/icon';
-import { useTap } from '@/lib/tap';
+import { ScrollEdgeScreen } from '@/lib/navigation/scrolledge';
 import { useTheme } from '@/providers/themeprovider';
 import { useUser } from '@/providers/userprovider';
 
@@ -21,7 +18,9 @@ export default function Community({ ackMode = false }) {
     const { communityRulesVersion, communityRulesAcceptedAt, communityRulesPending, acceptCommunityRules } = useUser();
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [canContinue, setCanContinue] = useState(false);
-    const backTap = useTap({ onPress: router.back });
+    const [headerHeight, setHeaderHeight] = useState(() => getFloatingHeaderHeight(insets.top));
+    const headerInset = useMemo(() => ({ top: headerHeight }), [headerHeight]);
+    const headerOffset = useMemo(() => ({ x: 0, y: -headerHeight }), [headerHeight]);
 
     const acceptedCurrentVersion = hasCurrentCommunityRules({ communityRulesVersion, communityRulesAcceptedAt, communityRulesPending });
 
@@ -56,33 +55,38 @@ export default function Community({ ackMode = false }) {
 
     return (
         <View style={{ flex: 1 }}>
-            <ScrollView
-                style={{ flex: 1 }}
-                onScroll={handleScroll}
-                scrollEventThrottle={16}
-                contentContainerStyle={{
-                    paddingTop: insets.top + 60,
-                    paddingBottom: insets.bottom + (ackMode ? 88 : 0),
-                    paddingHorizontal: 16,
-                    gap: 16,
-                }}
-                showsVerticalScrollIndicator={false}
-                bounces
-                alwaysBounceVertical
-            >
-                <View style={{ gap: 16 }}>
-                    {COMMUNITY_SECTIONS.map((section) => (
-                        <GlassView key={section.title} glassEffectStyle="clear" tintColor={theme.background} style={{ borderRadius: 24, paddingHorizontal: 18, paddingVertical: 18, gap: 10 }}>
-                            <Text style={{ fontSize: 18, fontWeight: '900', color: theme.foreground }}>{section.title}</Text>
-                            {section.body.map((line) => (
-                                <Text key={line} style={{ fontSize: 15, lineHeight: 23, color: theme.foreground }}>
-                                    {line}
-                                </Text>
-                            ))}
-                        </GlassView>
-                    ))}
-                </View>
-            </ScrollView>
+            <ScrollEdgeScreen>
+                <ScrollView
+                    style={{ flex: 1 }}
+                    onScroll={handleScroll}
+                    scrollEventThrottle={16}
+                    contentInset={headerInset}
+                    contentOffset={headerOffset}
+                    scrollIndicatorInsets={headerInset}
+                    contentContainerStyle={{
+                        paddingTop: FLOATING_HEADER_SCROLL_EDGE_PAD,
+                        paddingBottom: insets.bottom + (ackMode ? 88 : 0),
+                        paddingHorizontal: 16,
+                        gap: 16,
+                    }}
+                    showsVerticalScrollIndicator={false}
+                    bounces
+                    alwaysBounceVertical
+                >
+                    <View style={{ gap: 16 }}>
+                        {COMMUNITY_SECTIONS.map((section) => (
+                            <GlassView key={section.title} glassEffectStyle="clear" tintColor={theme.background} style={{ borderRadius: 24, paddingHorizontal: 18, paddingVertical: 18, gap: 10 }}>
+                                <Text style={{ fontSize: 18, fontWeight: '900', color: theme.foreground }}>{section.title}</Text>
+                                {section.body.map((line) => (
+                                    <Text key={line} style={{ fontSize: 15, lineHeight: 23, color: theme.foreground }}>
+                                        {line}
+                                    </Text>
+                                ))}
+                            </GlassView>
+                        ))}
+                    </View>
+                </ScrollView>
+            </ScrollEdgeScreen>
 
             {ackMode ? (
                 <GlassButton
@@ -94,15 +98,9 @@ export default function Community({ ackMode = false }) {
                 />
             ) : null}
 
-            <GlassHeader contentStyle={{ flexDirection: 'row', alignItems: 'center' }}>
+            <FloatingHeader onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}>
                 <View style={{ width: 56, alignItems: 'flex-start', justifyContent: 'center' }}>
-                    {!ackMode ? (
-                        <Pressable {...backTap.props} hitSlop={10} style={{ justifyContent: 'center' }}>
-                            <Animated.View style={{ transform: [{ scale: backTap.scale }] }}>
-                                <Icon icon={ChevronLeft} size={32} color={theme.foreground} />
-                            </Animated.View>
-                        </Pressable>
-                    ) : null}
+                    {!ackMode ? <FloatingHeaderBackIcon onPress={() => router.back()} /> : null}
                 </View>
 
                 <View style={{ flex: 1, minWidth: 0, alignItems: 'center', justifyContent: 'center' }}>
@@ -112,7 +110,7 @@ export default function Community({ ackMode = false }) {
                     </Text>
                 </View>
                 <View style={{ width: 56 }} />
-            </GlassHeader>
+            </FloatingHeader>
         </View>
     );
 }

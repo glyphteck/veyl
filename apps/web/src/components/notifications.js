@@ -14,8 +14,9 @@ export function Notifications(props) {
             toastOptions={{
                 unstyled: true,
                 classNames: {
-                    toast: 'min-w-50 max-w-96 flex items-center gap-3 rounded-round bg-background/70 p-4 shadow backdrop-blur-sm',
-                    title: 'font-black',
+                    toast: 'veyl-toast flex w-fit min-w-0 max-w-96 items-center gap-3 rounded-round bg-background/70 px-4 py-3 shadow backdrop-blur-sm',
+                    content: 'min-w-0',
+                    title: 'text-base font-black leading-tight',
                     description: 'text-sm !text-muted',
                     icon: '[&>svg]:size-5',
                 },

@@ -1,6 +1,5 @@
 import { Alert, Animated as RNAnimated, Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ChevronLeft } from 'lucide-react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Reanimated, { Easing, LinearTransition, useDerivedValue, useSharedValue, withTiming } from 'react-native-reanimated';
@@ -9,7 +8,7 @@ import { useChat } from '@/providers/chatprovider';
 import { useUser } from '@/providers/userprovider';
 import { usePeer } from '@/providers/peerprovider';
 import { useWallet } from '@/providers/walletprovider';
-import GlassHeader from '@/components/glass/glassheader';
+import FloatingHeader, { FloatingHeaderBackIcon } from '@/components/floatingheader';
 import ChatInput, { CommandBubbles, DraftBar } from '@/components/chat/chatinput';
 import Messages from '@/components/chat/messages/list';
 import { KeyboardStickyView } from '@/components/keyboardscroll';
@@ -17,6 +16,7 @@ import Icon from '@/components/icon';
 import Avatar from '@/components/avatar';
 import { prepareAssetForChatUpload } from '@/lib/chat/media';
 import { mark } from '@/lib/diagnostics';
+import { INVERTED_TOP_SCROLL_EDGE_EFFECTS, ScrollEdgeScreen } from '@/lib/navigation/scrolledge';
 import { useRouteLock } from '@/lib/navigation/routelock';
 import { formatUserDisplay } from '@veyl/shared/profile';
 import { getChatPeerPK } from '@veyl/shared/chat/ids';
@@ -65,7 +65,6 @@ export default function PeerChatRoute() {
     const { chatPK, chatBanned } = useUser();
     const { sendMoneyWithSpark } = useWallet();
     const { peerByChatPK, isBlockedChatPK, updatePeer } = usePeer() || {};
-    const backTap = useTap({ onPress: () => router.dismissTo('/chat') });
     const inputH = useRef(0);
     const { lockRoute } = useRouteLock();
     const inputApiRef = useRef(null);
@@ -465,101 +464,93 @@ export default function PeerChatRoute() {
     return (
         <View style={{ flex: 1 }}>
             <View style={{ flex: 1, overflow: 'hidden' }}>
-            <GlassHeader
-                style={{ zIndex: 2 }}
-                contentStyle={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                }}
-            >
-                <View style={{ width: 56, alignItems: 'flex-start', justifyContent: 'center' }}>
-                    <Pressable {...backTap.props} hitSlop={10}>
-                        <RNAnimated.View style={{ transform: [{ scale: backTap.scale }] }}>
-                            <Icon icon={ChevronLeft} color={theme.foreground} size={32} />
-                        </RNAnimated.View>
-                    </Pressable>
-                </View>
-                <View style={{ flex: 1, minWidth: 0, alignItems: 'center', justifyContent: 'center' }}>
-                    <Text
-                        numberOfLines={1}
-                        style={{
-                            textAlign: 'center',
-                            fontSize: 24,
-                            fontWeight: '900',
-                            color: theme.foreground,
-                            minWidth: 0,
-                        }}
+                <FloatingHeader>
+                    <View style={{ width: 56, alignItems: 'flex-start', justifyContent: 'center' }}>
+                        <FloatingHeaderBackIcon onPress={() => router.dismissTo('/chat')} />
+                    </View>
+                    <View style={{ flex: 1, minWidth: 0, alignItems: 'center', justifyContent: 'center' }}>
+                        <Text
+                            numberOfLines={1}
+                            style={{
+                                textAlign: 'center',
+                                fontSize: 24,
+                                fontWeight: '900',
+                                color: theme.foreground,
+                                minWidth: 0,
+                            }}
+                        >
+                            {chatTitle}
+                        </Text>
+                    </View>
+                    <View style={{ width: 56, alignItems: 'flex-end', justifyContent: 'center' }}>
+                        <Pressable {...avatarTap.props} hitSlop={10}>
+                            <RNAnimated.View style={{ transform: [{ scale: avatarTap.scale }] }}>
+                                <Avatar source={peerAvatarSource} size={48} pointerEvents="none" active={!!peerProfile?.active} bot={!!peerProfile?.bot} />
+                            </RNAnimated.View>
+                        </Pressable>
+                    </View>
+                </FloatingHeader>
+                <ScrollEdgeScreen scrollEdgeEffects={INVERTED_TOP_SCROLL_EDGE_EFFECTS}>
+                    <Messages
+                        chatId={chatId}
+                        chatTitle={chatTitle}
+                        onRequestHold={handleOpenHistory}
+                        onReply={handleReply}
+                        onEdit={handleEdit}
+                        draftKey={draftKey}
+                        inputH={inputBase}
+                        extraContentPadding={composerExtraPadding}
+                        peerAvatarSource={peerAvatarSource}
+                        peerBot={!!peerProfile?.bot}
+                        peerChatPK={peerChatPK}
+                        peerUid={peerProfile?.uid}
+                        peerWalletPK={peerProfile?.walletPK}
                     >
-                        {chatTitle}
-                    </Text>
-                </View>
-                <View style={{ width: 56, alignItems: 'flex-end', justifyContent: 'center' }}>
-                    <Pressable {...avatarTap.props} hitSlop={10}>
-                        <RNAnimated.View style={{ transform: [{ scale: avatarTap.scale }] }}>
-                            <Avatar source={peerAvatarSource} size={48} pointerEvents="none" active={!!peerProfile?.active} bot={!!peerProfile?.bot} />
-                        </RNAnimated.View>
-                    </Pressable>
-                </View>
-            </GlassHeader>
-            <Messages
-                chatId={chatId}
-                chatTitle={chatTitle}
-                onRequestHold={handleOpenHistory}
-                onReply={handleReply}
-                onEdit={handleEdit}
-                draftKey={draftKey}
-                inputH={inputBase}
-                extraContentPadding={composerExtraPadding}
-                peerAvatarSource={peerAvatarSource}
-                peerBot={!!peerProfile?.bot}
-                peerChatPK={peerChatPK}
-                peerUid={peerProfile?.uid}
-                peerWalletPK={peerProfile?.walletPK}
-            >
-                {ENABLE_CHAT_COMPOSER ? (
-                    <KeyboardStickyView
-                        offset={stickyOffset}
-                        style={{
-                            position: 'absolute',
-                            bottom: insets.bottom,
-                            left: 0,
-                            right: 0,
-                            zIndex: 2,
-                        }}
-                        pointerEvents="box-none"
-                    >
-                        <View style={{ paddingHorizontal: 16 }}>
-                            <Reanimated.View
-                                collapsable={false}
-                                layout={composerOverlayLayout}
-                                onLayout={onOverlayLayout}
-                                style={{ gap: COMPOSER_OVERLAY_GAP, paddingBottom: composerOverlayMounted ? COMPOSER_OVERLAY_GAP : 0 }}
+                        {ENABLE_CHAT_COMPOSER ? (
+                            <KeyboardStickyView
+                                offset={stickyOffset}
+                                style={{
+                                    position: 'absolute',
+                                    bottom: insets.bottom,
+                                    left: 0,
+                                    right: 0,
+                                    zIndex: 2,
+                                }}
+                                pointerEvents="box-none"
                             >
-                                <CommandBubbles items={commandContext.items} onSelect={handleCommandBubblePress} interactive={commandContext.kind === 'pick'} />
-                                <DraftBar draft={draft} peerDisplayName={chatTitle} onClear={handleClearDraft} onHidden={handleDraftHidden} />
-                            </Reanimated.View>
-                            {ENABLE_CHAT_INPUT ? (
-                                <ChatInput
-                                    onLayout={onInputLayout}
-                                    onSend={handleSend}
-                                    onEditMessage={handleEditMessage}
-                                    onSendImage={handleSendImage}
-                                    onSendAttachment={handleSendAttachment}
-                                    onSendMoney={peerProfile?.walletPK ? () => handleOpenTransfer('send') : undefined}
-                                    onCommand={handleCommand}
-                                    onCommandChange={handleCommandChange}
-                                    inputApiRef={inputApiRef}
-                                    draft={draft}
-                                    onClearDraft={handleClearDraft}
-                                    draftKey={draftKey}
-                                />
-                            ) : (
-                                <View onLayout={onInputLayout} style={{ height: inputBase, borderRadius: 24, backgroundColor: theme.background }} />
-                            )}
-                        </View>
-                    </KeyboardStickyView>
-                ) : null}
-            </Messages>
+                                <View style={{ paddingHorizontal: 14 }}>
+                                    <Reanimated.View
+                                        collapsable={false}
+                                        layout={composerOverlayLayout}
+                                        onLayout={onOverlayLayout}
+                                        style={{ gap: COMPOSER_OVERLAY_GAP, paddingBottom: composerOverlayMounted ? COMPOSER_OVERLAY_GAP : 0 }}
+                                    >
+                                        <CommandBubbles items={commandContext.items} onSelect={handleCommandBubblePress} interactive={commandContext.kind === 'pick'} />
+                                        <DraftBar draft={draft} peerDisplayName={chatTitle} onClear={handleClearDraft} onHidden={handleDraftHidden} />
+                                    </Reanimated.View>
+                                    {ENABLE_CHAT_INPUT ? (
+                                        <ChatInput
+                                            onLayout={onInputLayout}
+                                            onSend={handleSend}
+                                            onEditMessage={handleEditMessage}
+                                            onSendImage={handleSendImage}
+                                            onSendAttachment={handleSendAttachment}
+                                            onSendMoney={peerProfile?.walletPK ? () => handleOpenTransfer('send') : undefined}
+                                            onCommand={handleCommand}
+                                            onCommandChange={handleCommandChange}
+                                            inputApiRef={inputApiRef}
+                                            draft={draft}
+                                            onClearDraft={handleClearDraft}
+                                            draftKey={draftKey}
+                                        />
+                                    ) : (
+                                        <View onLayout={onInputLayout} style={{ height: inputBase, borderRadius: 24, backgroundColor: theme.background }} />
+                                    )}
+                                </View>
+                            </KeyboardStickyView>
+                        ) : null}
+                    </Messages>
+                </ScrollEdgeScreen>
             </View>
         </View>
     );

@@ -5,7 +5,7 @@ import { Camera } from 'lucide-react-native';
 import { isMainnet, resolveNetwork } from '@veyl/shared/network';
 import Avatar from './avatar';
 import { DotIcon, DOT_ICONS } from './dot';
-import GlassFooter from './glass/glassfooter';
+import GlassView from './glass/glassview';
 import Icon from './icon';
 import { useTheme } from '../providers/themeprovider';
 import { useUser } from '../providers/userprovider';
@@ -15,17 +15,28 @@ import { useTap } from '@/lib/tap';
 
 const ICON_SIZE = 32;
 const AVATAR_SIZE = 34;
-const TOP_PADDING = 8;
-const ITEM_HEIGHT = Math.max(ICON_SIZE, AVATAR_SIZE);
-const HEIGHT = TOP_PADDING + ITEM_HEIGHT;
+const MENU_HEIGHT = 56;
+const MENU_RADIUS = 999;
+const MENU_WIDTH = '70%';
+const MENU_MIN_WIDTH = 256;
+const MENU_MAX_WIDTH = 320;
+const MENU_BOTTOM_GAP = 10;
+const MENU_TOP_RESERVE = 12;
+const MENU_SIDE_PADDING = 6;
+const ITEM_TOUCH_SIZE = 48;
+const REGTEST_BOTTOM_GAP = 6;
+
+function getMenuBottomOffset(bottomInset = 0) {
+    return Math.max(MENU_BOTTOM_GAP, Number(bottomInset) || 0);
+}
 
 export function getMainMenuHeight(bottomInset = 0) {
-    return HEIGHT + Math.max(0, Number(bottomInset) || 0);
+    return MENU_HEIGHT + getMenuBottomOffset(bottomInset) + MENU_TOP_RESERVE;
 }
 
 const ITEM_STYLE = {
-    flex: 1,
-    height: ITEM_HEIGHT,
+    width: ITEM_TOUCH_SIZE,
+    height: ITEM_TOUCH_SIZE,
     alignItems: 'center',
     justifyContent: 'center',
 };
@@ -95,32 +106,59 @@ export default function MainMenu({ state, navigation, position, onWarmRoute }) {
 
     return (
         <>
-            <GlassFooter
-                contentStyle={{
-                    flexDirection: 'row',
-                    alignItems: 'flex-start',
-                    justifyContent: 'space-between',
-                    gap: 12,
-                    paddingTop: TOP_PADDING,
-                }}
-            >
-                <MenuItem progress={tabProgress[routeIndexes.chat]} onPress={() => onSelect('chat')} onPressIn={() => warmRoute('chat')} disabled={chatBanned} pressScale={chatActive ? 0.86 : 1}>
-                    <DotIcon iconNode={DOT_ICONS.messageCircle} show={!chatBanned && hasUnseenChats} color={chatBanned ? theme.muted : theme.foreground} size={ICON_SIZE} />
-                </MenuItem>
-                <MenuItem progress={tabProgress[routeIndexes.camera]} onPress={() => onSelect('camera')} onPressIn={() => warmRoute('camera')}>
-                    <Icon icon={Camera} color={theme.foreground} size={ICON_SIZE} />
-                </MenuItem>
-                <MenuItem progress={tabProgress[routeIndexes.wallet]} onPress={() => onSelect('wallet')} onPressIn={() => warmRoute('wallet')}>
-                    <DotIcon iconNode={DOT_ICONS.wallet} show={showWalletDot} color={theme.foreground} size={ICON_SIZE} />
-                </MenuItem>
-                <MenuItem progress={tabProgress[routeIndexes.settings]} onPress={() => onSelect('settings')} onPressIn={() => warmRoute('settings')}>
-                    <View pointerEvents="none">
-                        <Avatar size={AVATAR_SIZE} source={avatar ? { uri: avatar } : null} />
+            <View pointerEvents="box-none" style={{ position: 'absolute', left: 0, right: 0, bottom: getMenuBottomOffset(insets.bottom), alignItems: 'center' }}>
+                <GlassView
+                    glassEffectStyle="clear"
+                    tintColor={theme.glassBackground}
+                    style={{
+                        width: MENU_WIDTH,
+                        minWidth: MENU_MIN_WIDTH,
+                        maxWidth: MENU_MAX_WIDTH,
+                        height: MENU_HEIGHT,
+                        borderRadius: MENU_RADIUS,
+                        borderCurve: 'continuous',
+                        overflow: 'hidden',
+                    }}
+                >
+                    <View
+                        style={{
+                            flex: 1,
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: 10,
+                            paddingHorizontal: MENU_SIDE_PADDING,
+                            paddingVertical: (MENU_HEIGHT - ITEM_TOUCH_SIZE) / 2,
+                        }}
+                    >
+                        <MenuItem progress={tabProgress[routeIndexes.chat]} onPress={() => onSelect('chat')} onPressIn={() => warmRoute('chat')} disabled={chatBanned} pressScale={chatActive ? 0.86 : 1}>
+                            <DotIcon iconNode={DOT_ICONS.messageCircle} show={!chatBanned && hasUnseenChats} color={chatBanned ? theme.muted : theme.foreground} size={ICON_SIZE} />
+                        </MenuItem>
+                        <MenuItem progress={tabProgress[routeIndexes.camera]} onPress={() => onSelect('camera')} onPressIn={() => warmRoute('camera')}>
+                            <Icon icon={Camera} color={theme.foreground} size={ICON_SIZE} />
+                        </MenuItem>
+                        <MenuItem progress={tabProgress[routeIndexes.wallet]} onPress={() => onSelect('wallet')} onPressIn={() => warmRoute('wallet')}>
+                            <DotIcon iconNode={DOT_ICONS.wallet} show={showWalletDot} color={theme.foreground} size={ICON_SIZE} />
+                        </MenuItem>
+                        <MenuItem progress={tabProgress[routeIndexes.settings]} onPress={() => onSelect('settings')} onPressIn={() => warmRoute('settings')}>
+                            <View pointerEvents="none">
+                                <Avatar size={AVATAR_SIZE} source={avatar ? { uri: avatar } : null} />
+                            </View>
+                        </MenuItem>
                     </View>
-                </MenuItem>
-            </GlassFooter>
+                </GlassView>
+            </View>
             {!isMainnet(network) ? (
-                <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, bottom: Math.max(6, Math.min(12, insets.bottom - 20)), alignItems: 'center' }}>
+                <View
+                    pointerEvents="none"
+                    style={{
+                        position: 'absolute',
+                        left: 0,
+                        right: 0,
+                        bottom: REGTEST_BOTTOM_GAP,
+                        alignItems: 'center',
+                    }}
+                >
                     <View style={{ borderRadius: 999, backgroundColor: alpha(theme.destructive, 12), paddingHorizontal: 8, paddingVertical: 3 }}>
                         <Text style={{ color: theme.destructive, fontSize: 10, fontWeight: '900', lineHeight: 12 }}>regtest</Text>
                     </View>

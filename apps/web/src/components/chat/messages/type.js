@@ -27,7 +27,7 @@ export function ChatMessageType({ msg, fromPeer = false, peerChatPK, peerDisplay
         case 'img':
             body = <ImageMessage msg={msg} peerChatPK={peerChatPK} />;
             break;
-        case 'mp3':
+        case 'm4a':
             body = <AudioMessage msg={msg} peerChatPK={peerChatPK} fromPeer={fromPeer} />;
             break;
         case 'mp4':

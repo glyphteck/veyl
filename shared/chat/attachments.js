@@ -1,10 +1,11 @@
 'use client';
 
-import { MAX_CHAT_UPLOAD_FILES } from './filepayload.js';
+import { MAX_CHAT_UPLOAD_BYTES, MAX_CHAT_UPLOAD_FILES } from './filepayload.js';
 import { makeTxtFileName } from './messages.js';
 import { ATTACHMENT_CACHE_FALLBACK_DELAY_MS, ATTACHMENT_CACHE_IDLE_TIMEOUT_MS } from '../config.js';
 import { encoder } from '../crypto/core.js';
 import { writeCachedMedia } from '../cache/localdata.js';
+import { formatBytes } from '../utils/display.js';
 import { cleanText, lowerText } from '../utils/text.js';
 
 export function makeChatUnavailableError() {
@@ -49,6 +50,11 @@ export function chatUploadErrorMessage(error, options = {}) {
     if (code === 'too-many-files') {
         const label = formatMaxChatUploadFiles(error?.maxFiles || MAX_CHAT_UPLOAD_FILES);
         return typeof options.tooManyFiles === 'function' ? options.tooManyFiles(label, error) : `choose up to ${label}`;
+    }
+
+    if (code === 'upload-too-large') {
+        const label = formatBytes(error?.maxBytes || MAX_CHAT_UPLOAD_BYTES, { fallback: 'the upload limit' });
+        return typeof options.uploadTooLarge === 'function' ? options.uploadTooLarge(label, error) : `max upload is ${label}`;
     }
 
     if (code === 'video-unavailable' && typeof options.videoUnavailable === 'function') {
@@ -150,7 +156,7 @@ export function getAttachmentType(attachment = {}) {
         return 'img';
     }
     if (mimeType.startsWith('audio/')) {
-        return 'mp3';
+        return 'm4a';
     }
     if (mimeType.startsWith('video/')) {
         return 'mp4';
@@ -160,5 +166,5 @@ export function getAttachmentType(attachment = {}) {
 }
 
 export function isAttachmentType(type) {
-    return type === 'img' || type === 'mp3' || type === 'mp4' || type === 'file';
+    return type === 'img' || type === 'm4a' || type === 'mp4' || type === 'file';
 }

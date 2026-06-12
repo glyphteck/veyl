@@ -203,7 +203,7 @@ export function prepareAttachment(chatPK, attachment) {
         ...(Number.isFinite(attachment?.duration) ? { d: attachment.duration } : {}),
         ...(caption ? { c: caption } : {}),
         ...(name ? { n: name } : {}),
-        ...((type === 'img' || type === 'mp3' || type === 'mp4') && localUri ? { localUri } : {}),
+        ...((type === 'img' || type === 'm4a' || type === 'mp4') && localUri ? { localUri } : {}),
         ...(attachment?.data ? { localData: attachment.data } : {}),
         cid,
         s: chatPK,

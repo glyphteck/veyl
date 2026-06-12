@@ -1,15 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Animated, FlatList, Pressable, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import { ChevronLeft, UserX } from 'lucide-react-native';
+import { UserX } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import Avatar from '@/components/avatar';
 import EmptyState from '@/components/emptystate';
+import FloatingHeader, { FloatingHeaderBackIcon, FLOATING_HEADER_SCROLL_EDGE_PAD, getFloatingHeaderHeight } from '@/components/floatingheader';
 import GlassButton from '@/components/glass/glassbutton';
-import GlassHeader from '@/components/glass/glassheader';
-import Icon from '@/components/icon';
-import { useTap } from '@/lib/tap';
+import { ScrollEdgeScreen } from '@/lib/navigation/scrolledge';
 import { usePeer } from '@/providers/peerprovider';
 import { useTheme } from '@/providers/themeprovider';
 import { useUser } from '@/providers/userprovider';
@@ -51,7 +50,9 @@ export default function BlockedRoute() {
     const { blockedPeers, blockedPeersReady, loadBlockedPeers, restorePeer } = usePeer() || {};
     const { unblockPeer } = useUser();
     const [busyUid, setBusyUid] = useState(null);
-    const backTap = useTap({ onPress: router.back });
+    const [headerHeight, setHeaderHeight] = useState(() => getFloatingHeaderHeight(insets.top));
+    const headerInset = useMemo(() => ({ top: headerHeight }), [headerHeight]);
+    const headerOffset = useMemo(() => ({ x: 0, y: -headerHeight }), [headerHeight]);
 
     useEffect(() => {
         void loadBlockedPeers?.();
@@ -90,33 +91,34 @@ export default function BlockedRoute() {
 
     return (
         <View style={{ flex: 1, overflow: 'hidden' }}>
-            <FlatList
-                data={blockedItems}
-                keyExtractor={(item) => item.uid}
-                renderItem={({ item }) => <BlockedRow item={item} onUnblock={handleUnblock} busyUid={busyUid} />}
-                ItemSeparatorComponent={() => <View style={{ height: 1, backgroundColor: theme.border }} />}
-                ListEmptyComponent={() => (blockedPeersReady ? <EmptyState icon={UserX} title="no blocked users" /> : <EmptyState busy title="loading blocked users..." />)}
-                contentContainerStyle={{ flexGrow: 1, paddingTop: insets.top + 38, paddingBottom: insets.bottom + 24 }}
-                style={{ flex: 1 }}
-                showsVerticalScrollIndicator={false}
-                bounces
-                alwaysBounceVertical
-                directionalLockEnabled
-                alwaysBounceHorizontal={false}
-            />
-            <GlassHeader contentStyle={{ flexDirection: 'row', alignItems: 'center' }}>
+            <ScrollEdgeScreen>
+                <FlatList
+                    data={blockedItems}
+                    keyExtractor={(item) => item.uid}
+                    renderItem={({ item }) => <BlockedRow item={item} onUnblock={handleUnblock} busyUid={busyUid} />}
+                    ItemSeparatorComponent={() => <View style={{ height: 1, backgroundColor: theme.border }} />}
+                    ListEmptyComponent={() => (blockedPeersReady ? <EmptyState icon={UserX} title="no blocked users" /> : <EmptyState busy title="loading blocked users..." />)}
+                    contentInset={headerInset}
+                    contentOffset={headerOffset}
+                    scrollIndicatorInsets={headerInset}
+                    contentContainerStyle={{ flexGrow: 1, paddingTop: FLOATING_HEADER_SCROLL_EDGE_PAD, paddingBottom: insets.bottom + 24 }}
+                    style={{ flex: 1 }}
+                    showsVerticalScrollIndicator={false}
+                    bounces
+                    alwaysBounceVertical
+                    directionalLockEnabled
+                    alwaysBounceHorizontal={false}
+                />
+            </ScrollEdgeScreen>
+            <FloatingHeader onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}>
                 <View style={{ width: 56, alignItems: 'flex-start', justifyContent: 'center' }}>
-                    <Pressable {...backTap.props} hitSlop={10} style={{ justifyContent: 'center' }}>
-                        <Animated.View style={{ transform: [{ scale: backTap.scale }] }}>
-                            <Icon icon={ChevronLeft} size={32} color={theme.foreground} />
-                        </Animated.View>
-                    </Pressable>
+                    <FloatingHeaderBackIcon onPress={() => router.back()} />
                 </View>
                 <View style={{ flex: 1, minWidth: 0, alignItems: 'center', justifyContent: 'center' }}>
                     <Text numberOfLines={1} style={{ color: theme.foreground, fontSize: 24, fontWeight: '900' }}>blocked users</Text>
                 </View>
                 <View style={{ width: 56 }} />
-            </GlassHeader>
+            </FloatingHeader>
         </View>
     );
 }

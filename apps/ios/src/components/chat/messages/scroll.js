@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { FLOATING_HEADER_SCROLL_EDGE_PAD, getFloatingHeaderScrollEdgeInset } from '@/components/floatingheader';
 import { positivePx } from '@/components/chat/rowmotion';
 
 const NEWEST_GAP = 8;
@@ -22,12 +23,14 @@ export function useScroll({ chatId, extraContentPadding, hasOlder, inputH, loadO
     const bottomProgress = useSharedValue(0);
     const stickyOffset = useMemo(() => ({ closed: 0, opened: insets.bottom - KEYBOARD_GAP }), [insets.bottom]);
     const bottomBase = positivePx(insets.bottom + inputH + 20);
+    const headerEdgeInset = getFloatingHeaderScrollEdgeInset(insets.top);
+    const headerInset = useMemo(() => ({ bottom: headerEdgeInset }), [headerEdgeInset]);
     const contentContainerStyle = useMemo(
         () => ({
             paddingTop: positivePx(insets.bottom + inputH + NEWEST_GAP),
-            paddingBottom: insets.top + 42 + 24,
+            paddingBottom: FLOATING_HEADER_SCROLL_EDGE_PAD,
         }),
-        [insets.bottom, insets.top, inputH]
+        [insets.bottom, inputH]
     );
     const bottomStyle = useAnimatedStyle(() => ({
         transform: [
@@ -101,10 +104,12 @@ export function useScroll({ chatId, extraContentPadding, hasOlder, inputH, loadO
         bottomMounted,
         bottomPositionStyle,
         bottomStyle,
+        contentInset: headerInset,
         contentContainerStyle,
         handleListScroll,
         handleLoadOlder,
         listRef,
+        scrollIndicatorInsets: headerInset,
         scrollToBottom,
         showBottom,
         stickyOffset,

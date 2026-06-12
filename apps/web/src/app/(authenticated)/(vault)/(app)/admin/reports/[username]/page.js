@@ -26,7 +26,7 @@ function reportTypeLabel(type) {
             return 'image';
         case 'file':
             return 'file';
-        case 'mp3':
+        case 'm4a':
             return 'audio';
         case 'mp4':
             return 'video';

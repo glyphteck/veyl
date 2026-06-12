@@ -12,7 +12,7 @@ Use the existing glass primitives first:
 - `GlassIcon` for route buttons, toolbar actions, and compact icon-only actions.
 - `GlassField` for inputs.
 - `GlassView` for glass panels, message bubbles, slash-command chips, and other frosted surfaces.
-- `GlassHeader` and `GlassFooter` for pinned top and bottom chrome.
+- `FloatingHeader` for pinned top chrome and `GlassFooter` for pinned bottom chrome.
 - `Icon` for lucide icons so theme color and stroke width stay consistent.
 
 Do not build new buttons from raw `Pressable` unless the shape is genuinely custom. If a raw press target is needed, use `useTap` or `tap` from `src/lib/tap.js`; default spring and haptics are preferred. For repeated press interactions, keep changes narrow: usually only `scale`, `hapticIn`, or `hapticOut`.
@@ -21,7 +21,7 @@ Tap feedback is scale-first. Press targets shrink on press down with the shared 
 
 For controls that appear or disappear in place, use `usePop` from `src/lib/pop.js` so the item scales in and can animate width, height, or adjacent gaps. Keep normal press feedback on the child press target when a popped item is also tappable.
 
-Do not set or animate `opacity` on `GlassView` or any component built on the `GlassView` primitive, including `GlassButton`, `GlassIcon`, `GlassField`, `GlassHeader`, and `GlassFooter`, or on wrappers whose opacity controls one of those components. Native glass has a known bug where setting opacity to `0` can leave the glass surface unable to render again. Hide glass controls with conditional mounting after their scale/size exit animation finishes, or use scale, width, height, gap, or route-state changes while keeping the glass layer itself fully opaque.
+Do not set or animate `opacity` on `GlassView` or any component built on the `GlassView` primitive, including `GlassButton`, `GlassIcon`, `GlassField`, and `GlassFooter`, or on wrappers whose opacity controls one of those components. Native glass has a known bug where setting opacity to `0` can leave the glass surface unable to render again. Hide glass controls with conditional mounting after their scale/size exit animation finishes, or use scale, width, height, gap, or route-state changes while keeping the glass layer itself fully opaque.
 
 Use `160ms` as the default fixed animation time for responsive UI state changes, including button/toggle state changes, avatar selection borders, menu/dialog fades, search focus crossfades, and chat row layout transitions for height changes, inserts, and removals. Timings in the `100ms` to `200ms` range should usually normalize to `160ms`; keep deliberately different longer/shorter timings, springs, gesture physics, media viewer staging, and spinner behavior only when they are tuned for a specific feel.
 
@@ -59,7 +59,7 @@ Rounding is generous and consistent:
 
 Color should come from `useTheme()` and `src/lib/colors.js`: `background`, `glassBackground`, `glassBackgroundSoft`, `foreground`, `glassForeground`, `muted`, `border`, `destructive`, `inflow`, `outflow`, `bitcoin`, and `active`. `background` and `foreground` are solid fill and text colors, while `glassBackground`, `glassBackgroundSoft`, and `glassForeground` are material tints for `GlassView` surfaces. Use `glassBackgroundSoft` for input glass and camera shutter glass where the normal background tint is too opaque. Use `alpha()` only when a custom translucent variant is needed. Avoid hardcoded colors except for camera overlays or other isolated native surfaces.
 
-Headers and footers are usually absolute glass overlays. Account for safe areas with `useSafeAreaInsets()`. Keep scroll content padded under overlays instead of placing content behind them.
+Top headers are absolute floating chrome without a background glass slab. Use `FloatingHeader` for title/avatar/header text and `FloatingHeaderBackIcon` for header back actions. Scrollable route content should live inside `ScrollEdgeScreen` so iOS 26+ native soft scroll-edge effects provide the system blur/fade. For floating-header routes, set the scroll view's native top `contentInset` and `scrollIndicatorInsets` to the measured floating-header height, set its initial `contentOffset.y` to the negative header height, and keep content `paddingTop` to `FLOATING_HEADER_SCROLL_EDGE_PAD`; inverted scroll views still use the native top edge effect via `INVERTED_TOP_SCROLL_EDGE_EFFECTS`, while their visual header spacing stays in the list's bottom inset/padding. Footers are usually absolute glass overlays. Account for safe areas with `useSafeAreaInsets()`. Keep scroll content padded under overlays instead of placing content behind them.
 
 Chat-style iOS lists should use `KeyboardChatScrollView` for scroll geometry and `KeyboardStickyView` for pinned composers or footers. Avoid `KeyboardGestureArea` in this checkout; it is the known risky native surface. For current-chat message lists, use `keyboardLiftBehavior="persistent"` so closing the keyboard does not apply a full keyboard-height drop-back scroll.
 
@@ -70,7 +70,7 @@ The iOS full-screen media viewer provider lives in `apps/ios/src/providers/media
 For new iOS UI, implement in this order:
 
 1. Choose the closest existing screen pattern: onboarding form, wallet/action header, chat composer, settings row, or modal-style veyl.
-2. Use `GlassHeader`/`GlassFooter` for pinned chrome and `GlassView`/`GlassField`/`GlassButton`/`GlassIcon` for controls.
+2. Use `FloatingHeader` for top chrome, `GlassFooter` for bottom chrome, and `GlassView`/`GlassField`/`GlassButton`/`GlassIcon` for controls.
 3. Import lucide icons from `lucide-react-native` and render them through `Icon` or `GlassIcon`.
 4. Use `useTheme()` colors and the established font weights instead of local palettes.
 5. Use `useTap`/`tap` for custom presses; do not invent a new animation or haptic pattern.

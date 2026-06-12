@@ -172,10 +172,12 @@ export default function Messages({
         bottomMounted: scrollBottomMounted,
         bottomPositionStyle: scrollBottomPositionStyle,
         bottomStyle: scrollBottomStyle,
+        contentInset,
         contentContainerStyle,
         handleListScroll,
         handleLoadOlder,
         listRef,
+        scrollIndicatorInsets,
         scrollToBottom,
         showBottom: showScrollBottom,
         stickyOffset,
@@ -392,7 +394,9 @@ export default function Messages({
                                 itemLayoutAnimation={rowLayoutAnimation}
                                 style={{ flex: 1, width: screenW + STAMP_TRAY, zIndex: 0 }}
                                 inverted
+                                contentInset={contentInset}
                                 contentContainerStyle={contentContainerStyle}
+                                scrollIndicatorInsets={scrollIndicatorInsets}
                                 renderScrollComponent={renderScrollComponent}
                                 automaticallyAdjustKeyboardInsets={false}
                                 contentInsetAdjustmentBehavior="never"

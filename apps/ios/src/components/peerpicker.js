@@ -1,12 +1,14 @@
 import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
 import { Keyboard, Pressable, Text, View } from 'react-native';
 import Animated, { Easing, scrollTo, useAnimatedRef, useAnimatedStyle, useDerivedValue, useSharedValue, withTiming } from 'react-native-reanimated';
+import { UserRoundPlus } from 'lucide-react-native';
 import { scheduleOnRN } from 'react-native-worklets';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { formatUserDisplay, peerKey } from '@veyl/shared/profile';
 import { truncateLabel } from '@veyl/shared/utils/display';
 
 import Avatar from '@/components/avatar';
+import Icon from '@/components/icon';
 import SearchInput from '@/components/search';
 import { KeyboardChatScrollView, KeyboardStickyView, useReanimatedKeyboardAnimation } from '@/components/keyboardscroll';
 import { tap } from '@/lib/tap';
@@ -27,6 +29,7 @@ const PEER_ROW_HEIGHT_FALLBACK = 112;
 const LIST_CROP_TOP = 20;
 const LIST_CONTENT_TOP = 18 + 24;
 const LIST_DEFAULT_BOTTOM_GAP = 12;
+const INVITE_PICKER_ITEM = Object.freeze({ invite: true });
 
 export function samePeer(a, b) {
     if (!a || !b) return false;
@@ -36,23 +39,51 @@ export function samePeer(a, b) {
     return false;
 }
 
-const PeerCell = memo(function PeerCell({ item, onSelect, theme, selected, disabled }) {
+const PeerCell = memo(function PeerCell({ item, onInvitePress, onSelect, theme, selected, disabled }) {
     const scale = useSharedValue(1);
+    const isInvite = !!item?.invite;
     const pressFeedback = tap({
         value: scale,
         disabled,
-        onPress: () => !disabled && onSelect?.(item),
+        onPress: () => {
+            if (disabled) return;
+            if (isInvite) {
+                onInvitePress?.();
+                return;
+            }
+            onSelect?.(item);
+        },
     });
 
     const scaleStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
 
     const avatar = useMemo(() => (item?.avatar ? { uri: item.avatar } : null), [item?.avatar]);
-    const label = truncateLabel(formatUserDisplay(item), 8, '…');
+    const label = isInvite ? 'invite' : truncateLabel(formatUserDisplay(item), 8, '…');
 
     return (
         <Pressable {...pressFeedback} style={{ width: '33.333%', alignItems: 'center', paddingVertical: 10 }}>
             <Animated.View style={[{ alignItems: 'center' }, scaleStyle]}>
-                <Avatar pointerEvents="none" source={avatar} size={72} active={!!item?.active} selected={selected} bot={!!item?.bot} />
+                {isInvite ? (
+                    <View
+                        pointerEvents="none"
+                        style={{
+                            width: 72,
+                            height: 72,
+                            borderRadius: 36,
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            backgroundColor: theme.background,
+                            shadowColor: 'rgba(0, 0, 0, 1)',
+                            shadowOpacity: 0.1,
+                            shadowRadius: 3,
+                            shadowOffset: { width: 0, height: 0 },
+                        }}
+                    >
+                        <Icon icon={UserRoundPlus} size={34} color={theme.foreground} />
+                    </View>
+                ) : (
+                    <Avatar pointerEvents="none" source={avatar} size={72} active={!!item?.active} selected={selected} bot={!!item?.bot} />
+                )}
                 <Text numberOfLines={1} style={{ marginTop: 6, fontSize: 12, fontWeight: '700', color: theme.foreground }}>
                     {label}
                 </Text>
@@ -63,13 +94,16 @@ const PeerCell = memo(function PeerCell({ item, onSelect, theme, selected, disab
 
 function arePeerCellsEqual(prev, next) {
     return (
+        prev.item?.invite === next.item?.invite &&
         prev.item?.uid === next.item?.uid &&
         prev.item?.avatar === next.item?.avatar &&
         prev.item?.active === next.item?.active &&
         prev.item?.bot === next.item?.bot &&
         prev.selected === next.selected &&
         prev.disabled === next.disabled &&
+        prev.onInvitePress === next.onInvitePress &&
         prev.onSelect === next.onSelect &&
+        prev.theme?.background === next.theme?.background &&
         prev.theme?.foreground === next.theme?.foreground
     );
 }
@@ -86,6 +120,7 @@ export default function PeerPicker({
     isPeerSelected,
     onClearSearch,
     onFooterHidden,
+    onInvitePress,
     onPeerPress,
     onSearchChange,
     peers,
@@ -110,8 +145,12 @@ export default function PeerPicker({
     const linkedScrollBase = useSharedValue(0);
     const linkedScrollDelta = useSharedValue(0);
     const linkedScrollActive = useSharedValue(0);
+    const peerItems = useMemo(() => {
+        const list = Array.isArray(peers) ? peers : [];
+        return onInvitePress ? [INVITE_PICKER_ITEM, ...list] : list;
+    }, [onInvitePress, peers]);
 
-    peersRef.current = peers;
+    peersRef.current = peerItems;
     if (footerOpen) {
         openFooterRef.current = footer;
     }
@@ -239,16 +278,17 @@ export default function PeerPicker({
         ({ item }) => (
             <PeerCell
                 item={item}
+                onInvitePress={onInvitePress}
                 onSelect={onPeerPress}
                 theme={theme}
-                selected={isPeerSelected?.(item)}
-                disabled={isPeerDisabled?.(item)}
+                selected={!item?.invite && isPeerSelected?.(item)}
+                disabled={!item?.invite && isPeerDisabled?.(item)}
             />
         ),
-        [isPeerDisabled, isPeerSelected, onPeerPress, theme]
+        [isPeerDisabled, isPeerSelected, onInvitePress, onPeerPress, theme]
     );
 
-    const keyExtractor = useCallback((item, index) => peerKey(item, `${index}`), []);
+    const keyExtractor = useCallback((item, index) => (item?.invite ? 'invite' : peerKey(item, `${index}`)), []);
     const slideStyle = useAnimatedStyle(() => {
         if (!footerLive.value && footerProgress.value <= 0) {
             return { transform: [{ scale: FOOTER_PRELOAD_SCALE }] };
@@ -291,7 +331,7 @@ export default function PeerPicker({
             <View onLayout={handleListLayout} style={{ position: 'absolute', top: LIST_CROP_TOP, left: 0, right: 0, bottom: 0, overflow: 'hidden' }}>
                 <Animated.FlatList
                     ref={listRef}
-                    data={peers}
+                    data={peerItems}
                     keyExtractor={keyExtractor}
                     renderItem={renderPeer}
                     numColumns={3}

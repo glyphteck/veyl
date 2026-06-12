@@ -1,18 +1,23 @@
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Text, View } from 'react-native';
 import { Image } from 'expo-image';
-import { File } from 'lucide-react-native';
+import { File, Play } from 'lucide-react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { useBitcoin } from '@/providers/bitcoinprovider';
+import { useChat } from '@/providers/chatprovider';
 import { useTheme } from '@/providers/themeprovider';
 import { useTxData } from '@/providers/txdataprovider';
 import { useUser } from '@/providers/userprovider';
-import { useWallet } from '@/providers/walletprovider';
 import { bubbleTint, imageWidth } from '@/lib/chat/messages';
+import { getCachedMessageFileUri, resolveMessageFileUri } from '@/lib/chat/downloads';
 import { useMsgImage } from '@/lib/chat/useimage';
-import { UNAVAILABLE_REPLY_MSG_TYPE, getAttachmentCaption, getAttachmentTitle, getImageAspect, getRequestContext, makeUnavailableReply } from '@veyl/shared/chat/messages';
+import { getCachedVideoPreviewUri, loadVideoPreviewUri } from '@/lib/chat/videopreview';
+import { fileUri } from '@/lib/file';
+import { UNAVAILABLE_REPLY_MSG_TYPE, getAttachmentCaption, getAttachmentTitle, getImageAspect, getRequestContext, isExpiredAttachmentMsg, makeUnavailableReply } from '@veyl/shared/chat/messages';
+import { getMessagePreviewCacheKey } from '@veyl/shared/chat/previews';
 import { useGestureBlockers } from './gesturecontext';
 import GlassView from '@/components/glass/glassview';
+import Icon from '@/components/icon';
 import Menu from '@/components/menu';
 import ReactionTray from './reactiontray';
 import { AudioBubble } from './audio';
@@ -144,6 +149,111 @@ function ReplyImage({ blockExternalGestures, reply, peerChatPK, onReplyPress }) 
     );
 }
 
+function ReplyVideo({ blockExternalGestures, reply, peerChatPK, onReplyPress }) {
+    const { theme } = useTheme();
+    const { readMessageFile, readMessagePreview, writeMessagePreview } = useChat();
+    const msgType = reply?.t;
+    const msgPath = reply?.p;
+    const msgKey = reply?.k;
+    const msgMime = reply?.m;
+    const msgName = reply?.n;
+    const msgLocalUri = reply?.localUri;
+    const msgExpiresAt = reply?.x;
+    const fileMsg = useMemo(
+        () => ({ t: msgType, p: msgPath, k: msgKey, m: msgMime, n: msgName, localUri: msgLocalUri, x: msgExpiresAt }),
+        [msgExpiresAt, msgKey, msgLocalUri, msgMime, msgName, msgPath, msgType]
+    );
+    const expired = isExpiredAttachmentMsg(fileMsg);
+    const previewKey = getMessagePreviewCacheKey(peerChatPK, fileMsg);
+    const initialPreviewUri = expired ? '' : getCachedVideoPreviewUri(peerChatPK, fileMsg);
+    const [previewUri, setPreviewUri] = useState(() => initialPreviewUri);
+    const [loading, setLoading] = useState(() => !expired && !!previewKey && !initialPreviewUri);
+    const aspect = getImageAspect(reply, 16 / 9);
+    const width = Math.round(Math.min(150, imageWidth(aspect) * 0.56));
+    const caption = getAttachmentCaption(reply);
+
+    useEffect(() => {
+        if (!previewKey || expired) {
+            setPreviewUri('');
+            setLoading(false);
+            return;
+        }
+
+        const cachedPreview = getCachedVideoPreviewUri(peerChatPK, fileMsg);
+        if (cachedPreview) {
+            setPreviewUri(cachedPreview);
+            setLoading(false);
+            return;
+        }
+
+        let cancelled = false;
+        setPreviewUri('');
+        setLoading(true);
+
+        const load = async () => {
+            let nextPreviewUri = '';
+            try {
+                nextPreviewUri = await loadVideoPreviewUri({ peerChatPK, msg: fileMsg, uri: '', width, readMessagePreview, writeMessagePreview });
+            } catch (previewError) {
+                if (previewError?.message !== 'video preview pending') {
+                    throw previewError;
+                }
+            }
+
+            if (!nextPreviewUri) {
+                const sourceUri = fileUri(getCachedMessageFileUri(fileMsg, peerChatPK)) || fileUri(await resolveMessageFileUri(fileMsg, peerChatPK, readMessageFile, { defer: true }));
+                nextPreviewUri = await loadVideoPreviewUri({ peerChatPK, msg: fileMsg, uri: sourceUri, width, readMessagePreview, writeMessagePreview });
+            }
+
+            if (!cancelled) {
+                setPreviewUri(nextPreviewUri || '');
+                setLoading(false);
+            }
+        };
+
+        load().catch((nextError) => {
+            if (!cancelled) {
+                if (nextError?.message !== 'video preview unavailable' && nextError?.message !== 'file unavailable' && nextError?.message !== 'video unavailable') {
+                    console.warn('chat reply video preview failed', nextError);
+                }
+                setPreviewUri('');
+                setLoading(false);
+            }
+        });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [expired, fileMsg, peerChatPK, previewKey, readMessageFile, readMessagePreview, width, writeMessagePreview]);
+
+    return (
+        <ReplyPressable blockExternalGestures={blockExternalGestures} onReplyPress={onReplyPress}>
+            <View
+                style={{
+                    width,
+                    maxWidth: '100%',
+                    borderRadius: 20,
+                    overflow: 'hidden',
+                    backgroundColor: theme.background,
+                    opacity: 0.65,
+                }}
+            >
+                <View style={{ width: '100%', aspectRatio: aspect, backgroundColor: theme.border, alignItems: 'center', justifyContent: 'center' }}>
+                    {previewUri ? <Image source={{ uri: previewUri }} style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 }} contentFit="cover" enableLiveTextInteraction={false} /> : null}
+                    {loading && !previewUri ? <ActivityIndicator color={theme.foreground} size="small" /> : <Icon icon={Play} color="#fff" size={30} fill="#fff" strokeWidth={0} />}
+                </View>
+                {caption ? (
+                    <View style={{ paddingHorizontal: 10, paddingVertical: 8 }}>
+                        <Text numberOfLines={1} style={{ color: theme.foreground, fontSize: 14, fontWeight: '500' }}>
+                            {caption}
+                        </Text>
+                    </View>
+                ) : null}
+            </View>
+        </ReplyPressable>
+    );
+}
+
 function ReplyAttachment({ blockExternalGestures, reply, replyFromPeer, onReplyPress }) {
     const { theme } = useTheme();
     const title = getAttachmentTitle(reply);
@@ -198,10 +308,11 @@ function ReplyPreview({ blockExternalGestures, reply, replyFromPeer, peerChatPK,
             return <ReplyRequest blockExternalGestures={blockExternalGestures} reply={reply} replyFromPeer={replyFromPeer} peerDisplayName={peerDisplayName} onReplyPress={onReplyPress} />;
         case 'img':
             return <ReplyImage blockExternalGestures={blockExternalGestures} reply={reply} peerChatPK={peerChatPK} onReplyPress={onReplyPress} />;
-        case 'mp3':
+        case 'mp4':
+            return <ReplyVideo blockExternalGestures={blockExternalGestures} reply={reply} peerChatPK={peerChatPK} onReplyPress={onReplyPress} />;
+        case 'm4a':
             return <ReplyAudio blockExternalGestures={blockExternalGestures} reply={reply} replyFromPeer={replyFromPeer} onReplyPress={onReplyPress} />;
         case 'file':
-        case 'mp4':
             return <ReplyAttachment blockExternalGestures={blockExternalGestures} reply={reply} replyFromPeer={replyFromPeer} onReplyPress={onReplyPress} />;
         default:
             return null;

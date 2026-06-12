@@ -3,7 +3,6 @@ import { Alert, Animated as RNAnimated, DeviceEventEmitter, Linking, StyleSheet,
 import { router, useIsFocused, usePathname } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CommonResolutions, useCameraPermission, useOrientation, usePhotoOutput, useVideoOutput } from 'react-native-vision-camera';
-import GlassHeader from '@/components/glass/glassheader';
 import GlassIcon from '@/components/glass/glassicon';
 import GlassButton from '@/components/glass/glassbutton';
 import GlassContainer from '@/components/glass/glasscontainer';
@@ -563,7 +562,6 @@ function CameraContent({ cameraActive, pageOpen, warming }) {
                 orientationLocked={recording || recordingRef.current}
                 outputs={cameraOutputs}
             />
-            <GlassHeader style={{ height: insets.top }} pointerEvents="none" />
             {stagedMedia ? (
                 <View style={[StyleSheet.absoluteFill, { backgroundColor: theme.background, overflow: 'hidden', justifyContent: 'center', alignItems: 'center' }]} pointerEvents="box-none">
                     <StagedPreview media={stagedMedia} />
@@ -612,7 +610,9 @@ export default function CameraTab() {
     const pageOpen = useIsFocused();
     const cameraWarm = useCameraWarming(pageOpen);
 
-    if (!cameraWarm.mounted) return <View style={{ flex: 1 }} />;
-
-    return <CameraContent cameraActive={cameraWarm.active} pageOpen={pageOpen} warming={cameraWarm.warming} />;
+    return (
+        <>
+            {cameraWarm.mounted ? <CameraContent cameraActive={cameraWarm.active} pageOpen={pageOpen} warming={cameraWarm.warming} /> : <View style={{ flex: 1 }} />}
+        </>
+    );
 }

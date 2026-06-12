@@ -41,8 +41,8 @@ function getExt(msg) {
   switch (msg?.t) {
     case "img":
       return "jpg";
-    case "mp3":
-      return "mp3";
+    case "m4a":
+      return "m4a";
     case "mp4":
       return "mp4";
     default:
@@ -59,7 +59,7 @@ function getBaseName(msg) {
   switch (msg?.t) {
     case "img":
       return "image";
-    case "mp3":
+    case "m4a":
       return "audio";
     case "mp4":
       return "video";

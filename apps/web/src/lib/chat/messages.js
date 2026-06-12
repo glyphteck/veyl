@@ -2,7 +2,7 @@ import { formatAttachmentSize, hasStoredFileRef, isPngMsg } from '@veyl/shared/c
 import { cleanText } from '@veyl/shared/utils/text';
 import { saveBytes, saveUrl } from '../download';
 
-const HOVER_DOWNLOAD_MSG_TYPES = ['img', 'mp3', 'mp4'];
+const HOVER_DOWNLOAD_MSG_TYPES = ['img', 'm4a', 'mp4'];
 
 export function bubbleBg(fromPeer = false) {
     return fromPeer ? 'bg-foreground/3' : 'bg-foreground/1';
@@ -31,8 +31,8 @@ export function msgFileName(msg, fallback = 'attachment') {
     switch (msg?.t) {
         case 'img':
             return isPngMsg(msg) ? 'image.png' : 'image.jpg';
-        case 'mp3':
-            return 'audio.mp3';
+        case 'm4a':
+            return 'audio.m4a';
         case 'mp4':
             return 'video.mp4';
         default:
@@ -44,8 +44,8 @@ export function msgMime(msg) {
     switch (msg?.t) {
         case 'img':
             return msg?.m || 'image/jpeg';
-        case 'mp3':
-            return msg?.m || 'audio/mpeg';
+        case 'm4a':
+            return msg?.m || 'audio/mp4';
         case 'mp4':
             return msg?.m || 'video/mp4';
         default:

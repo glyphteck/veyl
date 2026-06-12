@@ -22,7 +22,7 @@ import {
     Bot,
     Hammer,
     Search,
-    Link,
+    UserPlus,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useDialog } from '@/components/providers/dialogprovider';
@@ -78,12 +78,12 @@ const ROW_ICONS = {
     hammer: Hammer,
     history: History,
     lock: Lock,
-    link: Link,
     logOut: LogOut,
     messageCircle: MessageCircle,
     messageCirclePlus: MessageCirclePlus,
     settings2: Settings2,
     trash2: Trash2,
+    userPlus: UserPlus,
     wallet: Wallet,
 };
 

@@ -26,7 +26,7 @@ function MsgPreview({ msg }) {
         );
     }
 
-    if (t === 'file' || t === 'mp3' || t === 'mp4') {
+    if (t === 'file' || t === 'm4a' || t === 'mp4') {
         return (
             <div className="flex items-center gap-2 min-w-0">
                 <File className="size-5 shrink-0 " />

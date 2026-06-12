@@ -634,7 +634,7 @@ Code:
 
 - `sendAttachment`.
 - `uploadAttachmentMsg`.
-- `putImg`, `putMp3`, `putMp4`, `putFile`.
+- `putImg`, `putM4a`, `putMp4`, `putFile`.
 
 Send:
 

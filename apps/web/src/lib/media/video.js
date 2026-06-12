@@ -1,11 +1,15 @@
 'use client';
 
+import {
+    CHAT_VIDEO_TRANSCODE_AUDIO_BITRATE_BPS,
+    CHAT_VIDEO_TRANSCODE_MAX_EDGE,
+    CHAT_VIDEO_TRANSCODE_VIDEO_BITRATE_BPS,
+    assertChatMediaTranscodeWorthTrying,
+    assertChatUploadByteSize,
+} from '@veyl/shared/chat/filepayload';
 import { filenameWithExtension } from '@veyl/shared/utils/filename';
-import { isMp4File } from '@veyl/shared/utils/filetype';
-
-function isMp4(file) {
-    return isMp4File(file);
-}
+import { fileExtension, mimeExtension } from '@veyl/shared/utils/filetype';
+import { nextFfmpegId, removeFfmpegFile, runFfmpegJob } from './ffmpeg';
 
 function loadVideo(file) {
     return new Promise((resolve, reject) => {
@@ -36,38 +40,58 @@ async function getMeta(file) {
     return meta;
 }
 
-function getMp4RecorderType() {
-    const types = ['video/mp4;codecs=h264,aac', 'video/mp4'];
-    return types.find((type) => MediaRecorder?.isTypeSupported?.(type)) || '';
+function inputExtension(file) {
+    return fileExtension(file) || mimeExtension(file, 'video');
 }
 
-async function recordMp4(file, mimeType) {
-    const { video, url } = await loadVideo(file);
-    const stream = video.captureStream?.();
-    if (!stream) {
-        URL.revokeObjectURL(url);
-        throw new Error('mp4 conversion unavailable');
-    }
+function videoFilter() {
+    return `scale=${CHAT_VIDEO_TRANSCODE_MAX_EDGE}:${CHAT_VIDEO_TRANSCODE_MAX_EDGE}:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p`;
+}
 
-    return new Promise((resolve, reject) => {
-        const chunks = [];
-        const recorder = new MediaRecorder(stream, { mimeType });
-        recorder.ondataavailable = (event) => {
-            if (event.data?.size) chunks.push(event.data);
-        };
-        recorder.onerror = () => reject(recorder.error || new Error('mp4 conversion failed'));
-        recorder.onstop = () => {
-            video.removeAttribute('src');
-            video.load();
-            URL.revokeObjectURL(url);
-            resolve(new Blob(chunks, { type: 'video/mp4' }));
-        };
-        video.onended = () => recorder.stop();
-        recorder.start();
-        video.play().catch((error) => {
-            recorder.stop();
-            reject(error);
-        });
+async function transcodeMp4(file) {
+    const id = nextFfmpegId('video');
+    const inputName = `input-${id}.${inputExtension(file)}`;
+    const outputName = `output-${id}.mp4`;
+    const { fetchFile } = await import('@ffmpeg/util');
+
+    return runFfmpegJob(async (ffmpeg) => {
+        await ffmpeg.writeFile(inputName, await fetchFile(file));
+        try {
+            const code = await ffmpeg.exec([
+                '-i',
+                inputName,
+                '-map',
+                '0:v:0',
+                '-map',
+                '0:a:0?',
+                '-vf',
+                videoFilter(),
+                '-c:v',
+                'libx264',
+                '-preset',
+                'veryfast',
+                '-b:v',
+                String(CHAT_VIDEO_TRANSCODE_VIDEO_BITRATE_BPS),
+                '-maxrate',
+                String(Math.round(CHAT_VIDEO_TRANSCODE_VIDEO_BITRATE_BPS * 1.5)),
+                '-bufsize',
+                String(Math.round(CHAT_VIDEO_TRANSCODE_VIDEO_BITRATE_BPS * 3)),
+                '-c:a',
+                'aac',
+                '-b:a',
+                String(CHAT_VIDEO_TRANSCODE_AUDIO_BITRATE_BPS),
+                '-movflags',
+                '+faststart',
+                outputName,
+            ]);
+            if (code !== 0) {
+                throw new Error('mp4 conversion failed');
+            }
+            const data = await ffmpeg.readFile(outputName);
+            return new Blob([data], { type: 'video/mp4' });
+        } finally {
+            await Promise.all([removeFfmpegFile(ffmpeg, inputName), removeFfmpegFile(ffmpeg, outputName)]);
+        }
     });
 }
 
@@ -76,19 +100,10 @@ export async function toMp4(file) {
         throw new Error('video file required');
     }
 
-    if (isMp4(file)) {
-        return {
-            file: file.type === 'video/mp4' ? file : new File([file], filenameWithExtension(file.name, 'mp4', 'video'), { type: 'video/mp4', lastModified: file.lastModified || Date.now() }),
-            ...(await getMeta(file)),
-        };
-    }
-
-    const mimeType = typeof MediaRecorder !== 'undefined' ? getMp4RecorderType() : '';
-    if (!mimeType) {
-        throw new Error('mp4 conversion unavailable');
-    }
-
-    const blob = await recordMp4(file, mimeType);
+    const meta = await getMeta(file);
+    assertChatMediaTranscodeWorthTrying('video', meta.duration);
+    const blob = await transcodeMp4(file);
+    assertChatUploadByteSize(blob);
     const nextFile = new File([blob], filenameWithExtension(file.name, 'mp4', 'video'), { type: 'video/mp4', lastModified: Date.now() });
     return {
         file: nextFile,

@@ -1,9 +1,19 @@
 import { File } from 'expo-file-system';
 import { AESEncryptionKey, AESSealedData, aesDecryptAsync, aesEncryptAsync } from 'expo-crypto';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
-import { CHAT_IMAGE_COMPRESS, CHAT_MEDIA_TTL_MS, assertChatUploadByteSize, fitChatImageSize } from '@veyl/shared/chat/filepayload';
+import { Audio, Video } from 'react-native-compressor';
+import {
+    CHAT_AUDIO_TRANSCODE_BITRATE_BPS,
+    CHAT_IMAGE_COMPRESS,
+    CHAT_MEDIA_TTL_MS,
+    CHAT_VIDEO_TRANSCODE_MAX_EDGE,
+    CHAT_VIDEO_TRANSCODE_VIDEO_BITRATE_BPS,
+    assertChatMediaTranscodeWorthTrying,
+    assertChatUploadByteSize,
+    fitChatImageSize,
+} from '@veyl/shared/chat/filepayload';
 import { filenameWithExtension } from '@veyl/shared/utils/filename';
-import { fileExtension, fileMime, isImageFile, isPngFile, isVideoFile } from '@veyl/shared/utils/filetype';
+import { fileMime, isAudioFile, isImageFile, isM4aFile, isPngFile, isVideoFile } from '@veyl/shared/utils/filetype';
 import { getMediaFileRef, makeChatMediaId, mediaFilePath } from '@veyl/shared/files';
 import { createFileKey, decodeFileKey, encodeFileKey, FILE_IV_BYTES, FILE_TAG_BYTES, getFileAadForPath } from '@veyl/shared/crypto/file';
 import { cleanBytes, randomBytes, toBytes } from '@veyl/shared/crypto/core';
@@ -13,6 +23,7 @@ import { pickAttachmentMeta } from '@veyl/shared/chat/media';
 import { getCachedPair } from '@veyl/shared/chat/pairs';
 import { positiveNumber } from '@veyl/shared/utils/number';
 import { cleanText } from '@veyl/shared/utils/text';
+import { fileUri } from '@/lib/file';
 import { mark } from '@/lib/diagnostics';
 
 function isImageAsset(asset) {
@@ -29,6 +40,14 @@ function isVideoAsset(asset) {
     }
 
     return isVideoFile(asset);
+}
+
+function isAudioAsset(asset) {
+    if (asset?.type === 'audio') {
+        return true;
+    }
+
+    return isAudioFile(asset);
 }
 
 async function readUriBytes(uri) {
@@ -117,32 +136,8 @@ async function makeChatFileUploadNative(pair, cid, data, meta = {}) {
     }
 }
 
-function getAssetName(asset, ext = 'jpg') {
-    return filenameWithExtension(asset?.fileName || asset?.name, ext, 'image');
-}
-
-function getVideoMimeType(asset) {
-    const mimeType = fileMime(asset);
-    return mimeType.startsWith('video/') ? mimeType : 'video/mp4';
-}
-
-function getVideoExtension(asset) {
-    const ext = fileExtension(asset);
-    if (/^(m4v|mov|mp4|webm)$/.test(ext)) {
-        return ext;
-    }
-
-    const mimeType = getVideoMimeType(asset);
-    if (mimeType === 'video/quicktime') {
-        return 'mov';
-    }
-    if (mimeType === 'video/webm') {
-        return 'webm';
-    }
-    if (mimeType === 'video/x-m4v') {
-        return 'm4v';
-    }
-    return 'mp4';
+function getAssetName(asset, ext = 'jpg', fallback = 'file') {
+    return filenameWithExtension(asset?.fileName || asset?.name, ext, fallback);
 }
 
 function getVideoDurationSeconds(asset) {
@@ -150,8 +145,80 @@ function getVideoDurationSeconds(asset) {
     return durationMs ? durationMs / 1000 : null;
 }
 
+function getAudioDurationSeconds(asset) {
+    const durationMs = positiveNumber(asset?.duration, null);
+    return durationMs ? durationMs / 1000 : null;
+}
+
 function isPngAsset(asset) {
     return isPngFile(asset);
+}
+
+async function prepareNativeM4a(asset) {
+    const duration = getAudioDurationSeconds(asset);
+    if (isM4aFile(asset)) {
+        const data = await readUriBytes(asset.uri);
+        try {
+            assertChatUploadByteSize(data);
+            mark('chat.media.prepare.audio.done', { bytes: data?.byteLength || 0, duration: duration || 0, normalized: true });
+            return {
+                data,
+                mimeType: 'audio/mp4',
+                size: Number.isFinite(data?.byteLength) ? data.byteLength : (asset?.fileSize ?? asset?.size),
+                ...(duration ? { duration } : {}),
+                name: getAssetName(asset, 'm4a', 'audio'),
+                localUri: asset.uri,
+            };
+        } catch (error) {
+            if (error?.code !== 'upload-too-large') {
+                throw error;
+            }
+        }
+    }
+
+    assertChatMediaTranscodeWorthTrying('audio', duration);
+    mark('chat.media.prepare.audio.transcode.start', { duration: duration || 0 });
+    const outputUri = await Audio.compress(asset.uri, {
+        bitrate: CHAT_AUDIO_TRANSCODE_BITRATE_BPS,
+    });
+    const data = await readUriBytes(outputUri);
+    assertChatUploadByteSize(data);
+    mark('chat.media.prepare.audio.done', { bytes: data?.byteLength || 0, duration: duration || 0 });
+    return {
+        data,
+        mimeType: 'audio/mp4',
+        size: data.byteLength,
+        ...(duration ? { duration } : {}),
+        name: getAssetName(asset, 'm4a', 'audio'),
+        localUri: fileUri(outputUri),
+    };
+}
+
+async function prepareNativeMp4(asset) {
+    const duration = getVideoDurationSeconds(asset);
+    assertChatMediaTranscodeWorthTrying('video', duration);
+    mark('chat.media.prepare.video.transcode.start', { duration: duration || 0, width: asset?.width || 0, height: asset?.height || 0 });
+    const outputUri = await Video.compress(asset.uri, {
+        compressionMethod: 'manual',
+        bitrate: CHAT_VIDEO_TRANSCODE_VIDEO_BITRATE_BPS,
+        maxSize: CHAT_VIDEO_TRANSCODE_MAX_EDGE,
+    });
+    const data = await readUriBytes(outputUri);
+    assertReadableVideoBytes(data);
+    assertChatUploadByteSize(data);
+    const width = positiveNumber(asset?.width);
+    const height = positiveNumber(asset?.height);
+    mark('chat.media.prepare.video.done', { bytes: data?.byteLength || 0, duration: duration || 0 });
+    return {
+        data,
+        mimeType: 'video/mp4',
+        size: data.byteLength,
+        ...(width ? { width } : {}),
+        ...(height ? { height } : {}),
+        ...(duration ? { duration } : {}),
+        name: getAssetName(asset, 'mp4', 'video'),
+        previewUri: fileUri(outputUri),
+    };
 }
 
 export async function prepareAssetForChatUpload(asset) {
@@ -165,6 +232,7 @@ export async function prepareAssetForChatUpload(asset) {
         if (asset?.preserveImage === true) {
             mark('chat.media.prepare.image.preserve', {});
             const data = await readUriBytes(asset.uri);
+            assertChatUploadByteSize(data);
             const png = isPngAsset(asset);
             const width = Number(asset?.width);
             const height = Number(asset?.height);
@@ -174,7 +242,7 @@ export async function prepareAssetForChatUpload(asset) {
                 size: Number.isFinite(data?.byteLength) ? data.byteLength : (asset?.fileSize ?? asset?.size),
                 ...(Number.isFinite(width) && width > 0 ? { width } : {}),
                 ...(Number.isFinite(height) && height > 0 ? { height } : {}),
-                name: getAssetName(asset, png ? 'png' : 'jpg'),
+                name: getAssetName(asset, png ? 'png' : 'jpg', 'image'),
                 previewUri: asset.uri,
             };
         }
@@ -203,6 +271,7 @@ export async function prepareAssetForChatUpload(asset) {
             });
             mark('chat.media.prepare.image.save.done', { uri: saved.uri, width: saved.width || 0, height: saved.height || 0 });
             const data = await readUriBytes(saved.uri);
+            assertChatUploadByteSize(data);
             mark('chat.media.prepare.image.done', { bytes: data?.byteLength || 0 });
             return {
                 data,
@@ -210,7 +279,7 @@ export async function prepareAssetForChatUpload(asset) {
                 size: Number.isFinite(data?.byteLength) ? data.byteLength : (asset?.fileSize ?? asset?.size),
                 width: saved.width,
                 height: saved.height,
-                name: getAssetName(asset, png ? 'png' : 'jpg'),
+                name: getAssetName(asset, png ? 'png' : 'jpg', 'image'),
                 previewUri: saved.uri,
             };
         } finally {
@@ -219,28 +288,18 @@ export async function prepareAssetForChatUpload(asset) {
         }
     }
 
+    if (isAudioAsset(asset)) {
+        mark('chat.media.prepare.audio.start', {});
+        return prepareNativeM4a(asset);
+    }
+
     if (isVideoAsset(asset)) {
         mark('chat.media.prepare.video.start', {});
-        const data = await readUriBytes(asset.uri);
-        assertReadableVideoBytes(data);
-        assertChatUploadByteSize(data);
-        const width = positiveNumber(asset?.width);
-        const height = positiveNumber(asset?.height);
-        const duration = getVideoDurationSeconds(asset);
-        mark('chat.media.prepare.video.done', { bytes: data?.byteLength || 0, duration: duration || 0 });
-        return {
-            data,
-            mimeType: getVideoMimeType(asset),
-            size: Number.isFinite(data?.byteLength) ? data.byteLength : (asset?.fileSize ?? asset?.size),
-            ...(width ? { width } : {}),
-            ...(height ? { height } : {}),
-            ...(duration ? { duration } : {}),
-            name: getAssetName(asset, getVideoExtension(asset)),
-            previewUri: asset.uri,
-        };
+        return prepareNativeMp4(asset);
     }
 
     const data = await readUriBytes(asset.uri);
+    assertChatUploadByteSize(data);
     mark('chat.media.prepare.file.done', { bytes: data?.byteLength || 0, mimeType });
     return {
         data,

@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { UserRoundPlus } from 'lucide-react';
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/avatar';
 import { Button } from '@/components/button';
@@ -41,6 +42,17 @@ export function PeerGridCell({ peer, onClick, selected }) {
                 <AvatarFallback />
             </Avatar>
             <span className="text-sm font-bold truncate max-w-20">{formatUserDisplay(peer, true)}</span>
+        </Button>
+    );
+}
+
+export function PeerGridInviteCell({ onClick }) {
+    return (
+        <Button type="button" onClick={onClick} className="h-auto flex-col rounded-none p-0 shrinker" title="copy invite link">
+            <span className="flex size-16 items-center justify-center rounded-full bg-background shadow-sm">
+                <UserRoundPlus className="size-9 stroke-2" />
+            </span>
+            <span className="text-sm font-bold truncate max-w-20">invite</span>
         </Button>
     );
 }

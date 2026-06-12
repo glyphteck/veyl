@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Animated, FlatList, Pressable, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { ChevronLeft, History } from 'lucide-react-native';
+import { History } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import Avatar from '@/components/avatar';
 import EmptyState from '@/components/emptystate';
+import FloatingHeader, { FloatingHeaderBackIcon, FLOATING_HEADER_SCROLL_EDGE_PAD, getFloatingHeaderHeight } from '@/components/floatingheader';
 import GlassFooter from '@/components/glass/glassfooter';
-import GlassHeader from '@/components/glass/glassheader';
-import Icon from '@/components/icon';
+import { ScrollEdgeScreen } from '@/lib/navigation/scrolledge';
 import { useTap } from '@/lib/tap';
 import { useBitcoin } from '@/providers/bitcoinprovider';
 import { usePeer } from '@/providers/peerprovider';
@@ -81,9 +81,10 @@ export default function HistoryRoute() {
     const { hasMoreTxs, isTxLoading, loadMoreTxs } = useWallet();
     const { getPeerStats, getPeerTxs } = useTxData();
     const [displayFormat, setDisplayFormat] = useState(null);
-    const [headerHeight, setHeaderHeight] = useState(0);
+    const [headerHeight, setHeaderHeight] = useState(() => getFloatingHeaderHeight(insets.top));
     const [footerHeight, setFooterHeight] = useState(0);
-    const backTap = useTap({ onPress: router.back });
+    const headerInset = useMemo(() => ({ top: headerHeight }), [headerHeight]);
+    const headerOffset = useMemo(() => ({ x: 0, y: -headerHeight }), [headerHeight]);
     const handleLoadMoreTxs = useCallback(() => {
         if (!hasMoreTxs || isTxLoading) return;
         void loadMoreTxs?.();
@@ -140,33 +141,38 @@ export default function HistoryRoute() {
     });
     return (
         <View style={{ flex: 1, overflow: 'hidden' }}>
-            <FlatList
-                data={txs}
-                keyExtractor={(item) => item.id}
-                renderItem={({ item, index }) => (
-                    <TxRow
-                        tx={item}
-                        theme={theme}
-                        moneyFormat={activeFormat}
-                        btcPrice={btcPrice}
-                        peerAvatarSource={peerAvatarSource}
-                        userAvatarSource={userAvatarSource}
-                        isPeerActive={isPeerActive}
-                        isPeerBot={!!peerProfile?.bot}
-                        isLast={index === txs.length - 1}
-                    />
-                )}
-                onEndReached={handleLoadMoreTxs}
-                onEndReachedThreshold={0.6}
-                ListEmptyComponent={() => <EmptyState icon={History} title="no transactions with this user yet" />}
-                contentContainerStyle={{ flexGrow: 1, paddingTop: headerHeight, paddingBottom: footerHeight }}
-                style={{ flex: 1 }}
-                showsVerticalScrollIndicator={false}
-                bounces
-                alwaysBounceVertical
-                directionalLockEnabled
-                alwaysBounceHorizontal={false}
-            />
+            <ScrollEdgeScreen>
+                <FlatList
+                    data={txs}
+                    keyExtractor={(item) => item.id}
+                    renderItem={({ item, index }) => (
+                        <TxRow
+                            tx={item}
+                            theme={theme}
+                            moneyFormat={activeFormat}
+                            btcPrice={btcPrice}
+                            peerAvatarSource={peerAvatarSource}
+                            userAvatarSource={userAvatarSource}
+                            isPeerActive={isPeerActive}
+                            isPeerBot={!!peerProfile?.bot}
+                            isLast={index === txs.length - 1}
+                        />
+                    )}
+                    onEndReached={handleLoadMoreTxs}
+                    onEndReachedThreshold={0.6}
+                    ListEmptyComponent={() => <EmptyState icon={History} title="no transactions with this user yet" />}
+                    contentInset={headerInset}
+                    contentOffset={headerOffset}
+                    scrollIndicatorInsets={headerInset}
+                    contentContainerStyle={{ flexGrow: 1, paddingTop: FLOATING_HEADER_SCROLL_EDGE_PAD, paddingBottom: footerHeight }}
+                    style={{ flex: 1 }}
+                    showsVerticalScrollIndicator={false}
+                    bounces
+                    alwaysBounceVertical
+                    directionalLockEnabled
+                    alwaysBounceHorizontal={false}
+                />
+            </ScrollEdgeScreen>
             <GlassFooter onLayout={(e) => setFooterHeight(e.nativeEvent.layout.height)}>
                 <Pressable {...volumeTap.props} style={{ alignSelf: 'center' }}>
                     <Animated.View style={{ alignItems: 'center', justifyContent: 'center', transform: [{ scale: volumeTap.scale }] }}>
@@ -179,13 +185,9 @@ export default function HistoryRoute() {
                     <Text style={{ color: net > 0 ? theme.inflow : net < 0 ? theme.outflow : theme.foreground }}>{`net ${netText}`}</Text>
                 </Text>
             </GlassFooter>
-            <GlassHeader contentStyle={{ flexDirection: 'row', alignItems: 'center' }} onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}>
+            <FloatingHeader onLayout={(e) => setHeaderHeight(e.nativeEvent.layout.height)}>
                 <View style={{ width: 56, alignItems: 'flex-start', justifyContent: 'center' }}>
-                    <Pressable {...backTap.props} hitSlop={10} style={{ justifyContent: 'center' }}>
-                        <Animated.View style={{ transform: [{ scale: backTap.scale }] }}>
-                            <Icon icon={ChevronLeft} size={32} color={theme.foreground} />
-                        </Animated.View>
-                    </Pressable>
+                    <FloatingHeaderBackIcon onPress={() => router.back()} />
                 </View>
                 <View style={{ flex: 1, minWidth: 0, alignItems: 'center', justifyContent: 'center' }}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, maxWidth: '100%' }}>
@@ -196,7 +198,7 @@ export default function HistoryRoute() {
                     </View>
                 </View>
                 <View style={{ width: 56 }} />
-            </GlassHeader>
+            </FloatingHeader>
         </View>
     );
 }

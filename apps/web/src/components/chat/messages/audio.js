@@ -66,7 +66,7 @@ export default function AudioMessage({ msg, peerChatPK, fromPeer = false }) {
     const { readMessageFile } = useChat();
     const audioRef = useRef(null);
     const [src, setSrc] = useState(() => (!isExpiredAttachmentMsg(msg) && typeof msg?.localUri === 'string' && msg.localUri ? msg.localUri : ''));
-    const [loading, setLoading] = useState(() => msg?.t === 'mp3' && !msg?.localUri && hasStoredFileRef(msg));
+    const [loading, setLoading] = useState(() => msg?.t === 'm4a' && !msg?.localUri && hasStoredFileRef(msg));
     const [error, setError] = useState('');
     const [playing, setPlaying] = useState(false);
     const [time, setTime] = useState(0);
@@ -102,7 +102,7 @@ export default function AudioMessage({ msg, peerChatPK, fromPeer = false }) {
             return;
         }
 
-        if (msg?.t !== 'mp3' || !peerChatPK || !hasStoredFileRef(msg)) {
+        if (msg?.t !== 'm4a' || !peerChatPK || !hasStoredFileRef(msg)) {
             setSrc('');
             setLoading(false);
             setError('');
