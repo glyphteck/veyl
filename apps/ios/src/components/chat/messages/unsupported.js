@@ -1,7 +1,7 @@
-import { Text } from 'react-native';
+import { Text, View } from 'react-native';
 import { useTheme } from '@/providers/themeprovider';
+import { bubbleShadow } from '@/lib/chat/messages';
 import { useGestureBlockers } from './gesturecontext';
-import GlassView from '@/components/glass/glassview';
 import Menu from '@/components/menu';
 import ReactionTray from './reactiontray';
 
@@ -9,10 +9,10 @@ function UnsupportedBubble() {
     const { theme } = useTheme();
 
     return (
-        <GlassView
-            glassEffectStyle="clear"
-            tintColor={theme.destructive}
+        <View
             style={{
+                backgroundColor: theme.destructive,
+                ...bubbleShadow(theme),
                 borderRadius: 22,
                 paddingHorizontal: 14,
                 paddingVertical: 10,
@@ -27,7 +27,7 @@ function UnsupportedBubble() {
             >
                 this message cannot be shown
             </Text>
-        </GlassView>
+        </View>
     );
 }
 

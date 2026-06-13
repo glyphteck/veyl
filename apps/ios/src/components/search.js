@@ -5,6 +5,7 @@ import { Search, X } from 'lucide-react-native';
 
 import GlassView from '@/components/glass/glassview';
 import Icon from '@/components/icon';
+import { inputGlassTint } from '@/lib/colors';
 import { tap } from '@/lib/tap';
 import { useTheme } from '@/providers/themeprovider';
 
@@ -26,7 +27,7 @@ const SearchInput = forwardRef(function SearchInput(
     ref
 ) {
     const { theme, isDark } = useTheme();
-    const resolvedTintColor = tintColor ?? theme.glassBackgroundSoft;
+    const resolvedTintColor = tintColor ?? inputGlassTint(theme);
     const inputRef = useRef(null);
     const [focused, setFocused] = useState(false);
     const focus = useSharedValue(0);

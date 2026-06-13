@@ -31,6 +31,8 @@ Delete is also chat-visible global state. Either participant may hard-delete any
 ## Payloads
 
 - Display payloads: `txt`, `req`, `img`, `gif`, `m4a`, `mp4`, `file`.
+- `gif` is a first-class encrypted attachment payload, not an `img` fallback. It uses the same file-reference shape as other media payloads (`p`, `k`, optional `m`, `z`, `w`, `h`, `n`, `c`, `x`) while preserving the `gif` message type so renderers, replies, downloads, reports, and shared-media paths can keep animation behavior.
+- GIF bytes stay client-owned chat media. Web and iOS preserve GIF files instead of normalizing them through static image compression, and the server still sees only encrypted file bytes plus opaque message envelopes.
 - Append-only action envelopes cover `create`, `edit`, `pay_confirm`, `rxn`, `rr`, `hid`, and `sys`.
 - Creates, edits, payment confirmations, reactions, read receipts, hidden checkpoints, and system actions are signed by the per-chat actor key derived from local vault material plus the active `chatId`.
 - Edits apply only when the action actor is pinned for the original author. A peer cannot edit someone else's message without producing the original author's per-chat actor signature.

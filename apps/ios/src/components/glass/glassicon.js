@@ -3,7 +3,7 @@ import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanima
 
 import GlassView from '@/components/glass/glassview';
 import Icon from '@/components/icon';
-import { alpha } from '@/lib/colors';
+import { disabledGlassTint } from '@/lib/colors';
 import { useTheme } from '@/providers/themeprovider';
 import { tap } from '@/lib/tap';
 import { resolveGlassEffectStyle } from '@/lib/glass';
@@ -32,8 +32,7 @@ export default function GlassIcon({
     const { theme } = useTheme();
     const scale = useSharedValue(1);
     const inset = Math.max(0, (size - iconSize) / 2);
-    const accentTintColor = disabled ? alpha(theme.glassForeground, 20) : theme.glassForeground;
-    const resolvedTintColor = tintColor ?? (accent ? accentTintColor : theme.glassBackground);
+    const resolvedTintColor = tintColor ?? (disabled ? disabledGlassTint(theme) : accent ? theme.glassForeground : theme.glassBackground);
     const resolvedColor = color ?? (disabled ? theme.muted : accent ? theme.background : theme.foreground);
     const resolvedGlassEffectStyle = resolveGlassEffectStyle(glassEffectStyle, visible, duration);
     const borderRadius = rounded === 'full' ? size / 2 : rounded;

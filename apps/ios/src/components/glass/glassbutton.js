@@ -2,7 +2,7 @@ import { Pressable, Text, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 
 import GlassView from '@/components/glass/glassview';
-import { alpha } from '@/lib/colors';
+import { disabledGlassTint } from '@/lib/colors';
 import { useTheme } from '@/providers/themeprovider';
 import { tap } from '@/lib/tap';
 import { resolveGlassEffectStyle } from '@/lib/glass';
@@ -33,8 +33,7 @@ export default function GlassButton({
         transform: [{ scale: scale.value }],
     }));
     const radius = Math.round(height / 2);
-    const accentTintColor = disabled ? alpha(theme.glassForeground, 28) : theme.glassForeground;
-    const resolvedTintColor = tintColor ?? (accent ? accentTintColor : theme.glassBackground);
+    const resolvedTintColor = tintColor ?? (disabled ? disabledGlassTint(theme) : accent ? theme.glassForeground : theme.glassBackground);
     const resolvedColor = color ?? (disabled ? theme.muted : accent ? theme.background : theme.foreground);
     const resolvedGlassEffectStyle = resolveGlassEffectStyle(glassEffectStyle);
 

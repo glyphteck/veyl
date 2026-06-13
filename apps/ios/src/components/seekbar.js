@@ -1,42 +1,53 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import { View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
+
+function clampProgress(value) {
+    'worklet';
+    const number = Number(value);
+    return Number.isFinite(number) ? Math.max(0, Math.min(1, number)) : 0;
+}
 
 export default function SeekBar({ progress = 0, disabled = false, onSeek, blockExternalGestures, trackColor, fillColor, height = 28, barHeight = 4, seekOnStart = true, align = 'center', style }) {
-    const widthRef = useRef(0);
-    const [drag, setDrag] = useState(null);
-    const shown = drag == null ? progress : drag;
+    const trackWidth = useSharedValue(0);
+    const shown = useSharedValue(clampProgress(progress));
+    const dragging = useSharedValue(false);
 
     useEffect(() => {
         if (disabled) {
-            setDrag(null);
+            dragging.value = false;
+            shown.value = clampProgress(progress);
+            return;
         }
-    }, [disabled]);
+        if (!dragging.value) {
+            shown.value = clampProgress(progress);
+        }
+    }, [disabled, dragging, progress, shown]);
 
-    const seek = useCallback(
-        (x) => {
-            const width = widthRef.current;
-            if (disabled || !width) {
-                return;
-            }
-            const next = Math.max(0, Math.min(1, x / width));
-            setDrag(next);
-            onSeek?.(next);
-        },
-        [disabled, onSeek]
-    );
+    const commitSeek = useCallback((next) => {
+        onSeek?.(next);
+    }, [onSeek]);
 
-    const endDrag = useCallback(() => {
-        setDrag(null);
-    }, []);
+    const fillStyle = useAnimatedStyle(() => ({
+        width: trackWidth.value * clampProgress(shown.value),
+    }));
 
     const pan = useMemo(() => {
+        const seek = (x) => {
+            'worklet';
+            if (disabled || !trackWidth.value) {
+                return;
+            }
+            shown.value = clampProgress(x / trackWidth.value);
+        };
+
         let gesture = Gesture.Pan()
             .enabled(!disabled)
             .minDistance(0)
             .shouldCancelWhenOutside(false)
-            .runOnJS(true)
             .onBegin((event) => {
+                dragging.value = true;
                 if (seekOnStart) {
                     seek(event.x);
                 }
@@ -44,24 +55,29 @@ export default function SeekBar({ progress = 0, disabled = false, onSeek, blockE
             .onUpdate((event) => {
                 seek(event.x);
             })
-            .onFinalize(endDrag);
+            .onFinalize(() => {
+                dragging.value = false;
+                runOnJS(commitSeek)(clampProgress(shown.value));
+            });
         const gestures = (Array.isArray(blockExternalGestures) ? blockExternalGestures : [blockExternalGestures]).filter(Boolean);
         if (gestures.length) {
             gesture = gesture.blocksExternalGesture(...gestures);
         }
         return gesture;
-    }, [blockExternalGestures, disabled, endDrag, seek, seekOnStart]);
+    }, [blockExternalGestures, commitSeek, disabled, dragging, seekOnStart, shown, trackWidth]);
 
     return (
         <GestureDetector gesture={pan}>
             <View
-                onLayout={(event) => {
-                    widthRef.current = Math.round(event.nativeEvent.layout.width || 0);
-                }}
                 style={[{ height, justifyContent: align, opacity: disabled ? 0.45 : 1 }, style]}
             >
-                <View style={{ height: barHeight, borderRadius: 999, backgroundColor: trackColor, overflow: 'hidden' }}>
-                    <View style={{ width: `${Math.max(0, Math.min(1, shown)) * 100}%`, height: '100%', backgroundColor: fillColor }} />
+                <View
+                    onLayout={(event) => {
+                        trackWidth.value = Math.round(event.nativeEvent.layout.width || 0);
+                    }}
+                    style={{ height: barHeight, borderRadius: 999, backgroundColor: trackColor, overflow: 'hidden' }}
+                >
+                    <Animated.View style={[{ height: '100%', backgroundColor: fillColor }, fillStyle]} />
                 </View>
             </View>
         </GestureDetector>

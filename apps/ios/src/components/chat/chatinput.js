@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Animated, Pressable, Text, TextInput } from 'react-native';
+import { Alert, Animated, Pressable, Text, TextInput, View } from 'react-native';
 import Reanimated, { Easing, LinearTransition, runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { ArrowRightCircle, AudioLines, File, Film, HandCoins, Image as ImageIcon, Paperclip, Reply, SquarePen, X } from 'lucide-react-native';
 import * as DocumentPicker from 'expo-document-picker';
@@ -9,6 +9,7 @@ import { useBitcoin } from '@/providers/bitcoinprovider';
 import { useTxData } from '@/providers/txdataprovider';
 import { useUser } from '@/providers/userprovider';
 import { useTap } from '@/lib/tap';
+import { inputGlassTint } from '@/lib/colors';
 import GlassView from '@/components/glass/glassview';
 import Icon from '@/components/icon';
 import { mark } from '@/lib/diagnostics';
@@ -19,6 +20,16 @@ const INACTIVE_OPACITY = 0.32;
 const COMPOSER_POP_MS = 80;
 const COMPOSER_POP_EXIT_HOLD_MS = COMPOSER_POP_MS;
 const COMPOSER_POP_FROM = 0.001;
+const INPUT_FONT_SIZE = 18;
+const INPUT_LINE_HEIGHT = 22;
+const INPUT_PADDING_TOP = 3;
+const INPUT_PADDING_BOTTOM = 3;
+const INPUT_VERTICAL_PADDING = INPUT_PADDING_TOP + INPUT_PADDING_BOTTOM;
+const INPUT_MIN_HEIGHT = INPUT_LINE_HEIGHT + INPUT_VERTICAL_PADDING;
+const INPUT_MAX_LINES = 6;
+const INPUT_MAX_HEIGHT = INPUT_LINE_HEIGHT * INPUT_MAX_LINES + INPUT_VERTICAL_PADDING;
+const INPUT_ACTION_HEIGHT = 28;
+const COMPOSER_PADDING_VERTICAL = 8;
 
 const composerLayout = LinearTransition.duration(COMPOSER_POP_MS).easing(Easing.out(Easing.cubic));
 const composerPopInTiming = {
@@ -29,6 +40,22 @@ const composerPopOutTiming = {
     duration: COMPOSER_POP_MS,
     easing: Easing.in(Easing.cubic),
 };
+function inputHeight(value) {
+    const height = Math.ceil(Number(value) || 0);
+    return Math.max(INPUT_MIN_HEIGHT, Math.min(INPUT_MAX_HEIGHT, height));
+}
+
+function composerHeightForInput(value) {
+    return Math.max(INPUT_ACTION_HEIGHT, inputHeight(value)) + COMPOSER_PADDING_VERTICAL * 2;
+}
+
+function measureText(value) {
+    const text = String(value ?? '');
+    if (!text) {
+        return ' ';
+    }
+    return text.endsWith('\n') ? `${text} ` : text;
+}
 
 const SendButton = memo(function SendButton({ canSend, onPress }) {
     const { theme } = useTheme();
@@ -39,7 +66,7 @@ const SendButton = memo(function SendButton({ canSend, onPress }) {
     });
 
     return (
-        <Pressable {...sendFeedback.props} style={{ alignSelf: 'flex-end', marginBottom: -2 }} hitSlop={12} disabled={!canSend}>
+        <Pressable {...sendFeedback.props} style={{ alignSelf: 'flex-end' }} hitSlop={12} disabled={!canSend}>
             <Animated.View style={{ transform: [{ scale: sendFeedback.scale }], opacity: canSend ? 1 : INACTIVE_OPACITY }}>
                 <Icon icon={ArrowRightCircle} color={theme.foreground} size={28} />
             </Animated.View>
@@ -56,7 +83,7 @@ const AttachButton = memo(function AttachButton({ onPress, disabled = false }) {
     });
 
     return (
-        <Pressable {...tap.props} style={{ alignSelf: 'flex-end', marginBottom: -2 }} hitSlop={12} disabled={disabled}>
+        <Pressable {...tap.props} style={{ alignSelf: 'flex-end' }} hitSlop={12} disabled={disabled}>
             <Animated.View style={{ transform: [{ scale: tap.scale }], opacity: disabled ? INACTIVE_OPACITY : 1 }}>
                 <Icon icon={Paperclip} color={theme.foreground} size={24} />
             </Animated.View>
@@ -73,7 +100,7 @@ function ImageButton({ onPress, disabled = false }) {
     });
 
     return (
-        <Pressable {...tap.props} style={{ alignSelf: 'flex-end', marginBottom: -2 }} hitSlop={12} disabled={disabled}>
+        <Pressable {...tap.props} style={{ alignSelf: 'flex-end' }} hitSlop={12} disabled={disabled}>
             <Animated.View style={{ transform: [{ scale: tap.scale }], opacity: disabled ? INACTIVE_OPACITY : 1 }}>
                 <Icon icon={ImageIcon} color={theme.foreground} size={24} />
             </Animated.View>
@@ -90,7 +117,7 @@ function MoneyButton({ onPress, disabled = false }) {
     });
 
     return (
-        <Pressable {...tap.props} style={{ alignSelf: 'flex-end', marginBottom: -2 }} hitSlop={12} disabled={disabled}>
+        <Pressable {...tap.props} style={{ alignSelf: 'flex-end' }} hitSlop={12} disabled={disabled}>
             <Animated.View style={{ transform: [{ scale: tap.scale }], opacity: disabled ? INACTIVE_OPACITY : 1 }}>
                 <Icon icon={HandCoins} color={theme.foreground} size={24} />
             </Animated.View>
@@ -227,7 +254,7 @@ export function DraftBar({ draft, peerDisplayName, onClear, onHidden }) {
         <PopScale show={!!draft} onHidden={hideDraft} enterDelayMs={COMPOSER_POP_MS}>
             <GlassView
                 glassEffectStyle="regular"
-                tintColor={theme.glassBackgroundSoft}
+                tintColor={inputGlassTint(theme)}
                 style={{
                     flexDirection: 'row',
                     alignItems: 'center',
@@ -352,21 +379,54 @@ export function CommandBubbles({ items, onSelect, interactive = true }) {
     );
 }
 
-function ChatInput({ onLayout, onSend, onEditMessage, onSendImage, onSendAttachment, onSendMoney, onCommand, onCommandChange, inputApiRef, draft, onClearDraft, draftKey }) {
+function ChatInput({ onLayout, onFocusChange, onHeightChange, onSend, onEditMessage, onSendImage, onSendAttachment, onSendMoney, onCommand, onCommandChange, inputApiRef, draft, onClearDraft, draftKey }) {
     const { theme } = useTheme();
 
     const inputRef = useRef(null);
     const messageRef = useRef('');
     const [message, setMessage] = useState('');
+    const [textHeight, setTextHeight] = useState(INPUT_MIN_HEIGHT);
+    const [inputOverflow, setInputOverflow] = useState(false);
     const canSend = message.trim().length > 0;
     const parsedCommand = draft?.mode !== 'edit' && message.startsWith('/') ? parseCommand(message, { mode: 'chat' }) : null;
+    const scrollInput = inputOverflow;
 
-    const handleChange = useCallback((e) => {
-        const text = e?.nativeEvent?.text ?? '';
+    const measuredText = measureText(message);
+
+    const applyInputHeight = useCallback((height) => {
+        const measuredHeight = Math.ceil(Number(height) || 0);
+        const nextHeight = inputHeight(measuredHeight);
+        setTextHeight((current) => (current === nextHeight ? current : nextHeight));
+        onHeightChange?.(composerHeightForInput(nextHeight));
+        setInputOverflow((current) => {
+            const nextOverflow = measuredHeight > INPUT_MAX_HEIGHT;
+            return current === nextOverflow ? current : nextOverflow;
+        });
+    }, [onHeightChange]);
+    const resetInputHeight = useCallback(() => {
+        applyInputHeight(INPUT_MIN_HEIGHT);
+    }, [applyInputHeight]);
+
+    const handleChangeText = useCallback((text) => {
         messageRef.current = text;
         setMessage((current) => (current === text ? current : text));
+        if (!text) {
+            resetInputHeight();
+        }
         onCommandChange?.(text);
-    }, [onCommandChange]);
+    }, [onCommandChange, resetInputHeight]);
+
+    const handleTextMeasure = useCallback((e) => {
+        applyInputHeight((e?.nativeEvent?.layout?.height ?? 0) + INPUT_VERTICAL_PADDING);
+    }, [applyInputHeight]);
+    const handleFocus = useCallback(() => {
+        onFocusChange?.(true);
+    }, [onFocusChange]);
+    const handleBlur = useCallback(() => {
+        onFocusChange?.(false);
+    }, [onFocusChange]);
+
+    useEffect(() => () => onFocusChange?.(false), [onFocusChange]);
 
     useEffect(() => {
         if (!inputApiRef) {
@@ -377,6 +437,7 @@ function ChatInput({ onLayout, onSend, onEditMessage, onSendImage, onSendAttachm
                 const text = String(next ?? '');
                 messageRef.current = text;
                 setMessage(text);
+                resetInputHeight();
                 onCommandChange?.(text);
                 requestAnimationFrame(() => {
                     inputRef.current?.focus?.();
@@ -388,7 +449,7 @@ function ChatInput({ onLayout, onSend, onEditMessage, onSendImage, onSendAttachm
                 inputApiRef.current = null;
             }
         };
-    }, [inputApiRef, onCommandChange]);
+    }, [inputApiRef, onCommandChange, resetInputHeight]);
 
     const handleSend = useCallback(() => {
         const toSend = messageRef.current.trim();
@@ -399,6 +460,7 @@ function ChatInput({ onLayout, onSend, onEditMessage, onSendImage, onSendAttachm
             }
             messageRef.current = '';
             setMessage('');
+            resetInputHeight();
             onCommandChange?.('');
             onClearDraft?.();
             inputRef.current?.focus?.();
@@ -408,6 +470,7 @@ function ChatInput({ onLayout, onSend, onEditMessage, onSendImage, onSendAttachm
         if (draft?.mode === 'edit') {
             messageRef.current = '';
             setMessage('');
+            resetInputHeight();
             onCommandChange?.('');
             onClearDraft?.();
             inputRef.current?.focus?.();
@@ -416,12 +479,13 @@ function ChatInput({ onLayout, onSend, onEditMessage, onSendImage, onSendAttachm
         }
         messageRef.current = '';
         setMessage('');
+        resetInputHeight();
         onCommandChange?.('');
         const nextDraft = draft;
         onClearDraft?.();
         inputRef.current?.focus?.();
         Promise.resolve(onSend?.(toSend, nextDraft)).catch(() => {});
-    }, [draft, onClearDraft, onCommand, onCommandChange, onEditMessage, onSend, parsedCommand]);
+    }, [draft, onClearDraft, onCommand, onCommandChange, onEditMessage, onSend, parsedCommand, resetInputHeight]);
 
     const handlePickImage = useCallback(async () => {
         mark('chat.imagePicker.start', {});
@@ -477,44 +541,81 @@ function ChatInput({ onLayout, onSend, onEditMessage, onSendImage, onSendAttachm
             const text = typeof draft?.msg?.c === 'string' ? draft.msg.c : '';
             messageRef.current = text;
             setMessage(text);
+            resetInputHeight();
             onCommandChange?.(text);
         }
         requestAnimationFrame(() => {
             inputRef.current?.focus?.();
         });
-    }, [draft, draftKey, onCommandChange]);
+    }, [draft, draftKey, onCommandChange, resetInputHeight]);
 
     return (
         <GlassView
             glassEffectStyle="regular"
-            tintColor={theme.glassBackgroundSoft}
+            tintColor={inputGlassTint(theme)}
             onLayout={onLayout}
             style={{
                 flexDirection: 'row',
                 paddingLeft: 16,
                 paddingRight: 10,
                 borderRadius: 24,
-                paddingTop: 6,
-                paddingBottom: 10,
+                paddingVertical: COMPOSER_PADDING_VERTICAL,
                 gap: 10,
                 alignItems: 'flex-end',
             }}
         >
-            <TextInput
-                ref={inputRef}
-                value={message}
-                onChange={handleChange}
-                placeholder="send a message"
-                placeholderTextColor={theme.muted}
-                style={{
-                    flex: 1,
-                    color: theme.foreground,
-                    fontSize: 18,
-                    maxHeight: 120,
-                }}
-                multiline
-                returnKeyType="default"
-            />
+            <View style={{ flex: 1, height: textHeight, minHeight: INPUT_MIN_HEIGHT, maxHeight: INPUT_MAX_HEIGHT, overflow: 'hidden' }}>
+                <Text
+                    accessibilityElementsHidden
+                    importantForAccessibility="no-hide-descendants"
+                    onLayout={handleTextMeasure}
+                    pointerEvents="none"
+                    style={{
+                        position: 'absolute',
+                        left: 0,
+                        right: 0,
+                        top: 0,
+                        color: 'transparent',
+                        fontSize: INPUT_FONT_SIZE,
+                        lineHeight: INPUT_LINE_HEIGHT,
+                        fontWeight: '400',
+                        includeFontPadding: false,
+                        paddingHorizontal: 0,
+                        width: '100%',
+                    }}
+                >
+                    {measuredText}
+                </Text>
+                <TextInput
+                    ref={inputRef}
+                    value={message}
+                    onFocus={handleFocus}
+                    onBlur={handleBlur}
+                    onChangeText={handleChangeText}
+                    placeholder="send a message"
+                    placeholderTextColor={theme.muted}
+                    style={{
+                        color: theme.foreground,
+                        fontSize: INPUT_FONT_SIZE,
+                        lineHeight: INPUT_LINE_HEIGHT,
+                        height: textHeight,
+                        minHeight: INPUT_MIN_HEIGHT,
+                        maxHeight: INPUT_MAX_HEIGHT,
+                        includeFontPadding: false,
+                        margin: 0,
+                        paddingLeft: 0,
+                        paddingRight: 0,
+                        paddingTop: scrollInput ? 0 : INPUT_PADDING_TOP,
+                        paddingBottom: scrollInput ? 0 : INPUT_PADDING_BOTTOM,
+                        width: '100%',
+                    }}
+                    multiline
+                    scrollEnabled={scrollInput}
+                    textAlignVertical="top"
+                    returnKeyType="default"
+                    submitBehavior="newline"
+                />
+            </View>
             {canSend ? (
                 <SendButton canSend={canSend} onPress={handleSend} />
             ) : (

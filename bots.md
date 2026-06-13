@@ -176,9 +176,9 @@ The CLI can do the same:
 - `bun bot sub <@username|uid|all|role:name> <traffic|echo|review>` — short form for enabling a role
 - `bun bot unsub <@username|uid|all|role:name> <traffic|echo|review>` — short form for disabling a role
 - `bun bot restart <@username|uid|all|role:name>` — restart selected bot sessions without stopping the runtime
-- `bun bot traffic [mixed/tx/msg] [@username/uid] [fast/slow]` — queue runtime-owned client load traffic; defaults to mixed message/transfer traffic for `@zxrl`
+- `bun bot traffic [mixed/tx/msg/chat] [@username/uid] [fast/slow]` — queue runtime-owned client load traffic; defaults to mixed message/transfer traffic for `@zxrl`
 - `bun bot traffic mixed [@username/uid] [fast/slow]` — queue message and 1-sat transfer traffic in parallel
-- `bun bot traffic msg [@username/uid] [fast/slow] [--solo] [--source @botname]` — send message traffic only, optionally pinned to one bot-owned chat
+- `bun bot traffic msg|chat [@username/uid] [fast/slow] [--solo] [--source @botname]` — send message traffic only, optionally pinned to one bot-owned chat
 - `bun bot traffic tx [@username/uid] [fast/slow]` — send 1-sat transfer traffic only
 - `bun bot traffic fund [--source @faucet] [--target 1000]` — send a flat funding transfer to each enabled traffic-role bot
 - `bun bot traffic label [@username|uid|all] [on|off]` — set the internal `roles.traffic` marker used by traffic commands
@@ -252,12 +252,12 @@ bun bot traffic mixed @alice slow --duration 10m --no-wait
 Queue focused traffic:
 
 ```bash
-bun bot traffic msg @alice fast --count 60
-bun bot traffic msg @alice fast --solo --source @mybot
+bun bot traffic chat @alice fast --count 60
+bun bot traffic chat @alice fast --solo --source @mybot
 bun bot traffic tx @alice fast --count 300 --no-wait
 ```
 
-`msg --solo` sends every message through one bot-owned chat, either the requested `--source` bot or the first active traffic bot. Transfer traffic always sends 1 sat per transfer. Each transfer action randomly picks a traffic bot for every transfer and records sender counts plus tx ids in the action result when Spark returns them. For message, mixed, and transfer traffic, `--duration` derives the count from the selected delay and is capped by the shared traffic maximum.
+`msg` and `chat` both send message traffic. `msg --solo` or `chat --solo` sends every message through one bot-owned chat, either the requested `--source` bot or the first active traffic bot. Transfer traffic always sends 1 sat per transfer. Each transfer action randomly picks a traffic bot for every transfer and records sender counts plus tx ids in the action result when Spark returns them. For message, mixed, and transfer traffic, `--duration` derives the count from the selected delay and is capped by the shared traffic maximum.
 
 Stop queued or running traffic cleanly:
 
@@ -276,7 +276,7 @@ Agent checklist:
 1. Start `bun dev -v` and wait for web, iOS Metro, and bot runtime readiness.
 2. Ask the human to unlock web and iOS as the target account before judging client logs.
 3. Use `bun bot traffic label all` after provisioning or renaming bots, then `bun bot traffic fund --target 1000` before transfer traffic if the fleet may be low.
-4. Use `mixed` for combined chat/wallet pressure, `msg --solo` for single-chat pressure, `msg` for chat-list behavior, and `tx` for wallet-list behavior.
+4. Use `mixed` for combined chat/wallet pressure, `chat --solo` or `msg --solo` for single-chat pressure, `chat` or `msg` for chat-list behavior, and `tx` for wallet-list behavior.
 5. Prefer `--no-wait` only when deliberately overlapping traffic or leaving a long observation run active.
 6. Use `bun bot traffic stop` before changing shape, restarting runtimes, or handing off.
 7. Inspect verbose client logs for cache churn, profile/avatar refetches, list-wide rerenders, repeated wallet aggregation, and tx pagination work.

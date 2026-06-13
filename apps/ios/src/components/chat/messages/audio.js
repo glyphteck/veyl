@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Text, View } from 'react-native';
+import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 import * as Haptics from 'expo-haptics';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
@@ -9,12 +10,11 @@ import { useChat } from '@/providers/chatprovider';
 import { useAudio, useAudioState } from '@/providers/audioprovider';
 import { useTheme } from '@/providers/themeprovider';
 import { getCachedMessageFileUri, resolveMessageFileUri } from '@/lib/chat/downloads';
-import { bubbleTint } from '@/lib/chat/messages';
+import { bubbleStyle } from '@/lib/chat/messages';
 import { useGestureBlockers } from './gesturecontext';
 import { getAttachmentCaption, getAttachmentTitle, hasStoredFileRef } from '@veyl/shared/chat/messages';
 import { fileUri } from '@/lib/file';
 import { formatDuration } from '@veyl/shared/utils/time';
-import GlassView from '@/components/glass/glassview';
 import Icon from '@/components/icon';
 import Menu from '@/components/menu';
 import SeekBar from '@/components/seekbar';
@@ -72,20 +72,7 @@ export function AudioBubble({ msg, fromPeer = false, loading = false, disabled =
     );
 
     return (
-        <GlassView
-            glassEffectStyle="clear"
-            tintColor={bubbleTint(theme, fromPeer)}
-            style={{
-                width,
-                maxWidth: '100%',
-                borderRadius: 22,
-                paddingHorizontal,
-                paddingVertical,
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap,
-            }}
-        >
+        <View style={[bubbleStyle(theme, fromPeer), { width, maxWidth: '100%', borderRadius: 22, paddingHorizontal, paddingVertical, flexDirection: 'row', alignItems: 'center', gap }]}>
             {playGesture ? <GestureDetector gesture={playGesture}>{playControl}</GestureDetector> : playControl}
             <View style={{ flex: 1, minWidth: 0, alignSelf: 'stretch', justifyContent: 'center' }}>
                 <View style={{ minWidth: 0, flexDirection: 'row', alignItems: 'center', gap }}>
@@ -105,30 +92,36 @@ export function AudioBubble({ msg, fromPeer = false, loading = false, disabled =
                         </View>
                     </View>
                 ) : (
-                    <SeekBar progress={shownProgress} disabled={false} onSeek={onSeek} blockExternalGestures={blockExternalGestures} trackColor={theme.border} fillColor={color} height={barHeight} style={{ marginTop: 3 }} seekOnStart={false} />
+                    <SeekBar progress={shownProgress} disabled={false} onSeek={onSeek} blockExternalGestures={blockExternalGestures} trackColor={theme.border} fillColor={color} height={barHeight} style={{ marginTop: 3 }} />
                 )}
                 {caption ? <Text style={{ marginTop: compact ? 6 : 8, color, fontSize: captionSize, fontWeight: '500' }}>{caption}</Text> : null}
             </View>
-        </GlassView>
+        </View>
     );
 }
 
 export default function AudioMessage({ msg, peerChatPK, fromPeer = false, menuItems, menuId, reactions = [], reactionUsers, reactionPreviewInset = 0 }) {
     const { readMessageFile } = useChat();
-    const { kind, key: audioKey, play, pause, seek } = useAudio();
-    const { status: audioStatus } = useAudioState();
+    const { kind, key: audioKey, getPosition, play, pause, seek } = useAudio();
+    const { key: audioStateKey, status: audioStatus } = useAudioState();
     const blockExternalGestures = useGestureBlockers({ includeLike: true });
     const playScale = useSharedValue(1);
     const initialUri = fileUri(getCachedMessageFileUri(msg, peerChatPK));
     const [uri, setUri] = useState(() => initialUri);
     const [loading, setLoading] = useState(() => msg?.t === 'm4a' && !initialUri && hasStoredFileRef(msg));
     const [error, setError] = useState('');
+    const [knownDuration, setKnownDuration] = useState(() => (Number.isFinite(msg?.d) ? msg.d : 0));
+    const [storedTime, setStoredTime] = useState(0);
     const title = getAttachmentTitle(msg);
     const key = `${peerChatPK || ''}:${msg?.p || msg?.localUri || ''}:${msg?.k || ''}`;
+    const metadataSource = useMemo(() => (uri ? { uri } : null), [uri]);
+    const metadataPlayer = useAudioPlayer(metadataSource, { updateInterval: 1000, keepAudioSessionActive: false });
+    const metadataStatus = useAudioPlayerStatus(metadataPlayer);
     const active = kind === 'audio' && audioKey === key;
-    const status = active ? audioStatus : null;
-    const duration = Number.isFinite(status?.duration) && status.duration > 0 ? status.duration : Number.isFinite(msg?.d) ? msg.d : 0;
-    const currentTime = Number.isFinite(status?.currentTime) ? status.currentTime : 0;
+    const status = active && audioStateKey === key ? audioStatus : null;
+    const duration = knownDuration;
+    const rawCurrentTime = Number.isFinite(status?.currentTime) ? status.currentTime : storedTime;
+    const currentTime = duration > 0 ? Math.max(0, Math.min(duration, rawCurrentTime)) : Math.max(0, rawCurrentTime);
     const progress = duration > 0 ? Math.max(0, Math.min(1, currentTime / duration)) : 0;
     const disabled = loading || !!error || !uri;
     const timeLabel = loading ? 'loading...' : error || `${formatDuration(currentTime, { hours: false })} / ${formatDuration(duration, { hours: false })}`;
@@ -179,6 +172,42 @@ export default function AudioMessage({ msg, peerChatPK, fromPeer = false, menuIt
         };
     }, [msg?.k, msg?.localUri, msg?.m, msg?.p, msg?.t, peerChatPK, readMessageFile]);
 
+    useEffect(() => {
+        setKnownDuration(Number.isFinite(msg?.d) ? msg.d : 0);
+        setStoredTime(getPosition(key));
+    }, [getPosition, key, msg?.d]);
+
+    useEffect(() => {
+        const nextDuration =
+            Number.isFinite(status?.duration) && status.duration > 0
+                ? status.duration
+                : Number.isFinite(metadataStatus?.duration) && metadataStatus.duration > 0
+                  ? metadataStatus.duration
+                  : Number.isFinite(metadataPlayer?.duration) && metadataPlayer.duration > 0
+                    ? metadataPlayer.duration
+                    : Number.isFinite(msg?.d) && msg.d > 0
+                      ? msg.d
+                      : 0;
+        if (nextDuration > 0) {
+            setKnownDuration((current) => (current === nextDuration ? current : nextDuration));
+        }
+    }, [metadataPlayer?.duration, metadataStatus?.duration, msg?.d, status?.duration]);
+
+    useEffect(() => {
+        if (active) {
+            return;
+        }
+        const nextStoredTime = getPosition(key);
+        setStoredTime((current) => (current === nextStoredTime ? current : nextStoredTime));
+    }, [active, getPosition, key]);
+
+    useEffect(() => {
+        if (!active || !Number.isFinite(status?.currentTime)) {
+            return;
+        }
+        setStoredTime((current) => (current === status.currentTime ? current : status.currentTime));
+    }, [active, status?.currentTime]);
+
     const pressPlay = useCallback(() => {
         const latest = latestRef.current;
         if (latest.disabled) {
@@ -191,20 +220,22 @@ export default function AudioMessage({ msg, peerChatPK, fromPeer = false, menuIt
             return;
         }
 
-        latest.play({ kind: 'audio', key: latest.key, uri: latest.uri, title: latest.title });
-        if (latest.active && (latest.status?.didJustFinish || (latest.duration > 0 && latest.currentTime >= latest.duration))) {
-            latest.seek(0);
+        if (latest.duration > 0 && latest.currentTime >= latest.duration) {
+            latest.seek(0, { key: latest.key });
         }
+        latest.play({ kind: 'audio', key: latest.key, uri: latest.uri, title: latest.title });
     }, []);
 
     const handleSeek = useCallback(
         (nextProgress) => {
-            if (!active || !duration || disabled) {
+            if (!duration || disabled) {
                 return;
             }
-            seek(nextProgress * duration);
+            const nextTime = nextProgress * duration;
+            setStoredTime(nextTime);
+            seek(nextTime, { key });
         },
-        [active, disabled, duration, seek]
+        [disabled, duration, key, seek]
     );
     const playGesture = useMemo(() => {
         let gesture = Gesture.Tap()

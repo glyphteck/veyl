@@ -5,10 +5,9 @@ import { File } from 'lucide-react-native';
 import { useChat } from '@/providers/chatprovider';
 import { useTheme } from '@/providers/themeprovider';
 import { warmMessageDownload } from '@/lib/chat/downloads';
-import { bubbleTint } from '@/lib/chat/messages';
+import { bubbleStyle } from '@/lib/chat/messages';
 import { formatAttachmentSize, getAttachmentCaption, getAttachmentTitle } from '@veyl/shared/chat/messages';
 import { useGestureBlockers } from './gesturecontext';
-import GlassView from '@/components/glass/glassview';
 import Icon from '@/components/icon';
 import Menu from '@/components/menu';
 import ReactionTray from './reactiontray';
@@ -34,18 +33,7 @@ export default function AttachmentMessage({ msg, peerChatPK, fromPeer = false, m
     return (
         <Menu id={menuId} items={menuItems} longScale={ATTACHMENT_LONG_SCALE} blockExternalGestures={blockExternalGestures} previewBottomInset={reactionPreviewInset}>
             <ReactionTray reactions={reactions} users={reactionUsers} fromPeer={fromPeer}>
-                <GlassView
-                    glassEffectStyle="clear"
-                    tintColor={bubbleTint(theme, fromPeer)}
-                    style={{
-                        gap: 8,
-                        maxWidth: 280,
-                        borderRadius: 22,
-                        paddingLeft: 14,
-                        paddingRight: 20,
-                        paddingVertical: 12,
-                    }}
-                >
+                <View style={[bubbleStyle(theme, fromPeer), { gap: 8, maxWidth: 280, borderRadius: 22, paddingLeft: 14, paddingRight: 20, paddingVertical: 12 }]}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                         <Icon icon={File} color={theme.foreground} size={24} />
                         <View style={{ flexShrink: 1, gap: 2 }}>
@@ -56,7 +44,7 @@ export default function AttachmentMessage({ msg, peerChatPK, fromPeer = false, m
                         </View>
                     </View>
                     {caption ? <Text style={{ color: theme.foreground, fontSize: 15, fontWeight: '500' }}>{caption}</Text> : null}
-                </GlassView>
+                </View>
             </ReactionTray>
         </Menu>
     );

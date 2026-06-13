@@ -8,7 +8,7 @@ import { useChat } from '@/providers/chatprovider';
 import { useTheme } from '@/providers/themeprovider';
 import { useTxData } from '@/providers/txdataprovider';
 import { useUser } from '@/providers/userprovider';
-import { bubbleTint, imageWidth } from '@/lib/chat/messages';
+import { bubbleStyle, imageWidth } from '@/lib/chat/messages';
 import { getCachedMessageFileUri, resolveMessageFileUri } from '@/lib/chat/downloads';
 import { useMsgImage } from '@/lib/chat/useimage';
 import { getCachedVideoPreviewUri, loadVideoPreviewUri } from '@/lib/chat/videopreview';
@@ -16,7 +16,6 @@ import { fileUri } from '@/lib/file';
 import { UNAVAILABLE_REPLY_MSG_TYPE, getAttachmentCaption, getAttachmentTitle, getImageAspect, getRequestContext, isExpiredAttachmentMsg, makeUnavailableReply } from '@veyl/shared/chat/messages';
 import { getMessagePreviewCacheKey } from '@veyl/shared/chat/previews';
 import { useGestureBlockers } from './gesturecontext';
-import GlassView from '@/components/glass/glassview';
 import Icon from '@/components/icon';
 import Menu from '@/components/menu';
 import ReactionTray from './reactiontray';
@@ -83,10 +82,9 @@ function ReplyRequest({ blockExternalGestures, reply, replyFromPeer, peerDisplay
 
     return (
         <ReplyPressable blockExternalGestures={blockExternalGestures} onReplyPress={onReplyPress}>
-            <GlassView
-                glassEffectStyle="clear"
-                tintColor={bubbleTint(theme, replyFromPeer)}
+            <View
                 style={{
+                    ...bubbleStyle(theme, replyFromPeer),
                     maxWidth: '100%',
                     borderRadius: 20,
                     paddingHorizontal: 12,
@@ -99,7 +97,7 @@ function ReplyRequest({ blockExternalGestures, reply, replyFromPeer, peerDisplay
                 <Text numberOfLines={1} style={{ color: theme.foreground, fontSize: 24, fontWeight: '900' }}>
                     {amount}
                 </Text>
-            </GlassView>
+            </View>
         </ReplyPressable>
     );
 }
@@ -261,10 +259,9 @@ function ReplyAttachment({ blockExternalGestures, reply, replyFromPeer, onReplyP
 
     return (
         <ReplyPressable blockExternalGestures={blockExternalGestures} onReplyPress={onReplyPress}>
-            <GlassView
-                glassEffectStyle="clear"
-                tintColor={bubbleTint(theme, replyFromPeer)}
+            <View
                 style={{
+                    ...bubbleStyle(theme, replyFromPeer),
                     flexDirection: 'row',
                     alignItems: 'center',
                     gap: 10,
@@ -285,7 +282,7 @@ function ReplyAttachment({ blockExternalGestures, reply, replyFromPeer, onReplyP
                         </Text>
                     ) : null}
                 </View>
-            </GlassView>
+            </View>
         </ReplyPressable>
     );
 }

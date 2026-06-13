@@ -60,6 +60,8 @@ Rules:
 - Chat media uploads go directly through Firebase Storage rules, not through a chat media upload callable.
 - Storage object metadata uses `application/octet-stream`; the user-facing MIME type stays inside the encrypted payload.
 - The encrypted local media cache stores only vault-encrypted blobs with opaque local ids.
+- GIF messages use payload type `gif` and the normal encrypted attachment file-reference shape. They share the image render/cache/viewer surfaces where appropriate, but clients must preserve GIF bytes instead of converting them through the static image normalization path.
+- GIFs remain client-semantic media. The backend does not branch on GIF type, and shared-media, save/unsave, delete, report evidence, download/share, local retry, and bot echo behavior should treat them as encrypted chat media with the `gif` payload type.
 
 ## Save And Unsave
 
@@ -129,6 +131,7 @@ Shared media constraints:
 - Shared media messages cannot be saved forever.
 - Deleting the destination message does not delete `shared/{sharedId}`.
 - Shared media still uses the signed upload URL path because it is not chat-scoped.
+- GIF shared-media messages keep the destination payload type `gif`; do not collapse them to `img` or `file` when copying the encrypted file reference.
 
 ## Ownership
 

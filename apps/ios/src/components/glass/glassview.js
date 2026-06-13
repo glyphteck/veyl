@@ -17,7 +17,7 @@ function resolveTintColor(theme, tintColor) {
 }
 
 function resolveFillColor(theme, tintColor) {
-    if (!tintColor || tintColor === theme.background || tintColor === theme.glassBackground || tintColor === theme.glassBackgroundSoft) {
+    if (!tintColor || tintColor === theme.background || tintColor === theme.glassBackground) {
         return theme.background;
     }
 

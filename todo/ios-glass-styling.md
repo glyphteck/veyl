@@ -8,15 +8,13 @@ repo version: 0.14.18
 
 ## Scope
 
-Audit glass styling across the iOS app after the iOS 27 glass rendering changes, with special focus on inputs, disabled buttons, and destructive-action treatment.
+Audit glass styling across the iOS app after the iOS 27 glass rendering changes, with special focus on inputs, disabled buttons, message bubbles, and destructive-action treatment.
 
-The current input default uses regular glass with `glassBackgroundSoft`. It is better than the heavy full tint, but it still does not clearly land between enough tint and enough clear glass. Revisit the primitive in `apps/ios/src/components/search.js` and `apps/ios/src/components/glass/glassfield.js` before tuning one-off call sites.
+Inputs now share `inputGlassTint(theme)` through `GlassField`, search, and composer surfaces. Disabled glass controls use `disabledGlassTint(theme)` through `GlassButton`, `GlassIcon`, and the in-message payment action. Message bubbles now use plain `View` surfaces with shared `bubbleStyle`/`bubbleShadow` helpers from `apps/ios/src/lib/chat/messages.js` so bubble styling stays separate from input styling and native glass.
 
 ## Open Questions
 
-- Should inputs use clear glass with a stronger tint, regular glass with a much softer tint, or a separate input-specific glass token?
 - Are stacked glass surfaces making header icons and inputs darker than the standalone primitive?
-- Should disabled glass buttons keep a tint, lose most tint, or switch to a simpler opacity-only treatment?
 - Should destructive button styling be removed from glass controls entirely, keeping only disabled state plus explicit feedback text when an action cannot run or needs confirmation?
 
 ## Write Boundary

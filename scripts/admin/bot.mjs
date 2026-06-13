@@ -49,8 +49,8 @@ function usage() {
     console.error('usage: bun bot add [username|count]');
     console.error('usage: bun bot power <@username|uid|all> <on|off>');
     console.error('usage: bun bot kill <@username|uid|all>');
-    console.error('usage: bun bot traffic [mixed/tx/msg] [@username/uid] [fast/slow] [--count 60] [--duration 10m] [--delay 3s] [--no-wait]');
-    console.error('usage: bun bot traffic msg [@username/uid] [fast/slow] [--solo] [--source @botname]');
+    console.error('usage: bun bot traffic [mixed/tx/msg/chat] [@username/uid] [fast/slow] [--count 60] [--duration 10m] [--delay 3s] [--no-wait]');
+    console.error('usage: bun bot traffic msg|chat [@username/uid] [fast/slow] [--solo] [--source @botname]');
     console.error('usage: bun bot traffic fund [--source @faucet] [--target 1000] [--amount 1000] [--delay 250ms] [--no-wait]');
     console.error('usage: bun bot traffic label [@username|uid|all] [on|off]');
     console.error('usage: bun bot traffic stop');
@@ -391,7 +391,7 @@ function parseTrafficCommand(args) {
     if (first === 'mixed') {
         return { mode: 'mixed', args: args.slice(1) };
     }
-    if (first === 'msg') {
+    if (first === 'msg' || first === 'chat') {
         return { mode: 'msg', args: args.slice(1) };
     }
     if (first === 'tx') {

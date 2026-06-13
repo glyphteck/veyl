@@ -2,6 +2,13 @@
 
 Repo-level changes are listed newest first. Keep entries short and concrete. Broad pushes get grouped bullets, while narrow fixes can use one concise bugfix or cleanup bullet that still names the actual change.
 
+## 0.16.1 - 2026-06-13
+
+- Retuned iOS chat composer keyboard stickiness, multiline input sizing, message-bubble rendering, and audio seek/resume behavior.
+- Centralized iOS input and disabled-control glass tint helpers, then applied them across fields, search, chat composer, camera shutter, and glass actions.
+- Added the `bun bot traffic chat` alias, clarified dev-runner readiness output, and refreshed bot traffic docs.
+- Documented the first-class GIF media contract in chat lifecycle docs, removed completed GIF and invite todos, and narrowed the remaining iOS glass follow-up.
+
 ## 0.16.0 - 2026-06-13
 
 - Added external Lightning and Spark-compatible payment QR receive support across web and iOS, with Veyl app-link QRs by default and a Lightning invoice QR toggle for external wallets.

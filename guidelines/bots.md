@@ -39,8 +39,8 @@ bun bot traffic fund --target 1000
 ```bash
 bun bot traffic
 bun bot traffic mixed @zxrl fast --count 50
-bun bot traffic msg @zxrl slow --duration 10m --no-wait
-bun bot traffic msg @zxrl fast --solo --source @mybot
+bun bot traffic chat @zxrl slow --duration 10m --no-wait
+bun bot traffic chat @zxrl fast --solo --source @mybot
 ```
 
 5. Run transfer traffic while the wallet transfer list is visible:
@@ -49,7 +49,7 @@ bun bot traffic msg @zxrl fast --solo --source @mybot
 bun bot traffic tx @zxrl fast --count 300 --no-wait
 ```
 
-`fast` means 500ms between events, `slow` means 5s, and the default delay is 3s. Transfer traffic always sends 1 sat per transfer. Message traffic covers each active traffic bot once before repeating, and randomly chooses text or payment-request content using the shared weights in `shared/bot/traffic/messages.js`; transfer constants live in `shared/bot/traffic/transfers.js`. `msg --solo` pins every message to one bot-owned chat.
+`fast` means 500ms between events, `slow` means 5s, and the default delay is 3s. Transfer traffic always sends 1 sat per transfer. Message traffic covers each active traffic bot once before repeating, and randomly chooses text or payment-request content using the shared weights in `shared/bot/traffic/messages.js`; transfer constants live in `shared/bot/traffic/transfers.js`. `chat --solo` or `msg --solo` pins every message to one bot-owned chat.
 
 6. Stop before changing traffic shape, restarting runtimes, or handing off:
 

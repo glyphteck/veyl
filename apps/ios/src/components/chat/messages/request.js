@@ -10,12 +10,12 @@ import { useTheme } from '@/providers/themeprovider';
 import { useTxData } from '@/providers/txdataprovider';
 import { useUser } from '@/providers/userprovider';
 import { useWallet } from '@/providers/walletprovider';
-import { bubbleTint } from '@/lib/chat/messages';
+import { bubbleStyle } from '@/lib/chat/messages';
 import { getRequestContext } from '@veyl/shared/chat/messages';
 import { useGestureBlockers } from './gesturecontext';
 import GlassView from '@/components/glass/glassview';
 import Icon from '@/components/icon';
-import { alpha } from '@/lib/colors';
+import { disabledGlassTint } from '@/lib/colors';
 import { resolveGlassEffectStyle } from '@/lib/glass';
 import Menu from '@/components/menu';
 import ReactionTray from './reactiontray';
@@ -82,7 +82,7 @@ function PayButton({ blockExternalGestures, disabled = false, onPress }) {
         transform: [{ scale: scale.value }],
     }));
     const color = disabled ? theme.muted : theme.background;
-    const tintColor = disabled ? alpha(theme.glassForeground, 20) : theme.glassForeground;
+    const tintColor = disabled ? disabledGlassTint(theme) : theme.glassForeground;
     const inset = Math.max(0, (PAY_ICON_SIZE - PAY_ICON_SYMBOL_SIZE) / 2);
 
     return (
@@ -99,21 +99,21 @@ function PayButton({ blockExternalGestures, disabled = false, onPress }) {
 function RequestCard({ fromPeer = false, formattedAmount, label, amountColor, isPaying = false, theme }) {
     if (fromPeer) {
         return (
-            <GlassView glassEffectStyle="clear" tintColor={bubbleTint(theme, fromPeer)} style={CARD}>
+            <View style={[bubbleStyle(theme, fromPeer), CARD]}>
                 <View style={LABEL_ROW}>
                     <Text style={[LABEL, { color: theme.muted }]}>{label}</Text>
                     {isPaying ? <ActivityIndicator color={theme.muted} size="small" /> : null}
                 </View>
                 <Text style={[AMOUNT, { color: amountColor }]}>{formattedAmount}</Text>
-            </GlassView>
+            </View>
         );
     }
 
     return (
-        <GlassView glassEffectStyle="clear" tintColor={bubbleTint(theme, fromPeer)} style={[CARD, { alignItems: 'flex-end' }]}>
+        <View style={[bubbleStyle(theme, fromPeer), CARD, { alignItems: 'flex-end' }]}>
             <Text style={[LABEL, { color: theme.muted }]}>{label}</Text>
             <Text style={[AMOUNT, { color: amountColor }]}>{formattedAmount}</Text>
-        </GlassView>
+        </View>
     );
 }
 

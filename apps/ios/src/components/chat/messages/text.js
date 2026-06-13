@@ -1,10 +1,9 @@
 import { Linking, Text, View } from 'react-native';
 import { useTheme } from '@/providers/themeprovider';
-import { bubbleTint } from '@/lib/chat/messages';
+import { bubbleStyle } from '@/lib/chat/messages';
 import { getEmojiTextInfo } from '@veyl/shared/utils/display';
 import { splitLinks } from '@veyl/shared/chat/messages';
 import { useGestureBlockers } from './gesturecontext';
-import GlassView from '@/components/glass/glassview';
 import Menu from '@/components/menu';
 import ReactionTray from './reactiontray';
 
@@ -28,10 +27,9 @@ export function TextBubble({ msg, fromPeer = false, compact = false, singleLine 
     const parts = splitLinks(text);
 
     return (
-        <GlassView
-            glassEffectStyle="clear"
-            tintColor={bubbleTint(theme, fromPeer)}
+        <View
             style={[
+                bubbleStyle(theme, fromPeer),
                 {
                     maxWidth: '100%',
                     borderRadius: compact ? 20 : 22,
@@ -52,7 +50,7 @@ export function TextBubble({ msg, fromPeer = false, compact = false, singleLine 
                     )
                 )}
             </Text>
-        </GlassView>
+        </View>
     );
 }
 

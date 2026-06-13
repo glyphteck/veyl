@@ -2,8 +2,7 @@ import { Text, View } from 'react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { StaticAvatar } from '@/components/avatar';
-import GlassView from '@/components/glass/glassview';
-import { bubbleTint } from '@/lib/chat/messages';
+import { bubbleShadow, bubbleTint } from '@/lib/chat/messages';
 import { useTheme } from '@/providers/themeprovider';
 import { DEFAULT_REACTION_EMOJI, MAX_REACTIONS, getMsgReactions } from '@veyl/shared/chat/messages';
 
@@ -399,18 +398,17 @@ export default function ReactionTray({ children, reactions, users, fromPeer = fa
                             position: 'absolute',
                             ...(fromPeer ? { left: REACTION_MARK_INSET } : { right: REACTION_MARK_INSET }),
                             borderRadius: REACTION_OUTER_RADIUS,
-                            overflow: 'hidden',
                             backgroundColor: theme.background,
                             padding: REACTION_BORDER,
                             transformOrigin: fromPeer ? 'left center' : 'right center',
+                            ...bubbleShadow(theme),
                         },
                         trayStyle,
                     ]}
                 >
-                    <GlassView
-                        glassEffectStyle="clear"
-                        tintColor={bubbleTint(theme, fromPeer)}
+                    <View
                         style={{
+                            backgroundColor: bubbleTint(theme, fromPeer),
                             height: REACTION_MARK_H,
                             borderRadius: REACTION_RADIUS,
                             overflow: 'hidden',
@@ -423,7 +421,7 @@ export default function ReactionTray({ children, reactions, users, fromPeer = fa
                         {renderItems.map((reaction) => (
                             <Reaction key={groupKey(reaction)} reaction={reaction} users={users} />
                         ))}
-                    </GlassView>
+                    </View>
                 </Animated.View>
             )}
         </Animated.View>

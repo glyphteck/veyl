@@ -2,7 +2,7 @@ import { Alert, Animated as RNAnimated, Pressable, Text, View } from 'react-nati
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import Reanimated, { Easing, LinearTransition, useDerivedValue, useSharedValue, withTiming } from 'react-native-reanimated';
+import Reanimated, { Easing, LinearTransition, interpolate, useAnimatedReaction, useAnimatedStyle, useDerivedValue, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useTheme } from '@/providers/themeprovider';
 import { useChat } from '@/providers/chatprovider';
 import { useUser } from '@/providers/userprovider';
@@ -11,7 +11,7 @@ import { useWallet } from '@/providers/walletprovider';
 import FloatingHeader, { FloatingHeaderBackIcon } from '@/components/floatingheader';
 import ChatInput, { CommandBubbles, DraftBar } from '@/components/chat/chatinput';
 import Messages from '@/components/chat/messages/list';
-import { KeyboardStickyView } from '@/components/keyboardscroll';
+import { useReanimatedKeyboardAnimation } from '@/components/keyboardscroll';
 import Icon from '@/components/icon';
 import Avatar from '@/components/avatar';
 import { prepareAssetForChatUpload } from '@/lib/chat/media';
@@ -39,6 +39,47 @@ const composerOverlayTiming = {
     easing: Easing.out(Easing.cubic),
 };
 const composerOverlayLayout = LinearTransition.duration(COMPOSER_OVERLAY_MS).easing(Easing.out(Easing.cubic));
+
+function ComposerKeyboardStickyView({ children, enabled = true, holdOpen, offset: { closed = 0, opened = 0 } = {}, style, ...props }) {
+    const { height, progress } = useReanimatedKeyboardAnimation();
+    const noHold = useSharedValue(0);
+    const hold = holdOpen || noHold;
+    const lastOpenTranslate = useSharedValue(closed);
+
+    // Multiline TextInput layout churn can briefly report a closed keyboard sample while focus is still active.
+    useAnimatedReaction(
+        () => {
+            const offset = interpolate(progress.value, [0, 1], [closed, opened]);
+            const translate = enabled ? height.value + offset : closed;
+            const open = enabled && (progress.value > 0.01 || height.value < -1);
+            return { open, translate };
+        },
+        ({ open, translate }) => {
+            if (open || !hold.value) {
+                lastOpenTranslate.value = translate;
+            }
+        },
+        [closed, enabled, hold, opened]
+    );
+
+    const stickyStyle = useAnimatedStyle(() => {
+        const offset = interpolate(progress.value, [0, 1], [closed, opened]);
+        const translate = enabled ? height.value + offset : closed;
+        const open = enabled && (progress.value > 0.01 || height.value < -1);
+        if (!open && hold.value && lastOpenTranslate.value < closed - 1) {
+            return { transform: [{ translateY: lastOpenTranslate.value }] };
+        }
+        return { transform: [{ translateY: translate }] };
+    }, [closed, enabled, hold, opened]);
+
+    const styles = useMemo(() => [style, stickyStyle], [stickyStyle, style]);
+
+    return (
+        <Reanimated.View style={styles} {...props}>
+            {children}
+        </Reanimated.View>
+    );
+}
 
 function uploadErrorMessage(error, fallback) {
     return chatUploadErrorMessage(error, {
@@ -79,6 +120,7 @@ export default function PeerChatRoute() {
     const stickyOffset = useMemo(() => ({ closed: 0, opened: insets.bottom - COMPOSER_KEYBOARD_GAP }), [insets.bottom]);
     const composerOverlayPadding = useSharedValue(0);
     const composerInputPadding = useSharedValue(0);
+    const composerHoldOpen = useSharedValue(0);
     const composerExtraPadding = useDerivedValue(() => composerOverlayPadding.value + composerInputPadding.value);
 
     const ownChatPK = cleanChatPK(chatPK);
@@ -324,21 +366,25 @@ export default function PeerChatRoute() {
         [lockRoute, peerProfile?.uid, peerProfile?.walletPK, router]
     );
 
-    const onInputLayout = useCallback(
-        (e) => {
-            const h = Math.round(e?.nativeEvent?.layout?.height ?? 0);
+    const applyInputHeight = useCallback(
+        (height) => {
+            const h = Math.round(Number(height) || 0);
             if (!h) return;
             if (h === inputH.current) return;
             inputH.current = h;
-            if (!inputBaseH.current) {
+            if (!inputBaseH.current || h < inputBaseH.current) {
                 inputBaseH.current = h;
                 setInputBase(h);
-                composerInputPadding.value = 0;
-                return;
             }
-            composerInputPadding.value = withTiming(Math.max(0, h - inputBaseH.current), composerOverlayTiming);
+            composerInputPadding.value = Math.max(0, h - inputBaseH.current);
         },
         [composerInputPadding]
+    );
+    const onInputLayout = useCallback(
+        (e) => {
+            applyInputHeight(e?.nativeEvent?.layout?.height);
+        },
+        [applyInputHeight]
     );
     const onOverlayLayout = useCallback(
         (e) => {
@@ -431,6 +477,12 @@ export default function PeerChatRoute() {
     const handleCommandBubblePress = useCallback((prefix) => {
         inputApiRef.current?.setText?.(prefix);
     }, []);
+    const handleInputFocusChange = useCallback(
+        (focused) => {
+            composerHoldOpen.value = focused ? 1 : 0;
+        },
+        [composerHoldOpen]
+    );
 
     useEffect(() => {
         if (draft) {
@@ -507,7 +559,8 @@ export default function PeerChatRoute() {
                         peerWalletPK={peerProfile?.walletPK}
                     >
                         {ENABLE_CHAT_COMPOSER ? (
-                            <KeyboardStickyView
+                            <ComposerKeyboardStickyView
+                                holdOpen={composerHoldOpen}
                                 offset={stickyOffset}
                                 style={{
                                     position: 'absolute',
@@ -531,6 +584,8 @@ export default function PeerChatRoute() {
                                     {ENABLE_CHAT_INPUT ? (
                                         <ChatInput
                                             onLayout={onInputLayout}
+                                            onFocusChange={handleInputFocusChange}
+                                            onHeightChange={applyInputHeight}
                                             onSend={handleSend}
                                             onEditMessage={handleEditMessage}
                                             onSendImage={handleSendImage}
@@ -547,7 +602,7 @@ export default function PeerChatRoute() {
                                         <View onLayout={onInputLayout} style={{ height: inputBase, borderRadius: 24, backgroundColor: theme.background }} />
                                     )}
                                 </View>
-                            </KeyboardStickyView>
+                            </ComposerKeyboardStickyView>
                         ) : null}
                     </Messages>
                 </ScrollEdgeScreen>

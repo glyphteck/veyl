@@ -12,7 +12,7 @@ export const SHUTTER_SIZE = 82;
 const SHUTTER_LOCK_RETENTION = { top: 28, bottom: 28, left: 86, right: 86 };
 
 export function CameraShutter({ disabled, lockGesture, onLongPress, onPress, onPressIn, onPressOut, onTouchCancel, onTouchMove, previewPeer, previewStyle, recording, recordingLocked, scale, theme }) {
-    const tint = recording ? alpha(theme.destructive, 72) : previewPeer ? 'transparent' : theme.glassBackgroundSoft;
+    const tint = recording ? alpha(theme.destructive, 72) : previewPeer ? 'transparent' : alpha(theme.background, 25);
     const frame = {
         width: SHUTTER_SIZE,
         height: SHUTTER_SIZE,

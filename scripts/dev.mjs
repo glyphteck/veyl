@@ -73,14 +73,13 @@ function explicit(name, line) {
 }
 
 function printStatus() {
-    const webUrl = readyUrls.get('web') || webApps.veyl.origin;
+    const webUrl = readyUrls.get('web');
     const iosUrl = readyUrls.get('ios');
     const bots = [...runningBots].sort();
-    const botText = bots.length ? bots.map((username) => `@${username}`).join(', ') : 'starting...';
 
-    process.stdout.write(`${tag('web')} ${paint(`local ${webUrl}`, ansi.green)}\n`);
-    process.stdout.write(`${tag('ios')} ${paint(iosUrl ? `local ${iosUrl}` : 'starting...', iosUrl ? ansi.green : ansi.dim)}\n`);
-    process.stdout.write(`${tag('bot')} ${paint(`running ${botText}`, bots.length ? ansi.green : ansi.dim)}\n`);
+    process.stdout.write(`${tag('web')} ${paint(webUrl ? `ready at ${webUrl}` : 'starting...', webUrl ? ansi.green : ansi.dim)}\n`);
+    process.stdout.write(`${tag('ios')} ${paint(iosUrl ? `ready at ${iosUrl}` : 'starting...', iosUrl ? ansi.green : ansi.dim)}\n`);
+    process.stdout.write(`${tag('bot')} ${paint(bots.length ? `running ${bots.map((username) => `@${username}`).join(', ')}` : 'starting...', bots.length ? ansi.green : ansi.dim)}\n`);
     process.stdout.write('\n');
 }
 
@@ -101,7 +100,8 @@ function isIosProgress(line) {
 }
 
 function getIosReadyUrl(line) {
-    return line.match(/^Waiting on (https?:\/\/\S+)/)?.[1] || null;
+    const ready = line.trim().match(/^(?:›\s*)?(?:Metro )?waiting on (\S+)/i)?.[1] || null;
+    return ready?.includes('://') ? ready : null;
 }
 
 function isWebReload(line) {

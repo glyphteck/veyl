@@ -30,6 +30,15 @@ This is not the active task list. Move an idea into `todo/` only when it becomes
 - Veyl's vaulted local cache would help, but it would become the primary chat state after delivery. Losing a device or cache could lose history unless Veyl also builds a separate encrypted backup or sync layer.
 - Permanent chats could exist as client-encrypted saved state or encrypted backup state, but that is a different architecture than keeping message docs in Firestore forever.
 
+## Native Shell And Shared Core
+
+- Explore a long-term app shape where iOS becomes SwiftUI-owned, web remains TypeScript/JavaScript-owned, and only stable product logic moves into a shared native core.
+- Prefer Rust over Go for the shared client core if the target stays Swift iOS plus JS web. Rust has a stronger path to Swift bindings and WebAssembly, while Go is a better fit for backend services, CLIs, workers, and operational tooling.
+- Keep the shared core narrow: encrypted payload formats, canonical validation, message/chat reducers, wallet or protocol state machines, QR/deep-link parsing, deterministic serialization, and fixture-tested pure transformations.
+- Do not move UI, navigation, Firebase/browser adapters, keyboard behavior, push notifications, camera flows, or churny product orchestration into the core.
+- Avoid a big rewrite. Prove the path with one boring boundary first, backed by golden fixtures from the current JS behavior, then expose it to Swift and web before cutting over more domains.
+- Treat rebuilds, FFI boundaries, Wasm packaging, async/error modeling, and generated bindings as real complexity. The architecture only pays off when the boundary is stable enough to stay clean.
+
 ## Synthetic Data Blending
 
 - Explore whether real backend records can be harder to distinguish by mixing them with large volumes of generated decoy data.

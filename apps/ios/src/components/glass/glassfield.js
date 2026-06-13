@@ -1,4 +1,5 @@
 import GlassView from '@/components/glass/glassview';
+import { inputGlassTint } from '@/lib/colors';
 import { useTheme } from '@/providers/themeprovider';
 
 export default function GlassField({ children, disabled = false, tintColor, style }) {
@@ -7,7 +8,7 @@ export default function GlassField({ children, disabled = false, tintColor, styl
     return (
         <GlassView
             glassEffectStyle="regular"
-            tintColor={tintColor ?? theme.glassBackgroundSoft}
+            tintColor={tintColor ?? inputGlassTint(theme)}
             style={[
                 {
                     flexDirection: 'row',

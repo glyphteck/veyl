@@ -3,19 +3,27 @@ export function alpha(color, percent) {
 }
 
 const GLASS_BACKGROUND_OPACITY = 75;
-const GLASS_BACKGROUND_SOFT_OPACITY = 25;
 const GLASS_FOREGROUND_OPACITY = 90;
+const INPUT_GLASS_BACKGROUND_OPACITY = 25;
+const DISABLED_GLASS_BACKGROUND_OPACITY = 10;
 const lightBackground = 'rgba(254, 254, 254, 1)';
 const lightGlassBackground = 'rgba(252, 252, 252, 1)';
 const lightForeground = 'rgba(0, 0, 0, 1)';
 const darkBackground = 'rgba(0, 0, 0, 1)';
 const darkForeground = 'rgba(252, 252, 252, 1)';
 
+export function inputGlassTint(theme) {
+    return alpha(theme.background, INPUT_GLASS_BACKGROUND_OPACITY);
+}
+
+export function disabledGlassTint(theme) {
+    return alpha(theme.background, DISABLED_GLASS_BACKGROUND_OPACITY);
+}
+
 export const colors = {
     light: {
         background: lightBackground,
         glassBackground: alpha(lightGlassBackground, GLASS_BACKGROUND_OPACITY),
-        glassBackgroundSoft: alpha(lightBackground, GLASS_BACKGROUND_SOFT_OPACITY),
         foreground: lightForeground,
         glassForeground: alpha(lightForeground, GLASS_FOREGROUND_OPACITY),
         muted: 'rgba(128, 128, 128, 1)',
@@ -31,7 +39,6 @@ export const colors = {
     dark: {
         background: darkBackground,
         glassBackground: alpha(darkBackground, GLASS_BACKGROUND_OPACITY),
-        glassBackgroundSoft: alpha(darkBackground, GLASS_BACKGROUND_SOFT_OPACITY),
         foreground: darkForeground,
         glassForeground: alpha(darkForeground, GLASS_FOREGROUND_OPACITY),
         muted: 'rgba(113, 113, 113, 1)',
