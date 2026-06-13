@@ -71,6 +71,15 @@ export function useScan({ addPeer, bitcoin, capture, cloaked, network, onUser, o
                     return;
                 }
 
+                if (qrData?.kind === qr.lightning || qrData?.kind === qr.spark) {
+                    openDialog('payments', {
+                        tab: 'send',
+                        invoice: qrData,
+                        amount: qrData.amount ?? null,
+                    });
+                    return;
+                }
+
                 if (qrData?.kind === qr.bitcoin && qrData.address) {
                     if (!isAddressOnNetwork(qrData.address, network)) {
                         toast.error(`wrong network — not a ${network.toLowerCase()} address`);

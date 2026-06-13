@@ -85,6 +85,16 @@ export default function QRPage() {
                 return;
             }
 
+            if (data?.kind === qr.lightning || data?.kind === qr.spark) {
+                openDialog('payments', {
+                    tab: 'send',
+                    invoice: data,
+                    amount: data.amount ?? null,
+                });
+                router.replace('/wallet');
+                return;
+            }
+
             if (data?.kind === qr.bitcoin && data.address) {
                 if (isAddressOnNetwork(data.address, network)) {
                     openDialog('withdraw', { address: data.address });

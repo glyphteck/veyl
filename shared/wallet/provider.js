@@ -8,7 +8,7 @@ import { useFundingAddress } from './funding.js';
 import { useLightning } from './lightning.js';
 import { useWalletBoot, useWalletData, useWalletEvents, useWalletPolling, useWalletReadyDiag } from './lifecycle.js';
 import { useWalletPrivacy } from './privacy.js';
-import { useSparkSend } from './send.js';
+import { useExternalPayment, useSparkSend } from './send.js';
 import { useWalletTransfers } from './transfers.js';
 import { useWithdrawal } from './withdraw.js';
 
@@ -125,6 +125,7 @@ export function createWalletProvider({
         });
 
         const sendMoneyWithSpark = useSparkSend({ wallet, network, updateWalletData, rememberTransfer: transferState.rememberTransfer });
+        const payExternalInvoice = useExternalPayment({ wallet, updateWalletData, rememberTransfer: transferState.rememberTransfer });
         const lightning = useLightning({ wallet, updateWalletData });
         const withdrawal = useWithdrawal({ wallet, network, updateWalletData });
 
@@ -181,6 +182,7 @@ export function createWalletProvider({
                 claimDeposits: claimState.claimDeposits,
                 getFundingAddress: fundingState.getFundingAddress,
                 sendMoneyWithSpark,
+                payExternalInvoice,
                 createLightningInvoice: lightning.createLightningInvoice,
                 quoteLightningFees: lightning.quoteLightningFees,
                 sendLightningPayment: lightning.sendLightningPayment,
@@ -219,6 +221,7 @@ export function createWalletProvider({
                 transferState.ensureTxCoverage,
                 transferState.loadMoreTxs,
                 sendMoneyWithSpark,
+                payExternalInvoice,
                 lightning.createLightningInvoice,
                 lightning.quoteLightningFees,
                 lightning.sendLightningPayment,

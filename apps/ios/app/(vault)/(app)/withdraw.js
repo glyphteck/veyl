@@ -14,6 +14,7 @@ import { useBitcoin } from '@/providers/bitcoinprovider';
 import { useTheme } from '@/providers/themeprovider';
 import { useUser } from '@/providers/userprovider';
 import { useWallet } from '@/providers/walletprovider';
+import AmountInput from '@/components/amountinput';
 import GlassButton from '@/components/glass/glassbutton';
 import GlassField from '@/components/glass/glassfield';
 import GlassIcon from '@/components/glass/glassicon';
@@ -200,15 +201,15 @@ export default function Withdraw() {
                 {/* amount input */}
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                     <GlassField disabled={isSubmitting} style={{ flex: 1, paddingHorizontal: 16 }}>
-                        <TextInput
+                        <AmountInput
                             ref={amountInputRef}
                             value={amount}
                             placeholder={inputUnit === 'sats' ? '0000' : '0.00'}
                             placeholderTextColor={theme.muted}
+                            color={theme.foreground}
                             keyboardType="numeric"
                             onChangeText={setAmount}
                             editable={!isSubmitting}
-                            style={{ flex: 1, fontSize: 24, fontWeight: '900', color: theme.foreground, paddingVertical: 10 }}
                         />
                         <Pressable {...cyclePress} hitSlop={8} disabled={isSubmitting}>
                             <Animated.View style={[{ paddingLeft: 12, alignItems: 'center', justifyContent: 'center' }, cycleStyle]}>

@@ -2,7 +2,7 @@ import { useMemo, useState, useRef, useEffect, useLayoutEffect, useCallback } fr
 import { createPortal } from 'react-dom';
 import { Button } from '@/components/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/avatar';
-import { ChevronsUpDown, Loader, Search, UsersRound, X } from 'lucide-react';
+import { ChevronsUpDown, Loader, Search, UserRoundPlus, UsersRound, X } from 'lucide-react';
 import { mergeProfiles } from '@veyl/shared/search/merge';
 import { formatUserDisplay } from '@veyl/shared/profile';
 import { useSearch } from '@/lib/search/usesearch';
@@ -15,7 +15,18 @@ function isFastSearchKey(event) {
     return event.key.length === 1 && event.key !== ' ' && !event.metaKey && !event.ctrlKey && !event.altKey;
 }
 
-export default function PeerSelector({ selectedPeer, onPeerChange, disabled = false, active = false, filterPeers, label = 'user', className = '' }) {
+export default function PeerSelector({
+    selectedPeer,
+    onPeerChange,
+    disabled = false,
+    active = false,
+    filterPeers,
+    label = 'user',
+    className = '',
+    inviteLabel = 'invite',
+    inviteTitle = 'copy invite link',
+    onInvitePress,
+}) {
     const [popoverOpen, setPopoverOpen] = useState(false);
     const [searchValue, setSearchValue] = useState('');
     const [mounted, setMounted] = useState(false);
@@ -42,6 +53,7 @@ export default function PeerSelector({ selectedPeer, onPeerChange, disabled = fa
         return list.filter((peer) => peer?.uid && peer.uid !== currentUserUid && (!filterPeers || filterPeers(peer))).slice(0, 3);
     }, [currentUserUid, filterPeers, recentPeers?.wallet]);
     const displayPeers = query ? peerResults : defaultPeers;
+    const hasInvite = typeof onInvitePress === 'function';
 
     const focusTrigger = useCallback(() => {
         window.setTimeout(() => {
@@ -253,12 +265,20 @@ export default function PeerSelector({ selectedPeer, onPeerChange, disabled = fa
                                   event.stopPropagation();
                               }}
                           >
-                              {searching && query && !displayPeers.length ? (
+                              {searching && query && !displayPeers.length && !hasInvite ? (
                                   <div className="flex justify-center py-1.5 text-muted">
                                       <Loader className="animate-spin size-6" />
                                   </div>
-                              ) : displayPeers.length > 0 ? (
+                              ) : displayPeers.length > 0 || hasInvite ? (
                                   <div className="grid grid-cols-4 gap-4 p-4">
+                                      {hasInvite ? (
+                                          <Button type="button" data-peer-selector-item="" className="h-auto flex-col rounded-none p-0 shrinker" onClick={onInvitePress} disabled={disabled} title={inviteTitle}>
+                                              <span className="flex size-16 items-center justify-center rounded-full bg-background shadow-sm">
+                                                  <UserRoundPlus className="size-9 stroke-2" />
+                                              </span>
+                                              <span className="text-sm font-bold truncate max-w-20">{inviteLabel}</span>
+                                          </Button>
+                                      ) : null}
                                       {displayPeers.map((peer) => (
                                           <Button
                                               key={peer.uid}

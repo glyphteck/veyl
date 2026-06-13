@@ -4,12 +4,14 @@ import { Stack, usePathname, useRouter } from 'expo-router';
 import { writeResumeTarget } from '@veyl/shared/cache/localdata';
 import { invite } from '@veyl/shared/invite';
 import { resumeTargetFromPath } from '@veyl/shared/navigation/resume';
+import { canSendOnScan } from '@veyl/shared/settings';
 import { useTheme } from '@/providers/themeprovider';
 import { useChat } from '@/providers/chatprovider';
 import { usePeer } from '@/providers/peerprovider';
 import { useUser } from '@/providers/userprovider';
 import { useVault } from '@/providers/vaultprovider';
 import { dropPendingInvite, readPendingInvite } from '@/lib/invite';
+import { dropPendingQrIntent, qrIntent, readPendingQrIntent } from '@/lib/qrintent';
 import { mark } from '@/lib/diagnostics';
 import { stackScreenOptions } from '@/lib/navigation/stackoptions';
 
@@ -86,6 +88,90 @@ function PendingInviteHandler() {
     return null;
 }
 
+function PendingQrIntentHandler() {
+    const router = useRouter();
+    const pathname = usePathname();
+    const user = useUser();
+    const { addPeer } = usePeer();
+
+    useEffect(() => {
+        if (pathname.startsWith('/qr')) return;
+
+        let cancelled = false;
+
+        async function run() {
+            const pending = await readPendingQrIntent();
+            if (!pending || cancelled) return;
+
+            await dropPendingQrIntent();
+            if (cancelled) return;
+
+            if (pending.kind === qrIntent.payment) {
+                const auto = canSendOnScan(user.settings) && !!pending.amount;
+
+                if (pending.invoice && pending.invoiceType) {
+                    let peer = null;
+                    if (pending.walletPK || pending.username) {
+                        try {
+                            peer = await addPeer?.(pending.walletPK ? { walletPK: pending.walletPK } : { username: pending.username });
+                        } catch (error) {
+                            console.warn('pending invoice peer lookup failed', error);
+                        }
+                    }
+
+                    router.push({
+                        pathname: '/transfer',
+                        params: {
+                            invoiceType: pending.invoiceType,
+                            invoice: pending.invoice,
+                            ...(peer?.uid ? { uid: peer.uid } : {}),
+                            ...(peer?.username || pending.username ? { username: peer?.username ?? pending.username } : {}),
+                            ...(peer?.walletPK || pending.walletPK ? { walletPK: peer?.walletPK ?? pending.walletPK } : {}),
+                            ...(pending.amount ? { amount: pending.amount, send: '1', auto: auto ? '1' : '0' } : { send: '1' }),
+                        },
+                    });
+                    return;
+                }
+
+                if (pending.walletPK && pending.walletPK !== user.walletPK) {
+                    let peer = null;
+                    try {
+                        peer = await addPeer?.({ walletPK: pending.walletPK });
+                    } catch (error) {
+                        console.warn('pending qr peer lookup failed', error);
+                    }
+
+                    router.push({
+                        pathname: '/transfer',
+                        params: {
+                            uid: peer?.uid ?? '',
+                            walletPK: peer?.walletPK ?? pending.walletPK,
+                            ...(pending.amount ? { amount: pending.amount, send: '1', auto: auto ? '1' : '0' } : { send: '1' }),
+                        },
+                    });
+                    return;
+                }
+            }
+
+            if (pending.kind === qrIntent.withdraw && pending.address) {
+                router.push({ pathname: '/withdraw', params: { address: pending.address } });
+            }
+        }
+
+        run()
+            .catch((error) => {
+                console.warn('pending qr intent failed', error);
+                void dropPendingQrIntent();
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [addPeer, pathname, router, user.settings, user.walletPK]);
+
+    return null;
+}
+
 export default function AppLayout() {
     const { theme } = useTheme();
     const pathname = usePathname();
@@ -136,6 +222,7 @@ export default function AppLayout() {
     return (
         <>
             <PendingInviteHandler />
+            <PendingQrIntentHandler />
             <Stack screenOptions={stackScreenOptions(theme, SHEET_ROUTES)}>
                 <Stack.Screen name="(home)" options={{ animationTypeForReplace: 'pop' }} />
                 <Stack.Screen name="community" />

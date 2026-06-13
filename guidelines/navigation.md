@@ -53,9 +53,14 @@ On iOS, do not use `router.prefetch` or route preload to warm native sheets or m
 - Web join fallback: `apps/web/src/app/(unauthenticated)/join/page.js`
 - Web download fallback: `apps/web/src/app/download/page.js`
 - Web mobile routing proxy: `apps/web/src/proxy.js`
+- Shared invite helpers: `shared/invite.js`
+- Web invite persistence: `apps/web/src/lib/invite.js`
+- Web root invite metadata and handoff: `apps/web/src/app/page.js`, `apps/web/src/app/rootclient.js`
+- Web invite surfaces: `apps/web/src/components/dialogs/newchat.js`, `apps/web/src/components/peerselector.js`, `apps/web/src/components/sendmoney.js`, `apps/web/src/components/requestmoney.js`
 - iOS user scan route: `apps/ios/app/(vault)/(app)/userscan.js`
 - iOS QR app-link route: `apps/ios/app/(vault)/qr.js`
 - iOS camera scanner: `apps/ios/app/(vault)/(app)/(home)/camera.js`
+- iOS invite persistence and payment surfaces: `apps/ios/src/lib/invite.js`, `apps/ios/app/(vault)/(app)/peerselector.js`
 
 Veyl-specific QR codes are HTTPS wrappers at `/qr` on the canonical base Veyl web host. Use `shared/qr.js` to write and read them. Do not emit raw `veyl:` strings or base64 JSON payloads. URL parsing should stay limited to Veyl app-link hosts on `/qr`; direct object params are for app routes, and direct `@username` / `bitcoin:` parsing is only for scanner input.
 
@@ -69,9 +74,23 @@ For user QR codes, the username is the scanned account id. Do not encode Firebas
 
 The wrapper URL is intentional for Veyl-specific actions, and it is separate from peer-selection invite links. On iOS, the canonical base Veyl host is an app link for all Veyl builds, with the Apple app-site association priority ordered as production, test, then dev. A system Camera scan opens the highest-priority installed build; if no build is installed, the URL opens the website. Without the app, the website sends mobile `/qr` scans to `/download`; QR context is not preserved through download because the App Store handoff loses it anyway. Desktop users go through the normal web auth/unlock path. Bitcoin funding QR codes intentionally stay standard `bitcoin:` URIs so external wallets can scan them directly.
 
-`/qr` is also the external scan helper for onboarding and locked-account flows. If an app-link QR opens before the user is unlocked, root/auth/vault shells may store the public QR intent through the invite adapter, then the unlocked app boundary resolves it into chat or transfer navigation. Keep that bridge generic: QR payload parsing stays in `shared/qr.js`, QR-to-public-intent conversion stays in `shared/invite.js`, and root/auth shells should only preserve opaque public intent instead of knowing app destinations.
+`/qr` is also the external scan helper for onboarding and locked-account flows. If an app-link QR opens before the user is unlocked, root/auth/vault shells may store the public QR intent through the invite adapter, then the unlocked app boundary resolves it into chat or payment navigation. Keep that bridge generic: QR payload parsing stays in `shared/qr.js`, QR-to-public-intent conversion stays in `shared/invite.js`, and root/auth shells should only preserve opaque public intent instead of knowing app destinations.
 
-Peer-selection invite links are canonical base-host root app links with one human-readable `join` query token, not QR payloads. Use `shared/invite.js` to build links and centralized preview copy such as `${links.veyl}/?join/@<username>` or `${links.veyl}/?join/@<username>/chat`. The root page owns paste-preview metadata, while root/auth/onboarding/vault guards keep normal routing ownership. The unlocked app boundary resolves any preserved public invite intent.
+Invite links are canonical base-host root app links with one human-readable `join` query token, not QR payloads. Use `shared/invite.js` to build, parse, and describe invite links. The root page owns paste-preview metadata through `describeInvite`, while root/auth/onboarding/vault guards keep normal routing ownership. The unlocked app boundary resolves any preserved public invite intent.
+
+Current invite structures:
+
+- Generic join: `${links.veyl}/?join`
+- From a user: `${links.veyl}/?join/@<username>`
+- Chat: `${links.veyl}/?join/@<username>/chat`
+- Payment send: `${links.veyl}/?join/@<username>/send/<sats>`
+- Payment request: `${links.veyl}/?join/@<username>/pay/<sats>`
+
+Payment invite amounts are optional. When the picker has no valid amount yet, omit the amount segment and let the recipient choose the amount after opening Veyl.
+
+Invite links may encode only public intent: invite kind, inviter username, typed recipient handle when useful, amount/currency for payment flows, a public receiver wallet key for QR-derived payment requests, and an optional public source marker such as `peer-picker` or `qr`. Never put Firebase UIDs, wallet secrets, Spark ids, private chat text, encrypted payloads, media bytes, or local cache keys in invite links. Future one-time or private invite codes need an explicit backend-owned design; do not smuggle private state into the stateless root link.
+
+Clipboard and share behavior stays platform-local. Web surfaces copy with `navigator.clipboard.writeText`; iOS surfaces use the native share sheet where the picker already uses sharing. Current user-facing invite affordances are the new-chat invite, the main-menu generic invite, and payment peer-picker invites. Share-media and send-photo recipient pickers intentionally do not expose invite buttons because media cannot be sent to a person until an existing encrypted chat recipient exists.
 
 ## Chat
 

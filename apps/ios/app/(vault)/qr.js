@@ -1,20 +1,25 @@
 import { useEffect, useRef } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
+import { readResumeTarget } from '@veyl/shared/cache/localdata';
+import { hrefForResumeTarget } from '@veyl/shared/navigation/resume';
 import { qr, readQr } from '@veyl/shared/qr';
 import { isAddressOnNetwork } from '@veyl/shared/network';
-import { canSendOnScan } from '@veyl/shared/settings';
 
 import { useChat } from '@/providers/chatprovider';
 import { usePeer } from '@/providers/peerprovider';
 import { useUser } from '@/providers/userprovider';
+import { useVault } from '@/providers/vaultprovider';
 import { useWallet } from '@/providers/walletprovider';
+import { isInvoiceScanSuppressed } from '@/lib/invoicescan';
 import { dropPendingInvite } from '@/lib/invite';
+import { writePendingQrIntent } from '@/lib/qrintent';
 
 export default function QRRoute() {
     const params = useLocalSearchParams();
     const { selectPeerChat } = useChat() || {};
     const { addPeer } = usePeer() || {};
-    const { chatBanned, chatPK, settings, walletPK: ownWalletPK } = useUser();
+    const { chatBanned, chatPK, walletPK: ownWalletPK } = useUser();
+    const { localCache } = useVault();
     const { network } = useWallet();
     const handledRef = useRef(false);
 
@@ -26,6 +31,7 @@ export default function QRRoute() {
 
         async function run() {
             await dropPendingInvite();
+            const resumeHref = hrefForResumeTarget(readResumeTarget(localCache));
 
             if (data?.kind === qr.user && data.username) {
                 const peer = await addPeer?.({ username: data.username });
@@ -43,39 +49,37 @@ export default function QRRoute() {
 
             if (data?.kind === qr.request && data.to) {
                 if (data.to !== ownWalletPK) {
-                    const auto = canSendOnScan(settings) && !!data.amount;
-                    let peer = null;
-                    try {
-                        peer = await addPeer?.({ walletPK: data.to });
-                    } catch (error) {
-                        console.warn('qr peer lookup failed', error);
-                    }
-
-                    router.replace({
-                        pathname: '/transfer',
-                        params: {
-                            uid: peer?.uid ?? '',
-                            walletPK: peer?.walletPK ?? data.to,
-                            ...(data.amount ? { amount: data.amount, send: '1', auto: auto ? '1' : '0' } : { send: '1' }),
-                        },
-                    });
+                    await writePendingQrIntent(data);
+                    router.replace(resumeHref);
                     return;
                 }
             }
 
-            if (data?.kind === qr.bitcoin && data.address && isAddressOnNetwork(data.address, network)) {
-                router.replace({ pathname: '/withdraw', params: { address: data.address } });
+            if (data?.kind === qr.lightning || data?.kind === qr.spark) {
+                if (isInvoiceScanSuppressed({ type: data.kind, invoice: data.invoice })) {
+                    router.replace(resumeHref);
+                    return;
+                }
+
+                await writePendingQrIntent(data);
+                router.replace(resumeHref);
                 return;
             }
 
-            router.replace('/wallet');
+            if (data?.kind === qr.bitcoin && data.address && isAddressOnNetwork(data.address, network)) {
+                await writePendingQrIntent(data);
+                router.replace(resumeHref);
+                return;
+            }
+
+            router.replace(resumeHref);
         }
 
         run().catch((error) => {
             console.warn('qr route failed', error);
             router.replace('/wallet');
         });
-    }, [addPeer, chatBanned, chatPK, network, ownWalletPK, params, selectPeerChat, settings?.sendOnScan]);
+    }, [addPeer, chatBanned, chatPK, localCache, network, ownWalletPK, params, selectPeerChat]);
 
     return null;
 }

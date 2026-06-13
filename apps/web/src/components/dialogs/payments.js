@@ -25,7 +25,8 @@ export default function Payments({ data, close }) {
     const canSend = hasAvailableBalance(balance);
     const hasPeer = hasOwn(data, 'peer');
     const hasAmount = hasOwn(data, 'amount');
-    const hasContext = hasPeer || hasAmount;
+    const hasInvoice = hasOwn(data, 'invoice');
+    const hasContext = hasPeer || hasAmount || hasInvoice;
     const peer = useMemo(() => (data?.peer?.walletPK === currentUserWalletPK ? null : data?.peer || null), [currentUserWalletPK, data?.peer]);
     const amount = useMemo(() => {
         if (data?.amount == null || data.amount === '') return '';
@@ -69,7 +70,7 @@ export default function Payments({ data, close }) {
                     </TabsTrigger>
                 </TabsList>
                 <TabsContent value="send" className="flex flex-col gap-2">
-                    <SendMoney peer={draftPeer} amount={draftAmount} inputUnit={draftUnit} onPeerChange={setDraftPeer} onAmountChange={setDraftAmount} onInputUnitChange={setDraftUnit} />
+                    <SendMoney peer={draftPeer} amount={draftAmount} inputUnit={draftUnit} invoice={data?.invoice || null} onPeerChange={setDraftPeer} onAmountChange={setDraftAmount} onInputUnitChange={setDraftUnit} />
                 </TabsContent>
                 <TabsContent value="request" className="flex flex-col gap-2">
                     <RequestMoney peer={draftPeer} amount={draftAmount} inputUnit={draftUnit} onPeerChange={setDraftPeer} onAmountChange={setDraftAmount} onInputUnitChange={setDraftUnit} />

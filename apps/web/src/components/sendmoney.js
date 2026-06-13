@@ -6,7 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { Field } from '@/components/field';
 import { Button } from '@/components/button';
 import { MoneyAmountInput } from '@/components/moneyamountinput';
-import { Loader, Coins, ScanQrCode } from 'lucide-react';
+import { Loader, Coins, ScanQrCode, Zap } from 'lucide-react';
 import { formatUserDisplay } from '@veyl/shared/profile';
 import { MONEY_UNITS, toSats, toDisplay, renderMoney } from '@veyl/shared/money';
 import { useBitcoin } from '@/components/providers/bitcoinprovider';
@@ -14,32 +14,40 @@ import { useWallet } from '@/components/providers/walletprovider';
 import { useUser } from '@/components/providers/userprovider';
 import { useDialog } from '@/components/providers/dialogprovider';
 import { useCloak } from '@veyl/shared/providers/cloakprovider';
+import { invite, makeInviteLink } from '@veyl/shared/invite';
+import { qr } from '@veyl/shared/qr';
 import { toast } from 'sonner';
 import PeerSelector from '@/components/peerselector';
 
-export default function SendMoney({ peer, amount = '', inputUnit, onPeerChange, onAmountChange, onInputUnitChange }) {
+function invoiceTitle(invoice) {
+    if (invoice?.kind === qr.spark) return 'Spark invoice';
+    return 'Lightning invoice';
+}
+
+export default function SendMoney({ peer, amount = '', inputUnit, invoice = null, onPeerChange, onAmountChange, onInputUnitChange }) {
     const [receiver, setReceiver] = useState(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const bitcoin = useBitcoin();
-    const { sendMoneyWithSpark, balance } = useWallet();
-    const { settings, walletPK: currentUserWalletPK } = useUser();
+    const { sendMoneyWithSpark, payExternalInvoice, balance } = useWallet();
+    const { settings, username, walletPK: currentUserWalletPK } = useUser();
     const { closeDialog } = useDialog();
     const router = useRouter();
     const { cloaked } = useCloak();
     const amountInputRef = useRef(null);
     const unit = inputUnit || settings.moneyFormat;
     const hasAmount = amount != null && amount !== '';
-    const start = !peer ? 'peer' : !hasAmount ? 'amount' : null;
+    const isInvoice = invoice?.kind === qr.lightning || invoice?.kind === qr.spark;
+    const start = isInvoice ? (!hasAmount ? 'amount' : null) : !peer ? 'peer' : !hasAmount ? 'amount' : null;
 
-    const schema = (max, price, currentWalletPK) =>
+    const schema = (max, price, currentWalletPK, hasInvoice) =>
         z
             .object({
-                receiver: z.object({}).passthrough(),
+                receiver: z.object({}).passthrough().nullable(),
                 inputUnit: z.enum(MONEY_UNITS),
                 amount: z.string().regex(/^\d+(\.\d{0,8})?$/, 'invalid number'),
             })
             .superRefine((data, ctx) => {
-                if (!data.receiver?.walletPK) {
+                if (!hasInvoice && !data.receiver?.walletPK) {
                     ctx.addIssue({
                         path: ['receiver'],
                         code: 'custom',
@@ -48,7 +56,7 @@ export default function SendMoney({ peer, amount = '', inputUnit, onPeerChange, 
                     return;
                 }
                 // Prevent self-sends
-                if (data.receiver.walletPK === currentWalletPK) {
+                if (!hasInvoice && data.receiver.walletPK === currentWalletPK) {
                     ctx.addIssue({
                         path: ['receiver'],
                         code: 'custom',
@@ -69,7 +77,7 @@ export default function SendMoney({ peer, amount = '', inputUnit, onPeerChange, 
             })
             .transform((d) => ({ ...d, amount: d.amount }));
 
-    const resolver = useMemo(() => zodResolver(schema(balance, bitcoin.price, currentUserWalletPK)), [balance, bitcoin.price, currentUserWalletPK]);
+    const resolver = useMemo(() => zodResolver(schema(balance, bitcoin.price, currentUserWalletPK, isInvoice)), [balance, bitcoin.price, currentUserWalletPK, isInvoice]);
     const form = useForm({
         resolver,
         defaultValues: {
@@ -81,7 +89,7 @@ export default function SendMoney({ peer, amount = '', inputUnit, onPeerChange, 
     const watchedInputUnit = form.watch('inputUnit');
 
     useEffect(() => {
-        const nextReceiver = peer || null;
+        const nextReceiver = isInvoice ? null : peer || null;
         const defaultValues = {
             receiver: nextReceiver,
             amount: amount || '',
@@ -93,7 +101,7 @@ export default function SendMoney({ peer, amount = '', inputUnit, onPeerChange, 
             return;
         }
         form.reset(defaultValues);
-    }, [peer, amount, unit, form]);
+    }, [peer, amount, unit, form, isInvoice]);
 
     useEffect(() => {
         const timeout = window.setTimeout(() => {
@@ -180,7 +188,7 @@ export default function SendMoney({ peer, amount = '', inputUnit, onPeerChange, 
     const onSubmit = useCallback(
         async (data) => {
             setIsSubmitting(true);
-            const displayName = formatUserDisplay(data.receiver, false);
+            const displayName = isInvoice ? invoiceTitle(invoice) : formatUserDisplay(data.receiver, false);
             const formattedAmount = renderMoney(data.amount.toString(), settings.moneyFormat, bitcoin.price);
             closeDialog();
             // show loading toast
@@ -191,7 +199,16 @@ export default function SendMoney({ peer, amount = '', inputUnit, onPeerChange, 
 
             try {
                 const amountStr = data.amount.toString();
-                const txId = await sendMoneyWithSpark(data.receiver.walletPK, amountStr);
+                if (isInvoice) {
+                    await payExternalInvoice({
+                        type: invoice.kind,
+                        invoice: invoice.invoice,
+                        amountSats: data.amount,
+                        variableAmount: !invoice.amount,
+                    });
+                } else {
+                    await sendMoneyWithSpark(data.receiver.walletPK, amountStr);
+                }
                 toast.success(cloaked ? `sent money to ${displayName}` : `sent ${formattedAmount} to ${displayName}`, {
                     id: loadingToastId,
                     icon: <Coins />,
@@ -215,34 +232,78 @@ export default function SendMoney({ peer, amount = '', inputUnit, onPeerChange, 
                 setIsSubmitting(false);
             }
         },
-        [sendMoneyWithSpark, settings.moneyFormat, bitcoin.price, closeDialog, form, onAmountChange, onInputUnitChange, onPeerChange]
+        [isInvoice, invoice, payExternalInvoice, sendMoneyWithSpark, settings.moneyFormat, bitcoin.price, closeDialog, form, onAmountChange, onInputUnitChange, onPeerChange]
     );
+
+    const copyPaymentInvite = useCallback(async () => {
+        if (!username) {
+            toast.error('invite unavailable');
+            return;
+        }
+
+        let inviteAmount = null;
+        const rawAmount = form.getValues('amount');
+        if (rawAmount && rawAmount !== '0') {
+            try {
+                const sats = toSats(rawAmount, form.getValues('inputUnit'), bitcoin.price);
+                if (sats > 0n) inviteAmount = sats.toString();
+            } catch {}
+        }
+
+        const link = makeInviteLink({
+            kind: invite.send,
+            from: username,
+            ...(inviteAmount ? { amount: inviteAmount, currency: 'sats' } : {}),
+            source: 'peer-picker',
+        });
+        if (!link) {
+            toast.error('invite unavailable');
+            return;
+        }
+
+        try {
+            await navigator.clipboard.writeText(link);
+            toast('payment invite copied');
+        } catch (error) {
+            console.error('payment invite copy failed', error);
+            toast.error('could not copy payment invite');
+        }
+    }, [bitcoin.price, form, username]);
 
     return (
         <div className="flex flex-col gap-2">
             <form id="sendMoney" onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-3">
-                <Field
-                    control={form.control}
-                    name="receiver"
-                    render={({ field }) => (
-                        <PeerSelector
-                            className="h-12 pl-2 text-base [&_.avatar]:size-9"
-                            selectedPeer={receiver}
-                            onPeerChange={(peer) => {
-                                setReceiver(peer);
-                                field.onChange(peer);
-                                onPeerChange?.(peer);
-                                if (amountInputRef.current) {
-                                    amountInputRef.current.focus();
-                                }
-                            }}
-                            disabled={isSubmitting}
-                            active={start === 'peer'}
-                            filterPeers={(peer) => Boolean(peer.walletPK)}
-                            label="receiver"
-                        />
-                    )}
-                />
+                {isInvoice ? (
+                    <div className="flex h-12 min-w-0 items-center gap-3 rounded-round bg-background/70 px-3 text-base font-black shadow backdrop-blur-sm">
+                        <Zap className="size-6 shrink-0 text-bitcoin" />
+                        <span className="min-w-0 flex-1 truncate">{invoiceTitle(invoice)}</span>
+                    </div>
+                ) : (
+                    <Field
+                        control={form.control}
+                        name="receiver"
+                        render={({ field }) => (
+                            <PeerSelector
+                                className="h-12 pl-2 text-base [&_.avatar]:size-9"
+                                selectedPeer={receiver}
+                                onPeerChange={(peer) => {
+                                    setReceiver(peer);
+                                    field.onChange(peer);
+                                    onPeerChange?.(peer);
+                                    if (amountInputRef.current) {
+                                        amountInputRef.current.focus();
+                                    }
+                                }}
+                                disabled={isSubmitting}
+                                active={start === 'peer'}
+                                filterPeers={(peer) => Boolean(peer.walletPK)}
+                                label="receiver"
+                                inviteTitle="copy payment invite"
+                                onInvitePress={copyPaymentInvite}
+                            />
+                        )}
+                    />
+                )}
                 <Field
                     control={form.control}
                     name="amount"
@@ -271,11 +332,11 @@ export default function SendMoney({ peer, amount = '', inputUnit, onPeerChange, 
                     className="button-fill shrinker flex-1"
                     disabled={
                         isSubmitting ||
-                        !form.watch('receiver') ||
+                        (!isInvoice && !form.watch('receiver')) ||
                         !form.watch('amount') ||
                         form.watch('amount') === '0' ||
                         toSats(form.watch('amount'), form.watch('inputUnit'), bitcoin.price) === 0n ||
-                        form.watch('receiver')?.walletPK === currentUserWalletPK
+                        (!isInvoice && form.watch('receiver')?.walletPK === currentUserWalletPK)
                     }
                 >
                     {isSubmitting ? <Loader className="animate-spin" /> : 'send'}

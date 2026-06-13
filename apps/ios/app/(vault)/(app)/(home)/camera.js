@@ -26,6 +26,7 @@ import { StagedPreview, stageCapturedPhoto } from '@/lib/camera/staging';
 import { useCameraWarming } from '@/lib/camera/warming';
 import { saveMediaToLibrary } from '@/lib/media/save';
 import { useRouteLock } from '@/lib/navigation/routelock';
+import { alpha } from '@/lib/colors';
 
 const PREVIEW_FADE = 250;
 const PREVIEW_HOLD = 2000;
@@ -567,7 +568,7 @@ function CameraContent({ cameraActive, pageOpen, warming }) {
                     <StagedPreview media={stagedMedia} />
                     <View style={{ position: 'absolute', bottom: controlsBottom, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: ACTION_GAP }}>
                         <GlassIcon glassEffectStyle="clear" icon={X} visible duration={PREVIEW_FADE} onPress={discardStaged} />
-                        <GlassIcon glassEffectStyle="clear" icon={ArrowUpRight} iconSize={32} size={SHUTTER_SIZE} visible duration={PREVIEW_FADE} accent onPress={handleSendStaged} />
+                        <GlassIcon glassEffectStyle="clear" tintColor={alpha(theme.background, 25)} icon={ArrowUpRight} iconSize={32} size={SHUTTER_SIZE} visible duration={PREVIEW_FADE} onPress={handleSendStaged} />
                         <GlassIcon glassEffectStyle="clear" icon={ArrowDownToLine} visible duration={PREVIEW_FADE} onPress={handleSaveStaged} />
                     </View>
                 </View>

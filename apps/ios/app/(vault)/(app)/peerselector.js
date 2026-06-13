@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Keyboard, Pressable, Share, Text, TextInput, View } from 'react-native';
+import { Alert, Keyboard, Pressable, Share, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import { ArrowDownLeft, ArrowUpRight, MessageCircle, Search } from 'lucide-react-native';
@@ -20,6 +20,7 @@ import { useWallet } from '@/providers/walletprovider';
 import { useChat } from '@/providers/chatprovider';
 import { useSearch } from '@/lib/search/usesearch';
 import EmptyState from '@/components/emptystate';
+import AmountInput from '@/components/amountinput';
 import GlassButton from '@/components/glass/glassbutton';
 import GlassField from '@/components/glass/glassfield';
 import GlassIcon from '@/components/glass/glassicon';
@@ -82,18 +83,28 @@ export default function PeerSelectorScreen() {
     }, [pickPeer, settings?.moneyFormat]);
 
     const handleInvite = useCallback(async () => {
-        if (chatBanned) {
-            Alert.alert('Chat unavailable', 'You cannot create a chat invite right now.');
-            return;
-        }
         if (!username) {
             Alert.alert('Invite unavailable', 'Your profile is still loading.');
             return;
         }
 
-        const link = makeInviteLink({ kind: invite.chat, from: username });
+        let inviteAmount = null;
+        if (amount) {
+            try {
+                const price = bitcoin?.price ?? BTC_PRICE_FALLBACK;
+                const sats = toSats(amount, inputUnit, price);
+                if (sats > 0n) inviteAmount = sats.toString();
+            } catch {}
+        }
+
+        const link = makeInviteLink({
+            kind: mode === 'request' ? invite.request : invite.send,
+            from: username,
+            ...(inviteAmount ? { amount: inviteAmount, currency: 'sats' } : {}),
+            source: 'peer-picker',
+        });
         if (!link) {
-            Alert.alert('Invite unavailable', 'Could not create an invite link.');
+            Alert.alert('Invite unavailable', 'Could not create a payment invite link.');
             return;
         }
 
@@ -104,14 +115,13 @@ export default function PeerSelectorScreen() {
 
         try {
             await Share.share({
-                title: 'Chat on veyl',
-                message: link,
+                title: 'Payment on veyl',
                 url: link,
             });
         } catch (error) {
             Alert.alert('Invite failed', error?.message || 'Could not open sharing.');
         }
-    }, [chatBanned, resetOverlay, username]);
+    }, [amount, bitcoin?.price, inputUnit, mode, resetOverlay, username]);
 
     const finishClose = useCallback(() => {
         if (activePeer.current) return;
@@ -312,15 +322,15 @@ export default function PeerSelectorScreen() {
             footer={
                 <>
                     <GlassField disabled={isSending} style={{ flex: 1, paddingHorizontal: 16 }}>
-                        <TextInput
+                        <AmountInput
                             ref={amountInputRef}
                             value={amount}
                             placeholder={amountPlaceholder}
                             placeholderTextColor={theme.muted}
+                            color={theme.foreground}
                             keyboardType="numeric"
                             onChangeText={setAmount}
                             editable={overlayVisible && !isSending}
-                            style={{ flex: 1, fontSize: 24, fontWeight: '900', color: theme.foreground, paddingVertical: 10 }}
                         />
                         <Pressable {...cyclePress} hitSlop={8} disabled={isSending}>
                             <Animated.View style={[{ paddingLeft: 12, alignItems: 'center', justifyContent: 'center' }, cycleStyle]}>

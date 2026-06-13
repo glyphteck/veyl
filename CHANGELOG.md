@@ -2,6 +2,13 @@
 
 Repo-level changes are listed newest first. Keep entries short and concrete. Broad pushes get grouped bullets, while narrow fixes can use one concise bugfix or cleanup bullet that still names the actual change.
 
+## 0.16.0 - 2026-06-13
+
+- Added external Lightning and Spark-compatible payment QR receive support across web and iOS, with Veyl app-link QRs by default and a Lightning invoice QR toggle for external wallets.
+- Added iOS dynamic receive invoices, root `/qr` payment intent handling, scanner support for Lightning/Spark invoices, and transfer-sheet payment review for scanned external invoices.
+- Added invoice payment completion feedback with active-green QR animation, wallet refresh, fresh invoice creation on sheet reopen, and suppression for recently paid invoice scans.
+- Fixed iOS amount-input placeholder alignment across transfer, receive, peer selector, and withdraw amount fields.
+
 ## 0.15.2 - 2026-06-12
 
 - Added first-class GIF chat messages across shared upload/write paths, web and iOS send/render/cache/viewer surfaces, reply previews, downloads, shares, and report evidence handling.

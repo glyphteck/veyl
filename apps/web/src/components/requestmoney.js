@@ -12,10 +12,12 @@ import { useBitcoin } from '@/components/providers/bitcoinprovider';
 import { useUser } from '@/components/providers/userprovider';
 import { useDialog } from '@/components/providers/dialogprovider';
 import { useChat } from '@/components/providers/chatprovider';
+import { useWallet } from '@/components/providers/walletprovider';
 import { useCloak } from '@veyl/shared/providers/cloakprovider';
 import { makeReq } from '@veyl/shared/chat/messages';
 import { REQUEST_MONEY_MAX_SATS } from '@veyl/shared/config';
-import { makeRequestQr, qr } from '@veyl/shared/qr';
+import { invite, makeInviteLink } from '@veyl/shared/invite';
+import { qr } from '@veyl/shared/qr';
 import { toast } from 'sonner';
 import PeerSelector from '@/components/peerselector';
 
@@ -23,14 +25,16 @@ export default function RequestMoney({ peer, amount = '', inputUnit, onPeerChang
     const [sender, setSender] = useState(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const bitcoin = useBitcoin();
-    const { settings, walletPK: currentUserWalletPK } = useUser();
+    const { settings, username, walletPK: currentUserWalletPK } = useUser();
     const { closeDialog, openDialog } = useDialog();
     const { sendMessage } = useChat();
+    const { createLightningInvoice } = useWallet();
     const { cloaked } = useCloak();
     const amountInputRef = useRef(null);
     const unit = inputUnit || settings.moneyFormat;
     const hasAmount = amount != null && amount !== '';
     const start = !peer ? 'peer' : !hasAmount ? 'amount' : null;
+    const [isCreatingQr, setIsCreatingQr] = useState(false);
 
     const schema = (max, price, currentWalletPK) =>
         z
@@ -216,18 +220,74 @@ export default function RequestMoney({ peer, amount = '', inputUnit, onPeerChang
         [sendMessage, closeDialog, settings.moneyFormat, bitcoin.price, form, onAmountChange, onInputUnitChange, onPeerChange]
     );
 
-    const requestWithQR = () => {
-        const senderPeer = form.watch('sender');
+    const requestWithQR = async () => {
+        if (isCreatingQr) return;
         const amount = form.watch('amount');
-        const sats = amount && amount !== '0' ? toSats(amount, form.watch('inputUnit'), bitcoin.price) : 0n;
-        const qrData = makeRequestQr({
-            to: currentUserWalletPK,
-            ...(senderPeer?.walletPK ? { from: senderPeer.walletPK } : {}),
-            ...(sats > 0n ? { amount: sats.toString() } : {}),
-        });
-        if (!qrData) return;
-        openDialog('qrcode', { type: qr.request, value: qrData });
+        const amountSats = amount && amount !== '0' ? toSats(amount, form.watch('inputUnit'), bitcoin.price) : 0n;
+        if (amountSats > BigInt(Number.MAX_SAFE_INTEGER)) {
+            toast.error('amount too large');
+            return;
+        }
+
+        setIsCreatingQr(true);
+        try {
+            const result = await createLightningInvoice({
+                amountSats: Number(amountSats),
+                memo: 'veyl payment',
+                includeSparkInvoice: true,
+            });
+            if (!result?.success || !result.invoice?.encodedInvoice) {
+                throw result?.error || new Error('failed to create invoice');
+            }
+            openDialog('qrcode', {
+                type: qr.lightning,
+                value: {
+                    ...result.invoice,
+                    username,
+                    walletPK: currentUserWalletPK,
+                },
+            });
+        } catch (error) {
+            toast.error(error?.message || 'failed to create invoice');
+        } finally {
+            setIsCreatingQr(false);
+        }
     };
+
+    const copyPaymentInvite = useCallback(async () => {
+        if (!username) {
+            toast.error('invite unavailable');
+            return;
+        }
+
+        let inviteAmount = null;
+        const rawAmount = form.getValues('amount');
+        if (rawAmount && rawAmount !== '0') {
+            try {
+                const sats = toSats(rawAmount, form.getValues('inputUnit'), bitcoin.price);
+                if (sats > 0n) inviteAmount = sats.toString();
+            } catch {}
+        }
+
+        const link = makeInviteLink({
+            kind: invite.request,
+            from: username,
+            ...(inviteAmount ? { amount: inviteAmount, currency: 'sats' } : {}),
+            source: 'peer-picker',
+        });
+        if (!link) {
+            toast.error('invite unavailable');
+            return;
+        }
+
+        try {
+            await navigator.clipboard.writeText(link);
+            toast('payment invite copied');
+        } catch (error) {
+            console.error('payment invite copy failed', error);
+            toast.error('could not copy payment invite');
+        }
+    }, [bitcoin.price, form, username]);
 
     return (
         <div className="flex flex-col gap-2">
@@ -251,6 +311,8 @@ export default function RequestMoney({ peer, amount = '', inputUnit, onPeerChang
                             active={start === 'peer'}
                             filterPeers={(peer) => Boolean(peer.walletPK && peer.chatPK)}
                             label="sender"
+                            inviteTitle="copy payment invite"
+                            onInvitePress={copyPaymentInvite}
                         />
                     )}
                 />
@@ -296,13 +358,9 @@ export default function RequestMoney({ peer, amount = '', inputUnit, onPeerChang
                     className="grower-lg"
                     type="button"
                     onClick={requestWithQR}
-                    disabled={
-                        isSubmitting ||
-                        form.watch('sender')?.walletPK === currentUserWalletPK ||
-                        !(form.watch('sender')?.walletPK || (form.watch('amount') && form.watch('amount') !== '0' && toSats(form.watch('amount'), form.watch('inputUnit'), bitcoin.price) > 0n))
-                    }
+                    disabled={isSubmitting || isCreatingQr || form.watch('sender')?.walletPK === currentUserWalletPK}
                 >
-                    <QrCode className="size-6" />
+                    {isCreatingQr ? <Loader className="size-6 animate-spin" /> : <QrCode className="size-6" />}
                 </Button>
             </div>
         </div>

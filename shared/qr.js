@@ -18,6 +18,8 @@ export const qr = Object.freeze({
     request: 'request',
     payment: 'payment',
     bitcoin: 'bitcoin',
+    lightning: 'lightning',
+    spark: 'spark',
 });
 
 function maybe(value) {
@@ -93,6 +95,16 @@ function readParams(params) {
     });
     if (request) return request;
 
+    const lightning = readLightning({
+        invoice: getRouteParam(params, 'l') || getRouteParam(params, 'lightning') || getRouteParam(params, 'invoice'),
+        username: getRouteParam(params, 'lu') || getRouteParam(params, 'lightningUser'),
+        walletPK: getRouteParam(params, 'lw') || getRouteParam(params, 'lightningWalletPK'),
+    });
+    if (lightning) return lightning;
+
+    const spark = readSpark(getRouteParam(params, 's') || getRouteParam(params, 'spark'));
+    if (spark) return spark;
+
     const address = readBitcoin(getRouteParam(params, 'b'));
     if (!address) return null;
 
@@ -122,6 +134,95 @@ function makeUserValue(value) {
 function makeBitcoinValue(value) {
     const address = readBitcoin(value);
     return address ? `bitcoin:${address}` : null;
+}
+
+function getLightningInvoice(value) {
+    const raw = cleanText(typeof value === 'string' ? value : (value?.invoice ?? value?.encodedInvoice ?? value?.bolt11));
+    const lower = lowerText(raw);
+    if (!lower) return null;
+
+    const invoice = lower.startsWith('lightning://') ? raw.slice(12).trim() : lower.startsWith('lightning:') ? raw.slice(10).trim() : raw;
+    const normalized = lowerText(invoice);
+    return /^ln[a-z0-9]+$/.test(normalized) ? invoice : null;
+}
+
+function ceilDiv(value, divisor) {
+    return (value + divisor - 1n) / divisor;
+}
+
+function lightningAmountSats(invoice) {
+    const value = lowerText(invoice);
+    const match = value.match(/^ln(?:bcrt|bc|tb|sb|tbs)(\d+[munp]?)?1/);
+    const amount = match?.[1];
+    if (!amount) return null;
+
+    const unit = /[munp]$/.test(amount) ? amount.slice(-1) : '';
+    const raw = unit ? amount.slice(0, -1) : amount;
+    if (!/^\d+$/.test(raw)) return null;
+
+    const n = BigInt(raw);
+    switch (unit) {
+        case 'm':
+            return n * 100000n;
+        case 'u':
+            return n * 100n;
+        case 'n':
+            return ceilDiv(n, 10n);
+        case 'p':
+            return ceilDiv(n, 10000n);
+        default:
+            return n * 100000000n;
+    }
+}
+
+function readLightning(value) {
+    const invoice = getLightningInvoice(value);
+    if (!invoice) return null;
+    const amountSats = lightningAmountSats(invoice);
+    const username = userHandle(typeof value === 'object' ? value?.username ?? value?.user ?? value?.lu : null);
+    const walletPK = maybe(typeof value === 'object' ? value?.walletPK ?? value?.receiver ?? value?.lw : null);
+    return {
+        kind: qr.lightning,
+        invoice,
+        ...(username ? { username } : {}),
+        ...(walletPK ? { walletPK } : {}),
+        ...(amountSats != null && amountSats > 0n ? { amount: amountSats.toString() } : {}),
+    };
+}
+
+function makeLightningValue(value) {
+    const invoice = getLightningInvoice(value);
+    if (!invoice) return null;
+
+    const username = userHandle(typeof value === 'object' ? value?.username ?? value?.user ?? value?.lu : null);
+    const walletPK = maybe(typeof value === 'object' ? value?.walletPK ?? value?.receiver ?? value?.lw : null);
+    return makeLink({ l: invoice, lu: username, lw: walletPK });
+}
+
+export function makeLightningInvoiceQr(value) {
+    const invoice = getLightningInvoice(value);
+    return invoice ? `lightning:${invoice}` : null;
+}
+
+function getSparkInvoice(value) {
+    const raw = cleanText(typeof value === 'string' ? value : (value?.invoice ?? value?.sparkInvoice ?? value?.address));
+    const lower = lowerText(raw);
+    if (!lower) return null;
+    return /^(spark|sparkt|sparkrt|sparks|sparkl)1[023456789acdefghjklmnpqrstuvwxyz]+$/.test(lower) ? raw : null;
+}
+
+function readSpark(value) {
+    const invoice = getSparkInvoice(value);
+    return invoice
+        ? {
+              kind: qr.spark,
+              invoice,
+          }
+        : null;
+}
+
+function makeSparkValue(value) {
+    return getSparkInvoice(value);
 }
 
 function readApp(raw) {
@@ -181,6 +282,12 @@ export function readQr(raw) {
     const veyl = readApp(raw);
     if (veyl) return veyl;
 
+    const lightning = readLightning(raw);
+    if (lightning) return lightning;
+
+    const spark = readSpark(raw);
+    if (spark) return spark;
+
     const address = readBitcoin(raw);
     if (!address) return null;
 
@@ -192,6 +299,14 @@ export function readQr(raw) {
 
 export function makeQr(data) {
     if (!data) return null;
+
+    if (data.type === qr.lightning) {
+        return makeLightningValue(data.value);
+    }
+
+    if (data.type === qr.spark) {
+        return makeSparkValue(data.value);
+    }
 
     if (data.type === qr.bitcoin) {
         return makeBitcoinValue(data.value);

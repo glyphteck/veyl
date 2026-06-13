@@ -302,6 +302,7 @@ function inviteCopy(data) {
         return { title: amount ? `${from} wants to send you ${amount} on veyl` : `${from} wants to send you sats on veyl`, action: inviteText.action.send };
     }
     if (data.kind === invite.request) {
+        if (data.from && amount) return { title: `pay ${from} ${amount} on veyl`, action: inviteText.action.request };
         return { title: data.from ? `pay ${from} on veyl` : amount ? `pay ${amount} on veyl` : 'pay on veyl', action: inviteText.action.request };
     }
     if (data.kind === invite.media) {

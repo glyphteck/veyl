@@ -6,6 +6,7 @@ import { isAddressOnNetwork } from '@veyl/shared/network';
 import { qr, readQr } from '@veyl/shared/qr';
 import { canSendOnScan } from '@veyl/shared/settings';
 import { mark } from '@/lib/diagnostics';
+import { isInvoiceScanSuppressed } from '@/lib/invoicescan';
 
 const QR_BARCODE_FORMATS = ['qr-code'];
 const SCAN_COOLDOWN = 700;
@@ -113,6 +114,29 @@ export function useScan({ addPeer, hidePreview, holdPreview, lockRoute, network,
                             },
                         });
                     }
+                    return;
+                }
+
+                if (qrData?.kind === qr.lightning || qrData?.kind === qr.spark) {
+                    if (isInvoiceScanSuppressed({ type: qrData.kind, invoice: qrData.invoice })) {
+                        return;
+                    }
+
+                    hidePreview();
+                    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                    if (!lockRoute()) return;
+
+                    const auto = canSendOnScan(settings) && !!qrData.amount;
+                    router.navigate({
+                        pathname: '/transfer',
+                        params: {
+                            invoiceType: qrData.kind,
+                            invoice: qrData.invoice,
+                            ...(qrData.username ? { username: qrData.username } : {}),
+                            ...(qrData.walletPK ? { walletPK: qrData.walletPK } : {}),
+                            ...(qrData.amount ? { amount: qrData.amount, send: '1', auto: auto ? '1' : '0' } : { send: '1' }),
+                        },
+                    });
                     return;
                 }
 

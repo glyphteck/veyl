@@ -21,6 +21,7 @@ const FINAL_TRANSFER_STATUS_CODES = new Set([5, 6, 7, -1]);
 const FINAL_TRANSFER_STATUSES = new Set([TRANSFER_STATUS_COMPLETED, 'TRANSFER_STATUS_EXPIRED', 'TRANSFER_STATUS_RETURNED', 'UNRECOGNIZED']);
 const HIDDEN_TRANSFER_STATUS_CODES = new Set([6, 7, -1]);
 const HIDDEN_TRANSFER_STATUSES = new Set(['TRANSFER_STATUS_EXPIRED', 'TRANSFER_STATUS_RETURNED', 'UNRECOGNIZED']);
+const LIGHTNING_RECEIVE_DONE_STATUSES = new Set(['transfer_completed', 'lightning_payment_received', 'payment_preimage_recovered', 'completed']);
 const WALLET_TRANSFER_TYPE_CODES = new Set([TRANSFER_TYPE_TRANSFER_CODE]);
 const WALLET_TRANSFER_TYPES = new Set([TRANSFER_TYPE_TRANSFER]);
 const WITHDRAWAL_TRANSFER_TYPE_CODES = new Set([TRANSFER_TYPE_COOPERATIVE_EXIT_CODE]);
@@ -52,6 +53,33 @@ export function txUpdatedMs(tx) {
 
 export function isCompletedTransfer(tx) {
     return tx?.status === TRANSFER_STATUS_COMPLETED;
+}
+
+export function isIncomingCompletedTransfer(tx) {
+    return isCompletedTransfer(tx) && isIncomingTransfer(tx);
+}
+
+export function isReceivePaymentTransfer(tx, { createdAt, amountSats, skewMs = 0 } = {}) {
+    if (!isIncomingCompletedTransfer(tx)) {
+        return false;
+    }
+
+    const invoiceMs = timestampMs(createdAt, null, { parseString: true });
+    const transferMs = txCreatedMs(tx);
+    if (Number.isFinite(invoiceMs) && Number.isFinite(transferMs) && transferMs < invoiceMs - skewMs) {
+        return false;
+    }
+
+    const expectedAmount = Number(amountSats);
+    if (Number.isSafeInteger(expectedAmount) && expectedAmount > 0) {
+        return Number(tx?.totalValue) === expectedAmount;
+    }
+
+    return true;
+}
+
+export function isLightningReceiveDone(status) {
+    return LIGHTNING_RECEIVE_DONE_STATUSES.has(typeof status === 'string' ? status.trim().toLowerCase() : '');
 }
 
 export function isPendingTransfer(tx) {

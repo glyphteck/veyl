@@ -1,0 +1,27 @@
+.qr {
+    color: var(--foreground);
+    display: inline-flex;
+    flex-shrink: 0;
+    transform-origin: center;
+    transition: color 320ms cubic-bezier(0.2, 0, 0, 1);
+    will-change: color, transform;
+}
+
+.paid {
+    animation: qr-paid-pop 650ms cubic-bezier(0.2, 0, 0, 1) both;
+    color: var(--active);
+}
+
+@keyframes qr-paid-pop {
+    0% {
+        transform: scale(1);
+    }
+
+    45% {
+        transform: scale(0.88);
+    }
+
+    100% {
+        transform: scale(1.06);
+    }
+}

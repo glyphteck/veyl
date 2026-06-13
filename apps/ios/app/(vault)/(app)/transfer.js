@@ -1,23 +1,27 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Pressable, Text, TextInput, View } from 'react-native';
+import { Alert, Pressable, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
-import { ArrowDownLeft, ArrowUpRight } from 'lucide-react-native';
+import { ArrowDownLeft, ArrowUpRight, Zap } from 'lucide-react-native';
 
 import Avatar from '@/components/avatar';
+import AmountInput from '@/components/amountinput';
 import GlassButton from '@/components/glass/glassbutton';
 import GlassField from '@/components/glass/glassfield';
 import GlassIcon from '@/components/glass/glassicon';
+import Icon from '@/components/icon';
 import { useBitcoin } from '@/providers/bitcoinprovider';
 import { useChat } from '@/providers/chatprovider';
 import { usePeer } from '@/providers/peerprovider';
 import { useTheme } from '@/providers/themeprovider';
 import { useUser } from '@/providers/userprovider';
 import { useWallet } from '@/providers/walletprovider';
+import { releaseInvoiceScan, suppressInvoiceScan } from '@/lib/invoicescan';
 import { tap } from '@/lib/tap';
 import { makeReq } from '@veyl/shared/chat/messages';
 import { BTC_PRICE_FALLBACK, REQUEST_MONEY_MAX_SATS } from '@veyl/shared/config';
 import { textRouteParam } from '@veyl/shared/navigation/params';
+import { qr } from '@veyl/shared/qr';
 import { SEND_ON_SCAN_ENABLED } from '@veyl/shared/settings';
 import { lowerText } from '@veyl/shared/utils/text';
 import { MONEY_UNITS, renderMoney, toDisplay, toSats } from '@veyl/shared/money';
@@ -29,31 +33,52 @@ function flag(value) {
     return raw === '1' || raw === 'true' || raw === 'yes';
 }
 
-export default function TransferScreen() {
+function InvoiceMark({ theme, size = 64 }) {
+    return (
+        <View
+            style={{
+                width: size,
+                height: size,
+                borderRadius: size / 2,
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: theme.glassBackground,
+                borderWidth: 1,
+                borderColor: theme.border,
+            }}
+        >
+            <Icon icon={Zap} size={Math.round(size * 0.46)} color={theme.foreground} />
+        </View>
+    );
+}
+
+export default function PaymentScreen() {
     const { theme, isDark } = useTheme();
     const { settings, walletPK: ownWalletPK, chatBanned } = useUser();
     const bitcoin = useBitcoin();
-    const { sendMoneyWithSpark, balance } = useWallet();
+    const { sendMoneyWithSpark, payExternalInvoice, balance } = useWallet();
     const { sendMessage } = useChat() || {};
-    const { peerByUid, peerByWalletPK, addPeer } = usePeer() || {};
+    const { peerByUid, peerByWalletPK, peerByUsername, addPeer } = usePeer() || {};
     const params = useLocalSearchParams();
 
     const uid = textRouteParam(params?.uid).trim();
+    const username = textRouteParam(params?.username).trim();
     const walletPK = textRouteParam(params?.walletPK).trim();
+    const invoiceType = lowerText(textRouteParam(params?.invoiceType)).trim();
+    const invoice = textRouteParam(params?.invoice).trim();
     const rawAmount = textRouteParam(params?.amount).trim();
     const presetMode = lowerText(textRouteParam(params?.mode));
     const forceSend = flag(params?.send);
     const autoSend = SEND_ON_SCAN_ENABLED && flag(params?.auto);
     const price = bitcoin?.price ?? BTC_PRICE_FALLBACK;
     const preset = rawAmount.length > 0;
+    const isInvoice = !!invoice && (invoiceType === qr.lightning || invoiceType === qr.spark);
 
     const inputRef = useRef(null);
-    const openRef = useRef(true);
     const busyRef = useRef(false);
     const autoSendRef = useRef(false);
 
     const [fetchedPeer, setFetchedPeer] = useState(null);
-    const [isSending, setIsSending] = useState(false);
     const [amount, setAmount] = useState('');
     const [unit, setUnit] = useState(settings?.moneyFormat || 'sats');
     const [mode, setMode] = useState('send');
@@ -74,62 +99,63 @@ export default function TransferScreen() {
             const byUid = peerByUid?.get(uid);
             if (byUid) return byUid;
         }
+        if (username) {
+            const byUsername = peerByUsername?.get(username);
+            if (byUsername) return byUsername;
+        }
         if (!walletPK) return null;
         return peerByWalletPK?.get(walletPK) ?? null;
-    }, [peerByUid, peerByWalletPK, uid, walletPK]);
+    }, [peerByUid, peerByUsername, peerByWalletPK, uid, username, walletPK]);
 
-    const peer = useMemo(() => knownPeer ?? fetchedPeer ?? (uid || walletPK ? { uid: uid || null, walletPK: walletPK || null } : null), [fetchedPeer, knownPeer, uid, walletPK]);
-    const peerWalletPK = peer?.walletPK || walletPK;
-    const peerChatPK = peer?.chatPK || null;
+    const peer = useMemo(() => knownPeer ?? fetchedPeer ?? (uid || username || walletPK ? { uid: uid || null, username: username || null, walletPK: walletPK || null } : null), [fetchedPeer, knownPeer, uid, username, walletPK]);
+    const peerWalletPK = isInvoice ? null : peer?.walletPK || walletPK;
+    const peerChatPK = isInvoice ? null : peer?.chatPK || null;
     const avatar = peer?.avatar ? { uri: peer.avatar } : null;
     const name = useMemo(() => {
+        if (isInvoice && (peer || username || walletPK)) return formatUserDisplay(peer || { username, walletPK }, false);
+        if (isInvoice) return invoiceType === qr.spark ? 'Spark invoice' : 'Lightning invoice';
         if (!peer && !walletPK) return 'user';
         return formatUserDisplay(peer || { walletPK }, false);
-    }, [peer, walletPK]);
+    }, [invoiceType, isInvoice, peer, username, walletPK]);
+    const showInvoiceMark = isInvoice && !peer?.username && !peer?.walletPK && !username && !walletPK;
 
     useEffect(() => {
         setFetchedPeer(null);
-    }, [uid, walletPK]);
+    }, [invoice, invoiceType, uid, username, walletPK]);
 
     useEffect(() => {
         autoSendRef.current = false;
-    }, [autoSend, rawAmount, uid, walletPK]);
+    }, [autoSend, invoice, invoiceType, rawAmount, uid, username, walletPK]);
 
     useEffect(() => {
-        return () => {
-            openRef.current = false;
-        };
-    }, []);
-
-    useEffect(() => {
-        if ((!uid && !walletPK) || knownPeer || !addPeer) {
+        if ((!uid && !username && !walletPK) || knownPeer || !addPeer) {
             return;
         }
 
         let cancelled = false;
 
-        addPeer(uid ? { uid, ...(walletPK ? { walletPK } : {}) } : { walletPK })
+        addPeer(uid ? { uid, ...(walletPK ? { walletPK } : {}), ...(username ? { username } : {}) } : username ? { username, ...(walletPK ? { walletPK } : {}) } : { walletPK })
             .then((nextPeer) => {
                 if (!cancelled) setFetchedPeer(nextPeer ?? null);
             })
             .catch((err) => {
-                console.warn('transfer peer lookup failed', err);
+                console.warn('payment peer lookup failed', err);
             });
 
         return () => {
             cancelled = true;
         };
-    }, [addPeer, knownPeer, uid, walletPK]);
+    }, [addPeer, knownPeer, uid, username, walletPK]);
 
     useEffect(() => {
-        setMode(presetMode === 'request' ? 'request' : 'send');
-    }, [forceSend, presetMode, rawAmount, uid, walletPK]);
+        setMode(!isInvoice && presetMode === 'request' ? 'request' : 'send');
+    }, [forceSend, invoice, invoiceType, isInvoice, presetMode, rawAmount, uid, username, walletPK]);
 
     useEffect(() => {
-        if (chatBanned && mode === 'request') {
+        if ((isInvoice || chatBanned) && mode === 'request') {
             setMode('send');
         }
-    }, [chatBanned, mode]);
+    }, [chatBanned, isInvoice, mode]);
 
     useEffect(() => {
         if (preset) return;
@@ -140,9 +166,9 @@ export default function TransferScreen() {
         requestAnimationFrame(() => {
             inputRef.current?.focus?.();
         });
-    }, [preset, settings?.moneyFormat, uid, walletPK]);
+    }, [invoice, invoiceType, preset, settings?.moneyFormat, uid, username, walletPK]);
 
-    const maxSats = mode === 'request' ? REQUEST_MONEY_MAX_SATS : balanceSats;
+    const maxSats = !isInvoice && mode === 'request' ? REQUEST_MONEY_MAX_SATS : balanceSats;
     const typedSats = useMemo(() => {
         if (!amount) return 0n;
         try {
@@ -154,11 +180,11 @@ export default function TransferScreen() {
         }
     }, [amount, maxSats, price, unit]);
 
-    const transferSats = preset ? presetSats : typedSats;
+    const paymentSats = preset ? presetSats : typedSats;
     const amountText = presetSats > 0n ? renderMoney(presetSats.toString(), settings?.moneyFormat || 'sats', price) : '—';
-    const canSend = !!peerWalletPK && transferSats > 0n && transferSats <= balanceSats && !isSending && peerWalletPK !== ownWalletPK;
-    const canRequest = !chatBanned && !!peerChatPK && transferSats > 0n && !isSending;
-    const actionLabel = mode === 'request' ? (isSending ? 'requesting...' : peer ? `request from ${name}` : 'request') : isSending ? 'sending...' : peer ? `send to ${name}` : 'send';
+    const canSend = isInvoice ? !!invoice && paymentSats > 0n && paymentSats <= balanceSats : !!peerWalletPK && paymentSats > 0n && paymentSats <= balanceSats && peerWalletPK !== ownWalletPK;
+    const canRequest = !isInvoice && !chatBanned && !!peerChatPK && paymentSats > 0n;
+    const actionLabel = isInvoice ? `pay ${name}` : mode === 'request' ? (peer ? `request from ${name}` : 'request') : peer ? `send to ${name}` : 'send';
     const actionDisabled = mode === 'request' ? !canRequest : !canSend;
     const modeIcon = mode === 'request' ? ArrowDownLeft : ArrowUpRight;
 
@@ -178,20 +204,16 @@ export default function TransferScreen() {
         }
         setUnit(next);
     }, [amount, price, unit]);
-    const unitPress = tap({ value: unitScale, disabled: isSending, onPress: cycleUnit });
+    const unitPress = tap({ value: unitScale, onPress: cycleUnit });
 
     const toggleMode = useCallback(() => {
-        if (isSending || forceSend || chatBanned) return;
+        if (isInvoice || forceSend || chatBanned) return;
         setMode((current) => (current === 'send' ? 'request' : 'send'));
-    }, [chatBanned, forceSend, isSending]);
+    }, [chatBanned, forceSend, isInvoice]);
 
-    const closeRoute = useCallback(() => {
-        if (!openRef.current) return;
-        openRef.current = false;
-        router.dismiss();
-    }, []);
+    const closeRoute = useCallback(() => router.dismiss(), []);
 
-    const handleTransfer = useCallback(() => {
+    const handlePayment = useCallback(() => {
         if (actionDisabled || busyRef.current) return;
 
         if (mode === 'request') {
@@ -207,14 +229,29 @@ export default function TransferScreen() {
             busyRef.current = true;
             closeRoute();
 
-            void sendMessage(peerChatPK, makeReq(transferSats.toString()))
-                .catch((err) => {
-                    Alert.alert('Request failed', err?.message || 'Failed to send request.');
+            void sendMessage(peerChatPK, makeReq(paymentSats.toString())).catch((err) => {
+                Alert.alert('Request failed', err?.message || 'Failed to send request.');
+            });
+            return;
+        }
+
+        if (isInvoice) {
+            busyRef.current = true;
+            suppressInvoiceScan({ type: invoiceType, invoice });
+            closeRoute();
+
+            void payExternalInvoice({
+                type: invoiceType,
+                invoice,
+                amountSats: paymentSats,
+                variableAmount: !preset,
+            })
+                .then(() => {
+                    suppressInvoiceScan({ type: invoiceType, invoice });
                 })
-                .finally(() => {
-                    if (!openRef.current) return;
-                    busyRef.current = false;
-                    setIsSending(false);
+                .catch((err) => {
+                    releaseInvoiceScan({ type: invoiceType, invoice });
+                    Alert.alert('Payment failed', err?.message || 'Failed to pay invoice.');
                 });
             return;
         }
@@ -227,32 +264,26 @@ export default function TransferScreen() {
         busyRef.current = true;
         closeRoute();
 
-        void sendMoneyWithSpark(peerWalletPK, Number(transferSats))
-            .catch((err) => {
-                Alert.alert('Send failed', err?.message || 'Failed to send money.');
-            })
-            .finally(() => {
-                if (!openRef.current) return;
-                busyRef.current = false;
-                setIsSending(false);
-            });
-    }, [actionDisabled, closeRoute, mode, peerChatPK, peerWalletPK, sendMessage, sendMoneyWithSpark, transferSats]);
+        void sendMoneyWithSpark(peerWalletPK, Number(paymentSats)).catch((err) => {
+            Alert.alert('Send failed', err?.message || 'Failed to send money.');
+        });
+    }, [actionDisabled, closeRoute, invoice, invoiceType, isInvoice, mode, payExternalInvoice, paymentSats, peerChatPK, peerWalletPK, preset, sendMessage, sendMoneyWithSpark]);
 
     useEffect(() => {
-        if (!autoSend || !forceSend || !preset || autoSendRef.current || !canSend || isSending) {
+        if (!autoSend || !forceSend || !preset || autoSendRef.current || !canSend) {
             return;
         }
 
         autoSendRef.current = true;
-        handleTransfer();
-    }, [autoSend, canSend, forceSend, handleTransfer, isSending, preset]);
+        handlePayment();
+    }, [autoSend, canSend, forceSend, handlePayment, preset]);
 
     return (
         <View style={{ flex: 1, paddingHorizontal: 24, paddingTop: 32, justifyContent: 'space-between', gap: 16 }}>
             <View style={{ flex: 1, justifyContent: 'center', gap: preset ? 0 : 16 }}>
                 {preset ? (
                     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 16, width: '100%' }}>
-                        <Avatar source={avatar} size={64} />
+                        {showInvoiceMark ? <InvoiceMark theme={theme} /> : <Avatar source={avatar} size={64} />}
                         <Text numberOfLines={1} adjustsFontSizeToFit style={{ flexShrink: 1, fontSize: 64, fontWeight: '900', color: theme.foreground }}>
                             {amountText}
                         </Text>
@@ -260,21 +291,20 @@ export default function TransferScreen() {
                 ) : (
                     <>
                         <View style={{ alignItems: 'center' }}>
-                            <Avatar source={avatar} size={64} />
+                            {showInvoiceMark ? <InvoiceMark theme={theme} /> : <Avatar source={avatar} size={64} />}
                         </View>
-                        <GlassField disabled={isSending} style={{ paddingHorizontal: 16 }}>
-                            <TextInput
+                        <GlassField style={{ paddingHorizontal: 16 }}>
+                            <AmountInput
                                 ref={inputRef}
                                 value={amount}
                                 placeholder={unit === 'sats' ? '0000' : '0.00'}
                                 placeholderTextColor={theme.muted}
+                                color={theme.foreground}
                                 keyboardType="numeric"
                                 onChangeText={setAmount}
-                                editable={!isSending}
-                                style={{ flex: 1, fontSize: 24, fontWeight: '900', color: theme.foreground, paddingVertical: 10 }}
                                 keyboardAppearance={isDark ? 'dark' : 'light'}
                             />
-                            <Pressable {...unitPress} hitSlop={8} disabled={isSending}>
+                            <Pressable {...unitPress} hitSlop={8}>
                                 <Animated.View style={[{ paddingLeft: 12, alignItems: 'center', justifyContent: 'center' }, unitStyle]}>
                                     {unit === 'btc' && <Text style={{ fontSize: 24, fontWeight: '900', color: theme.muted }}>₿</Text>}
                                     {unit === 'usd' && <Text style={{ fontSize: 24, fontWeight: '900', color: theme.muted }}>$</Text>}
@@ -286,8 +316,8 @@ export default function TransferScreen() {
                 )}
             </View>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                {!forceSend ? <GlassIcon icon={modeIcon} iconSize={32} onPress={toggleMode} disabled={isSending || chatBanned} /> : null}
-                <GlassButton onPress={handleTransfer} label={actionLabel} accent disabled={actionDisabled} pressableStyle={{ flex: 1 }} />
+                {!forceSend && !isInvoice ? <GlassIcon icon={modeIcon} iconSize={32} onPress={toggleMode} disabled={chatBanned} /> : null}
+                <GlassButton onPress={handlePayment} label={actionLabel} accent disabled={actionDisabled} pressableStyle={{ flex: 1 }} />
             </View>
         </View>
     );
