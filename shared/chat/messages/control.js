@@ -15,6 +15,8 @@ import {
     SYSTEM_RETENTION_KIND,
 } from './types.js';
 
+const retainedMessageCache = new WeakMap();
+
 function cleanReactionUser(value) {
     return cleanText(value);
 }
@@ -211,10 +213,31 @@ function sameReactions(a, b) {
     return left.every((reaction, index) => reaction.user === right[index]?.user && reaction.emoji === right[index]?.emoji);
 }
 
+function hasReactionControl(messages) {
+    for (const msg of messages || []) {
+        if (isServerConfirmedMsg(msg) && isReactionMsg(msg)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function needsRetentionProjection(messages) {
+    for (const msg of messages || []) {
+        if (isSystemMsg(msg) || isReadReceiptMsg(msg)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 export function deriveMessageReactions(messages, chatPK, peerChatPK) {
     const participants = [chatPK, peerChatPK].filter(Boolean);
     if (!Array.isArray(messages) || !messages.length || !participants.length) {
         return messages || [];
+    }
+    if (!hasReactionControl(messages)) {
+        return messages;
     }
 
     const allowed = new Set(participants);
@@ -344,79 +367,147 @@ export function getLatestReadOutgoingReceiptMessage(messages, chatPK, peerChatPK
     return getLatestReadOutgoingReceipt(messages, chatPK, peerChatPK)?.message ?? null;
 }
 
-function readReceiptFromRecipient(receipt, msg, chatPK, peerChatPK) {
-    const messageFromPeer = isPeerMsg(msg, chatPK);
-    const receiptFromPeer = isPeerMsg(receipt, chatPK);
-    return messageFromPeer ? !receiptFromPeer : receiptFromPeer && (!peerChatPK || receipt?.s === peerChatPK);
-}
-
-function readReceiptCoversMessage(receipt, msg, byKey, chatPK, peerChatPK) {
+function receiptCoverageTarget(receipt, byKey) {
     const targetKey = cleanText(receipt?.upto);
-    if (!targetKey || !readReceiptFromRecipient(receipt, msg, chatPK, peerChatPK)) {
-        return false;
+    if (!targetKey) {
+        return null;
     }
-    if (messageKeys(msg).includes(targetKey)) {
-        return true;
-    }
-
     const target = byKey.get(targetKey);
-    if (target && isPeerMsg(target, chatPK) !== isPeerMsg(msg, chatPK)) {
-        return false;
-    }
-
-    const messageMs = messageOrderMs(msg);
     const targetMs = messageOrderMs(target) ?? messageOrderMs({ cid: targetKey }) ?? messageOrderMs(receipt);
-    return messageMs != null && targetMs != null && messageMs <= targetMs;
+    const receiptMs = messageOrderMs(receipt);
+    if (targetMs == null || receiptMs == null) {
+        return null;
+    }
+    return {
+        target,
+        targetMs,
+        receiptMs,
+    };
 }
 
-function messageSeenAtMs(msg, receipts, byKey, chatPK, peerChatPK) {
-    let seenAt = null;
-    for (const receipt of receipts || []) {
-        if (!readReceiptCoversMessage(receipt, msg, byKey, chatPK, peerChatPK)) {
+function makeReceiptCoverage(messages, byKey, chatPK, peerChatPK) {
+    const peerMessageReceipts = [];
+    const ownMessageReceipts = [];
+
+    for (const msg of messages || []) {
+        if (!isServerConfirmedMsg(msg) || !isReadReceiptMsg(msg)) {
             continue;
         }
-        const receiptMs = messageOrderMs(receipt);
-        if (receiptMs != null && (seenAt == null || receiptMs < seenAt)) {
-            seenAt = receiptMs;
+
+        const coverage = receiptCoverageTarget(msg, byKey);
+        if (!coverage) {
+            continue;
+        }
+
+        const receiptFromPeer = isPeerMsg(msg, chatPK);
+        if (receiptFromPeer) {
+            if (peerChatPK && msg?.s !== peerChatPK) {
+                continue;
+            }
+            if (coverage.target && isPeerMsg(coverage.target, chatPK)) {
+                continue;
+            }
+            ownMessageReceipts.push(coverage);
+        } else {
+            if (coverage.target && !isPeerMsg(coverage.target, chatPK)) {
+                continue;
+            }
+            peerMessageReceipts.push(coverage);
         }
     }
-    return seenAt;
+
+    peerMessageReceipts.sort((a, b) => b.targetMs - a.targetMs);
+    ownMessageReceipts.sort((a, b) => b.targetMs - a.targetMs);
+    return {
+        peer: { receipts: peerMessageReceipts, index: 0, seenAt: null },
+        own: { receipts: ownMessageReceipts, index: 0, seenAt: null },
+    };
 }
 
-function isSeenHiddenMsg(msg, receipts, byKey, chatPK, peerChatPK, now) {
-    if (!isServerConfirmedMsg(msg) || isControlMsg(msg) || isSystemMsg(msg) || !canShowMsg(msg) || msg.ttl == null) {
-        return false;
+function receiptCoverageSeenAt(state, messageMs) {
+    if (!state || messageMs == null) {
+        return null;
     }
 
-    const seenAt = messageSeenAtMs(msg, receipts, byKey, chatPK, peerChatPK);
-    if (seenAt == null) {
-        return false;
+    while (state.index < state.receipts.length && state.receipts[state.index].targetMs >= messageMs) {
+        const receiptMs = state.receipts[state.index].receiptMs;
+        state.seenAt = state.seenAt == null ? receiptMs : Math.min(state.seenAt, receiptMs);
+        state.index += 1;
+    }
+    return state.seenAt;
+}
+
+function hasReadReceipts(messages) {
+    for (const msg of messages || []) {
+        if (isServerConfirmedMsg(msg) && isReadReceiptMsg(msg)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function canReadReceiptsHideMessages(messages, now) {
+    let hasSeenRetention = false;
+    let hasExpiredSeenWindow = false;
+
+    for (const msg of messages || []) {
+        if (isServerConfirmedMsg(msg) && isReadReceiptMsg(msg)) {
+            const ms = messageOrderMs(msg);
+            if (ms != null && seenMessageTtlMs(ms) <= now) {
+                hasExpiredSeenWindow = true;
+            }
+            continue;
+        }
+
+        if (getMessageRetention(msg) === CHAT_RETENTION_SEEN) {
+            hasSeenRetention = true;
+        }
+
+        if (hasSeenRetention && hasExpiredSeenWindow) {
+            return true;
+        }
     }
 
-    return getMessageRetention(msg) === CHAT_RETENTION_SEEN || seenMessageTtlMs(seenAt) <= now;
+    return hasSeenRetention || hasExpiredSeenWindow;
 }
 
 export function getSeenHiddenMessages(messages, chatPK, peerChatPK, options = {}) {
     if (!Array.isArray(messages) || !messages.length || !chatPK) {
         return [];
     }
-
-    const keepKeys = options?.keepKeys instanceof Set ? options.keepKeys : new Set(Array.isArray(options?.keepKeys) ? options.keepKeys.filter(Boolean) : []);
-    const now = Number.isFinite(options?.now) ? options.now : Date.now();
-    const byKey = indexMessagesByKey(messages, { keep: 'last' });
-    const receipts = [];
-
-    for (const msg of messages) {
-        if (isServerConfirmedMsg(msg) && isReadReceiptMsg(msg)) {
-            receipts.push(msg);
-        }
-    }
-
-    if (!receipts.length) {
+    if (!hasReadReceipts(messages)) {
         return [];
     }
 
-    return messages.filter((msg) => !hasAnyMsgKey(msg, keepKeys) && isSeenHiddenMsg(msg, receipts, byKey, chatPK, peerChatPK, now));
+    const keepKeys = options?.keepKeys instanceof Set ? options.keepKeys : new Set(Array.isArray(options?.keepKeys) ? options.keepKeys.filter(Boolean) : []);
+    const now = Number.isFinite(options?.now) ? options.now : Date.now();
+    if (!canReadReceiptsHideMessages(messages, now)) {
+        return [];
+    }
+    const byKey = indexMessagesByKey(messages, { keep: 'last' });
+    const coverage = makeReceiptCoverage(messages, byKey, chatPK, peerChatPK);
+    if (!coverage.peer.receipts.length && !coverage.own.receipts.length) {
+        return [];
+    }
+
+    const hidden = [];
+    const candidates = [];
+    for (const msg of messages) {
+        if (!hasAnyMsgKey(msg, keepKeys) && isServerConfirmedMsg(msg) && !isControlMsg(msg) && !isSystemMsg(msg) && canShowMsg(msg) && msg.ttl != null) {
+            const ms = messageOrderMs(msg);
+            if (ms != null) {
+                candidates.push({ msg, ms, fromPeer: isPeerMsg(msg, chatPK) });
+            }
+        }
+    }
+    candidates.sort((a, b) => b.ms - a.ms);
+    for (const candidate of candidates) {
+        const seenAt = receiptCoverageSeenAt(candidate.fromPeer ? coverage.peer : coverage.own, candidate.ms);
+        if (seenAt != null && (getMessageRetention(candidate.msg) === CHAT_RETENTION_SEEN || seenMessageTtlMs(seenAt) <= now)) {
+            hidden.push(candidate.msg);
+        }
+    }
+    return hidden;
 }
 
 export function filterSeenMessages(messages, chatPK, peerChatPK, options = {}) {
@@ -431,11 +522,19 @@ export function filterSeenMessages(messages, chatPK, peerChatPK, options = {}) {
 }
 
 export function getHiddenDisplayMessages(messages, chatPK, peerChatPK, options = {}) {
-    return getSeenHiddenMessages(applyMessageRetentionTimeline(applyMessageActions(messages), options.fallback), chatPK, peerChatPK, options);
+    const actionMessages = applyMessageActions(messages);
+    if (!hasReadReceipts(actionMessages)) {
+        return [];
+    }
+    return getSeenHiddenMessages(applyMessageRetentionTimeline(actionMessages, options.fallback), chatPK, peerChatPK, options);
 }
 
 export function getDisplayMessages(messages, chatPK, peerChatPK, options = {}) {
-    return filterSeenMessages(applyMessageRetentionTimeline(applyMessageActions(messages), options.fallback), chatPK, peerChatPK, options);
+    const actionMessages = applyMessageActions(messages);
+    if (!needsRetentionProjection(actionMessages)) {
+        return actionMessages || [];
+    }
+    return filterSeenMessages(applyMessageRetentionTimeline(actionMessages, options.fallback), chatPK, peerChatPK, options);
 }
 
 function actionTarget(msg) {
@@ -542,14 +641,16 @@ function replaceSystemMsg(previous, next) {
 
 export function collapseSystemMessages(messages) {
     const collapsed = [];
+    let changed = false;
     for (const msg of messages || []) {
         if (isSystemMsg(msg) && isSystemMsg(collapsed[collapsed.length - 1])) {
             collapsed[collapsed.length - 1] = replaceSystemMsg(collapsed[collapsed.length - 1], msg);
+            changed = true;
             continue;
         }
         collapsed.push(msg);
     }
-    return collapsed;
+    return changed ? collapsed : messages || [];
 }
 
 export function applyMessageRetentionTimeline(messages, fallback = CHAT_RETENTION_24H) {
@@ -570,9 +671,34 @@ export function applyMessageRetentionTimeline(messages, fallback = CHAT_RETENTIO
         if (isControlMsg(msg) || hasChatRetention(msg.retention) || !canShowMsg(msg)) {
             return msg;
         }
-        changed = true;
-        return withMessageRetention(msg, retention);
+        const next = withCachedMessageRetention(msg, retention);
+        if (next !== msg) {
+            changed = true;
+        }
+        return next;
     });
 
     return changed ? next : messages;
+}
+
+function withCachedMessageRetention(msg, retention) {
+    const next = withMessageRetention(msg, retention);
+    if (next === msg) {
+        return msg;
+    }
+
+    const nextRetention = next.retention;
+    let byRetention = retainedMessageCache.get(msg);
+    if (!byRetention) {
+        byRetention = new Map();
+        retainedMessageCache.set(msg, byRetention);
+    }
+
+    const cached = byRetention.get(nextRetention);
+    if (cached) {
+        return cached;
+    }
+
+    byRetention.set(nextRetention, next);
+    return next;
 }

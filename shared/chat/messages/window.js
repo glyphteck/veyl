@@ -2,20 +2,25 @@ import { dropCachedMedia } from '../../cache/localdata.js';
 import { filterChatMessages } from '../ids.js';
 import { addMessageKeys, keySet, messageHasKey } from '../messagekeys.js';
 import { getMessageKey, getMessageOrderMs, mergeMessages } from '../state.js';
-import { deriveMessageReactions, getDisplayMessages, holdVisibleMsg, isExpiredMsg } from './control.js';
+import { canShowMsg, collapseSystemMessages, deriveMessageReactions, getDisplayMessages, holdVisibleMsg, isExpiredMsg } from './control.js';
 
 export function trimExpiredMessages(messages, options = {}) {
     const keepKeys = options.keepKeys;
     const expiredKeys = options.expiredKeys;
-    return (messages || []).filter((message) => {
+    const source = messages || [];
+    let changed = false;
+    const next = [];
+    for (const message of source) {
         if (!isExpiredMsg(message)) {
-            return true;
+            next.push(message);
+            continue;
         }
         if (messageHasKey(message, keepKeys)) {
             addMessageKeys(expiredKeys, message);
         }
-        return false;
-    });
+        changed = true;
+    }
+    return changed ? next : source;
 }
 
 export function getMessagesBatch(messages, expiredKeys, deletedKeys) {
@@ -52,14 +57,34 @@ export function dropMissingFromBatch(messages, msgBatch, keys) {
     if (!msgBatch) {
         return messages || [];
     }
-    return (messages || []).filter((message) => !isMissingFromBatch(message, msgBatch, keys));
+    const source = messages || [];
+    let changed = false;
+    const next = [];
+    for (const message of source) {
+        if (isMissingFromBatch(message, msgBatch, keys)) {
+            changed = true;
+            continue;
+        }
+        next.push(message);
+    }
+    return changed ? next : source;
 }
 
 export function removeMessagesByKeys(messages, keys) {
     if (!keys?.size) {
         return messages || [];
     }
-    return (messages || []).filter((message) => !messageHasKey(message, keys));
+    const source = messages || [];
+    let changed = false;
+    const next = [];
+    for (const message of source) {
+        if (messageHasKey(message, keys)) {
+            changed = true;
+            continue;
+        }
+        next.push(message);
+    }
+    return changed ? next : source;
 }
 
 export function mergeKeySets(...groups) {
@@ -72,42 +97,28 @@ export function mergeKeySets(...groups) {
     return keys;
 }
 
-function messagePageMarker(message) {
-    if (!message?.id || String(message.id).startsWith('local:') || !message?.ts) {
-        return null;
-    }
-    return { id: message.id, ts: message.ts };
-}
-
-export function firstMessageWindowMarker(older, live) {
-    if (!older?.length) {
-        return null;
-    }
-
-    let first = null;
-    let firstMs = Infinity;
-    for (const messages of [older, live]) {
-        for (const message of messages || []) {
-            const marker = messagePageMarker(message);
-            const ms = getMessageOrderMs(marker);
-            if (!marker || !Number.isFinite(ms)) {
-                continue;
+function canConcatMessageGroups(groups) {
+    const keys = new Set();
+    let previousMs = -Infinity;
+    for (const group of groups) {
+        for (const message of group || []) {
+            const key = getMessageKey(message);
+            if (!key || keys.has(key)) {
+                return false;
             }
-            if (ms < firstMs || (ms === firstMs && marker.id < first.id)) {
-                first = marker;
-                firstMs = ms;
+            keys.add(key);
+            const ms = getMessageOrderMs(message);
+            if (!Number.isFinite(ms) || ms < previousMs) {
+                return false;
             }
+            previousMs = ms;
         }
     }
-    return first;
+    return true;
 }
 
-export function messageWindowMarkerKey(marker) {
-    if (!marker?.id) {
-        return '';
-    }
-    const ms = getMessageOrderMs(marker);
-    return `${marker.id}:${Number.isFinite(ms) ? ms : ''}`;
+function combineRouteMessages(...groups) {
+    return canConcatMessageGroups(groups) ? groups.flat() : mergeMessages(...groups);
 }
 
 export function selectRouteMessageState({ stateScope, scopeKey, initialSeed, older, live, hasOlder, ready, exists, serverBatch, fallbackReady = false }) {
@@ -122,24 +133,66 @@ export function selectRouteMessageState({ stateScope, scopeKey, initialSeed, old
     };
 }
 
-export function deriveRouteMessages({ older, live, locals, serverBatch, deletedKeys, visibleKeys, chatPK, peerChatPK }) {
+function holdCachedVisibleMessages(messages, cache) {
+    if (!(cache instanceof Map)) {
+        return messages.map(holdVisibleMsg);
+    }
+
+    const retainedKeys = new Set();
+    const heldMessages = messages.map((message) => {
+        const key = getMessageKey(message);
+        if (!key) {
+            return holdVisibleMsg(message);
+        }
+        retainedKeys.add(key);
+        const cached = cache.get(key);
+        if (cached?.source === message && cached?.held) {
+            return cached.held;
+        }
+
+        const held = holdVisibleMsg(message);
+        cache.set(key, { source: message, held });
+        return held;
+    });
+    for (const key of cache.keys()) {
+        if (!retainedKeys.has(key)) {
+            cache.delete(key);
+        }
+    }
+    return heldMessages;
+}
+
+function visibleRouteMessages(messages) {
+    const visible = [];
+    for (const message of messages || []) {
+        if (canShowMsg(message)) {
+            visible.push(message);
+        }
+    }
+    return collapseSystemMessages(visible);
+}
+
+export function deriveRouteMessages({ older, live, locals, serverBatch, deletedKeys, visibleKeys, heldMessages, chatPK, peerChatPK }) {
     const liveKeys = new Set((live || []).map(getMessageKey).filter(Boolean));
     const sourceGoneKeys = mergeKeySets(serverBatch?.deletedKeys, deletedKeys);
     const cleanOlder = serverBatch?.empty ? [] : dropMissingFromBatch(older, serverBatch, liveKeys);
+    const serverKeys = new Set([...cleanOlder, ...(live || [])].map(getMessageKey).filter(Boolean));
     const renderLocals =
-        liveKeys.size || sourceGoneKeys.size
+        serverKeys.size || sourceGoneKeys.size
             ? (locals || []).filter((message) => {
                   const key = getMessageKey(message);
-                  return (!key || !liveKeys.has(key)) && !messageHasKey(message, sourceGoneKeys);
+                  return (!key || !serverKeys.has(key)) && !messageHasKey(message, sourceGoneKeys);
               })
             : locals || [];
-    const rawMessages = filterChatMessages(mergeMessages(cleanOlder, live, renderLocals), chatPK, peerChatPK);
+    const rawMessages = filterChatMessages(combineRouteMessages(cleanOlder, live, renderLocals), chatPK, peerChatPK);
     const retainedMessages = getDisplayMessages(rawMessages, chatPK, peerChatPK, {
         keepKeys: visibleKeys,
     });
+    const messages = holdCachedVisibleMessages(deriveMessageReactions(retainedMessages, chatPK, peerChatPK), heldMessages);
     return {
         rawMessages,
-        messages: deriveMessageReactions(retainedMessages, chatPK, peerChatPK).map(holdVisibleMsg),
+        messages,
+        visibleMessages: visibleRouteMessages(messages),
     };
 }
 
@@ -320,6 +373,14 @@ export function messageSeedFromView(seed) {
     const deletedKeys = keySet(seed.serverBatch?.deletedKeys);
     const older = removeMessagesByKeys(trimExpiredMessages(seed.older || []), deletedKeys);
     const live = removeMessagesByKeys(trimExpiredMessages(seed.live || []), deletedKeys);
+    const liveBatch =
+        live.length && live === seed.live && seed.serverBatch && !seed.serverBatch.empty
+            ? seed.serverBatch
+            : live.length
+              ? getMessagesBatch(live, expiredKeys, deletedKeys)
+              : seed.serverBatch?.empty
+                ? { empty: true, expiredKeys, deletedKeys }
+                : null;
 
     return {
         older,
@@ -327,7 +388,7 @@ export function messageSeedFromView(seed) {
         hasOlder: !!seed.hasOlder,
         ready: true,
         exists: !!seed.exists,
-        serverBatch: live.length ? getMessagesBatch(live, expiredKeys, deletedKeys) : seed.serverBatch?.empty ? { empty: true, expiredKeys, deletedKeys } : null,
+        serverBatch: liveBatch,
         olderThan: seed.olderThan ?? null,
         olderLoaded: !!seed.olderLoaded,
     };

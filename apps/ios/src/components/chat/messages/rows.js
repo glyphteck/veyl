@@ -1,6 +1,39 @@
-import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { MESSAGE_ROW_ENTER_STATE_MS, MESSAGE_ROW_LEAVE_MS } from '@/components/chat/rowmotion';
 import { getMessageKey } from '@veyl/shared/chat/state';
+
+const ROW_CACHE_LIMIT = 40;
+const rowCache = new Map();
+
+function rememberRows(scopeKey, state, enteredKeys) {
+    const key = String(scopeKey || '').trim();
+    if (!key || !state) {
+        return;
+    }
+    rowCache.delete(key);
+    rowCache.set(key, {
+        state,
+        enteredKeys: new Set(enteredKeys || []),
+    });
+    while (rowCache.size > ROW_CACHE_LIMIT) {
+        const oldest = rowCache.keys().next().value;
+        if (!oldest) {
+            return;
+        }
+        rowCache.delete(oldest);
+    }
+}
+
+function readRows(scopeKey) {
+    const key = String(scopeKey || '').trim();
+    if (!key || !rowCache.has(key)) {
+        return null;
+    }
+    const cached = rowCache.get(key);
+    rowCache.delete(key);
+    rowCache.set(key, cached);
+    return cached;
+}
 
 function sameRowList(a, b) {
     if (a === b) {
@@ -35,22 +68,68 @@ function makePresentRows(messages) {
         .filter((row) => row.key);
 }
 
+function canUseCachedRows(cached, scopeKey, presentRows, animate) {
+    if (!animate || cached?.state?.scopeKey !== scopeKey) {
+        return false;
+    }
+
+    const presentKeys = new Set(presentRows.map((row) => row.key));
+    const cachedKeys = new Set();
+    for (const row of cached.state.rows || []) {
+        if (row?.state === 'leaving') {
+            continue;
+        }
+        if (!presentKeys.has(row?.key)) {
+            return false;
+        }
+        cachedKeys.add(row.key);
+    }
+    if (cachedKeys.size !== presentKeys.size) {
+        return false;
+    }
+    for (const key of presentKeys) {
+        if (!cachedKeys.has(key)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 function shouldExitPendingDot(previous, next) {
     return !!((previous?.pending || previous?.failed) && next && !next.pending && !next.failed);
 }
 
 export function useAnimatedRows(messages, scopeKey, animate = true) {
     const presentRows = useMemo(() => makePresentRows(messages), [messages]);
-    const [state, setState] = useState(() => ({ scopeKey, rows: presentRows, animated: animate }));
+    const initialCacheRef = useRef(null);
+    if (initialCacheRef.current == null) {
+        initialCacheRef.current = readRows(scopeKey) || false;
+    }
+    const [state, setState] = useState(() => {
+        const cached = initialCacheRef.current || null;
+        return canUseCachedRows(cached, scopeKey, presentRows, animate) ? cached.state : { scopeKey, rows: presentRows, animated: animate };
+    });
+    const enteredKeysRef = useRef(
+        canUseCachedRows(initialCacheRef.current, scopeKey, presentRows, animate) ? { scopeKey, keys: new Set(initialCacheRef.current.enteredKeys || []) } : { scopeKey, keys: new Set(presentRows.map((row) => row.key)) }
+    );
     const reset = state.scopeKey !== scopeKey;
+
+    useEffect(() => {
+        rememberRows(scopeKey, state, enteredKeysRef.current.keys);
+    }, [scopeKey, state]);
 
     useLayoutEffect(() => {
         setState((prev) => {
             if (prev.scopeKey !== scopeKey || !animate || !prev.animated) {
+                enteredKeysRef.current = { scopeKey, keys: new Set(presentRows.map((row) => row.key)) };
                 return { scopeKey, rows: presentRows, animated: animate };
             }
 
             const now = Date.now();
+            if (enteredKeysRef.current.scopeKey !== scopeKey) {
+                enteredKeysRef.current = { scopeKey, keys: new Set(prev.rows.map((row) => row.key)) };
+            }
+            const enteredKeys = enteredKeysRef.current.keys;
             const nextKeys = new Set(presentRows.map((row) => row.key));
             const prevByKey = new Map();
             const prevIndexByKey = new Map();
@@ -71,9 +150,13 @@ export function useAnimatedRows(messages, scopeKey, animate = true) {
                 const prevEnteredAt = prevRow?.enteredAt || now;
                 const keepEntering = prevRow?.state === 'entering' && now - prevEnteredAt < MESSAGE_ROW_ENTER_STATE_MS;
                 const retainedState = keepEntering || prevRow?.state === 'instant' ? prevRow.state : 'present';
-                const nextState = retained ? retainedState : index < newestInsertCount ? 'entering' : 'instant';
+                const canEnter = !enteredKeys.has(row.key) && index < newestInsertCount;
+                const nextState = retained ? retainedState : canEnter ? 'entering' : 'instant';
                 const enteredAt = nextState === 'entering' ? (retained ? prevEnteredAt : now) : 0;
                 const dotExitToken = confirmed ? (prevRow.dotExitToken || 0) + 1 : prevRow?.dotExitToken || 0;
+                if (nextState === 'entering' || nextState === 'present' || nextState === 'instant') {
+                    enteredKeys.add(row.key);
+                }
                 if (prevRow && prevRow.state === nextState && prevRow.enteredAt === enteredAt && prevRow.msg === row.msg && prevRow.dotExitToken === dotExitToken) {
                     return prevRow;
                 }
@@ -224,5 +307,5 @@ export function useAnimatedRows(messages, scopeKey, animate = true) {
         return () => clearTimeout(timeout);
     }, [scopeKey, state.animated, state.rows, state.scopeKey]);
 
-    return reset ? presentRows : state.rows;
+    return !animate || reset ? presentRows : state.rows;
 }

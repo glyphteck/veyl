@@ -228,6 +228,7 @@ export function createChatProvider({ cloud, media = {}, useUser, useVault, readR
             subscribeMessageBatch,
             queueMessagePreload,
             getMessageView,
+            getMessageViewRuntime,
             rememberMessageView,
             updateMessageView,
             retainMessageView,
@@ -392,14 +393,19 @@ export function createChatProvider({ cloud, media = {}, useUser, useVault, readR
             [chatBanned, ensureChat, ensureMessageBatch, getChatPreviewKey, setSelectedChat]
         );
 
-        const resolvePeerChatId = useCallback(
-            async (peerChatPK) => {
+        const getPeerChatId = useCallback(
+            (peerChatPK) => {
                 if (chatBanned || !peerChatPK) {
                     return null;
                 }
                 return sendOptionsForPeer(peerChatPK)?.chatId || null;
             },
             [chatBanned, sendOptionsForPeer]
+        );
+
+        const resolvePeerChatId = useCallback(
+            async (peerChatPK) => getPeerChatId(peerChatPK),
+            [getPeerChatId]
         );
 
         const selectPeerChat = useCallback(
@@ -552,6 +558,7 @@ export function createChatProvider({ cloud, media = {}, useUser, useVault, readR
                 queueMessagePreload,
                 getMessageBatch,
                 getMessageView,
+                getMessageViewRuntime,
                 rememberMessageView,
                 updateMessageView,
                 retainMessageView,
@@ -572,6 +579,7 @@ export function createChatProvider({ cloud, media = {}, useUser, useVault, readR
                 queueMessagePreload,
                 getMessageBatch,
                 getMessageView,
+                getMessageViewRuntime,
                 rememberMessageView,
                 updateMessageView,
                 retainMessageView,
@@ -595,6 +603,7 @@ export function createChatProvider({ cloud, media = {}, useUser, useVault, readR
                 loadMoreChats,
                 selectedChatId,
                 selectChat,
+                getPeerChatId,
                 resolvePeerChatId,
                 selectPeerChat,
                 dropChat,
@@ -641,6 +650,7 @@ export function createChatProvider({ cloud, media = {}, useUser, useVault, readR
                 loadMoreChats,
                 selectedChatId,
                 selectChat,
+                getPeerChatId,
                 resolvePeerChatId,
                 selectPeerChat,
                 dropChat,

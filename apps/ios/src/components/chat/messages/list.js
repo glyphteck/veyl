@@ -22,7 +22,7 @@ import { mark } from '@/lib/diagnostics';
 import { useChatMessages } from '@/lib/chat/usemessages';
 import { getMediaViewerKey, isMediaViewerMsg } from '@/lib/chat/viewer';
 import { cancelPendingMsgFileLoads } from '@/lib/chat/imagecache';
-import { canReplyToMsg, canShowMsg, collapseSystemMessages, getLatestReadOutgoingReceipt, isPeerMsg, isSavedForeverMsg, isSystemMsg } from '@veyl/shared/chat/messages';
+import { canReplyToMsg, getLatestReadOutgoingReceipt, isPeerMsg, isSavedForeverMsg, isSystemMsg } from '@veyl/shared/chat/messages';
 import { isDateSeparatorMsg, withDateSeparators } from '@veyl/shared/chat/messages/dates';
 import { messageKeys } from '@veyl/shared/chat/messagekeys';
 import { formatTimeHHMM } from '@veyl/shared/utils/time';
@@ -30,6 +30,10 @@ import { getMessageKey, getMessageOrderMs } from '@veyl/shared/chat/state';
 
 const LIKE_PREVIEW_INSET = 22;
 const KEYBOARD_DISMISS_MODE = 'interactive';
+const LIST_INITIAL_RENDER = 24;
+const LIST_MAX_RENDER_BATCH = 24;
+const LIST_RENDER_BATCH_MS = 16;
+const LIST_WINDOW_SIZE = 21;
 
 function OlderMessagesLoader({ chatPad, screenW, theme }) {
     return (
@@ -53,6 +57,7 @@ function getMsgStamp(msg) {
 export default function Messages({
     chatId,
     chatPad = 16,
+    headerHeight = 0,
     chatTitle,
     children,
     extraContentPadding,
@@ -71,7 +76,7 @@ export default function Messages({
     const { active: menuActive } = useMenu();
     const { setMediaItems } = useMediaViewer();
     const { width: screenW } = useWindowDimensions();
-    const { messages: messagesAsc, ready, hasOlder, loadingOlder, loadOlder, patchMessage, removeMessage } = useChatMessages(chatId);
+    const { messages: messagesAsc, visibleMessages: visibleMessagesSourceAsc, ready, hasOlder, loadingOlder, loadOlder, patchMessage, removeMessage } = useChatMessages(chatId, peerChatPK);
     const time = useSharedValue(0);
     const receiptSnapshotRef = useRef(new Map());
     const receiptSnapshotChatRef = useRef('');
@@ -112,10 +117,25 @@ export default function Messages({
         removeMessage,
     });
     const activeMessagesAsc = useMemo(
-        () => (messagesAsc || []).filter((msg) => !messageKeys(msg).some((key) => deletingMessageKeys.has(key))),
+        () => {
+            const source = messagesAsc || [];
+            if (!deletingMessageKeys?.size) {
+                return source;
+            }
+            return source.filter((msg) => !messageKeys(msg).some((key) => deletingMessageKeys.has(key)));
+        },
         [deletingMessageKeys, messagesAsc]
     );
-    const visibleMessagesAsc = useMemo(() => collapseSystemMessages(activeMessagesAsc.filter(canShowMsg)), [activeMessagesAsc]);
+    const visibleMessagesAsc = useMemo(
+        () => {
+            const source = visibleMessagesSourceAsc || [];
+            if (!deletingMessageKeys?.size) {
+                return source;
+            }
+            return source.filter((msg) => !messageKeys(msg).some((key) => deletingMessageKeys.has(key)));
+        },
+        [deletingMessageKeys, visibleMessagesSourceAsc]
+    );
     const datedMessagesAsc = useMemo(() => {
         const dated = withDateSeparators(visibleMessagesAsc);
         if (!hasOlder || !isDateSeparatorMsg(dated[0])) {
@@ -125,8 +145,8 @@ export default function Messages({
     }, [hasOlder, visibleMessagesAsc]);
     const messages = useMemo(() => [...datedMessagesAsc].reverse(), [datedMessagesAsc]);
     const displayRows = useAnimatedRows(messages, chatId || '', ready);
-    const rowLayoutAnimation = useMemo(() => (displayRows.some((row) => row?.state === 'entering') ? MESSAGE_ROW_LAYOUT : undefined), [displayRows]);
-    const olderLoader = useMemo(() => (hasOlder || loadingOlder ? <OlderMessagesLoader chatPad={chatPad} screenW={screenW} theme={theme} /> : null), [chatPad, hasOlder, loadingOlder, screenW, theme]);
+    const rowLayoutAnimation = useMemo(() => (displayRows.some((row) => row?.state === 'entering' || row?.state === 'leaving') ? MESSAGE_ROW_LAYOUT : undefined), [displayRows]);
+    const olderLoader = useMemo(() => (loadingOlder ? <OlderMessagesLoader chatPad={chatPad} screenW={screenW} theme={theme} /> : null), [chatPad, loadingOlder, screenW, theme]);
     const latestReadReceipt = useMemo(() => getLatestReadOutgoingReceipt(activeMessagesAsc, chatPK, peerChatPK), [activeMessagesAsc, chatPK, peerChatPK]);
     const latestReadReceiptKey = getMessageKey(latestReadReceipt?.message);
     const latestReadReceiptStamp = useMemo(() => getMsgStamp(latestReadReceipt?.receipt), [latestReadReceipt?.receipt?.cid, latestReadReceipt?.receipt?.id, latestReadReceipt?.receipt?.ts]);
@@ -190,8 +210,10 @@ export default function Messages({
         bottomPositionStyle: scrollBottomPositionStyle,
         bottomStyle: scrollBottomStyle,
         contentContainerStyle,
+        handleContentSizeChange,
+        handleListLayout,
         handleListScroll,
-        handleLoadOlder,
+        handleListScrollEnd,
         listRef,
         scrollIndicatorInsets,
         scrollToBottom,
@@ -201,9 +223,11 @@ export default function Messages({
         chatId,
         extraContentPadding,
         hasOlder,
+        headerHeight,
         inputH,
         loadOlder,
         loadingOlder,
+        rowCount: displayRows.length,
     });
     const renderScrollComponent = useCallback(
         (props) => (
@@ -289,8 +313,9 @@ export default function Messages({
         ({ item: row }) => {
             const msg = row?.msg;
             const rowState = row?.state || 'present';
+            const enterToken = row?.enteredAt || 0;
             if (isSystemMsg(msg) || isDateSeparatorMsg(msg)) {
-                return <SystemRow chatPad={chatPad} msg={msg} rowState={rowState} screenW={screenW} theme={theme} />;
+                return <SystemRow chatPad={chatPad} msg={msg} rowState={rowState} enterToken={enterToken} screenW={screenW} theme={theme} />;
             }
 
             const fromPeer = isPeerMsg(msg, chatPK);
@@ -321,6 +346,7 @@ export default function Messages({
                     chatPad={chatPad}
                     msg={msg}
                     rowState={rowState}
+                    enterToken={enterToken}
                     fromPeer={fromPeer}
                     theme={theme}
                     screenW={screenW}
@@ -419,16 +445,23 @@ export default function Messages({
                                 keyboardDismissMode={KEYBOARD_DISMISS_MODE}
                                 keyboardShouldPersistTaps="handled"
                                 extraData={getOptimisticReactions}
+                                initialNumToRender={LIST_INITIAL_RENDER}
+                                maxToRenderPerBatch={LIST_MAX_RENDER_BATCH}
+                                maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
                                 removeClippedSubviews={false}
+                                updateCellsBatchingPeriod={LIST_RENDER_BATCH_MS}
+                                windowSize={LIST_WINDOW_SIZE}
                                 scrollEnabled={!menuActive}
+                                onContentSizeChange={handleContentSizeChange}
+                                onLayout={handleListLayout}
+                                onMomentumScrollEnd={handleListScrollEnd}
                                 onScroll={handleListScroll}
+                                onScrollEndDrag={handleListScrollEnd}
                                 scrollEventThrottle={16}
                                 directionalLockEnabled
                                 bounces
                                 alwaysBounceVertical
                                 alwaysBounceHorizontal={false}
-                                onEndReached={handleLoadOlder}
-                                onEndReachedThreshold={0.35}
                                 onScrollToIndexFailed={({ index }) => {
                                     setTimeout(() => {
                                         listRef.current?.scrollToIndex?.({

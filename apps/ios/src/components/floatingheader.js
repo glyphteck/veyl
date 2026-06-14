@@ -1,8 +1,8 @@
 import { View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronLeft } from 'lucide-react-native';
 
 import GlassIcon from '@/components/glass/glassicon';
+import { useStableSafeAreaInsets } from '@/lib/safearea';
 
 export const FLOATING_HEADER_SIDE = 56;
 export const FLOATING_HEADER_BOTTOM_PAD = 8;
@@ -34,7 +34,7 @@ export function FloatingHeaderBackIcon(props) {
 }
 
 export default function FloatingHeader({ onLayout, pointerEvents = 'box-none', style, contentStyle, children }) {
-    const insets = useSafeAreaInsets();
+    const insets = useStableSafeAreaInsets();
 
     return (
         <View

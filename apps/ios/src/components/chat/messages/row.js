@@ -14,6 +14,7 @@ import { getMessageOrderMs } from '@veyl/shared/chat/state';
 import { formatTimeHHMM } from '@veyl/shared/utils/time';
 import {
     MESSAGE_ROW_DROP_MS,
+    MESSAGE_ROW_ENTER_ANIMATION_MS,
     MESSAGE_ROW_EASING,
     MESSAGE_ROW_ENTER_OFFSET_Y,
     MESSAGE_ROW_ENTER_SCALE,
@@ -103,13 +104,33 @@ export function ReportedBubble({ fromPeer = false }) {
     return <TextBubble msg={{ c: 'reported message hidden' }} fromPeer={fromPeer} />;
 }
 
-export function Row({ chatPad, msg, rowState = 'present', fromPeer = false, theme, timeGesture, screenW, receiptStamp, stampBottomInset = 0, onReply, onLike, children }) {
+function getEnterElapsedMs(enterToken) {
+    const startedAt = Number(enterToken);
+    if (!Number.isFinite(startedAt) || startedAt <= 0) {
+        return 0;
+    }
+    return Math.max(0, Date.now() - startedAt);
+}
+
+function getEnterProgress(enterToken) {
+    return Math.min(1, getEnterElapsedMs(enterToken) / MESSAGE_ROW_ENTER_ANIMATION_MS);
+}
+
+function getEnterTiming(progress) {
+    return {
+        ...MESSAGE_ROW_ENTER_TIMING,
+        duration: Math.max(1, Math.round(MESSAGE_ROW_ENTER_ANIMATION_MS * (1 - progress))),
+    };
+}
+
+export function Row({ chatPad, msg, rowState = 'present', enterToken = 0, fromPeer = false, theme, timeGesture, screenW, receiptStamp, stampBottomInset = 0, onReply, onLike, children }) {
     const reply = useSharedValue(0);
-    const appear = useSharedValue(rowState === 'entering' ? 0 : 1);
+    const appear = useSharedValue(rowState === 'entering' ? getEnterProgress(enterToken) : 1);
     const exit = useSharedValue(0);
     const exitDistance = useSharedValue(0);
     const exitContentLayoutRef = useRef(null);
     const exitTargetLayoutRef = useRef(null);
+    const enterTokenRef = useRef(null);
     const stamp = useMemo(() => getMsgStamp(msg), [msg?.cid, msg?.id, msg?.ts]);
     const dropped = rowState === 'leaving';
     const entering = rowState === 'entering';
@@ -182,6 +203,7 @@ export function Row({ chatPad, msg, rowState = 'present', fromPeer = false, them
     useEffect(() => {
         let enterTimer;
         if (dropped) {
+            enterTokenRef.current = null;
             appear.value = 1;
             exitDistance.value = measureExitTranslate();
             exit.value = withTiming(1, { duration: MESSAGE_ROW_EXIT_ANIMATION_MS, easing: MESSAGE_ROW_EXIT_EASING });
@@ -191,21 +213,33 @@ export function Row({ chatPad, msg, rowState = 'present', fromPeer = false, them
         exit.value = 0;
         exitDistance.value = 0;
         if (instant) {
+            enterTokenRef.current = null;
             appear.value = 1;
             return undefined;
         }
         if (!entering) {
+            enterTokenRef.current = null;
             appear.value = 1;
             return undefined;
         }
 
-        appear.value = 0;
-        appear.value = withTiming(1, MESSAGE_ROW_ENTER_TIMING);
+        const progress = getEnterProgress(enterToken);
+        if (enterTokenRef.current !== enterToken) {
+            enterTokenRef.current = enterToken;
+            appear.value = progress;
+        } else {
+            appear.value = Math.max(appear.value, progress);
+        }
+        if (progress >= 1) {
+            appear.value = 1;
+            return undefined;
+        }
+        appear.value = withTiming(1, getEnterTiming(progress));
         enterTimer = setTimeout(() => {
             appear.value = 1;
-        }, MESSAGE_ROW_ENTER_STATE_MS);
+        }, Math.max(1, MESSAGE_ROW_ENTER_STATE_MS - getEnterElapsedMs(enterToken)));
         return () => clearTimeout(enterTimer);
-    }, [appear, dropped, entering, exit, exitDistance, instant, measureExitTranslate]);
+    }, [appear, dropped, enterToken, entering, exit, exitDistance, instant, measureExitTranslate]);
 
     const replyGesture = useMemo(() => {
         const gesture = Gesture.Pan()
@@ -361,9 +395,10 @@ export function Row({ chatPad, msg, rowState = 'present', fromPeer = false, them
     );
 }
 
-export function SystemRow({ chatPad, msg, rowState = 'present', screenW, theme }) {
-    const appear = useSharedValue(rowState === 'entering' ? 0 : 1);
+export function SystemRow({ chatPad, msg, rowState = 'present', enterToken = 0, screenW, theme }) {
+    const appear = useSharedValue(rowState === 'entering' ? getEnterProgress(enterToken) : 1);
     const exit = useSharedValue(0);
+    const enterTokenRef = useRef(null);
     const dropped = rowState === 'leaving';
     const entering = rowState === 'entering';
     const instant = rowState === 'instant';
@@ -379,6 +414,7 @@ export function SystemRow({ chatPad, msg, rowState = 'present', screenW, theme }
     useEffect(() => {
         let enterTimer;
         if (dropped) {
+            enterTokenRef.current = null;
             appear.value = 1;
             exit.value = withTiming(1, { duration: MESSAGE_ROW_EXIT_ANIMATION_MS, easing: MESSAGE_ROW_EXIT_EASING });
             return undefined;
@@ -386,21 +422,33 @@ export function SystemRow({ chatPad, msg, rowState = 'present', screenW, theme }
 
         exit.value = 0;
         if (instant) {
+            enterTokenRef.current = null;
             appear.value = 1;
             return undefined;
         }
         if (!entering) {
+            enterTokenRef.current = null;
             appear.value = 1;
             return undefined;
         }
 
-        appear.value = 0;
-        appear.value = withTiming(1, MESSAGE_ROW_ENTER_TIMING);
+        const progress = getEnterProgress(enterToken);
+        if (enterTokenRef.current !== enterToken) {
+            enterTokenRef.current = enterToken;
+            appear.value = progress;
+        } else {
+            appear.value = Math.max(appear.value, progress);
+        }
+        if (progress >= 1) {
+            appear.value = 1;
+            return undefined;
+        }
+        appear.value = withTiming(1, getEnterTiming(progress));
         enterTimer = setTimeout(() => {
             appear.value = 1;
-        }, MESSAGE_ROW_ENTER_STATE_MS);
+        }, Math.max(1, MESSAGE_ROW_ENTER_STATE_MS - getEnterElapsedMs(enterToken)));
         return () => clearTimeout(enterTimer);
-    }, [appear, dropped, entering, exit, instant]);
+    }, [appear, dropped, enterToken, entering, exit, instant]);
 
     const text = getDateSeparatorText(msg) || getSystemMsgText(msg);
     const rowBody = (

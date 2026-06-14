@@ -5,6 +5,47 @@ export function createMessageViewCache(limit = CHAT_MESSAGE_VIEW_CACHE_SIZE) {
     const active = new Map();
     let owner = '';
 
+    function makeRuntime() {
+        return {
+            decrypted: new Map(),
+            held: new Map(),
+            visibleKeys: new Set(),
+            deletedKeys: new Set(),
+            derived: null,
+        };
+    }
+
+    function normalizeEntry(value) {
+        if (value?.runtime) {
+            return value;
+        }
+        return {
+            seed: value?.ready ? value : null,
+            runtime: makeRuntime(),
+        };
+    }
+
+    function getEntry(scopeKey, create = false) {
+        if (!scopeKey) {
+            return null;
+        }
+        const current = views.get(scopeKey);
+        if (current) {
+            const entry = normalizeEntry(current);
+            if (entry !== current) {
+                views.set(scopeKey, entry);
+            }
+            return entry;
+        }
+        if (!create) {
+            return null;
+        }
+        const entry = normalizeEntry(null);
+        views.set(scopeKey, entry);
+        trim();
+        return entry;
+    }
+
     function clear() {
         views.clear();
         active.clear();
@@ -28,12 +69,21 @@ export function createMessageViewCache(limit = CHAT_MESSAGE_VIEW_CACHE_SIZE) {
     }
 
     function trim() {
-        while (views.size > limit) {
+        let scanned = 0;
+        while (views.size > limit && scanned < views.size) {
             const oldest = views.keys().next().value;
             if (!oldest) {
                 return;
             }
+            if (active.has(oldest)) {
+                const value = views.get(oldest);
+                views.delete(oldest);
+                views.set(oldest, value);
+                scanned += 1;
+                continue;
+            }
             views.delete(oldest);
+            scanned = 0;
         }
     }
 
@@ -41,31 +91,37 @@ export function createMessageViewCache(limit = CHAT_MESSAGE_VIEW_CACHE_SIZE) {
         clear,
         resetOwner,
         get(scopeKey) {
-            return scopeKey ? views.get(scopeKey) ?? null : null;
+            return getEntry(scopeKey)?.seed ?? null;
+        },
+        runtime(scopeKey) {
+            return getEntry(scopeKey, true)?.runtime ?? null;
         },
         remember(scopeKey, seed) {
             if (!scopeKey || !seed?.ready) {
                 return;
             }
 
+            const entry = getEntry(scopeKey, true);
+            entry.seed = seed;
             views.delete(scopeKey);
-            views.set(scopeKey, seed);
+            views.set(scopeKey, entry);
             trim();
         },
         update(scopeKey, update) {
             if (!scopeKey || typeof update !== 'function') {
                 return null;
             }
-            const seed = views.get(scopeKey);
-            if (!seed) {
+            const entry = getEntry(scopeKey);
+            if (!entry?.seed) {
                 return null;
             }
-            const next = update(seed);
+            const next = update(entry.seed);
             if (!next) {
                 views.delete(scopeKey);
                 return null;
             }
-            views.set(scopeKey, next);
+            entry.seed = next;
+            views.set(scopeKey, entry);
             trim();
             return next;
         },

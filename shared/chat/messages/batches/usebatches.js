@@ -334,7 +334,7 @@ export function useChatMessageBatches({ cloud, media = {}, chatPK, chatPrivateKe
                     }
                     notify(existing);
                     scheduleTrim();
-                    runBatchCleanup(existing, { hiddenCleanup: !existing.route, writeCheckpoint: false });
+                    runBatchCleanup(existing, { hiddenCleanup: !existing.route, compactControls: !existing.route, writeCheckpoint: false });
                     return makeMessageBatchSnapshot(existing);
                 }
 
@@ -427,7 +427,7 @@ export function useChatMessageBatches({ cloud, media = {}, chatPK, chatPrivateKe
                     notify(entry);
                     scheduleMedia();
                     scheduleTrim();
-                    runBatchCleanup(entry, { hiddenCleanup: !entry.route, writeCheckpoint: false });
+                    runBatchCleanup(entry, { hiddenCleanup: !entry.route, compactControls: !entry.route, writeCheckpoint: false });
                 },
                 (error) => {
                     if (batchesRef.current.get(chatId) !== entry || entry.generation !== generationRef.current) {
@@ -536,6 +536,7 @@ export function useChatMessageBatches({ cloud, media = {}, chatPK, chatPrivateKe
 
     const getMessageBatch = useCallback((chatId) => makeMessageBatchSnapshot(batchesRef.current.get(chatId)), []);
     const getMessageView = useCallback((scopeKey) => messageViewCacheRef.current.get(scopeKey), []);
+    const getMessageViewRuntime = useCallback((scopeKey) => messageViewCacheRef.current.runtime(scopeKey), []);
     const rememberMessageView = useCallback((scopeKey, seed) => messageViewCacheRef.current.remember(scopeKey, seed), []);
     const updateMessageView = useCallback((scopeKey, update) => messageViewCacheRef.current.update(scopeKey, update), []);
     const retainMessageView = useCallback((scopeKey) => messageViewCacheRef.current.retain(scopeKey), []);
@@ -749,6 +750,7 @@ export function useChatMessageBatches({ cloud, media = {}, chatPK, chatPrivateKe
         subscribeMessageBatch,
         queueMessagePreload,
         getMessageView,
+        getMessageViewRuntime,
         rememberMessageView,
         updateMessageView,
         retainMessageView,

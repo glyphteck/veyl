@@ -5,6 +5,7 @@ Repo-level changes are listed newest first. Keep entries short and concrete. Bro
 ## 0.16.6 - 2026-06-14
 
 - Stabilized iOS chat message-list header spacing, row-enter animation completion, and recently loaded older-message reuse after reopening a chat.
+- Optimized chat older-batch fetches with route-owned decrypt/runtime caches, scroll-driven paging, and less open-chat cleanup work on the main thread.
 
 ## 0.16.5 - 2026-06-14
 

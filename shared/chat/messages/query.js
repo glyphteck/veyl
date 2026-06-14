@@ -14,6 +14,30 @@ import { timestampKey, timestampMs } from '../../utils/time.js';
 export const MSG_BATCH_SIZE = CHAT_MESSAGE_BATCH_SIZE;
 export const MSG_QUERY_MAX_DOCS = CHAT_MESSAGE_QUERY_MAX_DOCS;
 
+function abortError() {
+    const error = new Error('aborted');
+    error.name = 'AbortError';
+    return error;
+}
+
+function throwIfAborted(signal) {
+    if (signal?.aborted) {
+        throw abortError();
+    }
+}
+
+function yieldToMain() {
+    return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+async function maybeYield(index, options) {
+    const every = positiveInt(options?.yieldEvery, 0);
+    if (every > 0 && index > 0 && index % every === 0) {
+        await yieldToMain();
+        throwIfAborted(options?.signal);
+    }
+}
+
 function messageDataExpired(msgData, now = Date.now()) {
     return isExpiredMsg({ ttl: msgData?.ttl ?? null }, now);
 }
@@ -124,6 +148,7 @@ function cacheMessageBody(cache, docId, msgData, message) {
 }
 
 async function decryptRecord(record, userChatPK, userPrivKey, peerChatPK, cache, options = {}) {
+    throwIfAborted(options?.signal);
     const msgData = record;
     if (messageDataExpired(msgData)) {
         cache?.delete?.(record.id);
@@ -157,13 +182,37 @@ function pruneMessageCache(cache, records) {
 }
 
 async function decryptRecordEntries(records, userChatPK, userPrivKey, peerChatPK, cache, options = {}) {
-    const entries = await Promise.all(
-        records.map(async (record) => {
-            const message = await decryptRecord(record, userChatPK, userPrivKey, peerChatPK, cache, options);
-            return message ? { record, message } : null;
-        })
-    );
-    return entries.filter(Boolean);
+    const shouldYield = positiveInt(options?.yieldEvery, 0) > 0;
+    if (!options?.signal && !shouldYield) {
+        const entries = await Promise.all(
+            (records || []).map(async (record) => {
+                const message = await decryptRecord(record, userChatPK, userPrivKey, peerChatPK, cache, options);
+                return message ? { record, message } : null;
+            })
+        );
+        return entries.filter(Boolean);
+    }
+
+    const entries = [];
+    const source = records || [];
+    const chunkSize = positiveInt(options?.yieldEvery, source.length || 1);
+    for (let index = 0; index < source.length; index += chunkSize) {
+        throwIfAborted(options?.signal);
+        const chunk = source.slice(index, index + chunkSize);
+        const chunkEntries = await Promise.all(
+            chunk.map(async (record) => {
+                const message = await decryptRecord(record, userChatPK, userPrivKey, peerChatPK, cache, options);
+                return message ? { record, message } : null;
+            })
+        );
+        for (const entry of chunkEntries) {
+            if (entry) {
+                entries.push(entry);
+            }
+        }
+        await maybeYield(index + chunk.length, options);
+    }
+    return entries;
 }
 
 function messageQueryLimit(pageSize) {
@@ -363,6 +412,8 @@ export function listenToLatestMsgs(cloud, chatId, userChatPK, userPrivKey, peerC
 }
 
 export async function loadOlderMsgs(cloud, chatId, userChatPK, userPrivKey, peerChatPK, olderThan, pageSize, options = {}) {
+    const signal = options?.signal ?? options?.abortSignal;
+    throwIfAborted(signal);
     if (!olderThan) {
         return {
             messages: [],
@@ -371,52 +422,50 @@ export async function loadOlderMsgs(cloud, chatId, userChatPK, userPrivKey, peer
         };
     }
 
-    try {
-        const queryLimit = messageQueryLimit(pageSize);
-        const maxQueryLimit = messageQueryMax(pageSize);
-        const firstPage = await cloud.chat.messages.list(chatId, { olderThan, count: queryLimit });
-        let rawRecords = firstPage.records || [];
-        let filledQuery = !!firstPage.hasMore;
-        const expiredKeys = new Set();
-        let partitionedRecords = partitionExpiredMessageRecords(rawRecords, expiredKeys);
-        let olderRecords = partitionedRecords.activeRecords;
-        let allEntries = await decryptRecordEntries(olderRecords, userChatPK, userPrivKey, peerChatPK, undefined, { actors: options?.actors, chatId });
-        let readableWindow = readableEntryWindow(allEntries, pageSize, userChatPK, peerChatPK);
-        while (readableWindow.count < queryLimit && rawRecords.length < maxQueryLimit && filledQuery && rawRecords[0]) {
-            const nextLimit = Math.min(queryLimit, maxQueryLimit - rawRecords.length);
-            const nextPage = await cloud.chat.messages.list(chatId, {
-                olderThan: olderThanMarker(rawRecords[0]),
-                count: nextLimit,
-            });
-            const nextRecords = nextPage.records || [];
-            if (!nextRecords.length) {
-                filledQuery = false;
-                break;
-            }
-            rawRecords = [...nextRecords, ...rawRecords];
-            filledQuery = !!nextPage.hasMore;
-            partitionedRecords = partitionExpiredMessageRecords(rawRecords, expiredKeys);
-            olderRecords = partitionedRecords.activeRecords;
-            allEntries = await decryptRecordEntries(olderRecords, userChatPK, userPrivKey, peerChatPK, undefined, { actors: options?.actors, chatId });
-            readableWindow = readableEntryWindow(allEntries, pageSize, userChatPK, peerChatPK);
+    const queryLimit = messageQueryLimit(pageSize);
+    const maxQueryLimit = messageQueryMax(pageSize);
+    const decryptedCache = options?.decryptedCache instanceof Map ? options.decryptedCache : new Map();
+    const firstPage = await cloud.chat.messages.list(chatId, { olderThan, count: queryLimit });
+    throwIfAborted(signal);
+    let rawRecords = firstPage.records || [];
+    let filledQuery = !!firstPage.hasMore;
+    const expiredKeys = new Set();
+    let partitionedRecords = partitionExpiredMessageRecords(rawRecords, expiredKeys, decryptedCache);
+    let olderRecords = partitionedRecords.activeRecords;
+    let allEntries = await decryptRecordEntries(olderRecords, userChatPK, userPrivKey, peerChatPK, decryptedCache, { actors: options?.actors, chatId, signal, yieldEvery: options?.yieldEvery });
+    let readableWindow = readableEntryWindow(allEntries, pageSize, userChatPK, peerChatPK);
+    while (readableWindow.count < queryLimit && rawRecords.length < maxQueryLimit && filledQuery && rawRecords[0]) {
+        throwIfAborted(signal);
+        const nextLimit = maxQueryLimit - rawRecords.length;
+        const nextPage = await cloud.chat.messages.list(chatId, {
+            olderThan: olderThanMarker(rawRecords[0]),
+            count: nextLimit,
+        });
+        throwIfAborted(signal);
+        const nextRecords = nextPage.records || [];
+        if (!nextRecords.length) {
+            filledQuery = false;
+            break;
         }
-
-        const entries = readableWindow.entries;
-        const visibleRecords = entries.map((entry) => entry.record);
-        const visibleStart = recordIndexById(olderRecords, visibleRecords[0]?.id);
-        const messages = entries.map((entry) => entry.message);
-        const nextOlderThan = olderThanMarker(visibleRecords[0] ?? olderRecords[0] ?? rawRecords[0] ?? null);
-
-        return {
-            messages,
-            nextOlderThan,
-            hasMore: visibleStart > 0 || filledQuery,
-        };
-    } catch {
-        return {
-            messages: [],
-            nextOlderThan: null,
-            hasMore: false,
-        };
+        rawRecords = [...nextRecords, ...rawRecords];
+        filledQuery = !!nextPage.hasMore;
+        partitionedRecords = partitionExpiredMessageRecords(nextRecords, expiredKeys, decryptedCache);
+        olderRecords = [...partitionedRecords.activeRecords, ...olderRecords];
+        const nextEntries = await decryptRecordEntries(partitionedRecords.activeRecords, userChatPK, userPrivKey, peerChatPK, decryptedCache, { actors: options?.actors, chatId, signal, yieldEvery: options?.yieldEvery });
+        allEntries = [...nextEntries, ...allEntries];
+        readableWindow = readableEntryWindow(allEntries, pageSize, userChatPK, peerChatPK);
     }
+    throwIfAborted(signal);
+
+    const entries = readableWindow.entries;
+    const visibleRecords = entries.map((entry) => entry.record);
+    const visibleStart = recordIndexById(olderRecords, visibleRecords[0]?.id);
+    const messages = entries.map((entry) => entry.message);
+    const nextOlderThan = olderThanMarker(visibleRecords[0] ?? olderRecords[0] ?? rawRecords[0] ?? null);
+
+    return {
+        messages,
+        nextOlderThan,
+        hasMore: visibleStart > 0 || filledQuery,
+    };
 }

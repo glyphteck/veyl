@@ -1,4 +1,4 @@
-import { Bytes, collection, deleteDoc, deleteField, doc, documentId, endBefore, getDoc, getDocFromServer, getDocs, getDocsFromServer, limit, limitToLast, onSnapshot, orderBy, query, serverTimestamp, setDoc, startAfter, startAt, Timestamp, updateDoc, where, writeBatch } from 'firebase/firestore';
+import { Bytes, collection, deleteDoc, deleteField, doc, documentId, getDoc, getDocFromServer, getDocs, getDocsFromServer, limit, limitToLast, onSnapshot, orderBy, query, serverTimestamp, setDoc, startAfter, startAt, Timestamp, updateDoc, where, writeBatch } from 'firebase/firestore';
 import { onAuthStateChanged, signInWithCustomToken, signOut } from 'firebase/auth';
 import { httpsCallable } from 'firebase/functions';
 import { deleteObject, getBytes, getDownloadURL, ref, uploadBytes } from 'firebase/storage';
@@ -956,23 +956,31 @@ export function createFirebaseCloud({ db, auth, getAuth, functions, getFunctions
         return doc(chatMessagesCollection(chatId)).id;
     }
 
-    function chatMessagesPage(snap, count) {
+    function chatMessagesPage(snap, count, options = {}) {
         const records = messageRecordsFromSnapshot(snap);
+        if (options.reverse) {
+            records.reverse();
+        }
         return {
             records,
-            nextOlderThan: pageMarkerFromDoc(snap.docs[0] ?? null),
+            nextOlderThan: records[0] ? { id: records[0].id, ts: records[0].ts ?? null } : null,
             hasMore: records.length >= positiveInt(count, CHAT_MESSAGE_BATCH_SIZE),
         };
     }
 
     function chatMessagesQuery(chatId, count, olderThan) {
-        const clauses = [chatMessagesCollection(chatId), orderBy('ts', 'asc'), orderBy(documentId(), 'asc')];
+        const limitCount = positiveInt(count, CHAT_MESSAGE_BATCH_SIZE);
         const marker = pageMarker(olderThan);
         if (marker) {
-            clauses.push(endBefore(marker.ts, marker.id));
+            return {
+                ref: query(chatMessagesCollection(chatId), orderBy('ts', 'desc'), orderBy(documentId(), 'desc'), startAfter(marker.ts, marker.id), limit(limitCount)),
+                reverse: true,
+            };
         }
-        clauses.push(limitToLast(positiveInt(count, CHAT_MESSAGE_BATCH_SIZE)));
-        return query(...clauses);
+        return {
+            ref: query(chatMessagesCollection(chatId), orderBy('ts', 'asc'), orderBy(documentId(), 'asc'), limitToLast(limitCount)),
+            reverse: false,
+        };
     }
 
     function watchChatMessages(chatId, options = {}, onUpdate, onError) {
@@ -998,6 +1006,7 @@ export function createFirebaseCloud({ db, auth, getAuth, functions, getFunctions
         if (!marker) {
             return () => {};
         }
+        let checkedServerWindow = false;
         return onSnapshot(
             query(chatMessagesCollection(chatId), orderBy('ts', 'asc'), orderBy(documentId(), 'asc'), startAt(marker.ts, marker.id)),
             { includeMetadataChanges: true },
@@ -1005,20 +1014,32 @@ export function createFirebaseCloud({ db, auth, getAuth, functions, getFunctions
                 if (snap.metadata?.fromCache) {
                     return;
                 }
-                const keys = new Set();
-                const cidById = new Map();
-                for (const record of messageRecordsFromSnapshot(snap)) {
-                    if (record?.id) {
-                        cidById.set(record.id, typeof record?.head?.cid === 'string' ? record.head.cid : '');
-                    }
-                    for (const key of messageRecordKeys(record)) {
-                        keys.add(key);
+                const checkWindow = !checkedServerWindow;
+                checkedServerWindow = true;
+                const keys = checkWindow ? new Set() : null;
+                const cidById = checkWindow ? new Map() : null;
+                if (checkWindow) {
+                    for (const record of messageRecordsFromSnapshot(snap)) {
+                        if (record?.id) {
+                            cidById.set(record.id, typeof record?.head?.cid === 'string' ? record.head.cid : '');
+                        }
+                        for (const key of messageRecordKeys(record)) {
+                            keys.add(key);
+                        }
                     }
                 }
                 const removedKeys = new Set();
                 const expiredKeys = new Set();
+                const changedRecords = [];
                 const now = Date.now();
                 for (const change of snap.docChanges()) {
+                    if (change.type === 'modified') {
+                        const record = messageRecordFromDoc(change.doc);
+                        if (record) {
+                            changedRecords.push(record);
+                        }
+                        continue;
+                    }
                     if (change.type !== 'removed') {
                         continue;
                     }
@@ -1028,7 +1049,9 @@ export function createFirebaseCloud({ db, auth, getAuth, functions, getFunctions
                         targetKeys.add(key);
                     }
                 }
-                onUpdate?.({ keys, removedKeys, expiredKeys, cidById });
+                if (checkWindow || removedKeys.size || expiredKeys.size || changedRecords.length) {
+                    onUpdate?.({ keys, removedKeys, expiredKeys, cidById, changedRecords });
+                }
             },
             onError
         );
@@ -1036,8 +1059,9 @@ export function createFirebaseCloud({ db, auth, getAuth, functions, getFunctions
 
     async function listChatMessages(chatId, options = {}) {
         const count = positiveInt(options?.limitCount ?? options?.pageSize ?? options?.count, CHAT_MESSAGE_BATCH_SIZE);
-        const snap = await getDocsFromServer(chatMessagesQuery(chatId, count, options?.olderThan));
-        return chatMessagesPage(snap, count);
+        const messagesQuery = chatMessagesQuery(chatId, count, options?.olderThan);
+        const snap = await getDocsFromServer(messagesQuery.ref);
+        return chatMessagesPage(snap, count, { reverse: messagesQuery.reverse });
     }
 
     async function readChatMessage(chatId, messageId) {

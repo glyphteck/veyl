@@ -1,6 +1,5 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Animated, FlatList, Pressable, Text, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRouter } from 'expo-router';
 import { useIsFocused } from 'expo-router/react-navigation';
 import * as Haptics from 'expo-haptics';
@@ -22,6 +21,7 @@ import SearchInput from '@/components/search';
 import { KeyboardChatScrollView } from '@/components/keyboardscroll';
 import { useRouteLock } from '@/lib/navigation/routelock';
 import { ScrollEdgeScreen } from '@/lib/navigation/scrolledge';
+import { useStableSafeAreaInsets } from '@/lib/safearea';
 import { useTap } from '@/lib/tap';
 import { formatUserDisplay } from '@veyl/shared/profile';
 import { formatRowDateTime, timestampMs } from '@veyl/shared/utils/time';
@@ -381,7 +381,7 @@ export default function ChatList() {
     const focused = useIsFocused();
     const navigation = useNavigation();
     const router = useRouter();
-    const insets = useSafeAreaInsets();
+    const insets = useStableSafeAreaInsets();
     const { chats, isChatDataReady, hasMoreChats, loadingMoreChats, loadMoreChats, previewNow, deleteChat, restoreDeletedChat } = useChat();
     const { chatPK, blockedSet, chatBanned, settings } = useUser();
     const { peers, peerByChatPK, isBlockedChatPK, isPeerDataReady } = usePeer() || {};

@@ -1,6 +1,5 @@
 import { useMemo } from 'react';
 import { Animated, Pressable, Text, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Camera } from 'lucide-react-native';
 import { isMainnet, resolveNetwork } from '@veyl/shared/network';
 import Avatar from './avatar';
@@ -12,6 +11,7 @@ import { useUser } from '../providers/userprovider';
 import { useChat } from '../providers/chatprovider';
 import { alpha } from '@/lib/colors';
 import { useTap } from '@/lib/tap';
+import { useStableSafeAreaInsets } from '@/lib/safearea';
 
 const ICON_SIZE = 32;
 const AVATAR_SIZE = 34;
@@ -80,7 +80,7 @@ function MenuItem({ progress, onPress, onPressIn, disabled = false, pressScale =
 
 export default function MainMenu({ state, navigation, position, onWarmRoute }) {
     const { theme } = useTheme();
-    const insets = useSafeAreaInsets();
+    const insets = useStableSafeAreaInsets();
     const { avatar, chatBanned } = useUser();
     const { chats } = useChat();
     const routeIndexes = useMemo(() => Object.fromEntries(state.routes.map((route, index) => [route.name, index])), [state.routes]);

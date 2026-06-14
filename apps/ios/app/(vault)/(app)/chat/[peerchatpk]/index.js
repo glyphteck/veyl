@@ -1,5 +1,4 @@
 import { Alert, Animated as RNAnimated, Pressable, Text, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Reanimated, { Easing, LinearTransition, interpolate, useAnimatedReaction, useAnimatedStyle, useDerivedValue, useSharedValue, withTiming } from 'react-native-reanimated';
@@ -8,7 +7,7 @@ import { useChat } from '@/providers/chatprovider';
 import { useUser } from '@/providers/userprovider';
 import { usePeer } from '@/providers/peerprovider';
 import { useWallet } from '@/providers/walletprovider';
-import FloatingHeader, { FloatingHeaderBackIcon } from '@/components/floatingheader';
+import FloatingHeader, { FloatingHeaderBackIcon, getFloatingHeaderHeight } from '@/components/floatingheader';
 import ChatInput, { CommandBubbles, DraftBar } from '@/components/chat/chatinput';
 import Messages from '@/components/chat/messages/list';
 import { useReanimatedKeyboardAnimation } from '@/components/keyboardscroll';
@@ -18,6 +17,7 @@ import { prepareAssetForChatUpload } from '@/lib/chat/media';
 import { mark } from '@/lib/diagnostics';
 import { INVERTED_TOP_SCROLL_EDGE_EFFECTS, ScrollEdgeScreen } from '@/lib/navigation/scrolledge';
 import { useRouteLock } from '@/lib/navigation/routelock';
+import { useStableSafeAreaInsets } from '@/lib/safearea';
 import { formatUserDisplay } from '@veyl/shared/profile';
 import { getChatPeerPK } from '@veyl/shared/chat/ids';
 import { chatUploadErrorMessage } from '@veyl/shared/chat/attachments';
@@ -100,10 +100,10 @@ function cleanChatPK(value) {
 
 export default function PeerChatRoute() {
     const { theme } = useTheme();
-    const insets = useSafeAreaInsets();
+    const insets = useStableSafeAreaInsets();
     const params = useLocalSearchParams();
     const router = useRouter();
-    const { chats, selectChat, resolvePeerChatId, sendMessage, sendAttachment, sendImage, updateMessage } = useChat();
+    const { chats, getPeerChatId, selectPeerChat, sendMessage, sendAttachment, sendImage, updateMessage } = useChat();
     const { chatPK, chatBanned } = useUser();
     const { sendMoneyWithSpark } = useWallet();
     const { peerByChatPK, isBlockedChatPK, updatePeer } = usePeer() || {};
@@ -114,11 +114,14 @@ export default function PeerChatRoute() {
     const overlayH = useRef(0);
     const activeOverlayRef = useRef(false);
     const focusReleaseTimerRef = useRef(null);
+    const selectedRouteRef = useRef('');
     const [draft, setDraft] = useState(null);
     const [draftMounted, setDraftMounted] = useState(false);
     const [commandContext, setCommandContext] = useState({ kind: 'none', items: [] });
     const [inputBase, setInputBase] = useState(48);
     const [composerOverlayMounted, setComposerOverlayMounted] = useState(false);
+    const initialHeaderHeight = useMemo(() => getFloatingHeaderHeight(insets.top), [insets.top]);
+    const [headerHeight, setHeaderHeight] = useState(initialHeaderHeight);
     const stickyOffset = useMemo(() => ({ closed: 0, opened: insets.bottom - COMPOSER_KEYBOARD_GAP }), [insets.bottom]);
     const composerOverlayPadding = useSharedValue(0);
     const composerInputPadding = useSharedValue(0);
@@ -127,27 +130,64 @@ export default function PeerChatRoute() {
 
     const ownChatPK = cleanChatPK(chatPK);
     const routeChatPK = cleanChatPK(firstRouteParam(params?.peerchatpk));
-    const [chatId, setChatId] = useState(null);
+    const routeKey = `${ownChatPK || ''}:${routeChatPK || ''}`;
+    const [routeChatState, setRouteChatState] = useState({ key: '', chatId: null });
+    const routeKnownChatId = useMemo(() => {
+        if (!ownChatPK || !routeChatPK) {
+            return null;
+        }
+        const visibleChats = Array.isArray(chats) ? chats : [];
+        return visibleChats.find((chat) => getChatPeerPK(chat, ownChatPK) === routeChatPK)?.id ?? getPeerChatId?.(routeChatPK) ?? null;
+    }, [chats, getPeerChatId, ownChatPK, routeChatPK]);
+    const rememberedRouteChatId = routeChatState.key === routeKey ? routeChatState.chatId : null;
+    const chatId = routeKnownChatId || rememberedRouteChatId;
+    const rememberRouteChatId = useCallback(
+        (nextChatId) => {
+            if (!nextChatId || !routeKey) {
+                return;
+            }
+            setRouteChatState((prev) => (prev.key === routeKey && prev.chatId === nextChatId ? prev : { key: routeKey, chatId: nextChatId }));
+        },
+        [routeKey]
+    );
 
     useEffect(() => {
         let active = true;
-        setChatId(null);
         if (!ownChatPK || !routeChatPK) {
+            selectedRouteRef.current = '';
+            setRouteChatState((prev) => (prev.key === '' && prev.chatId === null ? prev : { key: '', chatId: null }));
             return () => {
                 active = false;
             };
         }
-        resolvePeerChatId?.(routeChatPK)
+        if (routeKnownChatId) {
+            setRouteChatState((prev) => (prev.key === routeKey && prev.chatId === routeKnownChatId ? prev : { key: routeKey, chatId: routeKnownChatId }));
+        }
+        const selectKey = `${routeKey}:${routeKnownChatId || ''}`;
+        if (selectedRouteRef.current === selectKey) {
+            return () => {
+                active = false;
+            };
+        }
+        selectedRouteRef.current = selectKey;
+        mark('chat.select', { chatId: routeKnownChatId || '', peerChatPK: routeChatPK });
+        Promise.resolve(selectPeerChat?.(routeChatPK))
             .then((nextChatId) => {
-                if (active) setChatId(nextChatId || null);
+                if (active) {
+                    const selectedChatId = nextChatId || routeKnownChatId || null;
+                    setRouteChatState((prev) => (prev.key === routeKey && prev.chatId === selectedChatId ? prev : { key: routeKey, chatId: selectedChatId }));
+                }
             })
             .catch(() => {
-                if (active) setChatId(null);
+                if (active) {
+                    const selectedChatId = routeKnownChatId || null;
+                    setRouteChatState((prev) => (prev.key === routeKey && prev.chatId === selectedChatId ? prev : { key: routeKey, chatId: selectedChatId }));
+                }
             });
         return () => {
             active = false;
         };
-    }, [ownChatPK, resolvePeerChatId, routeChatPK]);
+    }, [ownChatPK, routeChatPK, routeKey, routeKnownChatId, selectPeerChat]);
     const currentChat = useMemo(() => (chatId && Array.isArray(chats) ? (chats.find((chat) => chat?.id === chatId) ?? null) : null), [chatId, chats]);
 
     const peerChatPK = useMemo(() => getChatPeerPK(currentChat, chatPK) ?? routeChatPK, [chatPK, currentChat, routeChatPK]);
@@ -174,21 +214,8 @@ export default function PeerChatRoute() {
     const hasPeerProfile = !!peerProfile;
 
     useEffect(() => {
-        if (!chatId) {
-            return undefined;
-        }
-        let timer = null;
-        const frame = requestAnimationFrame(() => {
-            timer = setTimeout(() => {
-                mark('chat.select', { chatId });
-                selectChat?.(chatId);
-            }, 0);
-        });
-        return () => {
-            cancelAnimationFrame(frame);
-            if (timer) clearTimeout(timer);
-        };
-    }, [chatId, selectChat]);
+        setHeaderHeight((current) => (current >= initialHeaderHeight ? current : initialHeaderHeight));
+    }, [initialHeaderHeight]);
 
     useEffect(() => {
         mark('chat.route', {
@@ -272,9 +299,9 @@ export default function PeerChatRoute() {
             const canReply = draftState?.mode === 'reply' && canReplyToMsg(draftState?.msg);
             const replyId = String(canReply ? (typeof draftState?.msg?.id === 'string' && !draftState.msg.id.startsWith('local:') ? draftState.msg.id : draftState?.msg?.cid) || '' : '').trim();
             const result = await sendMessage?.(peerChatPK, replyId ? setReply(base, replyId) : base);
-            if (result?.chatId) setChatId(result.chatId);
+            if (result?.chatId) rememberRouteChatId(result.chatId);
         },
-        [peerChatPK, sendMessage]
+        [peerChatPK, rememberRouteChatId, sendMessage]
     );
 
     const handleEditMessage = useCallback(
@@ -308,13 +335,13 @@ export default function PeerChatRoute() {
                 if (String(prepared?.mimeType || '').startsWith('video/')) {
                     mark('chat.image.sendVideo.start', { size: prepared?.size || prepared?.data?.byteLength || 0 });
                     const result = await sendAttachment?.(peerChatPK, prepared);
-                    if (result?.chatId) setChatId(result.chatId);
+                    if (result?.chatId) rememberRouteChatId(result.chatId);
                     mark('chat.image.sendVideo.done', {});
                     return;
                 }
                 mark('chat.image.send.start', { size: prepared?.size || prepared?.data?.byteLength || 0 });
                 const result = await sendImage?.(peerChatPK, prepared);
-                if (result?.chatId) setChatId(result.chatId);
+                if (result?.chatId) rememberRouteChatId(result.chatId);
                 mark('chat.image.send.done', {});
             } catch (error) {
                 mark('chat.image.send.error', { message: error?.message || String(error), code: error?.code || '', stage: error?.stage || '' });
@@ -322,7 +349,7 @@ export default function PeerChatRoute() {
                 showUploadError('Upload failed', error, 'Could not send this media. Please try again.');
             }
         },
-        [peerChatPK, sendAttachment, sendImage]
+        [peerChatPK, rememberRouteChatId, sendAttachment, sendImage]
     );
 
     const handleSendAttachment = useCallback(
@@ -340,13 +367,13 @@ export default function PeerChatRoute() {
 
             try {
                 const result = await sendAttachment?.(peerChatPK, prepared);
-                if (result?.chatId) setChatId(result.chatId);
+                if (result?.chatId) rememberRouteChatId(result.chatId);
             } catch (error) {
                 console.warn('chat attachment send failed', error);
                 showUploadError('Upload failed', error, 'Could not send this attachment. Please try again.');
             }
         },
-        [peerChatPK, sendAttachment]
+        [peerChatPK, rememberRouteChatId, sendAttachment]
     );
 
     const handleOpenTransfer = useCallback(
@@ -467,13 +494,13 @@ export default function PeerChatRoute() {
                 }
                 try {
                     const result = await sendMessage?.(peerChatPK, makeReq(amountSats));
-                    if (result?.chatId) setChatId(result.chatId);
+                    if (result?.chatId) rememberRouteChatId(result.chatId);
                 } catch (error) {
                     Alert.alert('Request failed', error?.message || 'Failed to send request.');
                 }
             }
         },
-        [chatBanned, peerChatPK, peerProfile?.walletPK, sendMessage, sendMoneyWithSpark]
+        [chatBanned, peerChatPK, peerProfile?.walletPK, rememberRouteChatId, sendMessage, sendMoneyWithSpark]
     );
 
     const handleCommandBubblePress = useCallback((prefix) => {
@@ -514,6 +541,12 @@ export default function PeerChatRoute() {
     }, [draft]);
 
     const hasComposerOverlay = !!draft || draftMounted || !!commandContext.items?.length;
+    const handleHeaderLayout = useCallback((event) => {
+        const height = Math.round(Number(event?.nativeEvent?.layout?.height) || 0);
+        if (height > 0) {
+            setHeaderHeight((current) => (current === height ? current : height));
+        }
+    }, []);
 
     useEffect(() => {
         activeOverlayRef.current = hasComposerOverlay;
@@ -539,7 +572,7 @@ export default function PeerChatRoute() {
     return (
         <View style={{ flex: 1 }}>
             <View style={{ flex: 1, overflow: 'hidden' }}>
-                <FloatingHeader>
+                <FloatingHeader onLayout={handleHeaderLayout}>
                     <View style={{ width: 56, alignItems: 'flex-start', justifyContent: 'center' }}>
                         <FloatingHeaderBackIcon onPress={() => router.dismissTo('/chat')} />
                     </View>
@@ -573,6 +606,7 @@ export default function PeerChatRoute() {
                         onReply={handleReply}
                         onEdit={handleEdit}
                         draftKey={draftKey}
+                        headerHeight={headerHeight}
                         inputH={inputBase}
                         extraContentPadding={composerExtraPadding}
                         peerAvatarSource={peerAvatarSource}

@@ -4,7 +4,7 @@ import { Button } from '@/components/button';
 import { useChat } from '@/components/providers/chatprovider';
 import { useUser } from '@/components/providers/userprovider';
 import { usePeer } from '@/components/providers/peerprovider';
-import { canShowMsg, collapseSystemMessages, getLatestReadOutgoingReceipt, isPeerMsg, isSavedForeverMsg } from '@veyl/shared/chat/messages';
+import { getLatestReadOutgoingReceipt, isPeerMsg, isSavedForeverMsg } from '@veyl/shared/chat/messages';
 import { withDateSeparators } from '@veyl/shared/chat/messages/dates';
 import { formatUserDisplay } from '@veyl/shared/profile';
 import { formatTimeHHMM } from '@veyl/shared/utils/time';
@@ -35,7 +35,7 @@ export function Messages({ onReply, onEdit, bottomPad = 96 }) {
         receiptSnapshotRef.current.clear();
     }
 
-    const { messages: msgs, ready, hasOlder, loadingOlder, loadOlder, patchMessage, removeMessage } = useChatMessages(selectedChatId);
+    const { messages: msgs, visibleMessages: visibleMsgs, ready, hasOlder, loadingOlder, loadOlder, patchMessage, removeMessage } = useChatMessages(selectedChatId);
     const currentChat = useMemo(() => chats?.find((chat) => chat?.id === selectedChatId) ?? null, [chats, selectedChatId]);
     const peerChatPK = currentChat?.peerChatPK || null;
     const peerProfile = useMemo(() => peerByChatPK.get(peerChatPK) ?? null, [peerByChatPK, peerChatPK]);
@@ -79,7 +79,6 @@ export function Messages({ onReply, onEdit, bottomPad = 96 }) {
         removeMessage,
         selectedChatId,
     });
-    const visibleMsgs = useMemo(() => collapseSystemMessages((msgs || []).filter(canShowMsg)), [msgs]);
     const datedMsgs = useMemo(() => withDateSeparators(visibleMsgs), [visibleMsgs]);
     const displayMsgs = useMemo(() => [...datedMsgs].reverse(), [datedMsgs]);
     const displayRows = useAnimatedRows(displayMsgs, selectedChatId || '', deletingMessageKeys, ready);

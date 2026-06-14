@@ -1,6 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Animated, FlatList, Pressable, Text, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { BanknoteArrowDown, BanknoteArrowUp, UserRoundPlus } from 'lucide-react-native';
 
@@ -19,6 +18,7 @@ import { getMainMenuHeight } from '@/components/mainmenu';
 import { useRouteLock } from '@/lib/navigation/routelock';
 import { ScrollEdgeScreen } from '@/lib/navigation/scrolledge';
 import { useTap } from '@/lib/tap';
+import { useStableSafeAreaInsets } from '@/lib/safearea';
 import { BTC_PRICE_FALLBACK } from '@veyl/shared/config';
 import { renderBalance, renderMoney } from '@veyl/shared/money';
 import { formatUserDisplay } from '@veyl/shared/profile';
@@ -212,7 +212,7 @@ function WalletLoading() {
 export default function Wallet() {
     const { theme } = useTheme();
     const router = useRouter();
-    const insets = useSafeAreaInsets();
+    const insets = useStableSafeAreaInsets();
     const bitcoin = useBitcoin();
     const { balance, hasMoreTxs, isTxLoading, loadMoreTxs, txReady } = useWallet();
     const user = useUser();
