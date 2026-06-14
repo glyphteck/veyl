@@ -68,6 +68,10 @@ function encryptedBytes(value, label = 'encrypted bytes') {
     return toBytes(value, label);
 }
 
+function isCloudBytes(value) {
+    return value instanceof Uint8Array || value instanceof ArrayBuffer || ArrayBuffer.isView(value) || typeof value?.toUint8Array === 'function';
+}
+
 function readCloudBytes(value, label = 'encrypted bytes') {
     return value == null ? null : encryptedBytes(value, label);
 }
@@ -520,15 +524,13 @@ export function createFirebaseCloud({ db, auth, getAuth, functions, getFunctions
         }
         const snap = await getDoc(doc(db, 'users', uid));
         const saved = snap.data()?.settings ?? null;
-        const body = saved && (saved instanceof Uint8Array || saved instanceof ArrayBuffer || ArrayBuffer.isView(saved) || typeof saved?.toUint8Array === 'function')
-            ? readCloudBytes(saved, 'settings body')
-            : null;
-        if (body) {
-            return openSettings(key, uid, body);
+        if (saved != null) {
+            if (!isCloudBytes(saved)) {
+                throw new Error('unsupported settings body');
+            }
+            return openSettings(key, uid, readCloudBytes(saved, 'settings body'));
         }
-        const settings = saved && typeof saved === 'object' && !Array.isArray(saved)
-            ? normalizeSettings(saved)
-            : normalizeSettings(defaultSettings);
+        const settings = normalizeSettings(defaultSettings);
         await setDoc(
             doc(db, 'users', uid),
             {

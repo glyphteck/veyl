@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
+import { toast } from '@/components/notifications';
 import { Coins, Loader } from 'lucide-react';
 import Loading from '@/components/loading';
 import { useBitcoin } from '@/components/providers/bitcoinprovider';

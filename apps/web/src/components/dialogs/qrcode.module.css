@@ -3,8 +3,19 @@
     display: inline-flex;
     flex-shrink: 0;
     transform-origin: center;
-    transition: color 320ms cubic-bezier(0.2, 0, 0, 1);
+    transition:
+        color 320ms cubic-bezier(0.2, 0, 0, 1),
+        transform 160ms cubic-bezier(0.2, 0, 0, 1);
     will-change: color, transform;
+}
+
+.qr:is(button):hover,
+.qr:is(button):focus-visible {
+    transform: scale(0.97);
+}
+
+.qr:is(button):active {
+    transform: scale(0.92);
 }
 
 .paid {

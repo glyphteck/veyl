@@ -4,7 +4,7 @@ import { useUser } from '@/components/providers/userprovider';
 import { useChat } from '@/components/providers/chatprovider';
 import { formatUserDisplay } from '@veyl/shared/profile';
 import { prepareFile } from '@/lib/chat/files';
-import { toast } from 'sonner';
+import { toast } from '@/components/notifications';
 import { CAMERA_MEDIA_RECIPIENT_MAX } from '@veyl/shared/config';
 import Share from './share';
 

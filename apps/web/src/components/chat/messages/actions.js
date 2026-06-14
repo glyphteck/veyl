@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/components/notifications';
 import { useChat } from '@/components/providers/chatprovider';
 import { useDialog } from '@/components/providers/dialogprovider';
 import { useWallet } from '@/components/providers/walletprovider';

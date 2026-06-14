@@ -43,6 +43,7 @@ export async function bootWallet(walletMnemonic, user, { SparkWallet, cloud, net
         markDiag(diag, 'vault.bootWallet.spark.start', {});
         ({ wallet } = await initializeWallet.call(WalletClass, {
             mnemonicOrSeed: walletMnemonic,
+            forceReinit: true,
             options: {
                 network,
                 tokenOptimizationOptions: { enabled: false },
@@ -115,7 +116,8 @@ export async function bootChat(chatSeed, user, { cloud, diag = null } = {}) {
 
 export function lockWallet(wallet) {
     try {
-        wallet?.cleanupConnections();
+        const cleanup = typeof wallet?.cleanup === 'function' ? wallet.cleanup() : wallet?.cleanupConnections?.();
+        cleanup?.catch?.(() => {});
     } catch {}
 }
 

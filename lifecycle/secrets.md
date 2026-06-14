@@ -6,6 +6,7 @@ Use this guide when changing vault unlock, seed derivation, chat key derivation,
 
 - The vault password, decrypted master seed, secret registry, wallet mnemonic entropy, chat private key, pair secret, chat roots, actor secrets, owner-entry keys, ping keys, message keys, local cache keys, and file keys stay client-side.
 - The master seed unwraps the encrypted feature secret registry. Wallet, chat, and cache features use registry-owned secrets instead of direct master-seed children.
+- Account settings are stored server-side only as a vault-derived encrypted body. Plaintext settings objects are not a supported reader or migration path.
 - `linkId` is a stable pair rendezvous id. It is used to open or recreate the backend chat instance at `links/{linkId}`.
 - `linkId` is not a message/action encryption root input. Message bodies, action authenticators, and actor signatures are scoped by active `chatId`.
 - A recreated chat gets a fresh backend-issued `chatId`, fresh owner entry ids, fresh chat roots, fresh actor keys, and fresh message keys while keeping the same pair `linkId`.
@@ -26,6 +27,9 @@ flowchart TD
     G --> J["mnemonicFromWalletEntropy(walletEntropy)"]
     H --> K["Clamp chat seed into X25519 chat private key"]
     I --> L["Mix local-only install secret into cache key"]
+    I --> L2["Derive settings key"]
+    L2 --> L3["Open encrypted users/{uid}.settings"]
+    L3 --> L4["Apply autolock and Face ID preference"]
     K --> M["Publish matching chatPK in profile if missing"]
     M --> N["Peer lookup returns peer chatPK"]
     N --> O["X25519 pair secret"]
@@ -62,7 +66,9 @@ Unlock reverses vault creation locally:
 4. The platform Argon2id implementation derives the vault AES key.
 5. `decryptSeed(...)` opens the encrypted seed and returns the 32-byte master seed.
 6. The provider decrypts the secret registry with a master-derived registry wrapping key.
-7. The provider reads the default wallet entropy, active chat seed, and cache root seed from the registry, then zeroes the master seed.
+7. The provider reads the default wallet entropy, active chat seed, and cache root seed from the registry.
+8. The provider derives the settings key from the cache root seed and opens the encrypted `users/{uid}.settings` body.
+9. The provider applies autolock and iOS Face ID preferences, then zeroes the master seed and temporary key bytes where possible.
 
 The platform difference is only the Argon2id implementation: web uses a worker, iOS uses `react-native-argon2`. The shared seed envelope and derivation labels are the same.
 
@@ -77,6 +83,12 @@ The master seed is only the vault root. It decrypts the feature secret registry 
 `bootChat` zeroes the chat seed after creating the X25519 keypair. The live chat private key remains in the vault provider only while the vault is unlocked.
 
 The registry is the layer that lets Veyl add more wallets, rotate a chat identity, or add new secret-backed features without changing the master seed or changing unrelated feature seeds.
+
+## Wallet Export
+
+Wallet export deliberately reveals the default Spark mnemonic after the user enters the vault password again. This is a full spend-secret disclosure, not a backup preview.
+
+The export flow may show or copy the mnemonic after password verification and should zero the decrypted wallet entropy buffer after deriving the words. It must not send the mnemonic to the backend, put it in logs, or persist it in local cache. User-triggered reveal or clipboard copy is an explicit external disclosure controlled by the user.
 
 ## Vault Migration
 
@@ -101,6 +113,19 @@ The local cache key has two inputs:
 Web stores the install secret in the local IndexedDB cache database. iOS stores it in Secure Store with `WHEN_PASSCODE_SET_THIS_DEVICE_ONLY`. The install secret is never uploaded, so the backend does not learn a device id, device count, hardware model, or stable per-device identifier from this cache-key layer.
 
 If the local install secret is lost, the device's local cache becomes unreadable and starts fresh. That is acceptable because the local cache is only an optimization; the server remains the source of truth for messages and wallet balance.
+
+Plain local cache namespaces may include the account uid, active network, install-secret record key, and opaque media cache ids so the client can find the right encrypted blob. Chat ids, public keys, usernames, previews, transaction amounts, media paths, file keys, filenames, captions, media metadata, and peer lists belong only inside the encrypted cache payload.
+
+## Account Settings
+
+Account settings use the cache root seed as vault-backed key material:
+
+1. `deriveSettingsKey(cacheSeed, uid)` derives the settings key after unlock.
+2. `users/{uid}.settings` stores only a packed XChaCha20-Poly1305 body.
+3. The encrypted settings body contains display, preview, payment behavior, autolock, and iOS Face ID preference state.
+4. Missing settings are initialized by sealing `defaultSettings`; plaintext settings objects are rejected.
+
+Autolock settings are account settings and are user-controlled. iOS Face ID, when enabled by the user, stores the normalized vault password only in local SecureStore behind device authentication and still requires a live Firebase token refresh before unlock.
 
 ## Pair And Link
 
@@ -223,26 +248,30 @@ The server can see:
 
 - Firebase auth uid for authenticated calls.
 - `seeds/{uid}.es` encrypted seed blob, including the encrypted secret registry.
+- `users/{uid}.settings` encrypted account settings body.
 - Public profile fields such as username, avatar marker, wallet public key, and `chatPK`.
 - Pair `linkId` when a client opens or deletes a link.
 - Active random `chatId`, message doc ids, `head.cid`, ciphertext bodies, timestamps, TTL fields, and chat media paths.
 - Owner entry ids and owner entry timestamps under a user's path.
 - Inbox ping ids, ping ephemeral public keys, encrypted ping bodies, sender auth uid, and recipient uid for push routing.
+- User-submitted report notes, reported plaintext text content, and reported evidence paths only when a user intentionally files a report.
 
 The server should not see:
 
 - Vault password, decrypted master seed, decrypted secret registry, wallet entropy, wallet mnemonic, wallet private keys, chat private keys, cache root seed, device cache secret, pair secret, chat roots, actor secrets, owner-entry keys, ping keys, message keys, or file keys.
-- Plaintext message content, payment request details, sender identity inside a message body, read receipts, reactions, edits, hidden checkpoints, retention mode, previews, captions, filenames, peer lists, or chat-list semantics.
+- Plaintext account settings, message content, payment request details, sender identity inside a message body, read receipts, reactions, edits, hidden checkpoints, retention mode, previews, captions, filenames, peer lists, or chat-list semantics outside an intentional user report.
 
 ## Lock And Cleanup
 
 Vault lock, failed unlock, auth switch, provider unmount, and account deletion must tear down live secrets:
 
-- Close Spark wallet connections.
+- Run full Spark wallet cleanup so SDK streams, timers, and singleton references are torn down.
 - Zero the live chat private key where possible.
 - Clear cached chat pairs, which zero `linkRoot`, `chatRoot`, and actor secrets.
 - Close the vaulted local cache handle, which zeroes the device-mixed cache key.
 - Clear provider-owned plaintext chat, peer, message, and preview state.
+
+Any path that changes autolock behavior must re-check app open, vault locked, iOS background, browser shutdown, app shutdown, forced kill, and device restart behavior.
 
 ## Ownership
 
@@ -250,6 +279,7 @@ Vault lock, failed unlock, auth switch, provider unmount, and account deletion m
 - Platform vault KDF: `apps/web/src/lib/crypto/kdf.js`, `apps/ios/src/lib/crypto/kdf.js`.
 - Vault boot and lock: `shared/vault.js`, platform vault providers.
 - Local cache device secret: `apps/web/src/lib/cache/localdata.js`, `apps/ios/src/lib/cache/localdata.js`.
+- Settings key and encrypted settings body: `shared/settingscloud.js`, `shared/settings.js`, `shared/cloud/firebase.js`.
 - Pair, link, chat root, and message key derivation: `shared/crypto/pair.js`, `shared/crypto/chat.js`.
 - Actor key derivation and signatures: `shared/crypto/sign.js`, `shared/chat/messages/actions.js`.
 - Owner entries: `shared/chat/entry.js`.

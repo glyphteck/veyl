@@ -5,7 +5,7 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/button';
 import { Fingerprint, Loader, UserRoundPlus, X } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/components/notifications';
 import { isPasskeyEnvironmentMismatchError, isPasskeyRpMismatchError, isUnlinkedPasskeyError, passkeyLogin } from '@/lib/passkey';
 import { userAvatarCache } from '@/lib/user/avatarcache';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/avatar';

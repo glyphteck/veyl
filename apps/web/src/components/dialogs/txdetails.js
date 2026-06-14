@@ -12,7 +12,7 @@ import { usePeer } from '@/components/providers/peerprovider';
 import { useDialog } from '@/components/providers/dialogprovider';
 import { useCloak } from '@veyl/shared/providers/cloakprovider';
 import { Clock, HandCoins, Check, Copy, BanknoteArrowDown, BanknoteArrowUp } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/components/notifications';
 
 export default function TxDetails({ data, close }) {
     const bitcoin = useBitcoin();

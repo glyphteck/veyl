@@ -22,7 +22,7 @@ import { COOPERATIVE_EXIT_FLAT_FEE_SATS, COOPERATIVE_EXIT_TX_VBYTES, formatOncha
 import { getWithdrawalReviewAmounts } from '@veyl/shared/wallet/withdraw';
 import { availableBalanceSats } from '@veyl/shared/wallet/balance';
 import { isAddressOnNetwork, isMainnet } from '@veyl/shared/network';
-import { toast } from 'sonner';
+import { toast } from '@/components/notifications';
 
 export default function Withdraw({ data, close }) {
     const [isSubmitting, setIsSubmitting] = useState(false);

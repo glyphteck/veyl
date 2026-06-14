@@ -35,9 +35,6 @@ const PEER_SELECTOR_LOCK_MS = 520;
 const TX_ROW_HEIGHT = 71;
 const TX_ROW_SEPARATOR_HEIGHT = 1;
 const TX_ROW_CONTENT_HEIGHT = TX_ROW_HEIGHT - TX_ROW_SEPARATOR_HEIGHT;
-const TX_INITIAL_RENDER_COUNT = 20;
-const TX_RENDER_BATCH_SIZE = 24;
-const TX_LOAD_MORE_LOADER_MS = 160;
 
 function sameTxRow(a, b) {
     if (a === b) return true;
@@ -58,11 +55,6 @@ function sameProfile(a, b) {
     if (a === b) return true;
     if (!a || !b) return false;
     return a.username === b.username && a.avatar === b.avatar && a.active === b.active && a.bot === b.bot && a.chatPK === b.chatPK;
-}
-
-function profileSignature(profile) {
-    if (!profile) return '';
-    return [profile.uid || '', profile.username || '', profile.avatar || '', profile.active ? '1' : '0', profile.bot || '', profile.chatPK || ''].join(':');
 }
 
 function sameTheme(a, b) {
@@ -178,18 +170,18 @@ const TxRow = memo(function TxRow({ tx, profile, theme, moneyFormat, btcPrice, i
     sameProfile(prev.profile, next.profile)
 );
 
-const TxListFooter = memo(function TxListFooter({ bottomPadding, loading, offset, theme }) {
+const TxListFooter = memo(function TxListFooter({ bottomPadding, loading, theme }) {
     const loaderHeight = loading ? TX_ROW_HEIGHT : 0;
     if (!loaderHeight && !bottomPadding) return null;
 
     return (
-        <Animated.View style={{ height: loaderHeight + bottomPadding, transform: [{ translateY: offset }] }}>
+        <View style={{ height: loaderHeight + bottomPadding }}>
             {loading ? (
                 <View style={{ height: TX_ROW_HEIGHT, alignItems: 'center', justifyContent: 'center' }}>
                     <ActivityIndicator size="small" color={theme.foreground} />
                 </View>
             ) : null}
-        </Animated.View>
+        </View>
     );
 });
 
@@ -260,15 +252,10 @@ export default function Wallet() {
         inputRange: [0, 1],
         outputRange: [-BALANCE_HEIGHT, 0],
     });
-    const listContentOffset = fundedAnim.interpolate({
-        inputRange: [0, 1],
-        outputRange: [0, BALANCE_HEIGHT],
-        extrapolate: 'clamp',
-    });
     const listEdgeInset = insets.top + ACTIONS_HEIGHT;
     const listInset = useMemo(() => ({ top: listEdgeInset }), [listEdgeInset]);
     const listOffset = useMemo(() => ({ x: 0, y: -listEdgeInset }), [listEdgeInset]);
-    const listTopSpace = FLOATING_HEADER_SCROLL_EDGE_PAD;
+    const listTopSpace = FLOATING_HEADER_SCROLL_EDGE_PAD + (showBalance ? BALANCE_HEIGHT : 0);
     const cycleFormat = useCallback(() => {
         const abs = Math.abs(Number(balance ?? 0));
         const cycle = abs < 1_000_000 ? ['sats', 'usd'] : ['sats', 'usd', 'btc'];
@@ -280,25 +267,9 @@ export default function Wallet() {
     const txListData = txData?.sortedTransactions ?? [];
     const txTimes = useMemo(() => txListData.map((tx) => tx.createdTime), [txListData]);
     const rowTimeNow = useRowDateTimeNow(txTimes);
-    const mountedRef = useRef(true);
     const loadingMoreRef = useRef(false);
-    const loadingMoreFrameRef = useRef(null);
-    const loadingMoreStartTimerRef = useRef(null);
-    const loadingMoreFinishTimerRef = useRef(null);
-    const [loadingMoreTxs, setLoadingMoreTxs] = useState(false);
-    const txListShowsLoader = txListData.length > 0 && (loadingMoreTxs || (hasMoreTxs && isTxLoading));
+    const txListShowsLoader = txListData.length > 0 && hasMoreTxs && isTxLoading;
     const txListHasFooter = txListData.length > 0 && (txListShowsLoader || listBottomPadding > 0);
-    const txProfileSignature = useMemo(
-        () =>
-            txListData
-                .map((tx) => {
-                    if (!tx?.id) return '';
-                    if (tx.funding || tx.withdrawal) return `${tx.id}:self:${user?.avatar || ''}`;
-                    return `${tx.id}:${profileSignature(tx.peerPK ? peerByWalletPK?.get(tx.peerPK) : null)}`;
-                })
-                .join('|'),
-        [peerByWalletPK, txListData, user?.avatar]
-    );
 
     const balanceText = useMemo(() => {
         if (displayBalance == null) return '';
@@ -340,64 +311,20 @@ export default function Wallet() {
         [lockRoute, router]
     );
 
-    useEffect(
-        () => () => {
-            mountedRef.current = false;
-            if (loadingMoreFrameRef.current != null) cancelAnimationFrame(loadingMoreFrameRef.current);
-            if (loadingMoreStartTimerRef.current) clearTimeout(loadingMoreStartTimerRef.current);
-            if (loadingMoreFinishTimerRef.current) clearTimeout(loadingMoreFinishTimerRef.current);
-        },
-        []
-    );
-
-    const finishLoadMoreTxs = useCallback((startedAt) => {
-        if (!mountedRef.current) return;
-        const delay = Math.max(0, TX_LOAD_MORE_LOADER_MS - (Date.now() - startedAt));
-        if (loadingMoreFinishTimerRef.current) {
-            clearTimeout(loadingMoreFinishTimerRef.current);
-        }
-        loadingMoreFinishTimerRef.current = setTimeout(() => {
-            loadingMoreFinishTimerRef.current = null;
-            loadingMoreRef.current = false;
-            if (mountedRef.current) {
-                setLoadingMoreTxs(false);
-            }
-        }, delay);
-    }, []);
-
     const handleLoadMoreTxs = useCallback(() => {
         if (!txReady || !hasMoreTxs || isTxLoading || loadingMoreRef.current || typeof loadMoreTxs !== 'function') return;
         loadingMoreRef.current = true;
-        setLoadingMoreTxs(true);
-        if (loadingMoreFinishTimerRef.current) {
-            clearTimeout(loadingMoreFinishTimerRef.current);
-            loadingMoreFinishTimerRef.current = null;
-        }
-        loadingMoreFrameRef.current = requestAnimationFrame(() => {
-            loadingMoreFrameRef.current = null;
-            loadingMoreStartTimerRef.current = setTimeout(() => {
-                loadingMoreStartTimerRef.current = null;
-                const startedAt = Date.now();
-                Promise.resolve()
-                    .then(loadMoreTxs)
-                    .catch(() => {})
-                    .finally(() => finishLoadMoreTxs(startedAt));
-            }, 0);
-        });
-    }, [finishLoadMoreTxs, hasMoreTxs, isTxLoading, loadMoreTxs, txReady]);
+        Promise.resolve()
+            .then(loadMoreTxs)
+            .catch(() => {})
+            .finally(() => {
+                loadingMoreRef.current = false;
+            });
+    }, [hasMoreTxs, isTxLoading, loadMoreTxs, txReady]);
 
     const handleTxEndReached = useCallback(() => {
         handleLoadMoreTxs();
     }, [handleLoadMoreTxs]);
-
-    const renderTxCell = useCallback(
-        ({ children, onFocusCapture, onLayout, style }) => (
-            <Animated.View onFocusCapture={onFocusCapture} onLayout={onLayout} style={[style, { transform: [{ translateY: listContentOffset }] }]}>
-                {children}
-            </Animated.View>
-        ),
-        [listContentOffset]
-    );
 
     const renderTxItem = useCallback(
         ({ item, index }) => {
@@ -419,10 +346,7 @@ export default function Wallet() {
         [btcPrice, moneyFormat, openRoute, peerByWalletPK, rowTimeNow, selectPeerChat, theme, txListData.length, txListShowsLoader, user]
     );
 
-    const renderTxEmpty = useCallback(
-        () => <Animated.View style={{ flex: 1, transform: [{ translateY: listContentOffset }] }}>{txReady ? <WalletEmpty /> : <WalletLoading />}</Animated.View>,
-        [listContentOffset, txReady]
-    );
+    const renderTxEmpty = useCallback(() => <View style={{ flex: 1 }}>{txReady ? <WalletEmpty /> : <WalletLoading />}</View>, [txReady]);
 
     const getTxItemLayout = useCallback((data, index) => {
         const length = TX_ROW_HEIGHT;
@@ -430,24 +354,25 @@ export default function Wallet() {
     }, [listTopSpace]);
 
     const txListExtraData = useMemo(
-        () => [
+        () => ({
             moneyFormat,
             btcPrice,
-            user?.chatPK || '',
-            user?.chatBanned ? '1' : '0',
-            user?.avatar || '',
-            theme.foreground,
-            theme.muted,
-            theme.inflow,
-            theme.outflow,
-            theme.border,
+            chatPK: user?.chatPK || '',
+            chatBanned: user?.chatBanned === true,
+            avatar: user?.avatar || '',
+            foreground: theme.foreground,
+            muted: theme.muted,
+            inflow: theme.inflow,
+            outflow: theme.outflow,
+            border: theme.border,
             rowTimeNow,
-            txListShowsLoader ? '1' : '0',
-            txProfileSignature,
-        ].join('|'),
+            txListShowsLoader,
+            peerByWalletPK,
+        }),
         [
             btcPrice,
             moneyFormat,
+            peerByWalletPK,
             theme.border,
             theme.foreground,
             theme.inflow,
@@ -458,7 +383,6 @@ export default function Wallet() {
             user?.avatar,
             user?.chatBanned,
             user?.chatPK,
-            txProfileSignature,
         ]
     );
 
@@ -467,20 +391,14 @@ export default function Wallet() {
             <ScrollEdgeScreen>
                 <FlatList
                     data={txListData}
-                    CellRendererComponent={renderTxCell}
                     keyExtractor={(item) => item.id}
                     renderItem={renderTxItem}
                     extraData={txListExtraData}
                     getItemLayout={getTxItemLayout}
-                    initialNumToRender={TX_INITIAL_RENDER_COUNT}
-                    maxToRenderPerBatch={TX_RENDER_BATCH_SIZE}
-                    removeClippedSubviews
-                    updateCellsBatchingPeriod={24}
-                    windowSize={8}
                     onEndReached={handleTxEndReached}
                     onEndReachedThreshold={0.6}
                     ListHeaderComponent={<View style={{ height: listTopSpace }} />}
-                    ListFooterComponent={txListHasFooter ? <TxListFooter bottomPadding={listBottomPadding} loading={txListShowsLoader} offset={listContentOffset} theme={theme} /> : null}
+                    ListFooterComponent={txListHasFooter ? <TxListFooter bottomPadding={listBottomPadding} loading={txListShowsLoader} theme={theme} /> : null}
                     ListEmptyComponent={renderTxEmpty}
                     contentInset={listInset}
                     contentOffset={listOffset}

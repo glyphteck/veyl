@@ -12,10 +12,11 @@
 - The vault password should never be known by Glyphteck Corp.
 - The decrypted seed and derived wallet/chat secrets should stay client-side.
 - Unlock happens locally.
-- Vault lock should tear down wallet connections, zero the live chat private key where possible, clear provider state, and clear derived chat-pair caches.
+- Vault lock should run full Spark wallet cleanup, zero the live chat private key where possible, clear provider state, and clear derived chat-pair caches.
 - Vaulted local data cache keys are derived only after local seed decrypt, are mixed with a local-only install secret, are never stored directly, and must be zeroed/closed on lock, failed unlock, auth switch, and provider unmount. Do not upload the local install secret or use it as a cloud-visible device id.
-- The durable local cache must contain only ciphertext plus nonsensitive envelope metadata while the vault is locked. Do not put chat ids, public keys, usernames, message previews, transaction amounts, or peer lists in plaintext localStorage keys, IndexedDB indexes, AsyncStorage keys, or filenames.
-- Account settings are stored on the server as a vault-derived encrypted body. Do not write plaintext display currency, glass mode, autolock preferences, payment behavior preferences, chat preview preferences, or Face ID preference to `users/{uid}`. iOS may keep only the local pre-unlock biometric routing choice and SecureStore staging marker on device; after vault unlock the decrypted account setting is the source of truth and disables local biometric staging when `faceID` is false or unset.
+- The durable local cache must contain only ciphertext plus nonsensitive envelope metadata while the vault is locked. Plain uid/network cache namespaces are allowed only to find the encrypted per-account cache. Do not put chat ids, public keys, usernames, message previews, transaction amounts, media paths, file keys, filenames, captions, media metadata, or peer lists in plaintext localStorage keys, IndexedDB indexes, AsyncStorage keys, or filenames.
+- Account settings are stored on the server as a vault-derived encrypted body. Do not write plaintext display currency, glass mode, autolock preferences, payment behavior preferences, chat preview preferences, or Face ID preference to `users/{uid}`, and do not accept plaintext settings objects as a compatibility path.
+- iOS Face ID is optional local credential escrow, not a stronger vault secret. When `faceID` is true, iOS may keep the normalized vault password in SecureStore with device authentication and `WHEN_PASSCODE_SET_THIS_DEVICE_ONLY`, plus local pre-unlock routing/staging markers. Unlock must still require a fresh Firebase token before reading the staged password. After vault unlock, the decrypted account setting is the source of truth and disables/clears local biometric staging when `faceID` is false or unset.
 - Cached chat media bytes must be stored as vault-encrypted blobs with opaque local ids. Storage paths, file keys, chat ids, public keys, filenames, captions, and media metadata belong only inside the encrypted local cache payload.
 - Chat message lists must not be hydrated from durable local cache. The server is the source of truth for message existence, especially because either participant can hard-delete messages at any time.
 - In-memory recent-chat message batches are allowed only after unlock and must stay provider-owned session state. Do not persist those batches or expose plaintext local indexes. Warm message batches must not download attachment bytes; media reads should happen only from the normal render or user path after a server-confirmed message doc proves the attachment still exists.
@@ -58,6 +59,7 @@
 - veyl is non-custodial.
 - Veyl wallet/backend data is pre-production unless the user says otherwise. Prefer clean wallet architecture changes over legacy compatibility branches or migrations, and only preserve old wallet data when explicitly requested.
 - Wallet behavior depends on the locally derived seed.
+- The Spark SDK is the external wallet cryptography and network dependency. Veyl may pass the mnemonic only to the client-local SDK signer path after vault unlock or to an explicit user export action; never send it to Veyl backend systems, logs, reports, or local cache. Unlock should force a fresh SDK wallet instance, and lock must run full SDK cleanup.
 - User-facing transfer flows must treat Bitcoin and blockchain transfers as irreversible.
 - Wallet changes can touch vault boot, address derivation, transfer history, payment requests, and peer analytics.
 - Wallet transaction history may hydrate from the vaulted local cache, but wallet balance must remain live-only and must come from Spark balance calls or wallet events.
@@ -67,6 +69,7 @@
 - Withdrawal flows must reject addresses that do not match the active network at every entry point: scanner/QR handling, form validation and disabled state, and the shared wallet withdraw function.
 - Cooperative withdrawal UI must use the shared two-step review flow: call `prepareWithdrawal()` only from an explicit withdraw action, show the destination address, amount leaving the wallet, quoted fee, and amount received, then call `confirmWithdrawal()` from the confirmation action. Do not quote withdrawal fees on every keystroke.
 - Account deletion UX must warn users when their balance is at or above the practical withdrawal minimum and keep withdraw/export paths visible before destructive deletion.
+- Wallet export is a full spend-secret disclosure. Require the vault password before deriving the mnemonic, zero intermediate entropy buffers where possible, and keep reveal/copy actions explicit with clear user-facing warning that the mnemonic controls the Spark wallet.
 
 ## Backend And Rules
 

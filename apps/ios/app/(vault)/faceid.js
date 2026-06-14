@@ -46,7 +46,7 @@ export default function FaceIdScreen() {
                 <FaceIdIcon size={256} color={theme.foreground} />
                 <View style={{ alignItems: 'center', gap: 12 }}>
                     <Text style={{ fontSize: 36, fontWeight: '900', color: theme.foreground, textAlign: 'center' }}>use Face ID to unlock your vault?</Text>
-                    <Text style={{ fontSize: 16, fontWeight: '700', color: theme.muted, textAlign: 'center' }}>using Face ID is faster and more secure</Text>
+                    <Text style={{ fontSize: 16, fontWeight: '700', color: theme.muted, textAlign: 'center' }}>Face ID unlock is faster and stays on this device</Text>
                 </View>
             </View>
             <View style={{ position: 'absolute', left: 0, right: 0, bottom: '14%', alignItems: 'center', gap: 12 }}>

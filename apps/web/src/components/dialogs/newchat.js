@@ -17,7 +17,7 @@ import { invite, makeInviteLink } from '@veyl/shared/invite';
 import { mergeProfiles } from '@veyl/shared/search/merge';
 import { formatUserDisplay } from '@veyl/shared/profile';
 import { chatUploadErrorMessage, getUploadFiles, queueMessages } from '@/lib/chat/files';
-import { toast } from 'sonner';
+import { toast } from '@/components/notifications';
 
 export default function NewChat({ close }) {
     const router = useRouter();

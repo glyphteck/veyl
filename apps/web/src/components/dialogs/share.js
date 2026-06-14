@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Loader, Search } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/components/notifications';
 import { Card } from '@/components/card';
 import { Button } from '@/components/button';
 import { Input } from '@/components/input';

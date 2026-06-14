@@ -9,7 +9,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/avatar';
 import { Card } from '@/components/card';
 import { useAdminData } from '@/components/providers/adminprovider';
 import { botPowerClass, displayUser, formatSats } from '@/lib/admin/format';
-import { toast } from 'sonner';
+import { toast } from '@/components/notifications';
 
 export default function BotPage() {
     const { bots, botsReady, powerBot, banUser, unbanUser } = useAdminData();

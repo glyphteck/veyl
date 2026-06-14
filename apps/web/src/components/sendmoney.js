@@ -16,7 +16,7 @@ import { useDialog } from '@/components/providers/dialogprovider';
 import { useCloak } from '@veyl/shared/providers/cloakprovider';
 import { invite, makeInviteLink } from '@veyl/shared/invite';
 import { qr } from '@veyl/shared/qr';
-import { toast } from 'sonner';
+import { toast } from '@/components/notifications';
 import PeerSelector from '@/components/peerselector';
 
 function invoiceTitle(invoice) {

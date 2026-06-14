@@ -5,7 +5,7 @@ import { useChat } from '@/components/providers/chatprovider';
 import { readCachedShareAttachmentData } from '@/lib/chat/share';
 import { canShareAttachmentMsg, getAttachmentTitle } from '@veyl/shared/chat/messages';
 import { formatUserDisplay } from '@veyl/shared/profile';
-import { toast } from 'sonner';
+import { toast } from '@/components/notifications';
 import Share from './share';
 
 export default function ShareMedia({ data, close }) {

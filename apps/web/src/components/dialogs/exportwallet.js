@@ -9,7 +9,7 @@ import { normalizePassword } from '@veyl/shared/password';
 import { decryptWalletMnemonic, zeroBytes } from '@/lib/crypto/seed';
 import { useVault } from '@/components/providers/vaultprovider';
 import { useDialog } from '@/components/providers/dialogprovider';
-import { toast } from 'sonner';
+import { toast } from '@/components/notifications';
 import { cn } from '@/lib/classes';
 
 export default function ExportWallet() {
@@ -105,6 +105,7 @@ export default function ExportWallet() {
                             </div>
                             <div className="text-sm">if you do not want to use this account anymore, it is highly recommended that you withdraw your funds back to a bitcoin wallet instead.</div>
                         </div>
+                        <div className="text-sm font-black">the mnemonic gives full control of this Spark wallet. reveal it only somewhere private.</div>
                     </div>
                 </div>
             </Card>

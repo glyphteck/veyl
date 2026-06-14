@@ -15,7 +15,7 @@ import { usePeer } from '@/components/providers/peerprovider';
 import { formatUserDisplay } from '@veyl/shared/profile';
 import { chatUploadErrorMessage, getUploadFiles, queueMessages } from '@/lib/chat/files';
 import { HandCoins, CircleArrowRight, CircleCheck, Clock3, Eye, Flag, Paperclip, Trash2, UserX } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/components/notifications';
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { getChatPeerPK } from '@veyl/shared/chat/ids';

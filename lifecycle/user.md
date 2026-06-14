@@ -15,6 +15,8 @@ flowchart TD
     E --> F["Decrypt seed locally"]
     F --> G["Derive wallet key"]
     F --> H["Derive chat key"]
+    F --> K["Derive settings key"]
+    K --> L["Open encrypted account settings"]
     H --> I["Publish public chat key in profile"]
     G --> J["Client-only wallet operations"]
 ```
@@ -28,18 +30,21 @@ Unlock creates live capabilities; lock tears them down.
 ```mermaid
 flowchart TD
     A["Unlock succeeds"] --> B["Derive live chat and wallet material"]
-    B --> C["Open vaulted local cache"]
-    C --> D["Start providers"]
-    D --> E["Hydrate owner-private state after decrypting"]
-    E --> F["Use app"]
-    F --> G["Lock, failed unlock, auth switch, unmount, or account deletion"]
-    G --> H["Close wallet connections"]
-    G --> I["Clear provider/session state"]
-    G --> J["Zero live secrets where possible"]
-    G --> K["Close and clear local cache handles"]
+    B --> C["Open encrypted account settings"]
+    C --> D["Open vaulted local cache"]
+    D --> E["Start providers"]
+    E --> F["Hydrate owner-private state after decrypting"]
+    F --> G["Use app"]
+    G --> H["Autolock, manual lock, failed unlock, auth switch, unmount, or account deletion"]
+    H --> I["Run full wallet cleanup"]
+    H --> J["Clear provider/session state"]
+    H --> K["Zero live secrets where possible"]
+    H --> L["Close and clear local cache handles"]
 ```
 
-Durable local cache must contain only ciphertext plus nonsensitive envelope metadata while locked. Chat ids, public keys, usernames, message previews, transaction amounts, peer lists, media paths, file keys, filenames, captions, and media metadata do not belong in plaintext durable cache keys or filenames.
+Durable local cache must contain only ciphertext plus nonsensitive envelope metadata while locked. Plain uid/network cache namespaces are allowed only to find the encrypted per-account cache. Chat ids, public keys, usernames, message previews, transaction amounts, peer lists, media paths, file keys, filenames, captions, and media metadata do not belong in plaintext durable cache keys or filenames.
+
+Autolock settings are user-controlled account settings. iOS Face ID is optional local credential escrow: the decrypted settings body controls whether the normalized vault password may be staged in SecureStore, and a live Firebase token refresh is required before a Face ID unlock can read it.
 
 ## Owner-Private Chat State
 

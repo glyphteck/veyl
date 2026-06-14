@@ -1,7 +1,7 @@
 'use client';
 
 import { xchacha20poly1305 } from '@noble/ciphers/chacha.js';
-import { decoder, encoder, randomBytes, toBytes } from './core.js';
+import { cleanBytes, decoder, encoder, randomBytes, toBytes } from './core.js';
 
 export const BOX_NONCE_BYTES = 24;
 
@@ -32,10 +32,19 @@ export async function openBox(key, nonce, ct, aad) {
 }
 
 export async function sealJson(key, value, aad) {
-    return sealBox(key, encoder.encode(JSON.stringify(value)), aad);
+    const body = encoder.encode(JSON.stringify(value));
+    try {
+        return await sealBox(key, body, aad);
+    } finally {
+        cleanBytes(body);
+    }
 }
 
 export async function openJson(key, nonce, ct, aad) {
     const bytes = await openBox(key, nonce, ct, aad);
-    return JSON.parse(decoder.decode(bytes));
+    try {
+        return JSON.parse(decoder.decode(bytes));
+    } finally {
+        cleanBytes(bytes);
+    }
 }

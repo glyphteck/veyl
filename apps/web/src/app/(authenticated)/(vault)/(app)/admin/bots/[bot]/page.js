@@ -11,7 +11,7 @@ import { Button } from '@/components/button';
 import { Card } from '@/components/card';
 import { useAdminData } from '@/components/providers/adminprovider';
 import { botPowerClass, displayUser, formatDateTime, formatSats } from '@/lib/admin/format';
-import { toast } from 'sonner';
+import { toast } from '@/components/notifications';
 
 function MetaRow({ label, value, copyValue = '' }) {
     const text = value || 'not set';

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { Flag, Loader, File, Image } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/components/notifications';
 import { Card } from '@/components/card';
 import { Button } from '@/components/button';
 import { Input } from '@/components/input';

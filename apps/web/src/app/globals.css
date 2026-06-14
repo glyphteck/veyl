@@ -94,6 +94,22 @@
         @apply bg-destructive px-3 py-2 text-background shadow;
     }
 
+    .veyl-toast {
+        opacity: 0;
+        transform: translateY(0.75rem) scale(0.92);
+        transform-origin: left bottom;
+        pointer-events: auto;
+        transition:
+            opacity 160ms cubic-bezier(0.2, 0, 0, 1),
+            transform 160ms cubic-bezier(0.2, 0, 0, 1);
+        will-change: opacity, transform;
+    }
+
+    .veyl-toast[data-open='true'] {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+
     .veyl-toast:has([data-description], [data-button]) {
         min-width: 12.5rem;
         padding: 1rem;

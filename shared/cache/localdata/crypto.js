@@ -1,7 +1,7 @@
 'use client';
 
 import { AES_IV_BYTES, openAes, sealAes } from '../../crypto/aes.js';
-import { decoder, encoder, fromHexBytes, randomBytes, toBytes, toHex } from '../../crypto/core.js';
+import { cleanBytes, decoder, encoder, fromHexBytes, randomBytes, toBytes, toHex } from '../../crypto/core.js';
 import { packVersionedData, unpackVersionedData } from '../../crypto/pack.js';
 import { emptyPayload, LOCAL_DATA_CACHE_VERSION, normalizePayload } from './schema.js';
 
@@ -21,12 +21,16 @@ function mediaAad(uid, network, id) {
 
 export async function sealPayload(key, payload, uid, network) {
     const body = encoder.encode(JSON.stringify({ ...normalizePayload(payload), savedAt: Date.now() }));
-    const { iv, ct } = await sealAes(key, body, cacheAad(uid, network));
-    return JSON.stringify({
-        v: LOCAL_DATA_CACHE_VERSION,
-        iv: toHex(iv),
-        ct: toHex(ct),
-    });
+    try {
+        const { iv, ct } = await sealAes(key, body, cacheAad(uid, network));
+        return JSON.stringify({
+            v: LOCAL_DATA_CACHE_VERSION,
+            iv: toHex(iv),
+            ct: toHex(ct),
+        });
+    } finally {
+        cleanBytes(body);
+    }
 }
 
 export async function openPayload(key, raw, uid, network) {
@@ -40,7 +44,11 @@ export async function openPayload(key, raw, uid, network) {
     }
 
     const plain = await openAes(key, fromHexBytes(envelope.iv, 'cache iv'), fromHexBytes(envelope.ct, 'cache ciphertext'), cacheAad(uid, network));
-    return normalizePayload(JSON.parse(decoder.decode(plain)));
+    try {
+        return normalizePayload(JSON.parse(decoder.decode(plain)));
+    } finally {
+        cleanBytes(plain);
+    }
 }
 
 function packMedia(iv, ct) {

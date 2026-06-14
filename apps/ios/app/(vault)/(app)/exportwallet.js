@@ -163,6 +163,11 @@ export default function ExportWalletScreen() {
                                         if you do not want to use this account anymore, it is highly recommended that you withdraw your funds back to a bitcoin wallet instead.
                                     </Text>
                                 </GlassView>
+                                <GlassView glassEffectStyle="clear" tintColor={theme.background} style={{ borderRadius: 24, paddingHorizontal: 18, paddingVertical: 18 }}>
+                                    <Text style={{ fontSize: 15, lineHeight: 23, fontWeight: '800', color: theme.foreground }}>
+                                        the mnemonic gives full control of this Spark wallet. reveal it only somewhere private.
+                                    </Text>
+                                </GlassView>
                             </View>
                         </ScrollView>
                     </ScrollEdgeScreen>

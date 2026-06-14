@@ -9,7 +9,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/avatar';
 import { Card } from '@/components/card';
 import { useAdminData } from '@/components/providers/adminprovider';
 import { displayUser } from '@/lib/admin/format';
-import { toast } from 'sonner';
+import { toast } from '@/components/notifications';
 
 export default function AdminPage() {
     const { offenders, offendersReady, banUser, unbanUser } = useAdminData();

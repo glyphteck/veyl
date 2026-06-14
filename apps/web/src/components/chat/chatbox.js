@@ -16,7 +16,7 @@ import { chatUploadErrorMessage, queueMessages } from '@/lib/chat/files';
 import { canReplyToMsg, isPeerMsg, makeReq, makeTxt, setReply, setTxt } from '@veyl/shared/chat/messages';
 import { parseCommandAmountSats } from '@veyl/shared/commands';
 import { MessageCirclePlus } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/components/notifications';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 function canFocusControl(element) {

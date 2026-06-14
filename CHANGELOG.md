@@ -2,16 +2,26 @@
 
 Repo-level changes are listed newest first. Keep entries short and concrete. Broad pushes get grouped bullets, while narrow fixes can use one concise bugfix or cleanup bullet that still names the actual change.
 
+## 0.16.3 - 2026-06-14
+
+- Hardened wallet and vault secret lifecycle cleanup by zeroing decrypted JSON/cache buffers, forcing fresh Spark wallet instances, and running full SDK cleanup on lock.
+- Reworked wallet transfer history under load with cached pending-transfer hydration, pending status refreshes, latest-20 startup fetches, and native iOS transfer-list virtualization defaults.
+- Replaced the web Sonner dependency with the first-party notification surface and kept toast styling, icons, duration, dismissal, and copy feedback in the app.
+- Tightened wallet export warnings, QR funding-address copy behavior, account-settings compatibility rules, and security lifecycle docs while narrowing the remaining traffic-load follow-up to live observation.
+
+## 0.16.2 - 2026-06-13
+
+- Moved account settings into vault-encrypted cloud storage with explicit iOS Face ID choice gating and all-device logout cleanup.
+- Simplified the iOS funding sheet around the static Bitcoin deposit QR, copy feedback, and fee preview.
+- Added two-step wallet withdrawal review across web and iOS, with live fee/receive amounts and a shared zero-receive guard.
+- Moved non-urgent todo plans into `todo/post-launch/` and updated `bun map` to show deferred todos separately.
+
 ## 0.16.1 - 2026-06-13
 
 - Retuned iOS chat composer keyboard stickiness, multiline input sizing, message-bubble rendering, and audio seek/resume behavior.
 - Centralized iOS input and disabled-control glass tint helpers, then applied them across fields, search, chat composer, camera shutter, and glass actions.
-- Moved account settings into vault-encrypted cloud storage with explicit iOS Face ID choice gating and all-device logout cleanup.
-- Simplified the iOS funding sheet around the static Bitcoin deposit QR, copy feedback, and fee preview.
 - Added the `bun bot traffic chat` alias, clarified dev-runner readiness output, and refreshed bot traffic docs.
-- Added two-step wallet withdrawal review across web and iOS, with live fee/receive amounts and a shared zero-receive guard.
 - Documented the first-class GIF media contract in chat lifecycle docs and removed completed GIF, invite, iOS glass, and external payment QR invoice todos.
-- Moved non-urgent todo plans into `todo/post-launch/` and updated `bun map` to show deferred todos separately.
 
 ## 0.16.0 - 2026-06-13
 

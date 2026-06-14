@@ -8,7 +8,7 @@ import { decryptSeed, migrateVault, shouldMigrateVault, unpackVaultSeedData } fr
 import { normalizePassword } from '@veyl/shared/password';
 import { bootWallet, lockWallet, bootChat, lockChat } from '@/lib/vault';
 import { useUser } from '@/components/providers/userprovider';
-import { toast } from 'sonner';
+import { toast } from '@/components/notifications';
 import { Lock } from 'lucide-react';
 import { cloud } from '@/lib/cloud';
 import { mark } from '@/lib/diagnostics';

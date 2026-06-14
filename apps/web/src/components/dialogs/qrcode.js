@@ -18,7 +18,7 @@ const RECEIVE_POLL_MS = 2500;
 export default function QRCodeDialog({ data, close }) {
     const { avatar, username, active, settings } = useUser();
     const { openDialog } = useDialog();
-    const { getLightningReceiveRequest, refresh, transfers } = useWallet();
+    const { copyFundingAddress, getLightningReceiveRequest, refresh, transfers } = useWallet();
     const bitcoin = useBitcoin();
     const isUserQr = data?.type === qr.user;
     const isBitcoinQr = data?.type === qr.bitcoin;
@@ -30,7 +30,7 @@ export default function QRCodeDialog({ data, close }) {
     const invoiceId = isLightningQr ? data?.value?.id : null;
     const invoiceAmountSats = isLightningQr ? data?.value?.amountSats : null;
     const qrIdentity = typeof data?.value === 'string' ? data.value : data?.value?.id || data?.value?.encodedInvoice || '';
-    const canCopyQr = isLightningQr && lightningMode && !paid;
+    const canCopyQr = (isBitcoinQr || (isLightningQr && lightningMode)) && !paid;
     const hasReceiveTransfer = useMemo(() => {
         if (!isLightningQr || !qrIdentity) return false;
         return Array.isArray(transfers) && transfers.some((tx) => isReceivePaymentTransfer(tx, { createdAt: shownAt, amountSats: invoiceAmountSats }));
@@ -88,6 +88,10 @@ export default function QRCodeDialog({ data, close }) {
 
     const copyQr = () => {
         if (!canCopyQr) return;
+        if (isBitcoinQr) {
+            void copyFundingAddress?.(data?.value).catch(() => {});
+            return;
+        }
         void navigator.clipboard.writeText(qrValue).catch(() => {});
     };
 
@@ -128,7 +132,7 @@ export default function QRCodeDialog({ data, close }) {
                 </div>
             ) : null}
             {canCopyQr ? (
-                <button type="button" className={`${qrClassName} border-0 bg-transparent p-0`} onAnimationEnd={closeOnPaidAnimationEnd} onClick={copyQr} title="copy lightning invoice">
+                <button type="button" className={`${qrClassName} cursor-pointer border-0 bg-transparent p-0`} onAnimationEnd={closeOnPaidAnimationEnd} onClick={copyQr} title={isBitcoinQr ? 'copy funding address' : 'copy lightning invoice'}>
                     {qrCode}
                 </button>
             ) : (

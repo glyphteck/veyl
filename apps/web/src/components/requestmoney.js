@@ -18,7 +18,7 @@ import { makeReq } from '@veyl/shared/chat/messages';
 import { REQUEST_MONEY_MAX_SATS } from '@veyl/shared/config';
 import { invite, makeInviteLink } from '@veyl/shared/invite';
 import { qr } from '@veyl/shared/qr';
-import { toast } from 'sonner';
+import { toast } from '@/components/notifications';
 import PeerSelector from '@/components/peerselector';
 
 export default function RequestMoney({ peer, amount = '', inputUnit, onPeerChange, onAmountChange, onInputUnitChange }) {

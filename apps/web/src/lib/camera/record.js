@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { toast } from 'sonner';
+import { toast } from '@/components/notifications';
 import { stageVideoCapture } from '@/lib/camera/staging';
 
 const VIDEO_HOLD_MS = 220;

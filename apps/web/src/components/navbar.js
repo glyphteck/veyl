@@ -39,7 +39,7 @@ export default function Navbar() {
     const pathname = usePathname();
     const { openDialog } = useDialog();
     const user = useUser();
-    const { copyFundingAddress, fundingAddress, getFundingAddress, balance } = useWallet();
+    const { fundingAddress, getFundingAddress, balance } = useWallet();
     const { lock } = useVault();
     const { hasTx } = useTxData();
     const { hasChats, chats } = useChat();
@@ -161,7 +161,6 @@ export default function Navbar() {
                     <UserMenu
                         user={user}
                         balance={balance}
-                        copyFundingAddress={copyFundingAddress}
                         fundingAddress={fundingAddress}
                         getFundingAddress={getFundingAddress}
                         lock={lock}

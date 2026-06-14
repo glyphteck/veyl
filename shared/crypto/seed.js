@@ -220,8 +220,9 @@ function secretRegistryKey(masterSeed) {
 
 export async function sealSecretRegistry(masterSeed, registry) {
     const key = secretRegistryKey(masterSeed);
+    let body = null;
     try {
-        const body = encoder.encode(JSON.stringify(normalizeSecretRegistry(registry)));
+        body = encoder.encode(JSON.stringify(normalizeSecretRegistry(registry)));
         const { iv, ct } = await sealAes(key, body, SECRET_REGISTRY_AAD);
         return {
             v: SECRET_REGISTRY_ENVELOPE_VERSION,
@@ -229,6 +230,7 @@ export async function sealSecretRegistry(masterSeed, registry) {
             ct,
         };
     } finally {
+        cleanBytes(body);
         cleanBytes(key);
     }
 }
@@ -238,10 +240,12 @@ export async function openSecretRegistry(masterSeed, envelope) {
         throw vaultIncompatibleError('secret registry required');
     }
     const key = secretRegistryKey(masterSeed);
+    let body = null;
     try {
-        const body = await openAes(key, envelope.iv, envelope.ct, SECRET_REGISTRY_AAD);
+        body = await openAes(key, envelope.iv, envelope.ct, SECRET_REGISTRY_AAD);
         return normalizeSecretRegistry(JSON.parse(decoder.decode(body)));
     } finally {
+        cleanBytes(body);
         cleanBytes(key);
     }
 }

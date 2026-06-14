@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { Coins, Loader } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/components/notifications';
 import { isAddressOnNetwork } from '@veyl/shared/network';
 import { renderMoney } from '@veyl/shared/money';
 import { formatUserDisplay } from '@veyl/shared/profile';

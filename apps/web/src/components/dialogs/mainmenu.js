@@ -27,7 +27,7 @@ import {
     UserPlus,
     UserX,
 } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '@/components/notifications';
 import { useDialog } from '@/components/providers/dialogprovider';
 import { useUser } from '@/components/providers/userprovider';
 import { useBitcoin } from '@/components/providers/bitcoinprovider';
@@ -317,7 +317,7 @@ export default function MainMenu({ close, data, open = true }) {
     const { openDialog } = useDialog();
     const { uid, username, settings, chatPK, chatBanned, isAdmin, avatar, active, walletPK } = useUser();
     const bitcoin = useBitcoin();
-    const { copyFundingAddress, fundingAddress, getFundingAddress, sendMoneyWithSpark, balance, hasMoreTxs, isTxLoading, loadMoreTxs } = useWallet();
+    const { fundingAddress, getFundingAddress, sendMoneyWithSpark, balance, hasMoreTxs, isTxLoading, loadMoreTxs } = useWallet();
     const { lock, localCache } = useVault();
     const { hasTx, sortedTransactions } = useTxData();
     const { hasChats, lastChat, chats, previewNow, sendMessage, selectPeerChat } = useChat();
@@ -358,7 +358,6 @@ export default function MainMenu({ close, data, open = true }) {
         const address = fundingAddress || (await getFundingAddress());
         if (!address) return;
         openDialog('qrcode', { type: qr.bitcoin, value: address });
-        void copyFundingAddress(address).catch(() => {});
     };
 
     const openUserQr = () => {

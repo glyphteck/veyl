@@ -15,7 +15,7 @@ import { useRecord } from '@/lib/camera/record';
 import { useScan } from '@/lib/camera/scan';
 import { downloadCapture, stagePhotoCapture } from '@/lib/camera/staging';
 import { useCloak } from '@veyl/shared/providers/cloakprovider';
-import { toast } from 'sonner';
+import { toast } from '@/components/notifications';
 
 const NAV_FOCUSABLE_SELECTOR = 'nav button:not(:disabled), nav [href], nav input:not(:disabled), nav select:not(:disabled), nav textarea:not(:disabled), nav [tabindex]:not([tabindex="-1"])';
 

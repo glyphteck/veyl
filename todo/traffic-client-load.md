@@ -17,7 +17,7 @@ Finish verification and any remaining optimization for web and iOS clients under
 - Human must keep web and iOS unlocked on the target account before client observations are meaningful.
 - Use `bun dev -v` so web, iOS, and bot logs expose the receive path.
 - Stop queued/running traffic with `bun bot traffic stop` before changing traffic shape or restarting runtimes.
-- Current source includes wallet history ownership gates, background history coverage for web dashboard ranges, smaller iOS transfer-list render batches, and concurrent bot message traffic. The remaining task is observation on unlocked clients, not another blind optimization pass.
+- Current source includes wallet history ownership gates, cached pending-transfer refresh, latest-20 session-start transfer fetches, background history coverage for web dashboard ranges, native-managed iOS transfer-list virtualization, and concurrent bot message traffic. The remaining task is observation on unlocked clients, not another blind optimization pass.
 
 ## Remaining Work
 
@@ -30,10 +30,10 @@ bun bot traffic msg @zxrl fast --solo --count 60 --no-wait
 ```
 
 - Run a short opaque chat smoke on web, iOS, and bot against deployed rules/functions: simultaneous starts, inbox pings, established sends without parent chat docs, own-message edits, forged peer edit rejection, `pay_confirm`, hard message delete from either side, whole-chat delete, save/unsave text and chat-media messages, old seen media unsave, saved media hard-delete, and active-client source-doc clearing.
-- Verify iOS wallet scrolling no longer outruns painted transfer rows after the smaller reveal batch and visible-history split.
+- Verify iOS wallet scrolling no longer outruns painted transfer rows after returning transfer-list virtualization to the native list defaults.
 - Verify the web wallet dashboard fills full-history timeframe options and chart data from background-reconciled history without requiring a manual scroll through the transfer list.
+- Verify cached completed and pending transfer rows render immediately after unlock while pending rows refresh into their latest status.
 - Watch iOS main-thread responsiveness during simultaneous message and transfer traffic. If interaction stalls remain, inspect verbose logs for repeated wallet aggregation, profile/avatar fetches, cache writes, or list-wide rerenders.
-- Confirm transfer ownership remains fail-closed on both clients: no cached transfer row should display unless the unlocked wallet public key is the sender or receiver.
 - Keep runtime logs available during each observation pass, and record any reproducible bottleneck before patching.
 
 ## Validation

@@ -12,7 +12,7 @@ import { qr } from '@veyl/shared/qr';
 
 export default function WalletPage() {
     const txData = useTxData();
-    const { copyFundingAddress, fundingAddress, getFundingAddress, isWalletDataLoaded, txReady } = useWallet();
+    const { fundingAddress, getFundingAddress, isWalletDataLoaded, txReady } = useWallet();
     const { openDialog } = useDialog();
     const hasTransactions = txData?.hasTx || false;
 
@@ -20,7 +20,6 @@ export default function WalletPage() {
         const address = fundingAddress || (await getFundingAddress());
         if (!address) return;
         openDialog('qrcode', { type: qr.bitcoin, value: address });
-        void copyFundingAddress(address).catch(() => {});
     };
 
     if (!isWalletDataLoaded) {

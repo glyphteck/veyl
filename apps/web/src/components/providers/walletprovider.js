@@ -6,7 +6,7 @@ import { resolveNetwork } from '@veyl/shared/network';
 import { useVault } from '@/components/providers/vaultprovider';
 import { useCloak } from '@veyl/shared/providers/cloakprovider';
 import { useUser } from '@/components/providers/userprovider';
-import { toast } from 'sonner';
+import { toast } from '@/components/notifications';
 import { Copy } from 'lucide-react';
 import { mark } from '@/lib/diagnostics';
 
@@ -21,7 +21,7 @@ function useWalletExtras({ fundingAddress, getFundingAddress }) {
 
             await navigator.clipboard.writeText(address);
             toast('funding address copied to clipboard', {
-                ...(cloaked ? {} : { description: address }),
+                ...(cloaked ? {} : { description: address, descriptionMode: 'middle' }),
                 icon: <Copy />,
             });
 

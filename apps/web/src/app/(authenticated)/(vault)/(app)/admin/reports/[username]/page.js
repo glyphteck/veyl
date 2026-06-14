@@ -14,7 +14,7 @@ import { useAdminData } from '@/components/providers/adminprovider';
 import { displayUser, formatDateTime } from '@/lib/admin/format';
 import { useFileUrl } from '@/lib/admin/files';
 import { imageWidth } from '@/lib/chat/messages';
-import { toast } from 'sonner';
+import { toast } from '@/components/notifications';
 
 function reportTypeLabel(type) {
     switch (type) {

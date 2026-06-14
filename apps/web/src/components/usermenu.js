@@ -12,7 +12,6 @@ import { BanknoteArrowDown, BanknoteArrowUp, KeyRound, Lock, LogOut, QrCode, Set
 export default function UserMenu({
     user,
     balance,
-    copyFundingAddress,
     fundingAddress,
     getFundingAddress,
     lock,
@@ -37,7 +36,6 @@ export default function UserMenu({
         const address = fundingAddress || (await getFundingAddress?.());
         if (!address) return;
         openDialog('qrcode', { type: qr.bitcoin, value: address });
-        void copyFundingAddress?.(address).catch(() => {});
     };
 
     return (

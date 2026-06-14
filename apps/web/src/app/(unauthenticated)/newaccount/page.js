@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/button';
 import { Input } from '@/components/input';
 import { StaticAvatar } from '@/components/avatar';
-import { toast } from 'sonner';
+import { toast } from '@/components/notifications';
 import { sleep } from '@veyl/shared/utils/async';
 import { isPasskeyRpMismatchError, passkeyRegister } from '@/lib/passkey';
 import { cn } from '@/lib/classes';
