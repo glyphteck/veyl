@@ -57,7 +57,7 @@ export default async function RootLayout({ children }) {
     return (
         <html lang="en" suppressHydrationWarning>
             <body suppressHydrationWarning className="select-none font-bold antialiased">
-                <script type="application/ld+json" nonce={nonce || undefined} dangerouslySetInnerHTML={{ __html: JSON.stringify(appSchema) }} />
+                <script type="application/ld+json" nonce={nonce || undefined} suppressHydrationWarning dangerouslySetInnerHTML={{ __html: JSON.stringify(appSchema) }} />
                 <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange nonce={nonce}>
                     {children}
                     <Notifications position="bottom-left" />

@@ -2,6 +2,10 @@
 
 Repo-level changes are listed newest first. Keep entries short and concrete. Broad pushes get grouped bullets, while narrow fixes can use one concise bugfix or cleanup bullet that still names the actual change.
 
+## 0.16.4 - 2026-06-14
+
+- Suppressed the expected JSON-LD script nonce hydration warning while keeping the CSP nonce on the inline structured-data script.
+
 ## 0.16.3 - 2026-06-14
 
 - Hardened wallet and vault secret lifecycle cleanup by zeroing decrypted JSON/cache buffers, forcing fresh Spark wallet instances, and running full SDK cleanup on lock.
