@@ -17,6 +17,7 @@ import {
     MESSAGE_ROW_EASING,
     MESSAGE_ROW_ENTER_OFFSET_Y,
     MESSAGE_ROW_ENTER_SCALE,
+    MESSAGE_ROW_ENTER_STATE_MS,
     MESSAGE_ROW_ENTER_TIMING,
     MESSAGE_ROW_EXIT_ANIMATION_MS,
     MESSAGE_ROW_EXIT_CLEARANCE_PX,
@@ -179,6 +180,7 @@ export function Row({ chatPad, msg, rowState = 'present', fromPeer = false, them
     }, [fromPeer, screenW]);
 
     useEffect(() => {
+        let enterTimer;
         if (dropped) {
             appear.value = 1;
             exitDistance.value = measureExitTranslate();
@@ -199,7 +201,10 @@ export function Row({ chatPad, msg, rowState = 'present', fromPeer = false, them
 
         appear.value = 0;
         appear.value = withTiming(1, MESSAGE_ROW_ENTER_TIMING);
-        return undefined;
+        enterTimer = setTimeout(() => {
+            appear.value = 1;
+        }, MESSAGE_ROW_ENTER_STATE_MS);
+        return () => clearTimeout(enterTimer);
     }, [appear, dropped, entering, exit, exitDistance, instant, measureExitTranslate]);
 
     const replyGesture = useMemo(() => {
@@ -372,6 +377,7 @@ export function SystemRow({ chatPad, msg, rowState = 'present', screenW, theme }
     }));
 
     useEffect(() => {
+        let enterTimer;
         if (dropped) {
             appear.value = 1;
             exit.value = withTiming(1, { duration: MESSAGE_ROW_EXIT_ANIMATION_MS, easing: MESSAGE_ROW_EXIT_EASING });
@@ -390,7 +396,10 @@ export function SystemRow({ chatPad, msg, rowState = 'present', screenW, theme }
 
         appear.value = 0;
         appear.value = withTiming(1, MESSAGE_ROW_ENTER_TIMING);
-        return undefined;
+        enterTimer = setTimeout(() => {
+            appear.value = 1;
+        }, MESSAGE_ROW_ENTER_STATE_MS);
+        return () => clearTimeout(enterTimer);
     }, [appear, dropped, entering, exit, instant]);
 
     const text = getDateSeparatorText(msg) || getSystemMsgText(msg);

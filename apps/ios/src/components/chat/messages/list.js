@@ -189,7 +189,6 @@ export default function Messages({
         bottomMounted: scrollBottomMounted,
         bottomPositionStyle: scrollBottomPositionStyle,
         bottomStyle: scrollBottomStyle,
-        contentInset,
         contentContainerStyle,
         handleListScroll,
         handleLoadOlder,
@@ -412,7 +411,6 @@ export default function Messages({
                                 style={{ flex: 1, width: screenW + STAMP_TRAY, zIndex: 0 }}
                                 inverted
                                 ListFooterComponent={olderLoader}
-                                contentInset={contentInset}
                                 contentContainerStyle={contentContainerStyle}
                                 scrollIndicatorInsets={scrollIndicatorInsets}
                                 renderScrollComponent={renderScrollComponent}

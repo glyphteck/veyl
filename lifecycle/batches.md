@@ -4,7 +4,7 @@ Use this guide when changing chat-list warming, latest-message batches, route me
 
 ## Latest Batch And Route Open
 
-Opening or warming a chat uses the same provider-owned message batch. The route consumes the batch and owns only route-specific older paging and visible-message holds.
+Opening or warming a chat uses the same provider-owned message batch. The route consumes the batch and owns only route-specific older paging and visible-message holds. Route message views also keep the recently loaded older window in memory after leaving a chat, so reopening the same chat can render already-loaded pages immediately while the latest provider batch refreshes.
 
 ```mermaid
 flowchart TD

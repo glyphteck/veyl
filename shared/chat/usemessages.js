@@ -16,6 +16,20 @@ function isDenied(error) {
     return error?.code === 'permission-denied';
 }
 
+function hasLoadedOlderWindow(seed) {
+    return !!(seed?.ready && seed.exists && (seed.older?.length || seed.olderLoaded));
+}
+
+function pickInitialMessageSeed(batchSeed, viewSeed) {
+    if (batchSeed?.ready && batchSeed.exists === false) {
+        return batchSeed;
+    }
+    if (hasLoadedOlderWindow(viewSeed)) {
+        return viewSeed;
+    }
+    return batchSeed ?? viewSeed;
+}
+
 export function createUseChatMessages({ useChat, useUser, useVault, appState, pageSize = MSG_BATCH_SIZE }) {
     if (typeof useChat !== 'function' || typeof useUser !== 'function' || typeof useVault !== 'function') {
         throw new Error('createUseChatMessages requires { useChat, useUser, useVault }');
@@ -61,7 +75,10 @@ export function createUseChatMessages({ useChat, useUser, useVault, appState, pa
         const peerChatPK = useMemo(() => getChatPeerPK(currentChat, chatPK), [chatPK, currentChat]);
         const chatPreview = currentChat?.preview || null;
         const scopeKey = `${chatId || ''}:${chatPK || ''}:${chatPrivateKey ? 'unlocked' : 'locked'}:${peerChatPK || ''}`;
-        const initialSeed = messageSeedFromBatch(typeof getSharedMessageBatch === 'function' ? getSharedMessageBatch(chatId) : null, chatPK, peerChatPK) ?? messageSeedFromView(getMessageView?.(scopeKey));
+        const initialSeed = pickInitialMessageSeed(
+            messageSeedFromBatch(typeof getSharedMessageBatch === 'function' ? getSharedMessageBatch(chatId) : null, chatPK, peerChatPK),
+            messageSeedFromView(getMessageView?.(scopeKey))
+        );
 
         const [older, setOlder] = useState(() => initialSeed?.older ?? []);
         const [live, setLive] = useState(() => initialSeed?.live ?? []);
@@ -138,7 +155,10 @@ export function createUseChatMessages({ useChat, useUser, useVault, appState, pa
 
         useEffect(() => {
             runRef.current += 1;
-            const nextInitial = messageSeedFromBatch(typeof getSharedMessageBatch === 'function' ? getSharedMessageBatch(chatId) : null, chatPK, peerChatPK) ?? messageSeedFromView(getMessageView?.(scopeKey));
+            const nextInitial = pickInitialMessageSeed(
+                messageSeedFromBatch(typeof getSharedMessageBatch === 'function' ? getSharedMessageBatch(chatId) : null, chatPK, peerChatPK),
+                messageSeedFromView(getMessageView?.(scopeKey))
+            );
 
             setOlder(nextInitial?.older ?? []);
             setLive(nextInitial?.live ?? []);

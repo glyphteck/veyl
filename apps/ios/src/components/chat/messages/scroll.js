@@ -24,13 +24,13 @@ export function useScroll({ chatId, extraContentPadding, hasOlder, inputH, loadO
     const stickyOffset = useMemo(() => ({ closed: 0, opened: insets.bottom - KEYBOARD_GAP }), [insets.bottom]);
     const bottomBase = positivePx(insets.bottom + inputH + 20);
     const headerEdgeInset = getFloatingHeaderScrollEdgeInset(insets.top);
-    const headerInset = useMemo(() => ({ bottom: headerEdgeInset }), [headerEdgeInset]);
+    const headerIndicatorInset = useMemo(() => ({ bottom: headerEdgeInset }), [headerEdgeInset]);
     const contentContainerStyle = useMemo(
         () => ({
             paddingTop: positivePx(insets.bottom + inputH + NEWEST_GAP),
-            paddingBottom: FLOATING_HEADER_SCROLL_EDGE_PAD,
+            paddingBottom: positivePx(headerEdgeInset + FLOATING_HEADER_SCROLL_EDGE_PAD),
         }),
-        [insets.bottom, inputH]
+        [headerEdgeInset, insets.bottom, inputH]
     );
     const bottomStyle = useAnimatedStyle(() => ({
         transform: [
@@ -104,12 +104,11 @@ export function useScroll({ chatId, extraContentPadding, hasOlder, inputH, loadO
         bottomMounted,
         bottomPositionStyle,
         bottomStyle,
-        contentInset: headerInset,
         contentContainerStyle,
         handleListScroll,
         handleLoadOlder,
         listRef,
-        scrollIndicatorInsets: headerInset,
+        scrollIndicatorInsets: headerIndicatorInset,
         scrollToBottom,
         showBottom,
         stickyOffset,

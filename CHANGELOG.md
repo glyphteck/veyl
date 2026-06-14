@@ -2,6 +2,10 @@
 
 Repo-level changes are listed newest first. Keep entries short and concrete. Broad pushes get grouped bullets, while narrow fixes can use one concise bugfix or cleanup bullet that still names the actual change.
 
+## 0.16.6 - 2026-06-14
+
+- Stabilized iOS chat message-list header spacing, row-enter animation completion, and recently loaded older-message reuse after reopening a chat.
+
 ## 0.16.5 - 2026-06-14
 
 - Moved Veyl SoftwareApplication JSON-LD out of the root layout and into page-owned join/download metadata helpers without layout-level dangerous HTML injection.
