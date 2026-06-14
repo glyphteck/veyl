@@ -96,7 +96,7 @@ Evidence:
 
 - `firestore.rules` allows authenticated direct message creates under any valid, non-deleted 64-hex `chatId`.
 - `storage.rules` allows authenticated direct chat media creates under any valid chat media path, capped per object at 64 MiB.
-- `todo/server-abuse-prevention.md` explicitly parks the direct Firestore message-send frequency-cap decision.
+- `todo/post-launch/server-abuse-prevention.md` explicitly parks the direct Firestore message-send frequency-cap decision.
 
 Exploit:
 

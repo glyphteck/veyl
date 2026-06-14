@@ -39,7 +39,10 @@ export default function WithdrawalInfo({ data, close }) {
                         {feeFormula} = {feeDisplay}
                     </div>
                     <div className="text-sm leading-6 font-bold text-muted">
-                        the transaction fee is an estimate on how expensive it is to send bitcoin over the network at the moment, with an additional flat fee to export bitcoin off the spark network.
+                        veyl gets a live Spark withdrawal quote after you press withdraw. review the destination address, the amount leaving your wallet, the quoted fee, and the amount that reaches the address before confirming.
+                    </div>
+                    <div className="text-sm leading-6 font-bold text-foreground">
+                        once confirmed, bitcoin withdrawals are irreversible.
                     </div>
                 </div>
             </Card>

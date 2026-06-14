@@ -16,7 +16,7 @@ bun map
 - `shared`: cross-platform package imported as `@veyl/shared`.
 - `functions`: Firebase Functions package. It is not in the Bun workspace.
 - `scripts`: repo, dev, build, admin, map, and sanity tooling.
-- `todo`: active large-task coordination only. Completed work does not live there.
+- `todo`: active large-task coordination only. Current or launch-relevant work stays at the top level; non-urgent deferred work lives under `todo/post-launch/`. Completed work does not live there.
 
 ## First Files By System
 
@@ -62,7 +62,7 @@ Use `bun check:paths` after moving files, renaming package paths, or touching im
 ## Work Tracking
 
 - The actual diff is tracked by Git. Use `git status --short`, `git diff`, and `bun dirty`.
-- A `todo/` file tracks intent, ownership, branch/worktree, collision notes, and handoff state for large or collision-prone work. It does not isolate files or replace Git.
+- A `todo/` file tracks intent, ownership, branch/worktree, collision notes, and handoff state for large or collision-prone work. Keep current or launch-relevant work at the top level and non-urgent deferred work under `todo/post-launch/`. It does not isolate files or replace Git.
 - A branch plus linked worktree isolates parallel implementation. Use it when many files, long-running work, or likely overlap would make one checkout risky.
 - Small narrow fixes should stay in the current checkout without a todo file or worktree.
 - If a worktree is used, keep the task file in the primary checkout's `todo/` so other agents can see the coordination record.

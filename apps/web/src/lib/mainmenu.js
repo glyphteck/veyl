@@ -605,6 +605,17 @@ function buildStaticSections(options) {
                             shortcut: 'logout',
                         }
                     ),
+                    searchValue &&
+                        row(
+                            { type: 'logoutDevices' },
+                            {
+                                key: 'logout-devices',
+                                icon: 'logOut',
+                                label: 'log out all devices',
+                                keywords: ['logout all', 'log out everywhere', 'sessions', 'devices', 'security'],
+                                className: 'text-destructive',
+                            }
+                        ),
                 ],
                 staticFilter
             )

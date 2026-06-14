@@ -2,11 +2,12 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { AppState } from 'react-native';
 
 import { cloud } from '@/lib/cloud';
-import { stageFaceIdPassword, shouldStageFaceIdPassword } from '@/lib/faceid';
+import { clearFaceIdPassword, getFaceIdChoice, isFaceIdPasswordStaged, setFaceIdChoice, stageFaceIdPassword, shouldStageFaceIdPassword } from '@/lib/faceid';
 import { openLocalDataCache } from '@/lib/cache/localdata';
 import { clearMsgImageCache } from '@/lib/chat/imagecache';
 import { useUser } from '@/providers/userprovider';
 import { getCacheSeed, getChatSeed, getDefaultWalletEntropy, isVaultIncompatibleError, mnemonicFromWalletEntropy, openSecretRegistry } from '@veyl/shared/crypto/seed';
+import { deriveSettingsKey } from '@veyl/shared/settingscloud';
 import { decryptSeed, migrateVault, shouldMigrateVault, unpackVaultSeedData } from '@/lib/crypto/seed';
 import { normalizePassword } from '@veyl/shared/password';
 import { resolveNetwork } from '@veyl/shared/network';
@@ -30,6 +31,9 @@ export function VaultProvider({ children }) {
     const [localCache, setLocalCache] = useState(null);
     const [lockState, setLockState] = useState('locked');
     const [faceIdFailed, setFaceIdFailed] = useState(false);
+    const [faceIdChoice, setFaceIdChoiceState] = useState(null);
+    const [faceIdStaged, setFaceIdStaged] = useState(false);
+    const [faceIdChoiceReady, setFaceIdChoiceReady] = useState(false);
 
     const presenceRef = useRef({ uid: null, active: false });
     const vaultUidRef = useRef(null);
@@ -39,6 +43,8 @@ export function VaultProvider({ children }) {
     const idleRef = useRef(null);
 
     const { timer: autolockTimer, onBackground: autolockOnBackground } = user.settings?.autolock || {};
+    const faceIdConfigured = faceIdChoiceReady && typeof faceIdChoice === 'boolean';
+    const faceIdEnabled = faceIdConfigured && faceIdChoice === true && faceIdStaged;
 
     useEffect(() => {
         mark('vault.lockState', {
@@ -99,6 +105,53 @@ export function VaultProvider({ children }) {
         [syncPresence, user.uid]
     );
 
+    useEffect(() => {
+        const uid = user.uid || cloud.auth.user?.uid || null;
+        let cancelled = false;
+        setFaceIdChoiceReady(false);
+        setFaceIdChoiceState(null);
+        setFaceIdStaged(false);
+
+        if (!uid) {
+            setFaceIdChoiceReady(true);
+            return undefined;
+        }
+
+        void Promise.all([getFaceIdChoice(uid), isFaceIdPasswordStaged(uid)])
+            .then(([choice, staged]) => {
+                if (!cancelled) {
+                    setFaceIdChoiceState(choice);
+                    setFaceIdStaged(choice === true && staged);
+                    setFaceIdChoiceReady(true);
+                }
+            })
+            .catch(() => {
+                if (!cancelled) {
+                    setFaceIdChoiceState(null);
+                    setFaceIdStaged(false);
+                    setFaceIdChoiceReady(true);
+                }
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [user.uid]);
+
+    const setFaceIdEnabled = useCallback(async (enabled) => {
+        const uid = user.uid || cloud.auth.user?.uid || null;
+        if (!uid) throw new Error('auth');
+        const next = enabled === true ? true : enabled === false ? false : null;
+        await setFaceIdChoice(uid, next);
+        if (next !== true) {
+            await clearFaceIdPassword(uid).catch(() => false);
+        }
+        setFaceIdChoiceState(next);
+        setFaceIdStaged(next === true ? await isFaceIdPasswordStaged(uid) : false);
+        setFaceIdChoiceReady(true);
+        return next;
+    }, [user.uid]);
+
     const wipeLiveSecrets = useCallback(
         ({ resetState = true, resetFaceIdFailed = false } = {}) => {
             const liveWallet = walletRef.current;
@@ -120,12 +173,13 @@ export function VaultProvider({ children }) {
 
             setWallet(null);
             setChatPrivateKey(null);
+            user.lockSettings?.();
             void clearMsgImageCache().catch(() => {});
             if (resetFaceIdFailed) {
                 setFaceIdFailed(false);
             }
         },
-        [closeLocalCache]
+        [closeLocalCache, user.lockSettings]
     );
 
     const lock = useCallback(() => {
@@ -275,7 +329,7 @@ export function VaultProvider({ children }) {
                 hasVault: !!vault,
                 hasWalletPK: !!user.walletPK,
                 hasChatPK: !!user.chatPK,
-                hasFaceIDSetting: typeof user.settings?.faceID === 'boolean',
+                hasFaceIDSetting: faceIdConfigured,
             });
             setLockState('unlocking');
             let w = null;
@@ -284,6 +338,7 @@ export function VaultProvider({ children }) {
             let walletEntropy = null;
             let chatSeed = null;
             let cacheKey = null;
+            let settingsKey = null;
             let nextCache = null;
             const unlockUid = user.uid || cloud.auth.user?.uid || null;
             if (!unlockUid) {
@@ -293,6 +348,13 @@ export function VaultProvider({ children }) {
             const isCurrentUnlock = () => vaultUidRef.current === unlockUid && cloud.auth.user?.uid === unlockUid;
 
             try {
+                const sessionStartedAt = Date.now();
+                mark('vault.unlock.session.start', { source });
+                if (!cloud.auth.user?.getIdToken) {
+                    throw new Error('auth');
+                }
+                await cloud.auth.user.getIdToken(true);
+                mark('vault.unlock.session.done', { elapsedMs: Date.now() - sessionStartedAt, source });
                 const unpackStartedAt = Date.now();
                 let nextVault = vault;
                 let unpacked = null;
@@ -361,16 +423,13 @@ export function VaultProvider({ children }) {
                     markAnimationError(error);
                 }
 
-                const faceIdStartedAt = Date.now();
-                const shouldStagePassword = options.stageFaceId !== false && (await shouldStageFaceIdPassword(unlockUid, user.settings?.faceID));
-                mark('vault.unlock.faceIdStageCheck.done', { elapsedMs: Date.now() - faceIdStartedAt, source, shouldStagePassword });
-
                 const deriveStartedAt = Date.now();
                 const secretRegistry = await openSecretRegistry(masterSeed, registryEnvelope);
                 walletEntropy = getDefaultWalletEntropy(secretRegistry);
                 const walletMnemonic = mnemonicFromWalletEntropy(walletEntropy);
                 chatSeed = getChatSeed(secretRegistry);
                 cacheKey = getCacheSeed(secretRegistry);
+                settingsKey = deriveSettingsKey(cacheKey, unlockUid);
                 mark('vault.unlock.derive.done', { elapsedMs: Date.now() - deriveStartedAt, source });
 
                 zero(walletEntropy);
@@ -381,6 +440,35 @@ export function VaultProvider({ children }) {
                 if (!isCurrentUnlock()) {
                     throw new Error('account changed during unlock');
                 }
+
+                const settingsStartedAt = Date.now();
+                mark('vault.unlock.settings.start', { source });
+                const syncedSettings = await user.unlockSettings(settingsKey);
+                if (syncedSettings?.faceID === true) {
+                    await setFaceIdChoice(unlockUid, true);
+                    setFaceIdChoiceState(true);
+                    setFaceIdStaged(await isFaceIdPasswordStaged(unlockUid));
+                    setFaceIdChoiceReady(true);
+                } else if (syncedSettings?.faceID === false) {
+                    await setFaceIdChoice(unlockUid, false);
+                    await clearFaceIdPassword(unlockUid).catch(() => false);
+                    setFaceIdChoiceState(false);
+                    setFaceIdStaged(false);
+                    setFaceIdChoiceReady(true);
+                } else {
+                    await setFaceIdChoice(unlockUid, null);
+                    await clearFaceIdPassword(unlockUid).catch(() => false);
+                    setFaceIdChoiceState(null);
+                    setFaceIdStaged(false);
+                    setFaceIdChoiceReady(true);
+                }
+                mark('vault.unlock.settings.done', { elapsedMs: Date.now() - settingsStartedAt, source });
+                zero(settingsKey);
+                settingsKey = null;
+
+                const faceIdStartedAt = Date.now();
+                const shouldStagePassword = options.stageFaceId !== false && (await shouldStageFaceIdPassword(unlockUid, syncedSettings?.faceID));
+                mark('vault.unlock.faceIdStageCheck.done', { elapsedMs: Date.now() - faceIdStartedAt, source, shouldStagePassword });
 
                 const walletStartedAt = Date.now();
                 mark('vault.unlock.wallet.start', { source });
@@ -413,6 +501,7 @@ export function VaultProvider({ children }) {
                     const stageStartedAt = Date.now();
                     mark('vault.unlock.faceIdStage.start', { source });
                     await stageFaceIdPassword(normalizePassword(password), unlockUid);
+                    setFaceIdStaged(await isFaceIdPasswordStaged(unlockUid));
                     mark('vault.unlock.faceIdStage.done', { elapsedMs: Date.now() - stageStartedAt, source });
                 }
 
@@ -435,6 +524,7 @@ export function VaultProvider({ children }) {
                 zero(walletEntropy);
                 zero(chatSeed);
                 zero(cacheKey);
+                zero(settingsKey);
                 try {
                     lockWallet(w);
                     lockChat(chatPrivKey);
@@ -448,6 +538,7 @@ export function VaultProvider({ children }) {
                     setWallet(null);
                     setChatPrivateKey(null);
                     setLocalCache(null);
+                    user.lockSettings?.();
                     setLockState('locked');
                 } else {
                     void syncPresence(unlockUid, false);
@@ -455,7 +546,7 @@ export function VaultProvider({ children }) {
                 throw err;
             }
         },
-        [vault, lockState, user, setPresenceActive, syncPresence]
+        [faceIdConfigured, vault, lockState, user, setPresenceActive, syncPresence]
     );
 
     const value = useMemo(
@@ -467,12 +558,16 @@ export function VaultProvider({ children }) {
             localCache,
             lockState,
             faceIdFailed,
+            faceIdChoiceReady,
+            faceIdConfigured,
+            faceIdEnabled,
             setFaceIdFailed,
+            setFaceIdEnabled,
             unlockWithPsw,
             lock,
             touch,
         }),
-        [chatPrivateKey, vault, faceIdFailed, localCache, lock, lockState, vaultReady, touch, unlockWithPsw, wallet]
+        [chatPrivateKey, vault, faceIdChoiceReady, faceIdConfigured, faceIdEnabled, faceIdFailed, localCache, lock, lockState, setFaceIdEnabled, vaultReady, touch, unlockWithPsw, wallet]
     );
 
     return <VaultContext.Provider value={value}>{children}</VaultContext.Provider>;

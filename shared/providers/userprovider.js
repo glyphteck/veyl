@@ -8,8 +8,21 @@ import { markDiag, markDone, markError } from '../utils/diagnostics.js';
 import { banState, nextBanRefreshMs } from '../moderation.js';
 import { peerUid } from '../profile.js';
 import { defaultSettings } from '../settings.js';
+import { clearSettingsKey } from '../settingscloud.js';
 import { cleanText } from '../utils/text.js';
 import { resolveWalletPK } from '../wallet/keys.js';
+
+function settingsState(settings = defaultSettings) {
+    return {
+        ...defaultSettings,
+        ...(settings || {}),
+        ghostWallet: defaultSettings.ghostWallet,
+        autolock: {
+            ...defaultSettings.autolock,
+            ...(settings?.autolock || {}),
+        },
+    };
+}
 
 export const defaultUser = {
     uid: null,
@@ -34,12 +47,7 @@ export const defaultUser = {
     blockedReady: false,
     blocked: [],
     settingsReady: false,
-    settings: {
-        ...defaultSettings,
-        autolock: {
-            ...defaultSettings.autolock,
-        },
-    },
+    settings: settingsState(),
 };
 
 export function createUserProvider({ cloud, network, avatarCache = null, diag = null }) {
@@ -127,6 +135,8 @@ export function createUserProvider({ cloud, network, avatarCache = null, diag = 
         blockPeer: async () => {},
         unblockPeer: async () => {},
         acceptCommunityRules: async () => {},
+        unlockSettings: async () => {},
+        lockSettings: () => {},
         updateSettings: async () => {},
         refetchAvatar: () => {},
         clearAvatar: () => {},
@@ -137,6 +147,23 @@ export function createUserProvider({ cloud, network, avatarCache = null, diag = 
         const avatarFetchRef = useRef({ uid: null, key: null, promise: null });
         const authSessionRef = useRef(0);
         const avatarCacheUidRef = useRef(null);
+        const settingsKeyRef = useRef(null);
+        const userUidRef = useRef(null);
+
+        const clearUnlockedSettings = useCallback(() => {
+            clearSettingsKey(settingsKeyRef.current);
+            settingsKeyRef.current = null;
+            setUser((prevUser) => ({
+                ...prevUser,
+                settings: settingsState(),
+            }));
+        }, []);
+
+        const setSettingsKey = useCallback((key) => {
+            clearSettingsKey(settingsKeyRef.current);
+            settingsKeyRef.current = key ? new Uint8Array(key) : null;
+            return settingsKeyRef.current;
+        }, []);
 
         const fetchAvatar = useCallback(
             async (uid, { version = null, force = false, clear = false, persist = true } = {}) => {
@@ -242,6 +269,9 @@ export function createUserProvider({ cloud, network, avatarCache = null, diag = 
                 markDiag(diag, 'user.auth.state', { signedIn: !!authUser });
 
                 if (!authUser) {
+                    userUidRef.current = null;
+                    clearSettingsKey(settingsKeyRef.current);
+                    settingsKeyRef.current = null;
                     keepOnlyCachedAvatar(null, avatarCacheUidRef.current);
                     avatarCacheUidRef.current = null;
                     avatarFetchRef.current = { uid: null, key: null, promise: null };
@@ -252,10 +282,16 @@ export function createUserProvider({ cloud, network, avatarCache = null, diag = 
                 keepOnlyCachedAvatar(authUser.uid, avatarCacheUidRef.current);
                 avatarCacheUidRef.current = authUser.uid;
 
+                const authUidChanged = userUidRef.current !== authUser.uid;
+                userUidRef.current = authUser.uid;
+                if (authUidChanged) {
+                    clearSettingsKey(settingsKeyRef.current);
+                    settingsKeyRef.current = null;
+                }
                 setUser((prevUser) => (
-                    prevUser.uid === authUser.uid
-                        ? { ...prevUser, authReady: true, isAdmin: false, adminReady: false }
-                        : { ...defaultUser, authReady: true, uid: authUser.uid }
+                    authUidChanged
+                        ? { ...defaultUser, authReady: true, uid: authUser.uid }
+                        : { ...prevUser, authReady: true, isAdmin: false, adminReady: false }
                 ));
                 void readCachedAvatar(authUser.uid).then((cached) => {
                     if (!cached || authSessionRef.current !== authSession || cloud.auth.user?.uid !== authUser.uid) {
@@ -300,7 +336,6 @@ export function createUserProvider({ cloud, network, avatarCache = null, diag = 
                             fromCache: !!info.fromCache,
                             pending: !!info.pending,
                         });
-                        const { autolock: rawAutolock, ...rawSettings } = privateData.settings || {};
                         setUser((prevUser) => ({
                             ...prevUser,
                             communityRulesVersion: privateData.communityRulesVersion ?? null,
@@ -308,15 +343,6 @@ export function createUserProvider({ cloud, network, avatarCache = null, diag = 
                             communityRulesAcceptedAt: privateData.communityRulesAcceptedAt ?? null,
                             communityRulesPending: !!info.pending,
                             settingsReady: prevUser.settingsReady || !info.fromCache,
-                            settings: {
-                                ...defaultUser.settings,
-                                ...rawSettings,
-                                ghostWallet: defaultUser.settings.ghostWallet,
-                                autolock: {
-                                    ...defaultUser.settings.autolock,
-                                    ...(rawAutolock || {}),
-                                },
-                            },
                         }));
                     },
                     (error) => {
@@ -329,12 +355,6 @@ export function createUserProvider({ cloud, network, avatarCache = null, diag = 
                             communityRulesDate: null,
                             communityRulesAcceptedAt: null,
                             communityRulesPending: false,
-                            settings: {
-                                ...defaultUser.settings,
-                                autolock: {
-                                    ...defaultUser.settings.autolock,
-                                },
-                            },
                         }));
                     }
                 );
@@ -522,16 +542,39 @@ export function createUserProvider({ cloud, network, avatarCache = null, diag = 
             [cloud]
         );
 
+        const unlockSettings = useCallback(
+            async (key) => {
+                const uid = cloud.auth.user?.uid;
+                if (!uid) throw new Error('auth');
+                if (!key) throw new Error('settings key required');
+                const nextSettings = await cloud.user.settings.read(uid, key);
+                setSettingsKey(key);
+                setUser((prevUser) => ({
+                    ...prevUser,
+                    settingsReady: true,
+                    settings: settingsState(nextSettings),
+                }));
+                return nextSettings;
+            },
+            [cloud, setSettingsKey]
+        );
+
+        const lockSettings = useCallback(() => {
+            clearUnlockedSettings();
+        }, [clearUnlockedSettings]);
+
         const updateSettings = useCallback(
             async (patch) => {
                 const uid = cloud.auth.user?.uid;
                 if (!uid) throw new Error('auth');
+                const settingsKey = settingsKeyRef.current;
+                if (!settingsKey) throw new Error('settings locked');
 
-                const nextSettings = await cloud.user.settings.write(uid, patch, { currentSettings: user.settings });
+                const nextSettings = await cloud.user.settings.write(uid, patch, { currentSettings: user.settings, key: settingsKey });
                 setUser((prevUser) => ({
                     ...prevUser,
                     settingsReady: true,
-                    settings: nextSettings,
+                    settings: settingsState(nextSettings),
                 }));
                 return nextSettings;
             },
@@ -565,11 +608,13 @@ export function createUserProvider({ cloud, network, avatarCache = null, diag = 
                 blockPeer,
                 unblockPeer,
                 acceptCommunityRules,
+                unlockSettings,
+                lockSettings,
                 updateSettings,
                 refetchAvatar,
                 clearAvatar,
             }),
-            [acceptCommunityRules, avatarBanned, blockPeer, blockedSet, chatBanned, chatBanUntil, clearAvatar, isBlocked, refetchAvatar, unblockPeer, updateSettings, user]
+            [acceptCommunityRules, avatarBanned, blockPeer, blockedSet, chatBanned, chatBanUntil, clearAvatar, isBlocked, lockSettings, refetchAvatar, unblockPeer, unlockSettings, updateSettings, user]
         );
 
         return <UserContext value={value}>{children}</UserContext>;

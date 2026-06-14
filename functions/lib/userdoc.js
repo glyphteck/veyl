@@ -1,21 +1,5 @@
 import { db } from './admin.js';
 
-const defaultSettings = {
-    glass: true,
-    moneyFormat: 'usd',
-    ghostWallet: true,
-    showChatPreviews: true,
-    sendOnScan: false,
-    confirmSend: false,
-    faceID: null,
-    autolock: {
-        timer: 'never',
-        onHide: false,
-        onBlur: false,
-        onBackground: false,
-    },
-};
-
 export async function ensureUserDoc(uid) {
     if (!uid) {
         throw new Error('uid required');
@@ -27,6 +11,6 @@ export async function ensureUserDoc(uid) {
         return false;
     }
 
-    await ref.set({ settings: defaultSettings });
+    await ref.set({});
     return true;
 }

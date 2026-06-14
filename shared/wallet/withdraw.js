@@ -13,7 +13,7 @@ function getWithdrawalReview({ feeQuote, exitSpeed, amountSats, onchainAddress, 
     }
 
     const sparkFees = normalizeWithdrawalFeeQuote(feeQuote);
-    return {
+    const withdrawal = {
         kind: 'cooperative_exit',
         onchainAddress,
         amountSats,
@@ -28,6 +28,29 @@ function getWithdrawalReview({ feeQuote, exitSpeed, amountSats, onchainAddress, 
         sparkFees,
         expiresAt: sparkFees?.expiresAt ?? feeQuote.expiresAt ?? null,
     };
+    assertWithdrawalReceivesFunds(withdrawal);
+    return withdrawal;
+}
+
+export function getWithdrawalReviewAmounts(withdrawal) {
+    const amountSats = toSafeSats(withdrawal?.amountSats);
+    const feeAmountSats = toSafeNonNegativeSats(withdrawal?.feeAmountSats ?? 0, 'feeAmountSats');
+    const deductFeeFromWithdrawalAmount = withdrawal?.deductFeeFromWithdrawalAmount !== false;
+    const receiveAmountSats = deductFeeFromWithdrawalAmount ? Math.max(0, amountSats - feeAmountSats) : amountSats;
+    const sendAmountSats = deductFeeFromWithdrawalAmount ? amountSats : amountSats + feeAmountSats;
+
+    return {
+        sendAmountSats,
+        receiveAmountSats,
+        feeAmountSats,
+    };
+}
+
+function assertWithdrawalReceivesFunds(withdrawal) {
+    const { receiveAmountSats } = getWithdrawalReviewAmounts(withdrawal);
+    if (receiveAmountSats <= 0) {
+        throw new Error('withdrawal fee is greater than or equal to the amount');
+    }
 }
 
 export function useWithdrawal({ wallet, network, updateWalletData }) {
@@ -130,6 +153,12 @@ export function useWithdrawal({ wallet, network, updateWalletData }) {
                 if (!readyFeeQuoteId || readyFeeAmountSats == null) {
                     throw new Error('withdrawal fee quote unavailable');
                 }
+
+                assertWithdrawalReceivesFunds({
+                    amountSats: safeAmountSats,
+                    feeAmountSats: readyFeeAmountSats,
+                    deductFeeFromWithdrawalAmount,
+                });
 
                 const tx = await wallet.withdraw({
                     onchainAddress: address,

@@ -7,7 +7,8 @@ import { useTheme } from '@/providers/themeprovider';
 import { useUser } from '@/providers/userprovider';
 import { useVault } from '@/providers/vaultprovider';
 import Icon from '@/components/icon';
-import { getFaceIdPassword } from '@/lib/faceid';
+import { cloud } from '@/lib/cloud';
+import { clearFaceIdPassword, getFaceIdPassword } from '@/lib/faceid';
 import { mark } from '@/lib/diagnostics';
 
 let faceIdPromptInFlight = false;
@@ -46,6 +47,13 @@ export default function FaceIdUnlockScreen() {
         const startedAt = Date.now();
         mark('faceid.unlock.start', { lockState });
         try {
+            const sessionStartedAt = Date.now();
+            mark('faceid.session.start', {});
+            if (!cloud.auth.user?.getIdToken) {
+                throw new Error('auth');
+            }
+            await cloud.auth.user.getIdToken(true);
+            mark('faceid.session.done', { elapsedMs: Date.now() - sessionStartedAt });
             const passwordStartedAt = Date.now();
             mark('faceid.password.start', {});
             const password = await getFaceIdPassword(user?.uid);
@@ -69,6 +77,7 @@ export default function FaceIdUnlockScreen() {
             mark('faceid.unlock.done', { elapsedMs: Date.now() - startedAt });
         } catch (error) {
             mark('faceid.unlock.error', { elapsedMs: Date.now() - startedAt, code: error?.code || '', message: error?.message || String(error) });
+            await clearFaceIdPassword(user?.uid).catch(() => false);
             setFaceIdFailed(true);
         } finally {
             faceIdPromptInFlight = false;

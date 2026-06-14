@@ -6,6 +6,7 @@ const FACE_ID_SERVICE = 'veyl.faceid';
 
 const storeKey = (uid) => `veyl_vault_password_${uid}`;
 const stagedKey = (uid) => `veyl_faceid_staged_${uid}`;
+const choiceKey = (uid) => `veyl_faceid_choice_${uid}`;
 
 const STORE_OPTS = {
     keychainService: FACE_ID_SERVICE,
@@ -29,15 +30,48 @@ async function setStaged(uid, staged) {
     }
 }
 
+export async function getFaceIdChoice(uid) {
+    if (!uid) return null;
+    try {
+        const value = await AsyncStorage.getItem(choiceKey(uid));
+        if (value === '1') return true;
+        if (value === '0') return false;
+    } catch {}
+    return null;
+}
+
+export async function setFaceIdChoice(uid, enabled) {
+    if (!uid) return null;
+    if (enabled === true) {
+        await AsyncStorage.setItem(choiceKey(uid), '1');
+        return true;
+    }
+    if (enabled === false) {
+        await AsyncStorage.setItem(choiceKey(uid), '0');
+        return false;
+    }
+    await AsyncStorage.removeItem(choiceKey(uid));
+    return null;
+}
+
+export async function isFaceIdPasswordStaged(uid) {
+    if (!uid) return false;
+    if (!SecureStore.canUseBiometricAuthentication()) return false;
+    try {
+        return (await AsyncStorage.getItem(stagedKey(uid))) === '1';
+    } catch {
+        return false;
+    }
+}
+
 export function FaceIdIcon({ size = 24, color = 'currentColor', weight = 'regular', pointerEvents, style }) {
     return <SymbolView name="faceid" size={size} tintColor={color} weight={weight} pointerEvents={pointerEvents} style={style} />;
 }
 
 export async function shouldStageFaceIdPassword(uid, enabled) {
     if (!uid) return false;
-    if (enabled === false) return false;
+    if (enabled !== true) return false;
     if (!SecureStore.canUseBiometricAuthentication()) return false;
-    if (enabled === true) return true;
     return (await AsyncStorage.getItem(stagedKey(uid))) !== '1';
 }
 

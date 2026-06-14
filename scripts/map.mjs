@@ -81,6 +81,17 @@ function todoSummary() {
     for (const name of todos) {
         process.stdout.write(`  todo/${name}\n`);
     }
+
+    const postLaunchDir = resolve(todoDir, 'post-launch');
+    const postLaunchTodos = existsSync(postLaunchDir)
+        ? readdirSync(postLaunchDir)
+            .filter((name) => name.endsWith('.md'))
+            .sort()
+        : [];
+    bullet('post-launch todos', postLaunchTodos.length ? String(postLaunchTodos.length) : 'none');
+    for (const name of postLaunchTodos) {
+        process.stdout.write(`  todo/post-launch/${name}\n`);
+    }
 }
 
 function cleanCell(cell) {

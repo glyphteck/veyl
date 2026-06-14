@@ -10,6 +10,7 @@ import { toBytes } from '../crypto/core.js';
 import { firebaseConfig } from '../firebaseconfig.js';
 import { getRole } from '../search/roles.js';
 import { defaultSettings, normalizeSettings } from '../settings.js';
+import { openSettings, sealSettings } from '../settingscloud.js';
 import { positiveInt } from '../utils/number.js';
 import { timestampMs } from '../utils/time.js';
 import { walletPKField } from '../wallet/keys.js';
@@ -309,6 +310,11 @@ export function createFirebaseCloud({ db, auth, getAuth, functions, getFunctions
         return true;
     }
 
+    async function logoutDevices() {
+        await callFunction('logoutDevices');
+        return true;
+    }
+
     async function readOnboarding(uid) {
         requireUid(uid);
 
@@ -507,35 +513,46 @@ export function createFirebaseCloud({ db, auth, getAuth, functions, getFunctions
         );
     }
 
-    async function writeSettings(uid, settings, { currentSettings } = {}) {
+    async function readSettings(uid, key) {
         requireUid(uid);
+        if (!key) {
+            throw new Error('settings key required');
+        }
+        const snap = await getDoc(doc(db, 'users', uid));
+        const saved = snap.data()?.settings ?? null;
+        const body = saved && (saved instanceof Uint8Array || saved instanceof ArrayBuffer || ArrayBuffer.isView(saved) || typeof saved?.toUint8Array === 'function')
+            ? readCloudBytes(saved, 'settings body')
+            : null;
+        if (body) {
+            return openSettings(key, uid, body);
+        }
+        const settings = saved && typeof saved === 'object' && !Array.isArray(saved)
+            ? normalizeSettings(saved)
+            : normalizeSettings(defaultSettings);
+        await setDoc(
+            doc(db, 'users', uid),
+            {
+                settings: writeCloudBytes(await sealSettings(key, uid, settings), 'settings body'),
+            },
+            { merge: true }
+        );
+        return settings;
+    }
 
-        let base = currentSettings;
-
-        try {
-            const snap = await getDoc(doc(db, 'users', uid));
-            const saved = snap.exists() ? snap.data()?.settings : null;
-            const { autolock: rawAutolock, ...rawSettings } = saved || {};
-            base = {
-                ...defaultSettings,
-                ...rawSettings,
-                autolock: {
-                    ...defaultSettings.autolock,
-                    ...(rawAutolock || {}),
-                },
-            };
-        } catch (error) {
-            if (!base) {
-                throw error;
-            }
+    async function writeSettings(uid, settings, { currentSettings, key } = {}) {
+        requireUid(uid);
+        if (!key) {
+            throw new Error('settings key required');
         }
 
+        const base = currentSettings || (await readSettings(uid, key));
         const nextSettings = normalizeSettings(settings, base);
+        const body = await sealSettings(key, uid, nextSettings);
 
         await setDoc(
             doc(db, 'users', uid),
             {
-                settings: nextSettings,
+                settings: writeCloudBytes(body, 'settings body'),
             },
             { merge: true }
         );
@@ -857,6 +874,7 @@ export function createFirebaseCloud({ db, auth, getAuth, functions, getFunctions
         },
         watch: watchAuth,
         logout,
+        logoutDevices,
         login: {
             start: (payload) => callFunction('passkeyLoginOptions', payload),
             finish: (payload) => finishAuth('passkeyLoginVerify', payload),
@@ -1406,6 +1424,7 @@ export function createFirebaseCloud({ db, auth, getAuth, functions, getFunctions
             },
             banned: watchUserBanned,
             settings: {
+                read: readSettings,
                 write: writeSettings,
             },
             active: {

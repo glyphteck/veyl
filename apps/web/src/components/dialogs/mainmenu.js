@@ -69,6 +69,7 @@ import { Dot } from '@/components/dot';
 import { makeUserQr, qr } from '@veyl/shared/qr';
 import { invite, makeInviteLink } from '@veyl/shared/invite';
 import { Shortcut } from '@/components/shortcut';
+import { logoutAllDevices } from '@/lib/user/actions';
 
 const ROW_ICONS = {
     arrowDownLeft: ArrowDownLeft,
@@ -589,6 +590,19 @@ export default function MainMenu({ close, data, open = true }) {
             cloak();
         } else if (action.type === 'lock') {
             lock();
+        } else if (action.type === 'logoutDevices') {
+            openDialog('alert', {
+                title: 'log out all devices?',
+                description: 'This signs this account out everywhere. Unlocking again will require passkey login and your vault password.',
+                confirmLabel: 'log out',
+                confirmClassName: 'button-destructive',
+                onConfirm: () => {
+                    void logoutAllDevices().catch((error) => {
+                        console.error('logout all devices failed', error);
+                        toast.error(error?.message || 'could not log out all devices');
+                    });
+                },
+            });
         } else if (action.type === 'external') {
             close();
             window.open(action.href, '_blank');

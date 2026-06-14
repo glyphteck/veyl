@@ -1,4 +1,5 @@
 import { cloud } from '@/lib/cloud';
+import { clearFaceIdPassword } from '@/lib/faceid';
 import { dropPush } from '@/lib/push';
 import { userAvatarCache } from '@/lib/user/avatarcache';
 
@@ -21,6 +22,7 @@ export async function logout({ remember = null, account = null, lock = null } = 
     const uid = cloud.auth.user?.uid;
     await saveRememberChoice(uid, remember, account);
     lock?.();
+    await clearFaceIdPassword(uid).catch(() => false);
     await dropPush({ uid }).catch(() => {});
     await cloud.auth.logout();
 }

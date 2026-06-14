@@ -31,7 +31,10 @@ export default function WithdrawalInfoScreen() {
                 {feeFormula} = {feeDisplay}
             </Text>
             <Text style={{ fontSize: 15, lineHeight: 23, fontWeight: '700', color: theme.muted }}>
-                the transaction fee is an estimate on how expensive it is to send bitcoin over the network at the moment, with an additional flat fee to export bitcoin off the spark network.
+                veyl gets a live Spark withdrawal quote after you press withdraw. review the destination address, the amount leaving your wallet, the quoted fee, and the amount that reaches the address before confirming.
+            </Text>
+            <Text style={{ fontSize: 15, lineHeight: 23, fontWeight: '900', color: theme.foreground }}>
+                once confirmed, bitcoin withdrawals are irreversible.
             </Text>
             <GlassButton onPress={() => router.back()} label="back" accent />
         </View>

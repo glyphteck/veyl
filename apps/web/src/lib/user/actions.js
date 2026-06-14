@@ -106,3 +106,8 @@ export async function logout({ remember = null, account = null } = {}) {
         window.location.replace('/');
     }
 }
+
+export async function logoutAllDevices() {
+    await cloud.auth.logoutDevices();
+    await logout({ remember: false });
+}

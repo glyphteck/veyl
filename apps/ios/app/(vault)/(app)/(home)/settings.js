@@ -11,7 +11,7 @@ import Icon from '@/components/icon';
 import { getMainMenuHeight } from '@/components/mainmenu';
 import SearchInput from '@/components/search';
 import { deleteAvatar, uploadAvatar } from '@/lib/avatarupload';
-import { clearFaceIdPassword, FaceIdIcon } from '@/lib/faceid';
+import { FaceIdIcon } from '@/lib/faceid';
 import { cloud } from '@/lib/cloud';
 import { clearMsgImageCache } from '@/lib/chat/imagecache';
 import { hasQuickLoginAccount } from '@/lib/user/quicklogin';
@@ -332,7 +332,7 @@ export default function SettingsScreen() {
     const isFocused = useIsFocused();
     const insets = useSafeAreaInsets();
     const user = useUser();
-    const { vault, localCache } = useVault();
+    const { vault, localCache, setFaceIdEnabled } = useVault();
     const [settingSearch, setSettingSearch] = useState('');
     const [isLoggingOut, setIsLoggingOut] = useState(false);
     const mainMenuHeight = getMainMenuHeight(insets.bottom);
@@ -449,16 +449,8 @@ export default function SettingsScreen() {
             }
 
             await user.updateSettings(patch);
-
-            if (patch.faceID === false && user.uid) {
-                const cleared = await clearFaceIdPassword(user.uid).catch((err) => {
-                    console.warn('failed to clear face id password', err);
-                    return false;
-                });
-
-                if (!cleared) {
-                    console.warn('failed to clear face id password');
-                }
+            if (typeof patch.faceID === 'boolean') {
+                await setFaceIdEnabled(patch.faceID);
             }
 
             hasChangesRef.current = false;
@@ -467,7 +459,7 @@ export default function SettingsScreen() {
         } finally {
             savingRef.current = false;
         }
-    }, [serverSettings, user.settingsReady, user.uid, user.updateSettings]);
+    }, [serverSettings, setFaceIdEnabled, user.settingsReady, user.updateSettings]);
 
     useEffect(() => {
         const appSub = AppState.addEventListener('change', (nextState) => {

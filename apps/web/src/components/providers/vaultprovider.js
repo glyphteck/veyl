@@ -2,6 +2,7 @@
 import { createContext, useContext, useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { openLocalDataCache } from '@/lib/cache/localdata';
 import { getCacheSeed, getChatSeed, getDefaultWalletEntropy, isVaultIncompatibleError, mnemonicFromWalletEntropy, openSecretRegistry } from '@veyl/shared/crypto/seed';
+import { deriveSettingsKey } from '@veyl/shared/settingscloud';
 import { yieldToUi } from '@veyl/shared/utils/async';
 import { decryptSeed, migrateVault, shouldMigrateVault, unpackVaultSeedData } from '@/lib/crypto/seed';
 import { normalizePassword } from '@veyl/shared/password';
@@ -97,6 +98,7 @@ export function VaultProvider({ children }) {
             setWallet(null);
             setChatPrivateKey(null);
             setLocalCache(null);
+            user.lockSettings?.();
             updateVault(null);
             setLockState('locked');
 
@@ -130,7 +132,7 @@ export function VaultProvider({ children }) {
         return () => {
             cancelled = true;
         };
-    }, [rejectVaultWaiters, updateVault, user.uid]);
+    }, [rejectVaultWaiters, updateVault, user.lockSettings, user.uid]);
 
     //boot features from master seed
     const unlock = useCallback(
@@ -161,8 +163,16 @@ export function VaultProvider({ children }) {
             let walletEntropy = null;
             let chatSeed = null;
             let cacheKey = null;
+            let settingsKey = null;
             let nextCache = null;
             try {
+                const sessionStartedAt = Date.now();
+                mark('vault.unlock.session.start', { source });
+                if (!cloud.auth.user?.getIdToken) {
+                    throw new Error('auth');
+                }
+                await cloud.auth.user.getIdToken(true);
+                mark('vault.unlock.session.done', { elapsedMs: Date.now() - sessionStartedAt, source });
                 let vault = await waitForVault();
                 if (!isCurrentUnlock()) {
                     throw new Error('account changed during unlock');
@@ -241,6 +251,7 @@ export function VaultProvider({ children }) {
                 const walletMnemonic = mnemonicFromWalletEntropy(walletEntropy);
                 chatSeed = getChatSeed(secretRegistry);
                 cacheKey = getCacheSeed(secretRegistry);
+                settingsKey = deriveSettingsKey(cacheKey, unlockUid);
                 mark('vault.unlock.derive.done', { elapsedMs: Date.now() - deriveStartedAt, source });
 
                 // Zero the master seed from memory
@@ -277,9 +288,16 @@ export function VaultProvider({ children }) {
                 nextCache = await openLocalDataCache(cacheKey, { uid: unlockUid });
                 mark('vault.unlock.localCache.done', { elapsedMs: Date.now() - cacheStartedAt, source, hasCache: !!nextCache });
 
+                const settingsStartedAt = Date.now();
+                mark('vault.unlock.settings.start', { source });
+                await user.unlockSettings(settingsKey);
+                mark('vault.unlock.settings.done', { elapsedMs: Date.now() - settingsStartedAt, source });
+
                 // Zero derived seeds from memory
                 cacheKey.fill(0);
                 cacheKey = null;
+                settingsKey.fill(0);
+                settingsKey = null;
 
                 if (!isCurrentUnlock()) {
                     throw new Error('account changed during unlock');
@@ -313,6 +331,7 @@ export function VaultProvider({ children }) {
                     walletEntropy?.fill?.(0);
                     chatSeed?.fill?.(0);
                     cacheKey?.fill?.(0);
+                    settingsKey?.fill?.(0);
                 } catch {}
                 try {
                     lockWallet(w);
@@ -326,6 +345,7 @@ export function VaultProvider({ children }) {
                     setWallet(null);
                     setChatPrivateKey(null);
                     setLocalCache(null);
+                    user.lockSettings?.();
                     setLockState('locked');
                 }
 
@@ -353,6 +373,7 @@ export function VaultProvider({ children }) {
                 setWallet(null);
                 setChatPrivateKey(null);
                 setLocalCache(null);
+                user.lockSettings?.();
                 setLockState('locked');
 
                 // mark inactive (best-effort)
@@ -367,7 +388,7 @@ export function VaultProvider({ children }) {
                 }
             }
         },
-        [wallet, chatPrivateKey, localCache, lockState]
+        [wallet, chatPrivateKey, localCache, lockState, user.lockSettings, user.uid]
     );
 
     // idle autolock

@@ -9,7 +9,6 @@ import { ChatProvider } from '@/providers/chatprovider';
 import { PeerProvider } from '@/providers/peerprovider';
 import { PushProvider } from '@/providers/pushprovider';
 import { useTheme } from '@/providers/themeprovider';
-import { useUser } from '@/providers/userprovider';
 import { useVault } from '@/providers/vaultprovider';
 import { mark } from '@/lib/diagnostics';
 import { stackScreenOptions } from '@/lib/navigation/stackoptions';
@@ -17,36 +16,34 @@ import { stackScreenOptions } from '@/lib/navigation/stackoptions';
 function VaultContent() {
     const { theme } = useTheme();
     const router = useRouter();
-    const { lockState, faceIdFailed, localCache } = useVault();
-    const user = useUser();
+    const { lockState, faceIdFailed, localCache, faceIdChoiceReady, faceIdConfigured, faceIdEnabled } = useVault();
     const previousLockStateRef = useRef(lockState);
 
-    const faceIDConfigured = user.settingsReady && typeof user.settings?.faceID === 'boolean';
-    const faceIDEnabled = faceIDConfigured && user.settings.faceID === true;
     const isUnlocked = lockState === 'unlocked';
-    const shouldShowFaceIdSetup = isUnlocked && !faceIDConfigured;
-    const shouldShowApp = isUnlocked && faceIDConfigured;
-    const shouldShowFaceIdUnlock = !isUnlocked && !shouldShowFaceIdSetup && faceIDEnabled && !faceIdFailed;
-    const shouldShowPasswordUnlock = !isUnlocked && !shouldShowFaceIdSetup && (!faceIDEnabled || faceIdFailed);
+    const shouldShowFaceIdSetup = isUnlocked && faceIdChoiceReady && !faceIdConfigured;
+    const shouldShowApp = isUnlocked && faceIdChoiceReady && faceIdConfigured;
+    const shouldShowFaceIdUnlock = !isUnlocked && faceIdChoiceReady && !shouldShowFaceIdSetup && faceIdEnabled && !faceIdFailed;
+    const shouldShowPasswordUnlock = !isUnlocked && faceIdChoiceReady && !shouldShowFaceIdSetup && (!faceIdEnabled || faceIdFailed);
 
     useEffect(() => {
         mark('vault.gates', {
             lockState,
-            faceIDConfigured,
-            faceIDEnabled,
+            faceIDConfigured: faceIdConfigured,
+            faceIDEnabled: faceIdEnabled,
+            faceIdChoiceReady,
             faceIdFailed,
             shouldShowFaceIdSetup,
             shouldShowApp,
             shouldShowFaceIdUnlock,
             shouldShowPasswordUnlock,
         });
-    }, [faceIDConfigured, faceIDEnabled, faceIdFailed, lockState, shouldShowApp, shouldShowFaceIdSetup, shouldShowFaceIdUnlock, shouldShowPasswordUnlock]);
+    }, [faceIdChoiceReady, faceIdConfigured, faceIdEnabled, faceIdFailed, lockState, shouldShowApp, shouldShowFaceIdSetup, shouldShowFaceIdUnlock, shouldShowPasswordUnlock]);
 
     useLayoutEffect(() => {
         const wasUnlocked = previousLockStateRef.current === 'unlocked';
         previousLockStateRef.current = lockState;
 
-        if (lockState !== 'unlocked' || wasUnlocked || !faceIDConfigured) {
+        if (lockState !== 'unlocked' || wasUnlocked || !faceIdConfigured) {
             return;
         }
 
@@ -54,7 +51,7 @@ function VaultContent() {
         const href = hrefForResumeTarget(target);
         mark('route.cache.read', { route: target?.route || '' });
         router.replace(href, { withAnchor: true });
-    }, [faceIDConfigured, localCache, lockState, router]);
+    }, [faceIdConfigured, localCache, lockState, router]);
 
     return (
         <Stack screenOptions={stackScreenOptions(theme)}>

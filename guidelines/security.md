@@ -15,6 +15,7 @@
 - Vault lock should tear down wallet connections, zero the live chat private key where possible, clear provider state, and clear derived chat-pair caches.
 - Vaulted local data cache keys are derived only after local seed decrypt, are mixed with a local-only install secret, are never stored directly, and must be zeroed/closed on lock, failed unlock, auth switch, and provider unmount. Do not upload the local install secret or use it as a cloud-visible device id.
 - The durable local cache must contain only ciphertext plus nonsensitive envelope metadata while the vault is locked. Do not put chat ids, public keys, usernames, message previews, transaction amounts, or peer lists in plaintext localStorage keys, IndexedDB indexes, AsyncStorage keys, or filenames.
+- Account settings are stored on the server as a vault-derived encrypted body. Do not write plaintext display currency, glass mode, autolock preferences, payment behavior preferences, chat preview preferences, or Face ID preference to `users/{uid}`. iOS may keep only the local pre-unlock biometric routing choice and SecureStore staging marker on device; after vault unlock the decrypted account setting is the source of truth and disables local biometric staging when `faceID` is false or unset.
 - Cached chat media bytes must be stored as vault-encrypted blobs with opaque local ids. Storage paths, file keys, chat ids, public keys, filenames, captions, and media metadata belong only inside the encrypted local cache payload.
 - Chat message lists must not be hydrated from durable local cache. The server is the source of truth for message existence, especially because either participant can hard-delete messages at any time.
 - In-memory recent-chat message batches are allowed only after unlock and must stay provider-owned session state. Do not persist those batches or expose plaintext local indexes. Warm message batches must not download attachment bytes; media reads should happen only from the normal render or user path after a server-confirmed message doc proves the attachment still exists.
@@ -22,6 +23,7 @@
 - Media cache writes must not block first render after a Storage decrypt. Defer durable media writes, and use native platform crypto on iOS for large cached media blobs.
 - Do not enable Firebase offline persistence as a substitute for the vaulted local cache. Its local store is not keyed to the vault password.
 - Account deletion must clear the durable local cache before sign-out.
+- The all-device logout action revokes Firebase refresh tokens and local clients must require a live token refresh before vault unlock. If that refresh fails, the app must not decrypt the vault from a staged local password.
 - When changing vault behavior, check secret lifetime across app open, app lock, app background, browser close, forced kill, and device restart.
 
 ## Chat
@@ -63,6 +65,7 @@
 - Spark Bitcoin privacy mode is on by default. The dormant `ghostWallet` setting remains valid in private user settings, but do not expose it in the app UI unless product direction changes. Keep privacy synced through `wallet.setPrivacyEnabled(...)`; Spark docs say this hides Bitcoin activity from public read-only lookups, but token transactions remain visible and wallet-owner/authenticated access still works.
 - Wallet push notifications and Spark webhook registration are not active. Do not store static funding addresses or enable server-side deposit watching by default. Static Bitcoin deposit APNs require an explicit opt-in privacy tradeoff because the backend must know the address it watches. The server must never hold wallet seeds, claim signatures, Spark signers, static deposit addresses, or authenticated owner readonly access; the client remains the only deposit-claim executor. Deposit claim checks may run while the wallet is unlocked and active, using Spark identity or funding-address UTXO reads from the client.
 - Withdrawal flows must reject addresses that do not match the active network at every entry point: scanner/QR handling, form validation and disabled state, and the shared wallet withdraw function.
+- Cooperative withdrawal UI must use the shared two-step review flow: call `prepareWithdrawal()` only from an explicit withdraw action, show the destination address, amount leaving the wallet, quoted fee, and amount received, then call `confirmWithdrawal()` from the confirmation action. Do not quote withdrawal fees on every keystroke.
 - Account deletion UX must warn users when their balance is at or above the practical withdrawal minimum and keep withdraw/export paths visible before destructive deletion.
 
 ## Backend And Rules

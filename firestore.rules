@@ -135,30 +135,10 @@ service cloud.firestore {
         && data.communityRulesAcceptedAt == request.time;
     }
 
-    function isAutolockTimer(v) {
-      return v == 'never' || (v is int && v >= 1 && v <= 60);
-    }
-
     function settingsValid(data) {
       let settings = mapGet(data, 'settings');
-      let autolock = mapGet(settings, 'autolock');
-      let faceID = mapGet(settings, 'faceID');
 
-      return settings is map
-        && settings.keys().hasOnly(['glass', 'moneyFormat', 'ghostWallet', 'showChatPreviews', 'sendOnScan', 'confirmSend', 'faceID', 'autolock'])
-        && mapGet(settings, 'glass') is bool
-        && mapGet(settings, 'moneyFormat') in ['btc', 'usd', 'sats']
-        && mapGet(settings, 'ghostWallet') is bool
-        && mapGet(settings, 'showChatPreviews') is bool
-        && mapGet(settings, 'sendOnScan') is bool
-        && mapGet(settings, 'confirmSend') is bool
-        && (faceID == null || faceID is bool)
-        && autolock is map
-        && autolock.keys().hasOnly(['timer', 'onHide', 'onBlur', 'onBackground'])
-        && isAutolockTimer(mapGet(autolock, 'timer'))
-        && mapGet(autolock, 'onHide') is bool
-        && mapGet(autolock, 'onBlur') is bool
-        && mapGet(autolock, 'onBackground') is bool;
+      return bytesSizeAllowed(settings, 16 * 1024);
     }
 
     function communityRulesShapeValid(data) {

@@ -5,13 +5,15 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import GlassButton from '@/components/glass/glassbutton';
 import { useTheme } from '@/providers/themeprovider';
 import { useUser } from '@/providers/userprovider';
-import { clearFaceIdPassword, FaceIdIcon } from '@/lib/faceid';
+import { useVault } from '@/providers/vaultprovider';
+import { FaceIdIcon } from '@/lib/faceid';
 import { useTap } from '@/lib/tap';
 
 export default function FaceIdScreen() {
     const { theme } = useTheme();
     const insets = useSafeAreaInsets();
     const user = useUser();
+    const { setFaceIdEnabled } = useVault();
     const [isSaving, setIsSaving] = useState(false);
     const canSubmit = !!user.uid && user.settingsReady && !isSaving;
     const secondaryFeedback = useTap({ disabled: !canSubmit, onPress: () => setPreference(false) });
@@ -27,17 +29,7 @@ export default function FaceIdScreen() {
             setIsSaving(true);
             try {
                 await user.updateSettings({ faceID: enabled });
-
-                if (!enabled && user.uid) {
-                    const cleared = await clearFaceIdPassword(user.uid).catch((err) => {
-                        console.warn('failed to clear face id password', err);
-                        return false;
-                    });
-
-                    if (!cleared) {
-                        console.warn('failed to clear face id password');
-                    }
-                }
+                await setFaceIdEnabled(enabled);
             } catch (err) {
                 console.warn('failed to save face id preference', err);
                 Alert.alert('Face ID not updated', enabled ? 'Could not enable Face ID on this device.' : 'Could not skip Face ID setup right now.');
@@ -45,7 +37,7 @@ export default function FaceIdScreen() {
                 setIsSaving(false);
             }
         },
-        [canSubmit, user]
+        [canSubmit, setFaceIdEnabled, user]
     );
 
     return (
