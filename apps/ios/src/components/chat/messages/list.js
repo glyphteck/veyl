@@ -31,6 +31,16 @@ import { getMessageKey, getMessageOrderMs } from '@veyl/shared/chat/state';
 const LIKE_PREVIEW_INSET = 22;
 const KEYBOARD_DISMISS_MODE = 'interactive';
 
+function OlderMessagesLoader({ chatPad, screenW, theme }) {
+    return (
+        <View style={{ width: screenW + STAMP_TRAY, paddingTop: 10, paddingBottom: 14 }}>
+            <View style={{ width: screenW, paddingHorizontal: chatPad, alignItems: 'center' }}>
+                <ActivityIndicator size="small" color={theme.muted} />
+            </View>
+        </View>
+    );
+}
+
 function hasMsgFile(msg) {
     return (typeof msg?.localUri === 'string' && msg.localUri.trim().length > 0) || (typeof msg?.p === 'string' && !!msg.p && typeof msg?.k === 'string' && !!msg.k);
 }
@@ -106,10 +116,17 @@ export default function Messages({
         [deletingMessageKeys, messagesAsc]
     );
     const visibleMessagesAsc = useMemo(() => collapseSystemMessages(activeMessagesAsc.filter(canShowMsg)), [activeMessagesAsc]);
-    const datedMessagesAsc = useMemo(() => withDateSeparators(visibleMessagesAsc), [visibleMessagesAsc]);
+    const datedMessagesAsc = useMemo(() => {
+        const dated = withDateSeparators(visibleMessagesAsc);
+        if (!hasOlder || !isDateSeparatorMsg(dated[0])) {
+            return dated;
+        }
+        return dated.slice(1);
+    }, [hasOlder, visibleMessagesAsc]);
     const messages = useMemo(() => [...datedMessagesAsc].reverse(), [datedMessagesAsc]);
     const displayRows = useAnimatedRows(messages, chatId || '', ready);
     const rowLayoutAnimation = useMemo(() => (displayRows.some((row) => row?.state === 'entering') ? MESSAGE_ROW_LAYOUT : undefined), [displayRows]);
+    const olderLoader = useMemo(() => (hasOlder || loadingOlder ? <OlderMessagesLoader chatPad={chatPad} screenW={screenW} theme={theme} /> : null), [chatPad, hasOlder, loadingOlder, screenW, theme]);
     const latestReadReceipt = useMemo(() => getLatestReadOutgoingReceipt(activeMessagesAsc, chatPK, peerChatPK), [activeMessagesAsc, chatPK, peerChatPK]);
     const latestReadReceiptKey = getMessageKey(latestReadReceipt?.message);
     const latestReadReceiptStamp = useMemo(() => getMsgStamp(latestReadReceipt?.receipt), [latestReadReceipt?.receipt?.cid, latestReadReceipt?.receipt?.id, latestReadReceipt?.receipt?.ts]);
@@ -394,6 +411,7 @@ export default function Messages({
                                 itemLayoutAnimation={rowLayoutAnimation}
                                 style={{ flex: 1, width: screenW + STAMP_TRAY, zIndex: 0 }}
                                 inverted
+                                ListFooterComponent={olderLoader}
                                 contentInset={contentInset}
                                 contentContainerStyle={contentContainerStyle}
                                 scrollIndicatorInsets={scrollIndicatorInsets}
@@ -403,9 +421,6 @@ export default function Messages({
                                 keyboardDismissMode={KEYBOARD_DISMISS_MODE}
                                 keyboardShouldPersistTaps="handled"
                                 extraData={getOptimisticReactions}
-                                initialNumToRender={20}
-                                maxToRenderPerBatch={10}
-                                windowSize={3}
                                 removeClippedSubviews={false}
                                 scrollEnabled={!menuActive}
                                 onScroll={handleListScroll}

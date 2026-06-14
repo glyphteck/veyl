@@ -526,6 +526,15 @@ export function useChatSend({ cloud, media = {}, uid, chatBanned, chatPK, chatPr
     const queueSend = useCallback(
         async (peerChatPK, message, run, { previewRequired = false } = {}) => {
             const local = await showLocalMessage(peerChatPK, message, sendOptionsForPeer(peerChatPK));
+            let committed = false;
+            const markCommitted = () => {
+                if (committed) {
+                    return;
+                }
+                committed = true;
+                sentChatIdsRef.current.add(local.chatId);
+                markLocalStatus(local.chatId, local.cid, LOCAL_SENT);
+            };
 
             return new Promise((resolve, reject) => {
                 const job = {
@@ -533,12 +542,13 @@ export function useChatSend({ cloud, media = {}, uid, chatBanned, chatPK, chatPr
                     previewRequired,
                     resolve,
                     reject,
-                    onSuccess: () => {
-                        sentChatIdsRef.current.add(local.chatId);
-                        markLocalStatus(local.chatId, local.cid, LOCAL_SENT);
+                    onSuccess: markCommitted,
+                    onError: () => {
+                        if (!committed) {
+                            markLocalStatus(local.chatId, local.cid, LOCAL_FAILED);
+                        }
                     },
-                    onError: () => markLocalStatus(local.chatId, local.cid, LOCAL_FAILED),
-                    run: (context) => run({ ...context, local }),
+                    run: (context) => run({ ...context, local, onCommitted: markCommitted }),
                 };
 
                 enqueueSendJob(peerChatPK, job, reject);
@@ -547,7 +557,7 @@ export function useChatSend({ cloud, media = {}, uid, chatBanned, chatPK, chatPr
         [enqueueSendJob, markLocalStatus, sendOptionsForPeer, showLocalMessage]
     );
 
-    const sendOptionsForQueuedWrite = useCallback((baseOptions, local, updatePreview) => {
+    const sendOptionsForQueuedWrite = useCallback((baseOptions, local, updatePreview, onCommitted) => {
         const chatId = local?.chatId;
         const chatExists = baseOptions?.chatExists === true || sentChatIdsRef.current.has(chatId);
         return {
@@ -558,6 +568,7 @@ export function useChatSend({ cloud, media = {}, uid, chatBanned, chatPK, chatPr
             senderUid: uid,
             chatExists,
             updatePreview: !chatExists || updatePreview !== false,
+            onCommitted,
         };
     }, [uid]);
 
@@ -576,8 +587,8 @@ export function useChatSend({ cloud, media = {}, uid, chatBanned, chatPK, chatPr
                 const attachment = makeTxtFileAttachment(nextMessage);
                 const localMessage = makeLongTxtLocalMessage(chatPK, cid, attachment, nextMessage);
 
-                return queueSend(peerChatPK, localMessage, async ({ local, updatePreview }) => {
-                    const writeOptions = sendOptionsForQueuedWrite(sendOptions, local, updatePreview);
+                return queueSend(peerChatPK, localMessage, async ({ local, updatePreview, onCommitted }) => {
+                    const writeOptions = sendOptionsForQueuedWrite(sendOptions, local, updatePreview, onCommitted);
                     const uploaded = await uploadMessageAttachment(cloud, media, chatPK, chatPrivateKey, peerChatPK, { cid, ...attachment, chatId: local.chatId, meta: { ...attachment, chatId: local.chatId } });
                     saveMedia(localCache, uploaded, attachment.data, attachment);
                     rememberCachedLocalMedia(local.chatId, cid, uploaded);
@@ -586,8 +597,8 @@ export function useChatSend({ cloud, media = {}, uid, chatBanned, chatPK, chatPr
             }
 
             const queued = makeSendMessage(chatPK, nextMessage);
-            return queueSend(peerChatPK, queued.message, async ({ local, updatePreview }) => {
-                return sendMsg(cloud, chatPK, chatPrivateKey, peerChatPK, queued.message, sendOptionsForQueuedWrite(sendOptions, local, updatePreview));
+            return queueSend(peerChatPK, queued.message, async ({ local, updatePreview, onCommitted }) => {
+                return sendMsg(cloud, chatPK, chatPrivateKey, peerChatPK, queued.message, sendOptionsForQueuedWrite(sendOptions, local, updatePreview, onCommitted));
             }, { previewRequired: sendOptions.chatExists !== true });
         },
         [cloud, media, chatBanned, chatPK, chatPrivateKey, localCache, queueSend, rememberCachedLocalMedia, sendOptionsForPeer, sendOptionsForQueuedWrite]
@@ -680,8 +691,8 @@ export function useChatSend({ cloud, media = {}, uid, chatBanned, chatPK, chatPr
             const sendOptions = sendOptionsForPeer(peerChatPK);
             const localPayload = withMessageRetention(localMessage, sendOptions.retention);
 
-            return queueSend(peerChatPK, localPayload, async ({ local, updatePreview }) => {
-                const writeOptions = sendOptionsForQueuedWrite(sendOptions, local, updatePreview);
+            return queueSend(peerChatPK, localPayload, async ({ local, updatePreview, onCommitted }) => {
+                const writeOptions = sendOptionsForQueuedWrite(sendOptions, local, updatePreview, onCommitted);
                 const uploaded = await uploadMessageAttachment(cloud, media, chatPK, chatPrivateKey, peerChatPK, { ...nextAttachment, chatId: local.chatId, meta: { ...(nextAttachment.meta || {}), chatId: local.chatId } });
                 saveMedia(localCache, uploaded, attachment?.data, attachment);
                 rememberCachedLocalMedia(local.chatId, cid, uploaded);
@@ -813,8 +824,8 @@ export function useChatSend({ cloud, media = {}, uid, chatBanned, chatPK, chatPr
             const sendOptions = sendOptionsForPeer(peerChatPK);
             const cid = makeCid();
             const message = withMessageRetention({ ...sharedMessage, cid, s: chatPK }, sendOptions.retention);
-            return queueSend(peerChatPK, message, async ({ local, updatePreview }) => {
-                const writeOptions = sendOptionsForQueuedWrite(sendOptions, local, updatePreview);
+            return queueSend(peerChatPK, message, async ({ local, updatePreview, onCommitted }) => {
+                const writeOptions = sendOptionsForQueuedWrite(sendOptions, local, updatePreview, onCommitted);
                 if (sharedMessage?.localData != null) {
                     saveMedia(localCache, message, sharedMessage.localData, message);
                     rememberCachedLocalMedia(local.chatId, cid, message);

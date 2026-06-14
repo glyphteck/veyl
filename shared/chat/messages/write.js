@@ -230,6 +230,7 @@ export async function sendMsg(cloud, senderPubkey, senderPrivkey, receiverChatPK
         message: msgData,
         ownerEntry,
         inbox: ping ? { recipientUid: recipientProfile?.uid, ping } : null,
+        onCommitted: options?.onCommitted,
     });
     return { chatId, msgId: messageId, cid: head.cid, preview };
 }

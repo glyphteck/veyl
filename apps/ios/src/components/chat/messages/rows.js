@@ -10,7 +10,13 @@ function sameRowList(a, b) {
         return false;
     }
     for (let index = 0; index < a.length; index += 1) {
-        if (a[index]?.key !== b[index]?.key || a[index]?.msg !== b[index]?.msg || a[index]?.state !== b[index]?.state || a[index]?.dotExitToken !== b[index]?.dotExitToken) {
+        if (
+            a[index]?.key !== b[index]?.key ||
+            a[index]?.msg !== b[index]?.msg ||
+            a[index]?.state !== b[index]?.state ||
+            a[index]?.enteredAt !== b[index]?.enteredAt ||
+            a[index]?.dotExitToken !== b[index]?.dotExitToken
+        ) {
             return false;
         }
     }
@@ -23,6 +29,7 @@ function makePresentRows(messages) {
             key: getMessageKey(msg),
             msg,
             state: 'present',
+            enteredAt: 0,
             dotExitToken: 0,
         }))
         .filter((row) => row.key);
@@ -43,6 +50,7 @@ export function useAnimatedRows(messages, scopeKey, animate = true) {
                 return { scopeKey, rows: presentRows, animated: animate };
             }
 
+            const now = Date.now();
             const nextKeys = new Set(presentRows.map((row) => row.key));
             const prevByKey = new Map();
             const prevIndexByKey = new Map();
@@ -60,15 +68,19 @@ export function useAnimatedRows(messages, scopeKey, animate = true) {
                 const prevRow = prevByKey.get(row.key);
                 const retained = prevRow && prevRow.state !== 'leaving';
                 const confirmed = retained && shouldExitPendingDot(prevRow.msg, row.msg);
-                const retainedState = prevRow?.state === 'entering' || prevRow?.state === 'instant' ? prevRow.state : 'present';
+                const prevEnteredAt = prevRow?.enteredAt || now;
+                const keepEntering = prevRow?.state === 'entering' && now - prevEnteredAt < MESSAGE_ROW_ENTER_STATE_MS;
+                const retainedState = keepEntering || prevRow?.state === 'instant' ? prevRow.state : 'present';
                 const nextState = retained ? retainedState : index < newestInsertCount ? 'entering' : 'instant';
+                const enteredAt = nextState === 'entering' ? (retained ? prevEnteredAt : now) : 0;
                 const dotExitToken = confirmed ? (prevRow.dotExitToken || 0) + 1 : prevRow?.dotExitToken || 0;
-                if (prevRow && prevRow.state === nextState && prevRow.msg === row.msg && prevRow.dotExitToken === dotExitToken) {
+                if (prevRow && prevRow.state === nextState && prevRow.enteredAt === enteredAt && prevRow.msg === row.msg && prevRow.dotExitToken === dotExitToken) {
                     return prevRow;
                 }
                 return {
                     ...row,
                     state: nextState,
+                    enteredAt,
                     dotExitToken,
                 };
             });
@@ -116,7 +128,7 @@ export function useAnimatedRows(messages, scopeKey, animate = true) {
             if (row.state === 'instant') {
                 instant.push(row.key);
             } else if (row.state === 'entering') {
-                entering.push(row.key);
+                entering.push(`${row.key}:${row.enteredAt || 0}`);
             }
         }
         return {
@@ -137,7 +149,7 @@ export function useAnimatedRows(messages, scopeKey, animate = true) {
                 }
                 return {
                     ...prev,
-                    rows: prev.rows.map((row) => (row.state === 'instant' ? { ...row, state: 'present' } : row)),
+                    rows: prev.rows.map((row) => (row.state === 'instant' ? { ...row, state: 'present', enteredAt: 0 } : row)),
                 };
             });
         });
@@ -149,18 +161,45 @@ export function useAnimatedRows(messages, scopeKey, animate = true) {
             return undefined;
         }
 
-        const keys = new Set(enteringKeys.split('|').filter(Boolean));
+        const now = Date.now();
+        let nextDeadline = Infinity;
+        for (const entry of enteringKeys.split('|')) {
+            const enteredAt = Number(entry.split(':').pop());
+            if (Number.isFinite(enteredAt) && enteredAt > 0) {
+                nextDeadline = Math.min(nextDeadline, enteredAt + MESSAGE_ROW_ENTER_STATE_MS);
+            }
+        }
+        if (!Number.isFinite(nextDeadline)) {
+            return undefined;
+        }
+
         const timeout = setTimeout(() => {
             setState((prev) => {
                 if (prev.scopeKey !== scopeKey) {
                     return prev;
                 }
+                const doneAt = Date.now();
+                let changed = false;
+                const rows = prev.rows.map((row) => {
+                    if (row.state !== 'entering') {
+                        return row;
+                    }
+                    const enteredAt = row.enteredAt || doneAt;
+                    if (doneAt - enteredAt < MESSAGE_ROW_ENTER_STATE_MS) {
+                        return row;
+                    }
+                    changed = true;
+                    return { ...row, state: 'present', enteredAt: 0 };
+                });
+                if (!changed) {
+                    return prev;
+                }
                 return {
                     ...prev,
-                    rows: prev.rows.map((row) => (row.state === 'entering' && keys.has(row.key) ? { ...row, state: 'present' } : row)),
+                    rows,
                 };
             });
-        }, MESSAGE_ROW_ENTER_STATE_MS);
+        }, Math.max(0, nextDeadline - now));
 
         return () => clearTimeout(timeout);
     }, [enteringKeys, scopeKey, state.animated, state.scopeKey]);

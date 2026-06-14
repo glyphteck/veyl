@@ -1004,23 +1004,28 @@ export class BotRuntime {
         let requests = 0;
         let cancelled = false;
 
-        const sendTrafficMessage = (session, message, chatId) => {
+        const sendTrafficMessage = (session, message, chatKey, options = {}) => {
             const job = (async () => {
                 try {
-                    const result = await queueMapJob(session.chatJobs, chatId, async () => {
+                    const runSend = async () => {
                         if (session.closing || this.stopped) {
                             throw new Error('bot session closed');
                         }
-                        const result = await this.sendPayload(session, target.chatPK, message.payload, { receiverUid: target.uid });
-                        sentChats.set(session.uid, result?.chatId || chatId);
+                        const chatId = sentChats.get(session.uid);
+                        const result = await this.sendPayload(session, target.chatPK, message.payload, {
+                            receiverUid: target.uid,
+                            ...(chatId ? { chatId } : {}),
+                        });
+                        sentChats.set(session.uid, result?.chatId || chatId || chatKey);
                         return result;
-                    });
+                    };
+                    const result = options.queue === false ? await runSend() : await queueMapJob(session.chatJobs, chatKey, runSend);
 
                     incrementSender(senders, session);
                     messages.push({
                         uid: session.uid,
                         username: session.username || null,
-                        chatId: result?.chatId || chatId,
+                        chatId: result?.chatId || sentChats.get(session.uid) || chatKey,
                         msgId: result?.msgId || null,
                         request: message.request,
                     });
@@ -1036,6 +1041,7 @@ export class BotRuntime {
                 jobs.delete(job);
             });
             jobs.add(job);
+            return job;
         };
 
         const nextMessageSession = () => {
@@ -1062,7 +1068,19 @@ export class BotRuntime {
             return coverageSessions.shift() || pickRandom(sessions);
         };
 
-        for (let index = 0; index < count; index++) {
+        let startIndex = 0;
+        if (soloSession && count > 0) {
+            if (this.stopped || await this.isActionCancelRequested(action)) {
+                cancelled = true;
+            } else {
+                const message = randomTrafficPayload();
+                const chatKey = `${soloSession.uid}:${target.chatPK}`;
+                await sendTrafficMessage(soloSession, message, chatKey);
+                startIndex = 1;
+            }
+        }
+
+        for (let index = startIndex; index < count; index++) {
             if (this.stopped || await this.isActionCancelRequested(action)) {
                 cancelled = true;
                 break;
@@ -1070,8 +1088,8 @@ export class BotRuntime {
 
             const session = nextMessageSession();
             const message = randomTrafficPayload();
-            const chatId = `${session.uid}:${target.chatPK}`;
-            sendTrafficMessage(session, message, chatId);
+            const chatKey = `${session.uid}:${target.chatPK}`;
+            sendTrafficMessage(session, message, chatKey, { queue: !(soloSession && sentChats.has(session.uid)) });
 
             if (index + 1 < count) {
                 await sleep(delayMs);

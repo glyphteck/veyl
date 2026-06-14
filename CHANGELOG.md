@@ -2,6 +2,13 @@
 
 Repo-level changes are listed newest first. Keep entries short and concrete. Broad pushes get grouped bullets, while narrow fixes can use one concise bugfix or cleanup bullet that still names the actual change.
 
+## 0.16.5 - 2026-06-14
+
+- Moved Veyl SoftwareApplication JSON-LD out of the root layout and into page-owned join/download metadata helpers without layout-level dangerous HTML injection.
+- Improved solo bot chat traffic so the first send resolves the chat and follow-up sends can continue without serial queue waits.
+- Restored iOS chat message row animations while making older-message loading visible, suppressing stale top date separators, widening rendered windows, and preventing entering rows from getting stuck at their first frame.
+- Stabilized iOS chat and wallet list geometry around floating headers, composer keyboard hold-open behavior, and outgoing message pending-state clearing after durable message commits.
+
 ## 0.16.4 - 2026-06-14
 
 - Suppressed the expected JSON-LD script nonce hydration warning while keeping the CSP nonce on the inline structured-data script.

@@ -34,6 +34,7 @@ const COMPOSER_KEYBOARD_GAP = 8;
 const COMPOSER_OVERLAY_GAP = 8;
 const COMPOSER_OVERLAY_MS = 80;
 const COMPOSER_OVERLAY_EXIT_HOLD_MS = COMPOSER_OVERLAY_MS;
+const COMPOSER_FOCUS_RELEASE_MS = 160;
 const composerOverlayTiming = {
     duration: COMPOSER_OVERLAY_MS,
     easing: Easing.out(Easing.cubic),
@@ -112,6 +113,7 @@ export default function PeerChatRoute() {
     const inputBaseH = useRef(0);
     const overlayH = useRef(0);
     const activeOverlayRef = useRef(false);
+    const focusReleaseTimerRef = useRef(null);
     const [draft, setDraft] = useState(null);
     const [draftMounted, setDraftMounted] = useState(false);
     const [commandContext, setCommandContext] = useState({ kind: 'none', items: [] });
@@ -479,9 +481,30 @@ export default function PeerChatRoute() {
     }, []);
     const handleInputFocusChange = useCallback(
         (focused) => {
-            composerHoldOpen.value = focused ? 1 : 0;
+            if (focusReleaseTimerRef.current) {
+                clearTimeout(focusReleaseTimerRef.current);
+                focusReleaseTimerRef.current = null;
+            }
+            if (focused) {
+                composerHoldOpen.value = 1;
+                return;
+            }
+            focusReleaseTimerRef.current = setTimeout(() => {
+                focusReleaseTimerRef.current = null;
+                composerHoldOpen.value = 0;
+            }, COMPOSER_FOCUS_RELEASE_MS);
         },
         [composerHoldOpen]
+    );
+
+    useEffect(
+        () => () => {
+            if (focusReleaseTimerRef.current) {
+                clearTimeout(focusReleaseTimerRef.current);
+                focusReleaseTimerRef.current = null;
+            }
+        },
+        []
     );
 
     useEffect(() => {

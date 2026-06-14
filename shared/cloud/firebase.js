@@ -1094,6 +1094,7 @@ export function createFirebaseCloud({ db, auth, getAuth, functions, getFunctions
             batch.set(ownerEntry.ref, ownerEntry.data, { merge: true });
         }
         await batch.commit();
+        payload.onCommitted?.({ chatId, messageId });
         if (payload.inbox?.recipientUid && payload.inbox?.ping) {
             await pushInbox(payload.inbox.recipientUid, payload.inbox.ping);
         }

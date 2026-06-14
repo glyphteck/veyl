@@ -397,10 +397,9 @@ export default function ChatList() {
     const [rowMove, setRowMove] = useState(null);
     const searchTop = insets.top + SEARCH_TOP_GAP;
     const searchBottom = searchTop + SEARCH_BAR_HEIGHT;
-    const listInset = useMemo(() => ({ top: searchBottom }), [searchBottom]);
-    const listOffset = useMemo(() => ({ x: 0, y: -searchBottom }), [searchBottom]);
-    const listTopSpace = SEARCH_LIST_GAP;
     const mainMenuHeight = getMainMenuHeight(insets.bottom);
+    const listTopSpace = searchBottom + SEARCH_LIST_GAP;
+    const listIndicatorInsets = useMemo(() => ({ top: searchBottom, bottom: mainMenuHeight }), [mainMenuHeight, searchBottom]);
 
     const chatQuery = useMemo(() => lowerText(search), [search]);
     const usernameQuery = useMemo(() => cleanUsername(search), [search]);
@@ -746,9 +745,7 @@ export default function ChatList() {
                     alwaysBounceVertical
                     keyboardDismissMode="interactive"
                     keyboardShouldPersistTaps="handled"
-                    contentInset={listInset}
-                    contentOffset={listOffset}
-                    scrollIndicatorInsets={listInset}
+                    scrollIndicatorInsets={listIndicatorInsets}
                     contentContainerStyle={{ flexGrow: 1, paddingTop: listTopSpace, paddingBottom: mainMenuHeight }}
                     renderItem={renderItem}
                     extraData={listExtraData}

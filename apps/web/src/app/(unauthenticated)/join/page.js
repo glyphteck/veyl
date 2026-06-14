@@ -3,12 +3,14 @@ import Image from 'next/image';
 import { headers } from 'next/headers';
 import { userAgent } from 'next/server';
 import { ArrowRight, HatGlasses, KeyRound, Lock, MessageCircle, Smartphone, Wallet } from 'lucide-react';
+import { links } from '@veyl/shared/links';
 import { btclogo, gtlogo, usdblogo } from '@veyl/shared/logos';
 import { slogan } from '@veyl/shared/product';
 import { Button } from '@/components/button';
 import { Card } from '@/components/card';
 import { walletLogoSrc } from '@/lib/brand';
 import { cn } from '@/lib/classes';
+import { JsonLd, appDescription, veylSoftwareApplicationSchema } from '@/lib/seo';
 import { FeatureJump } from './featurejump';
 import { Graph } from './graph';
 
@@ -16,7 +18,7 @@ export const metadata = {
     title: {
         absolute: 'veyl by Glyphteck',
     },
-    description: 'Veyl is a passkey-first Bitcoin wallet and end-to-end encrypted chat app from Glyphteck Corp.',
+    description: appDescription,
     alternates: {
         canonical: '/join',
     },
@@ -94,10 +96,6 @@ function joinDevice(agent) {
     const iphone = agent.os.name === 'iOS' && /iphone/i.test(`${agent.device.model || ''} ${ua}`);
 
     return { appDevice, iphone };
-}
-
-async function getJoinDevice() {
-    return joinDevice(userAgent({ headers: await headers() }));
 }
 
 function joinCta(device) {
@@ -203,12 +201,15 @@ function FeatureSection({ id, icon, icon2, logos, title, body, shots, device, re
 }
 
 export default async function JoinPage() {
-    const device = await getJoinDevice();
+    const requestHeaders = await headers();
+    const nonce = requestHeaders.get('x-nonce');
+    const device = joinDevice(userAgent({ headers: requestHeaders }));
     const cta = joinCta(device);
     const CtaIcon = cta.icon;
 
     return (
         <main className="relative h-dvh overflow-y-auto overscroll-y-contain bg-background text-foreground">
+            <JsonLd data={veylSoftwareApplicationSchema({ url: `${links.veyl}/join` })} nonce={nonce} />
             <Graph className="pointer-events-none fixed inset-0 z-0 h-dvh w-full" />
             <div className="pointer-events-none fixed inset-0 z-0 bg-background/35" />
 

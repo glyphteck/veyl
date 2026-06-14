@@ -253,9 +253,8 @@ export default function Wallet() {
         outputRange: [-BALANCE_HEIGHT, 0],
     });
     const listEdgeInset = insets.top + ACTIONS_HEIGHT;
-    const listInset = useMemo(() => ({ top: listEdgeInset }), [listEdgeInset]);
-    const listOffset = useMemo(() => ({ x: 0, y: -listEdgeInset }), [listEdgeInset]);
-    const listTopSpace = FLOATING_HEADER_SCROLL_EDGE_PAD + (showBalance ? BALANCE_HEIGHT : 0);
+    const listTopSpace = listEdgeInset + FLOATING_HEADER_SCROLL_EDGE_PAD + (showBalance ? BALANCE_HEIGHT : 0);
+    const listIndicatorInsets = useMemo(() => ({ top: listEdgeInset, bottom: mainMenuHeight }), [listEdgeInset, mainMenuHeight]);
     const cycleFormat = useCallback(() => {
         const abs = Math.abs(Number(balance ?? 0));
         const cycle = abs < 1_000_000 ? ['sats', 'usd'] : ['sats', 'usd', 'btc'];
@@ -400,10 +399,9 @@ export default function Wallet() {
                     ListHeaderComponent={<View style={{ height: listTopSpace }} />}
                     ListFooterComponent={txListHasFooter ? <TxListFooter bottomPadding={listBottomPadding} loading={txListShowsLoader} theme={theme} /> : null}
                     ListEmptyComponent={renderTxEmpty}
-                    contentInset={listInset}
-                    contentOffset={listOffset}
-                    scrollIndicatorInsets={listInset}
+                    scrollIndicatorInsets={listIndicatorInsets}
                     contentContainerStyle={{ flexGrow: 1 }}
+                    contentInsetAdjustmentBehavior="never"
                     style={{ flex: 1 }}
                     showsVerticalScrollIndicator={false}
                     bounces
